@@ -15,7 +15,7 @@ const cloudMaterialSettings: THREE.MeshLambertMaterialParameters = {
     color: 0xFFFFFF,
     transparent: true,
     opacity: 0.8,
-    depthWrite: false,
+    depthWrite: true,
     depthTest: true
 };
 

@@ -1183,6 +1183,15 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /locate biome <biomeName>", 'error');
           }
+      } else if (parts[0] === '/shootingstar') {
+          if (parts[1] === 'spawn') {
+              if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new Event('atlas:shootingstar:spawn'));
+              }
+              logMsg('Spawned a shooting star', 'success');
+          } else {
+              logMsg('Usage: /shootingstar spawn', 'error');
+          }
       } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
       setCommandValue(''); 
       setShowSuggestions(false);

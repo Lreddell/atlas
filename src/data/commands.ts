@@ -1,5 +1,5 @@
 
-export const COMMANDS = ['/gamemode', '/time', '/phase', '/locate', '/tp', '/sound', '/playsound'];
+export const COMMANDS = ['/gamemode', '/time', '/phase', '/locate', '/tp', '/sound', '/playsound', '/shootingstar'];
 
 export const SUBCOMMANDS: Record<string, string[]> = {
     '/gamemode': ['survival', 'creative', 'spectator'],
@@ -8,7 +8,8 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/locate': ['biome'],
     '/tp': [], // Coordinates usually
     '/sound': ['reload', 'volume'],
-    '/playsound': []
+    '/playsound': [],
+    '/shootingstar': ['spawn']
 };
 
 // Nested options based on "Command + SubCommand" key
