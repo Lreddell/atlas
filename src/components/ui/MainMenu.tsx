@@ -3,16 +3,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { WorldStorage, WorldMetadata } from '../../systems/world/WorldStorage';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
-import { APP_VERSION } from '../../constants';
+import { APP_DISPLAY_VERSION } from '../../constants';
+import { getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
 
 const PANORAMA_DEBUG_HOTKEY = 'F5';
 
 interface MainMenuProps {
     onStart: (worldId: string) => void;
-    onOptions: () => void;
-    onQuit?: () => void;
     onChunkBase: () => void;
     onFeatureEditor: () => void;
+    onOptions: () => void;
+    onQuit?: () => void;
     backgroundMode: 'dirt' | 'panorama';
     panoramaBackgroundDataUrl: string | null;
     panoramaFaceDataUrls?: string[] | null;
@@ -323,10 +324,10 @@ const MCSlider: React.FC<{
 
 export const MainMenu: React.FC<MainMenuProps> = ({
     onStart,
-    onOptions,
-    onQuit,
     onChunkBase,
     onFeatureEditor,
+    onOptions,
+    onQuit,
     backgroundMode,
     panoramaBackgroundDataUrl,
     panoramaFaceDataUrls,
@@ -362,7 +363,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [worldName, setWorldName] = useState('New World');
     const [seed, setSeed] = useState('');
     const [gameMode, setGameMode] = useState<'survival' | 'creative' | 'spectator'>('survival');
+    const [worldGenPresets, setWorldGenPresets] = useState<WorldGenPresetEntry[]>([]);
+    const [selectedWorldGenPresetId, setSelectedWorldGenPresetId] = useState('');
     const hasFaceCubemap = !!panoramaFaceDataUrls && panoramaFaceDataUrls.length === 6;
+
+    const refreshWorldGenPresets = async () => {
+        const presets = await listWorldGenPresetsAsync();
+        setWorldGenPresets(presets);
+        setSelectedWorldGenPresetId((prev) => {
+            if (prev && presets.some((preset) => preset.id === prev)) return prev;
+            return '';
+        });
+    };
 
     const refreshSplash = () => {
         const selectedSplash = Math.random() < ULTRA_RARE_SPLASH_CHANCE
@@ -377,8 +389,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     };
 
     useEffect(() => {
-        loadWorlds();
+        void loadWorlds();
+        void refreshWorldGenPresets();
     }, []);
+
+    useEffect(() => {
+        if (view === 'create') {
+            void refreshWorldGenPresets();
+        }
+    }, [view]);
 
     useEffect(() => {
         if (view === 'main') {
@@ -426,7 +445,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     };
 
     const handleCreateWorld = async () => {
-        const meta = await WorldStorage.createWorld(worldName, seed, gameMode);
+        const selectedPreset = selectedWorldGenPresetId ? await getWorldGenPresetByIdAsync(selectedWorldGenPresetId) : null;
+        const meta = await WorldStorage.createWorld(
+            worldName,
+            seed,
+            gameMode,
+            selectedPreset?.config,
+            selectedPreset?.id ?? null,
+            selectedPreset?.name ?? null,
+        );
         onStart(meta.id);
     };
 
@@ -475,7 +502,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         );
     }
     const submenuHeadingClass = 'text-white text-xl mb-4 font-bold text-shadow-lg';
-    const showSubmenuOverlay = view !== 'main' && view !== 'editors';
+    const showSubmenuOverlay = view !== 'main';
 
     const renderMenuContent = () => {
         if (view === 'create') {
@@ -524,6 +551,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             </p>
                         </div>
 
+                        <div className="space-y-1">
+                            <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">World Edit Preset (.json)</label>
+                            <select
+                                value={selectedWorldGenPresetId}
+                                onChange={(e) => setSelectedWorldGenPresetId(e.target.value)}
+                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-minecraft px-3 outline-none"
+                            >
+                                <option value="">Default Terrain</option>
+                                {worldGenPresets.map((preset) => (
+                                    <option key={preset.id} value={preset.id}>{preset.name}</option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-gray-500 font-minecraft italic pl-1 leading-tight">
+                                Presets are saved from Editor Features → World Editor.
+                            </p>
+                        </div>
+
                         <div className="flex gap-4 mt-4">
                             <MCButton label="Cancel" onClick={() => setView('select')} width="w-[192px]" />
                             <MCButton label="Create World" onClick={handleCreateWorld} variant="primary" width="w-[192px]" />
@@ -555,7 +599,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                 `}
                             >
                                 <div>
-                                    <div className="font-bold text-lg text-[#eee]">{w.name}</div>
+                                    <div className="font-bold text-lg text-[#eee] flex items-center gap-2">
+                                        <span>{w.name}</span>
+                                        <span className="text-[10px] font-minecraft px-2 py-0.5 rounded border border-white/20 bg-black/35 text-blue-200">
+                                            Preset: {w.worldGenPresetName || 'Default Terrain'}
+                                        </span>
+                                    </div>
                                     <div className="text-xs text-gray-400 font-minecraft">
                                         {w.id.split('-')[0]} • {w.gameMode} • {new Date(w.lastPlayed).toLocaleDateString()} {new Date(w.lastPlayed).toLocaleTimeString()}
                                     </div>
@@ -722,12 +771,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
         if (view === 'editors') {
             return (
-                <div className="relative z-10 flex flex-col items-center w-[460px]">
+                <div className="relative z-10 flex flex-col items-center">
                     <h1 className={submenuHeadingClass}>Editor Features</h1>
-                    <div className="flex flex-col gap-4 w-full items-center">
-                        <MCButton label="WorldEdit" onClick={onChunkBase} width="w-[320px]" />
-                        <MCButton label="Feature Editor" onClick={onFeatureEditor} width="w-[320px]" />
-                        <MCButton label="Back" onClick={() => setView('main')} width="w-[320px]" />
+                    <div className="flex flex-col gap-4 w-[420px]">
+                        <MCButton label="World Editor" onClick={onChunkBase} width="w-full" variant="primary" />
+                        <MCButton label="Feature Editor" onClick={onFeatureEditor} disabled tooltip="Coming soon!" width="w-full" />
+                        <MCButton label="Back" onClick={() => setView('main')} width="w-full" />
                     </div>
                 </div>
             );
@@ -767,7 +816,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     </div>
                 </div>
 
-                <div className="absolute bottom-2 left-2 text-white text-shadow-md">Atlas v{APP_VERSION}</div>
+                <div className="absolute bottom-2 left-2 text-white text-shadow-md">Atlas {APP_DISPLAY_VERSION}</div>
                 <div className="absolute bottom-2 right-2 text-white text-shadow-md">Copyright Ryno LLC. Do not distribute!</div>
             </>
         );

@@ -8,7 +8,7 @@ Atlas is a voxel sandbox game built with TypeScript, React, Three.js, and Vite, 
 - Real-time meshing/generation workers for smooth gameplay
 - Inventory, crafting, drops, and interaction systems
 - In-game UI suite (main menu, pause, HUD, chat, debug screen)
-- Panorama-based menu backgrounds and feature editor tooling
+- Panorama-based menu backgrounds and customization
 - Browser development flow + desktop installer packaging
 
 ## Tech Stack

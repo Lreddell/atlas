@@ -5,6 +5,7 @@ import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHist
 import { CHUNK_SIZE } from '../../constants';
 import { worldManager } from '../../systems/WorldManager';
 import { createNoiseSet, hashSeed } from '../../utils/noise';
+import { deleteWorldGenPresetAsync, getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, saveWorldGenPresetAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
 
 interface ChunkBaseProps {
     onBack: () => void;
@@ -48,6 +49,10 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const [expandedBiomes, setExpandedBiomes] = useState<Record<string, boolean>>({});
     const [activeSection, setActiveSection] = useState<'noise' | 'biomes' | 'terrain'>('biomes');
     const [historyState, setHistoryState] = useState(getHistoryState());
+    const [presetNameInput, setPresetNameInput] = useState('My World Preset');
+    const [showSavesMenu, setShowSavesMenu] = useState(false);
+    const [savedPresets, setSavedPresets] = useState<WorldGenPresetEntry[]>([]);
+    const [selectedPresetId, setSelectedPresetId] = useState<string>('');
     
     // Seed State (Independent from Game)
     const [localSeedInput, setLocalSeedInput] = useState(() => worldManager.getSeed().toString());
@@ -95,6 +100,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     useEffect(() => {
         initHistory();
         setHistoryState(getHistoryState());
+        void refreshPresetList();
     }, []);
 
     useEffect(() => {
@@ -105,6 +111,12 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const forceUpdate = () => {
         setConfigVersion(v => v + 1);
         setHistoryState(getHistoryState());
+    };
+
+    const refreshPresetList = async () => {
+        const presets = await listWorldGenPresetsAsync();
+        setSavedPresets(presets);
+        setSelectedPresetId((prev) => (prev && presets.some((preset) => preset.id === prev) ? prev : presets[0]?.id ?? ''));
     };
 
     const commitChange = () => {
@@ -361,6 +373,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     };
 
     const handleReset = () => {
+        if (!confirm('Reset all world generation settings to defaults?')) return;
         resetGenConfig();
         commitChange();
     };
@@ -382,6 +395,43 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
     const handleImportClick = () => fileInputRef.current?.click();
 
+    const handleSavePreset = async () => {
+        const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
+        if (!saved) {
+            alert('Enter a preset name first.');
+            return;
+        }
+        await refreshPresetList();
+        setSelectedPresetId(saved.id);
+        setPresetNameInput(saved.name);
+        alert(`Saved preset: ${saved.name}`);
+    };
+
+    const handleLoadSelectedPreset = async () => {
+        if (!selectedPresetId) return;
+        const preset = await getWorldGenPresetByIdAsync(selectedPresetId);
+        if (!preset) {
+            alert('Preset not found.');
+            await refreshPresetList();
+            return;
+        }
+        if (loadGenConfig(preset.config)) {
+            commitChange();
+            setPresetNameInput(preset.name);
+        } else {
+            alert('Failed to load preset JSON.');
+        }
+    };
+
+    const handleDeleteSelectedPreset = async () => {
+        if (!selectedPresetId) return;
+        const preset = savedPresets.find((item) => item.id === selectedPresetId);
+        if (!preset) return;
+        if (!confirm(`Delete preset "${preset.name}"?`)) return;
+        await deleteWorldGenPresetAsync(selectedPresetId);
+        await refreshPresetList();
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -389,7 +439,18 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         reader.onload = (event) => {
             try {
                 const json = JSON.parse(event.target?.result as string);
-                if (loadGenConfig(json)) commitChange();
+                if (loadGenConfig(json)) {
+                    commitChange();
+                    const inferredName = file.name.replace(/\.json$/i, '').trim() || 'Imported Preset';
+                    void (async () => {
+                        const saved = await saveWorldGenPresetAsync(inferredName, GenConfig);
+                        await refreshPresetList();
+                        if (saved) {
+                            setSelectedPresetId(saved.id);
+                            setPresetNameInput(saved.name);
+                        }
+                    })();
+                }
                 else alert("Failed to load configuration. Check console.");
             } catch { alert("Invalid JSON file"); }
         };
@@ -512,9 +573,23 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                 </div>
 
                 <div className="p-3 border-t border-black bg-[#222] flex flex-col gap-3">
-                    <div className="grid grid-cols-2 gap-2"><button onClick={handleUndo} disabled={!historyState.canUndo} className={`py-2 bg-gray-700 font-bold text-sm rounded uppercase tracking-wider transition-colors ${!historyState.canUndo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}>↶ Undo</button><button onClick={handleRedo} disabled={!historyState.canRedo} className={`py-2 bg-gray-700 font-bold text-sm rounded uppercase tracking-wider transition-colors ${!historyState.canRedo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}>Redo ↷</button></div>
-                    <div className="grid grid-cols-2 gap-2"><button onClick={downloadConfig} className="py-2 bg-blue-700 hover:bg-blue-600 text-white font-bold text-sm rounded uppercase tracking-wider transition-colors">Export</button><button onClick={handleImportClick} className="py-2 bg-green-700 hover:bg-green-600 text-white font-bold text-sm rounded uppercase tracking-wider transition-colors">Import</button></div>
-                    <button onClick={handleReset} className="py-2 bg-red-800 hover:bg-red-700 text-white font-bold text-sm rounded uppercase tracking-wider transition-colors">Reset Defaults</button>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={handleUndo}
+                            disabled={!historyState.canUndo}
+                            className={`py-1.5 bg-gray-700 font-bold text-xs rounded uppercase tracking-wider transition-colors ${!historyState.canUndo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}
+                        >
+                            ↶ Undo
+                        </button>
+                        <button
+                            onClick={handleRedo}
+                            disabled={!historyState.canRedo}
+                            className={`py-1.5 bg-gray-700 font-bold text-xs rounded uppercase tracking-wider transition-colors ${!historyState.canRedo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}
+                        >
+                            Redo ↷
+                        </button>
+                    </div>
+                    <button onClick={handleReset} className="py-1.5 bg-red-800 hover:bg-red-700 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Reset Defaults</button>
                     
                     {/* Seed Area - Moved to Bottom */}
                     <div className="mt-1 pt-3 border-t border-white/5 space-y-2">
@@ -574,6 +649,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     <input className="w-20 bg-gray-800 border border-gray-600 px-2 py-1 rounded text-right text-sm" value={inputZ} onChange={e => setInputZ(e.target.value)} placeholder="Z" />
                     <button onClick={goToCoords} className="px-4 py-1 bg-blue-700 hover:bg-blue-600 rounded font-bold text-sm">Go</button>
                     <div className="flex-1" />
+                    <button onClick={() => { setShowSavesMenu((prev) => !prev); if (!showSavesMenu) void refreshPresetList(); }} className={`px-4 py-1 rounded font-bold text-sm border border-gray-900 ${showSavesMenu ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'}`}>Saves</button>
                     <div className="text-xs text-gray-400 font-mono">Scale: {scale.toFixed(2)} | Res: 1/2</div>
                 </div>
 
@@ -606,6 +682,60 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                             <div className="text-gray-400 text-center italic">Hover map for details</div>
                         )}
                     </div>
+
+                    {showSavesMenu && (
+                        <div className="absolute top-4 right-4 z-40 w-[420px] bg-[#1a1a1a] border border-white/20 rounded shadow-2xl p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm font-bold text-white">Saves</div>
+                                <button onClick={() => setShowSavesMenu(false)} className="px-2 py-1 text-xs bg-red-700 hover:bg-red-600 rounded">Close</button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={downloadConfig} className="py-2 bg-blue-700 hover:bg-blue-600 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Export JSON</button>
+                                <button onClick={handleImportClick} className="py-2 bg-green-700 hover:bg-green-600 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Import JSON</button>
+                            </div>
+
+                            <div className="space-y-2 border border-white/10 rounded bg-[#222] p-2">
+                                <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">Save Current Preset</div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={presetNameInput}
+                                        onChange={(e) => setPresetNameInput(e.target.value)}
+                                        className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+                                        placeholder="Preset name"
+                                    />
+                                    <button onClick={() => void handleSavePreset()} className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Save</button>
+                                </div>
+                                <div className="text-[10px] text-gray-500">Duplicate names auto-increment to avoid overwrites.</div>
+                            </div>
+
+                            <div className="space-y-2 border border-white/10 rounded bg-[#222] p-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">Saved Presets</div>
+                                    <button onClick={() => void refreshPresetList()} className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded uppercase">Refresh</button>
+                                </div>
+                                <div className="max-h-40 overflow-y-auto border border-white/10 bg-black/40 rounded">
+                                    {savedPresets.length === 0 && <div className="px-2 py-2 text-xs text-gray-500">No presets found.</div>}
+                                    {savedPresets.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            onClick={() => { setSelectedPresetId(preset.id); setPresetNameInput(preset.name); }}
+                                            onDoubleClick={() => void handleLoadSelectedPreset()}
+                                            className={`w-full text-left px-2 py-1.5 border-b border-white/5 text-xs ${selectedPresetId === preset.id ? 'bg-indigo-900/50 text-white' : 'hover:bg-white/5 text-gray-300'}`}
+                                        >
+                                            <div className="font-bold truncate">{preset.name}</div>
+                                            <div className="text-[10px] text-gray-500">Updated {new Date(preset.updatedAt).toLocaleString()}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button onClick={() => void handleLoadSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-blue-700 hover:bg-blue-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Load</button>
+                                    <button onClick={() => void handleDeleteSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-red-700 hover:bg-red-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -83,6 +83,57 @@ const getPanoramaStorageDir = () => {
   return path.join(app.getPath('userData'), 'panoramas');
 };
 
+const getWorldPresetStorageDir = () => {
+  if (!app.isPackaged) {
+    return path.join(process.cwd(), 'data', 'world-presets');
+  }
+  return path.join(app.getPath('userData'), 'world-presets');
+};
+
+const sanitizePresetName = (value) => {
+  const trimmed = String(value || '').trim();
+  const safe = trimmed.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ');
+  if (!safe) return 'World Preset';
+  return safe;
+};
+
+const toPresetFileName = (name) => `${name}.json`;
+
+const getUniquePresetName = async (directory, requestedName) => {
+  const base = sanitizePresetName(requestedName);
+  let attempt = 1;
+  while (attempt < 10000) {
+    const candidateName = attempt === 1 ? base : `${base} (${attempt})`;
+    const candidatePath = path.join(directory, toPresetFileName(candidateName));
+    try {
+      await fs.access(candidatePath);
+      attempt += 1;
+    } catch {
+      return candidateName;
+    }
+  }
+  throw new Error('Unable to allocate unique world preset name.');
+};
+
+const parsePresetFile = async (filePath) => {
+  const raw = await fs.readFile(filePath, 'utf8');
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!parsed.config || typeof parsed.config !== 'object') return null;
+
+  const stat = await fs.stat(filePath);
+  const id = path.basename(filePath, '.json');
+  const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : id;
+  return {
+    id,
+    name,
+    config: parsed.config,
+    createdAt: Number(parsed.createdAt) || stat.birthtimeMs || Date.now(),
+    updatedAt: Number(parsed.updatedAt) || stat.mtimeMs || Date.now(),
+    filePath,
+  };
+};
+
 const getUniqueFilePath = async (directory, baseFileName) => {
   const ext = path.extname(baseFileName) || '.png';
   const stem = path.basename(baseFileName, ext);
@@ -187,6 +238,79 @@ ipcMain.handle('panorama:delete', async (_event, payload) => {
     const cubeDir = path.join(baseDir, `${baseName}_panorama`);
     await fs.rm(cubeDir, { recursive: true, force: true });
 
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle('worldPreset:list', async () => {
+  try {
+    const dir = getWorldPresetStorageDir();
+    await fs.mkdir(dir, { recursive: true });
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const presetFiles = entries.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json'));
+    const presets = [];
+    for (const entry of presetFiles) {
+      const parsed = await parsePresetFile(path.join(dir, entry.name));
+      if (parsed) presets.push(parsed);
+    }
+    presets.sort((a, b) => b.updatedAt - a.updatedAt);
+    return { ok: true, presets };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error), presets: [] };
+  }
+});
+
+ipcMain.handle('worldPreset:read', async (_event, payload) => {
+  try {
+    const id = String(payload?.id || '').trim();
+    if (!id) return { ok: false, error: 'Missing preset id.' };
+    const dir = getWorldPresetStorageDir();
+    const filePath = path.join(dir, `${id}.json`);
+    const parsed = await parsePresetFile(filePath);
+    if (!parsed) return { ok: false, error: 'Invalid preset file.' };
+    return { ok: true, preset: parsed };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle('worldPreset:save', async (_event, payload) => {
+  try {
+    const config = payload?.config;
+    if (!config || typeof config !== 'object') {
+      return { ok: false, error: 'Missing preset config.' };
+    }
+    const requestedName = sanitizePresetName(payload?.name || 'World Preset');
+    const dir = getWorldPresetStorageDir();
+    await fs.mkdir(dir, { recursive: true });
+
+    const finalName = await getUniquePresetName(dir, requestedName);
+    const now = Date.now();
+    const body = {
+      name: finalName,
+      createdAt: now,
+      updatedAt: now,
+      config,
+    };
+
+    const filePath = path.join(dir, toPresetFileName(finalName));
+    await fs.writeFile(filePath, JSON.stringify(body, null, 2), 'utf8');
+    const preset = await parsePresetFile(filePath);
+    return { ok: true, preset };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+});
+
+ipcMain.handle('worldPreset:delete', async (_event, payload) => {
+  try {
+    const id = String(payload?.id || '').trim();
+    if (!id) return { ok: false, error: 'Missing preset id.' };
+    const dir = getWorldPresetStorageDir();
+    const filePath = path.join(dir, `${id}.json`);
+    await fs.rm(filePath, { force: true });
     return { ok: true };
   } catch (error) {
     return { ok: false, error: String(error?.message || error) };

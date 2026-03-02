@@ -1,7 +1,8 @@
 {
   "name": "atlas-desktop",
-  "version": "0.0.1",
-  "description": "Voxel engine wrapper",
+  "version": "v1.0.0-alpha",
+  "displayVersion": "Alpha 1.0.0",
+  "description": "Voxel-based world editor built with Electron, React, and Three.js",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",

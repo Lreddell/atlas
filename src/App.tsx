@@ -41,6 +41,7 @@ import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
 import { BIOMES } from './systems/world/biomes';
+import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
@@ -1539,6 +1540,14 @@ const App: React.FC = () => {
       }
 
       activeWorldIdRef.current = worldId;
+
+      resetGenConfig();
+      if (meta.worldGenConfig) {
+          const loaded = loadGenConfig(meta.worldGenConfig);
+          if (!loaded) {
+              console.warn('[WorldGen] Failed to load world generation config preset; using defaults.');
+          }
+      }
       
       // 2. Configure World Manager
       worldManager.reset();

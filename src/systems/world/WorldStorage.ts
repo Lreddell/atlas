@@ -30,6 +30,9 @@ export interface WorldMetadata {
     spawnPoint?: { x: number, y: number, z: number } | null;
     worldSpawn?: { x: number, y: number, z: number } | null;
     time: number; // World time
+    worldGenConfig?: unknown;
+    worldGenPresetId?: string | null;
+    worldGenPresetName?: string | null;
 }
 
 export interface ChunkStorageData {
@@ -94,7 +97,14 @@ class WorldStorageSystem {
         });
     }
 
-    public async createWorld(name: string, seedInput: string, gameMode: 'survival' | 'creative' | 'spectator'): Promise<WorldMetadata> {
+    public async createWorld(
+        name: string,
+        seedInput: string,
+        gameMode: 'survival' | 'creative' | 'spectator',
+        worldGenConfig?: unknown,
+        worldGenPresetId?: string | null,
+        worldGenPresetName?: string | null,
+    ): Promise<WorldMetadata> {
         const id = crypto.randomUUID();
         // Simple hash for seed
         let seedNum = 0;
@@ -111,6 +121,10 @@ class WorldStorageSystem {
             seedNum = Math.abs(seedNum);
         }
 
+        const worldGenConfigSnapshot = worldGenConfig == null
+            ? undefined
+            : JSON.parse(JSON.stringify(worldGenConfig));
+
         const meta: WorldMetadata = {
             id,
             name: name || "New World",
@@ -119,7 +133,10 @@ class WorldStorageSystem {
             created: Date.now(),
             lastPlayed: Date.now(),
             gameMode,
-            time: 6000 // Start at Noon
+            time: 6000, // Start at Noon
+            ...(worldGenConfigSnapshot ? { worldGenConfig: worldGenConfigSnapshot } : {}),
+            ...(worldGenPresetId ? { worldGenPresetId } : {}),
+            ...(worldGenPresetName ? { worldGenPresetName } : {}),
         };
 
         const db = await this.getDB();

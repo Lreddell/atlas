@@ -21,3 +21,4 @@ export const SEED = 12345;
 export const DROP_LIFETIME_MS = 5 * 60 * 1000; // 5 Minutes
 
 export const APP_VERSION = __APP_VERSION__;
+export const APP_DISPLAY_VERSION = __APP_DISPLAY_VERSION__;

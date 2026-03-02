@@ -5,7 +5,7 @@ import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE } from '../../constants';
-import { APP_VERSION } from '../../constants';
+import { APP_DISPLAY_VERSION } from '../../constants';
 import { BlockType } from '../../types';
 
 interface DebugScreenProps {
@@ -96,7 +96,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                     const currentFps = fpsRef.current;
 
                     leftColRef.current.innerHTML = [
-                        line(`Atlas v${APP_VERSION}`),
+                        line(`Atlas ${APP_DISPLAY_VERSION}`),
                         line(`${currentFps} fps`), // Real Render FPS
                         line(``),
                         line(`XYZ: ${pos.x.toFixed(3)} / ${pos.y.toFixed(5)} / ${pos.z.toFixed(3)}`),
