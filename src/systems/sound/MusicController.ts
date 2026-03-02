@@ -167,10 +167,22 @@ class MusicController {
 
     private switchContext(newContext: string, isFast: boolean = false) {
         console.log(`[Music] Switching to ${newContext} (Fast: ${isFast})`);
+        const previousContext = this.currentContext;
         this.currentContext = newContext;
-        
-        const fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
-        const silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
+
+        const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
+        const enteringMenu = newContext === 'MENU';
+
+        let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
+        let silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
+
+        if (enteringMenu) {
+            fadeOut = 0;
+            silence = 0;
+        } else if (leavingMenuForWorld) {
+            fadeOut = FAST_FADE_OUT;
+            silence = FAST_SILENCE;
+        }
 
         // 1. Stop current music with fade out
         soundManager.stopMusic(fadeOut);
@@ -187,6 +199,8 @@ class MusicController {
         const pack = MUSIC_PACKS[this.currentContext] || MUSIC_PACKS["generic"];
         if (!pack || pack.length === 0) return;
 
+        const effectiveFadeTime = this.currentContext === 'MENU' ? 0 : fadeTime;
+
         const trackId = pack[Math.floor(Math.random() * pack.length)];
         
         // Optimistically lock to prevent double triggers
@@ -194,7 +208,7 @@ class MusicController {
 
         // Try to play
         // We pass a callback for when it finishes
-        soundManager.playMusic(trackId, fadeTime, () => {
+        soundManager.playMusic(trackId, effectiveFadeTime, () => {
             this.onTrackFinished();
         }).then(started => {
             if (!started) {

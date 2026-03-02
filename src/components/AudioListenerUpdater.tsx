@@ -6,7 +6,7 @@ import { musicController } from '../systems/sound/MusicController';
 import { getBiome } from '../systems/world/biomes';
 
 // Update audio listener pos each frame AND Drive Music Controller
-export const AudioListenerUpdater = ({ isPaused, gameMode }: { isPaused: boolean, gameMode: string }) => {
+export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext = false }: { isPaused: boolean, gameMode: string, keepMenuMusicContext?: boolean }) => {
     const { camera } = useThree();
     const frameCount = useRef(0);
 
@@ -22,6 +22,12 @@ export const AudioListenerUpdater = ({ isPaused, gameMode }: { isPaused: boolean
         frameCount.current++;
         if (frameCount.current > 10) {
             frameCount.current = 0;
+
+            if (keepMenuMusicContext) {
+                musicController.update(true, gameMode, 'plains');
+                return;
+            }
+
             const x = Math.floor(camera.position.x);
             const z = Math.floor(camera.position.z);
             // Guard biome lookup
