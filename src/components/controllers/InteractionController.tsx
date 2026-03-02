@@ -413,8 +413,28 @@ export const InteractionController = ({
 
                     breakingRef.current.progress += delta * breakingSpeed;
                 }
+
+                let noDrop = false;
+                if (gameMode === 'survival') {
+                    const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+                    const targetDef = BLOCKS[targetType];
+                    let heldTier = 0;
+                    let isBestTool = false;
+
+                    if (heldItem) {
+                        const itemDef = BLOCKS[heldItem.type as BlockType];
+                        heldTier = itemDef.toolTier || 0;
+                        if (targetDef.preferredTool && itemDef.toolType === targetDef.preferredTool) {
+                            isBestTool = true;
+                        }
+                    }
+
+                    const requiresTool = (targetDef.minHarvestTier || 0) > 0;
+                    const canHarvest = !requiresTool || (isBestTool && heldTier >= (targetDef.minHarvestTier || 0));
+                    noDrop = !canHarvest;
+                }
                 
-                setBreakingVisual({ pos: [bx, by, bz], progress: breakingRef.current.progress });
+                setBreakingVisual({ pos: [bx, by, bz], progress: breakingRef.current.progress, noDrop });
 
                 if (breakingRef.current.progress >= 1.0) {
                     // Play Break Sound

@@ -1831,7 +1831,7 @@ const App: React.FC = () => {
                     openContainer={openContainer} gameMode={gameMode} setCursorStack={setCursorStack} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping}
                 />
                 
-                {!isCapturingPanorama && breakingVisual && <group position={[breakingVisual.pos[0]+0.5, breakingVisual.pos[1]+0.5, breakingVisual.pos[2]+0.5]}><mesh><boxGeometry args={[1.01, 1.01, 1.01]} /><meshBasicMaterial color="black" transparent opacity={breakingVisual.progress * 0.7} depthTest={true} depthWrite={false} /></mesh></group>}
+                {!isCapturingPanorama && breakingVisual && <group position={[breakingVisual.pos[0]+0.5, breakingVisual.pos[1]+0.5, breakingVisual.pos[2]+0.5]}><mesh><boxGeometry args={[1.01, 1.01, 1.01]} /><meshBasicMaterial color={breakingVisual.noDrop ? '#4b0000' : 'black'} transparent opacity={breakingVisual.progress * 0.7} depthTest={true} depthWrite={false} /></mesh></group>}
 
                 {/* Only mount Player when game is Active to ensure physics starts with correct spawn position */}
                 {appState === 'game' && (
