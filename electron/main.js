@@ -1,6 +1,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fsSync = require('fs');
 const fs = require('fs/promises');
 
 // ✅ Add this BEFORE app.whenReady() and before any BrowserWindow is created
@@ -27,10 +28,14 @@ async function loadDevUrlWithFallback(mainWindow) {
 }
 
 function createWindow() {
+  const devIconPath = path.join(__dirname, '../build/icon.ico');
+  const windowIcon = fsSync.existsSync(devIconPath) ? devIconPath : undefined;
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
     title: 'Atlas',
+    icon: windowIcon,
     backgroundColor: '#87CEEB',
     autoHideMenuBar: true,
     webPreferences: {
