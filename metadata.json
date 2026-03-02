@@ -1,0 +1,5 @@
+{
+  "name": "Atlas",
+  "description": "A simplified Voxel Sandbox engine in React using Three.js. Features procedural generation, chunk meshing, and basic physics.",
+  "requestFramePermissions": []
+}
