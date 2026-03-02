@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkMesh } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
@@ -1988,6 +1989,7 @@ const App: React.FC = () => {
             )}
           </>
       )}
+      <Analytics />
     </div>
   );
 };
