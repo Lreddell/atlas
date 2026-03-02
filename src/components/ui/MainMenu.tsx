@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
-import { WorldStorage, WorldMetadata } from '../../systems/world/WorldStorage';
+import { ExportedWorldData, WorldStorage, WorldMetadata } from '../../systems/world/WorldStorage';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { APP_DISPLAY_VERSION } from '../../constants';
 import { getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
@@ -477,7 +477,57 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         }
     };
 
+    const handleExportWorld = async () => {
+        if (!selectedWorldId) return;
+        try {
+            const world = worlds.find((entry) => entry.id === selectedWorldId);
+            const exported = await WorldStorage.exportWorld(selectedWorldId);
+            const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+
+            const safeName = (world?.name || 'world').replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'world';
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `${safeName}.atlasworld.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+
+            soundManager.play('ui.click', { pitch: 1.1 });
+        } catch (error) {
+            console.error(error);
+            alert('Failed to export world. See console for details.');
+        }
+    };
+
+    const handleImportWorld = async () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.atlasworld.json,.json,application/json';
+        input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text) as ExportedWorldData;
+                const imported = await WorldStorage.importWorld(parsed);
+                await loadWorlds();
+                setSelectedWorldId(imported.id);
+                soundManager.play('ui.click', { pitch: 1.15 });
+            } catch (error) {
+                console.error(error);
+                alert('Failed to import world file. Ensure it is a valid Atlas export.');
+            }
+        };
+        input.click();
+    };
+
     const getPanoramaLabel = (filePath: string) => {
+        if (filePath.startsWith('web:')) {
+            return filePath.slice(4) || 'Browser Panorama';
+        }
         const normalized = filePath.replace(/\\/g, '/');
         const chunks = normalized.split('/');
         return chunks[chunks.length - 1] || filePath;
@@ -641,6 +691,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             />
                             <MCButton label="Cancel" onClick={() => setView('main')} width="w-[185px]" />
                         </div>
+                        <div className="flex gap-4 justify-center">
+                            <MCButton
+                                label="Export"
+                                onClick={handleExportWorld}
+                                disabled={!selectedWorldId}
+                                width="w-[185px]"
+                            />
+                            <MCButton
+                                label="Import World"
+                                onClick={handleImportWorld}
+                                width="w-[185px]"
+                            />
+                        </div>
                     </div>
                 </div>
             );
@@ -671,7 +734,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                         >
                                             <div className="min-w-0">
                                                 <div className="font-bold text-[#eee] truncate">{getPanoramaLabel(filePath)}</div>
-                                                <div className="text-[10px] text-gray-400 truncate">{filePath}</div>
+                                                <div className="text-[10px] text-gray-400 truncate">{filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}</div>
                                             </div>
                                             <div className="flex gap-2 shrink-0">
                                                 <MCButton

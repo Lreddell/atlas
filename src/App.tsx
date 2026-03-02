@@ -42,6 +42,7 @@ import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
 import { BIOMES } from './systems/world/biomes';
 import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
+import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
@@ -58,6 +59,7 @@ const MENU_PANORAMA_BLUR_KEY = 'atlas.menu.panoramaBlur';
 const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
 const PANORAMA_CAPTURE_KEY = 'F8';
+const WEB_PANORAMA_PREFIX = 'web:';
 const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
@@ -276,6 +278,7 @@ const App: React.FC = () => {
     });
     const [menuPanoramaFaceDataUrls, setMenuPanoramaFaceDataUrls] = useState<string[] | null>(null);
   const [isCapturingPanorama, setIsCapturingPanorama] = useState(false);
+    const webPanoramaObjectUrlRef = useRef<string | null>(null);
 
   const activeWorldIdRef = useRef<string | null>(null); // Track active world ID for auto-save
 
@@ -924,13 +927,8 @@ const App: React.FC = () => {
   }, [fov]);
 
   const captureAndSavePanorama = useCallback(async () => {
-      if (!isElectron) {
-          logMsg('Panorama capture is available in desktop build only.', 'error');
-          return;
-      }
-
       const desktopApi = (window as any).atlasDesktop;
-      if (!desktopApi?.savePanorama) {
+      if (isElectron && !desktopApi?.savePanorama) {
           logMsg('Desktop panorama API is unavailable.', 'error');
           return;
       }
@@ -944,27 +942,51 @@ const App: React.FC = () => {
 
       try {
           const captureResult = await capturePanoramaDataUrl();
-          const result = await desktopApi.savePanorama({
-              dataUrl: captureResult.atlasDataUrl,
-              cubeFaces: captureResult.cubeFaces,
-              suggestedName
-          });
+          if (isElectron) {
+              const result = await desktopApi.savePanorama({
+                  dataUrl: captureResult.atlasDataUrl,
+                  cubeFaces: captureResult.cubeFaces,
+                  suggestedName
+              });
 
-          if (result?.canceled) {
-              if (result?.error) logMsg(`Panorama save failed: ${result.error}`, 'error');
-              else logMsg('Panorama save canceled.', 'info');
-              return;
+              if (result?.canceled) {
+                  if (result?.error) logMsg(`Panorama save failed: ${result.error}`, 'error');
+                  else logMsg('Panorama save canceled.', 'info');
+                  return;
+              }
+
+              if (!result?.filePath) {
+                  throw new Error('No file path returned from save dialog.');
+              }
+
+              setMenuPanoramaPath(result.filePath);
+              setMenuPanoramaLibrary(prev => prev.includes(result.filePath) ? prev : [result.filePath, ...prev]);
+              setMenuPanoramaDataUrl(captureResult.atlasDataUrl);
+              setMenuBackgroundMode('panorama');
+              logMsg('Panorama saved and set as menu background.', 'success');
+          } else {
+              const webEntryId = `${WEB_PANORAMA_PREFIX}${suggestedName}.png`;
+              const blob = await (await fetch(captureResult.atlasDataUrl)).blob();
+              await saveWebPanoramaBlob(webEntryId, blob);
+              setMenuPanoramaPath(webEntryId);
+              setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
+              setMenuBackgroundMode('panorama');
+
+              try {
+                  const downloadUrl = URL.createObjectURL(blob);
+                  const anchor = document.createElement('a');
+                  anchor.href = downloadUrl;
+                  anchor.download = `${suggestedName}.png`;
+                  document.body.appendChild(anchor);
+                  anchor.click();
+                  anchor.remove();
+                  URL.revokeObjectURL(downloadUrl);
+              } catch {
+                  // Ignore download failures in restricted browser contexts.
+              }
+
+              logMsg('Panorama captured, stored as blob, and downloaded as PNG.', 'success');
           }
-
-          if (!result?.filePath) {
-              throw new Error('No file path returned from save dialog.');
-          }
-
-          setMenuPanoramaPath(result.filePath);
-          setMenuPanoramaLibrary(prev => prev.includes(result.filePath) ? prev : [result.filePath, ...prev]);
-          setMenuPanoramaDataUrl(captureResult.atlasDataUrl);
-          setMenuBackgroundMode('panorama');
-          logMsg('Panorama saved and set as menu background.', 'success');
       } catch (error: any) {
           logMsg(`Panorama capture failed: ${error?.message || String(error)}`, 'error');
       } finally {
@@ -990,7 +1012,25 @@ const App: React.FC = () => {
 
   const importPanoramaFromDisk = useCallback(async () => {
       if (!isElectron) {
-          alert('Panorama import is available in desktop build only.');
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/png,image/*';
+          input.onchange = () => {
+              const file = input.files?.[0];
+              if (!file) return;
+
+              const safeName = file.name.replace(/[\\/:*?"<>|]+/g, '_');
+              const webEntryId = `${WEB_PANORAMA_PREFIX}${Date.now()}-${safeName}`;
+              saveWebPanoramaBlob(webEntryId, file).then(() => {
+                  setMenuPanoramaPath(webEntryId);
+                  setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
+                  setMenuBackgroundMode('panorama');
+                  logMsg('Panorama imported into blob storage.', 'success');
+              }).catch(() => {
+                  alert('Failed to import panorama file.');
+              });
+          };
+          input.click();
           return;
       }
       const desktopApi = (window as any).atlasDesktop;
@@ -1012,7 +1052,13 @@ const App: React.FC = () => {
 
   const deletePanoramaFromDisk = useCallback(async (filePath: string) => {
       if (!isElectron) {
-          alert('Delete from disk is available in desktop build only.');
+          const fileName = filePath.replace(/^web:/, '');
+          const confirmDelete = window.confirm(`Remove panorama from browser storage?\n\n${fileName}`);
+          if (!confirmDelete) return;
+
+          await deleteWebPanoramaBlob(filePath);
+          removePanoramaFromLibrary(filePath);
+          logMsg('Panorama removed from browser storage.', 'success');
           return;
       }
 
@@ -1303,6 +1349,10 @@ const App: React.FC = () => {
   useEffect(() => {
       if (typeof window === 'undefined') return;
       try {
+          if (menuPanoramaPath?.startsWith(WEB_PANORAMA_PREFIX)) {
+              window.localStorage.removeItem(MENU_PANORAMA_DATA_KEY);
+              return;
+          }
           if (menuPanoramaDataUrl) {
               window.localStorage.setItem(MENU_PANORAMA_DATA_KEY, menuPanoramaDataUrl);
           } else {
@@ -1311,7 +1361,7 @@ const App: React.FC = () => {
       } catch {
           // Ignore storage quota or browser storage failures.
       }
-  }, [menuPanoramaDataUrl]);
+  }, [menuPanoramaDataUrl, menuPanoramaPath]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -1387,13 +1437,56 @@ const App: React.FC = () => {
       let disposed = false;
       const desktopApi = (window as any).atlasDesktop;
 
+      const revokeCurrentWebObjectUrl = () => {
+          if (webPanoramaObjectUrlRef.current) {
+              URL.revokeObjectURL(webPanoramaObjectUrlRef.current);
+              webPanoramaObjectUrlRef.current = null;
+          }
+      };
+
       if (!menuPanoramaPath) {
+          revokeCurrentWebObjectUrl();
           setMenuPanoramaDataUrl(null);
           setMenuPanoramaFaceDataUrls(null);
           return;
       }
 
-      if (!isElectron || !desktopApi?.readPanorama) {
+      if (!isElectron) {
+          if (menuPanoramaPath.startsWith(WEB_PANORAMA_PREFIX)) {
+              setMenuPanoramaFaceDataUrls(null);
+              void (async () => {
+                  try {
+                      const blob = await readWebPanoramaBlob(menuPanoramaPath);
+                      if (disposed) return;
+
+                      revokeCurrentWebObjectUrl();
+
+                      if (!blob) {
+                          setMenuPanoramaDataUrl(null);
+                          setMenuPanoramaLibrary(prev => prev.filter((entry) => entry !== menuPanoramaPath));
+                          setMenuPanoramaPath(prev => (prev === menuPanoramaPath ? null : prev));
+                          setMenuBackgroundMode(prev => (prev === 'panorama' ? 'dirt' : prev));
+                          return;
+                      }
+
+                      const objectUrl = URL.createObjectURL(blob);
+                      webPanoramaObjectUrlRef.current = objectUrl;
+                      setMenuPanoramaDataUrl(objectUrl);
+                  } catch {
+                      if (!disposed) {
+                          revokeCurrentWebObjectUrl();
+                          setMenuPanoramaDataUrl(null);
+                      }
+                  }
+              })();
+          } else {
+              revokeCurrentWebObjectUrl();
+              setMenuPanoramaDataUrl(null);
+          }
+          return;
+      }
+
+      if (!desktopApi?.readPanorama) {
           return;
       }
 
@@ -1431,8 +1524,20 @@ const App: React.FC = () => {
 
       return () => {
           disposed = true;
+          if (!isElectron) {
+              revokeCurrentWebObjectUrl();
+          }
       };
-  }, [isElectron, menuPanoramaPath]);
+    }, [isElectron, menuPanoramaPath]);
+
+  useEffect(() => {
+      return () => {
+          if (webPanoramaObjectUrlRef.current) {
+              URL.revokeObjectURL(webPanoramaObjectUrlRef.current);
+              webPanoramaObjectUrlRef.current = null;
+          }
+      };
+  }, []);
 
   useEffect(() => { window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [handleKeyDown]);
 
@@ -1717,9 +1822,9 @@ const App: React.FC = () => {
               activePanoramaPath={menuPanoramaPath}
               onUsePanorama={setActivePanorama}
               onImportPanorama={importPanoramaFromDisk}
-              canImportPanorama={isElectron}
+              canImportPanorama={true}
               onDeletePanoramaFromDisk={deletePanoramaFromDisk}
-              canDeletePanoramaFromDisk={isElectron}
+              canDeletePanoramaFromDisk={true}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
               setPanoramaBlur={setMenuPanoramaBlur}

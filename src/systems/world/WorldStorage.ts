@@ -42,6 +42,29 @@ export interface ChunkStorageData {
     timestamp: number;
 }
 
+interface ExportedChunkData {
+    cx: number;
+    cz: number;
+    blocks: string;
+    light: string;
+    meta: string;
+    timestamp: number;
+}
+
+export interface ExportedWorldData {
+    format: 'atlas-world-export';
+    version: 1;
+    exportedAt: number;
+    meta: Omit<WorldMetadata, 'id' | 'created' | 'lastPlayed'> & {
+        name: string;
+        seed: string;
+        seedNum: number;
+        gameMode: 'survival' | 'creative' | 'spectator';
+        time: number;
+    };
+    chunks: ExportedChunkData[];
+}
+
 class WorldStorageSystem {
     private dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -192,6 +215,161 @@ class WorldStorageSystem {
 
     private getChunkKey(worldId: string, cx: number, cz: number): string {
         return `chunk_${worldId}_${cx}_${cz}`;
+    }
+
+    private bytesToBase64(bytes: Uint8Array): string {
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    private base64ToBytes(base64: string): Uint8Array {
+        const binary = atob(base64);
+        const out = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            out[i] = binary.charCodeAt(i);
+        }
+        return out;
+    }
+
+    private parseChunkKey(key: string, worldId: string): { cx: number; cz: number } | null {
+        const prefix = `chunk_${worldId}_`;
+        if (!key.startsWith(prefix)) return null;
+        const coordsPart = key.slice(prefix.length);
+        const parts = coordsPart.split('_');
+        if (parts.length !== 2) return null;
+
+        const cx = Number(parts[0]);
+        const cz = Number(parts[1]);
+        if (!Number.isFinite(cx) || !Number.isFinite(cz)) return null;
+        return { cx, cz };
+    }
+
+    public async exportWorld(worldId: string): Promise<ExportedWorldData> {
+        const meta = await this.getWorldMeta(worldId);
+        if (!meta) throw new Error('World metadata not found.');
+
+        const db = await this.getDB();
+        const chunks = await new Promise<ExportedChunkData[]>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const range = IDBKeyRange.bound(`chunk_${worldId}_`, `chunk_${worldId}_\uffff`);
+            const req = store.openCursor(range);
+            const collected: ExportedChunkData[] = [];
+
+            req.onsuccess = () => {
+                const cursor = req.result;
+                if (!cursor) {
+                    resolve(collected);
+                    return;
+                }
+
+                const key = String(cursor.key || '');
+                const parsed = this.parseChunkKey(key, worldId);
+                const value = cursor.value as ChunkStorageData | undefined;
+                if (parsed && value?.blocks && value?.light && value?.meta) {
+                    collected.push({
+                        cx: parsed.cx,
+                        cz: parsed.cz,
+                        blocks: this.bytesToBase64(value.blocks),
+                        light: this.bytesToBase64(value.light),
+                        meta: this.bytesToBase64(value.meta),
+                        timestamp: Number(value.timestamp) || Date.now(),
+                    });
+                }
+                cursor.continue();
+            };
+
+            req.onerror = () => reject(req.error);
+        });
+
+        return {
+            format: 'atlas-world-export',
+            version: 1,
+            exportedAt: Date.now(),
+            meta: {
+                name: meta.name,
+                seed: meta.seed,
+                seedNum: meta.seedNum,
+                gameMode: meta.gameMode,
+                time: meta.time,
+                player: meta.player,
+                spawnPoint: meta.spawnPoint ?? null,
+                worldSpawn: meta.worldSpawn ?? null,
+                worldGenConfig: meta.worldGenConfig,
+                worldGenPresetId: meta.worldGenPresetId ?? null,
+                worldGenPresetName: meta.worldGenPresetName ?? null,
+            },
+            chunks,
+        };
+    }
+
+    public async importWorld(data: ExportedWorldData): Promise<WorldMetadata> {
+        if (!data || data.format !== 'atlas-world-export' || data.version !== 1) {
+            throw new Error('Invalid world export format.');
+        }
+
+        const worlds = await this.getAllWorlds();
+        const existingNames = new Set(worlds.map((w) => w.name));
+        const baseName = String(data.meta?.name || 'Imported World').trim() || 'Imported World';
+        let finalName = baseName;
+        let attempt = 2;
+        while (existingNames.has(finalName)) {
+            finalName = `${baseName} (${attempt})`;
+            attempt += 1;
+        }
+
+        const newWorldId = crypto.randomUUID();
+        const now = Date.now();
+        const importedMeta: WorldMetadata = {
+            id: newWorldId,
+            name: finalName,
+            seed: String(data.meta?.seed || ''),
+            seedNum: Number(data.meta?.seedNum) || 1,
+            created: now,
+            lastPlayed: now,
+            gameMode: data.meta?.gameMode || 'survival',
+            time: Number(data.meta?.time) || 6000,
+            player: data.meta?.player,
+            spawnPoint: data.meta?.spawnPoint ?? null,
+            worldSpawn: data.meta?.worldSpawn ?? null,
+            worldGenConfig: data.meta?.worldGenConfig,
+            worldGenPresetId: data.meta?.worldGenPresetId ?? null,
+            worldGenPresetName: data.meta?.worldGenPresetName ?? null,
+        };
+
+        const db = await this.getDB();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction([META_STORE, STORE_NAME], 'readwrite');
+            tx.objectStore(META_STORE).put(importedMeta);
+
+            const chunkStore = tx.objectStore(STORE_NAME);
+            const chunks = Array.isArray(data.chunks) ? data.chunks : [];
+            for (const chunk of chunks) {
+                if (!Number.isFinite(chunk.cx) || !Number.isFinite(chunk.cz)) continue;
+                try {
+                    const blocks = this.base64ToBytes(chunk.blocks);
+                    const light = this.base64ToBytes(chunk.light);
+                    const meta = this.base64ToBytes(chunk.meta);
+                    chunkStore.put({
+                        blocks,
+                        light,
+                        meta,
+                        timestamp: Number(chunk.timestamp) || now,
+                    } as ChunkStorageData, this.getChunkKey(newWorldId, chunk.cx, chunk.cz));
+                } catch {
+                    // Skip malformed chunk entries.
+                }
+            }
+
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+
+        return importedMeta;
     }
 
     public async saveChunk(worldId: string, cx: number, cz: number, data: { blocks: Uint8Array, light: Uint8Array, meta: Uint8Array }) {
