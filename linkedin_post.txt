@@ -1,0 +1,17 @@
+I've been working on something that started as a completely personal passion project — and it's honestly been one of the most exciting and challenging things I've ever done.
+
+Back in December, during winter break, I fired up Google AI Studio on a whim. I've always loved Minecraft, but I'd been craving something more customized, more open-source, and more tailored to exactly what I want in a game. So I thought — why not try to build something myself?
+
+The catch? I had never made a game before in my life. Not even close. The whole thing was genuinely intimidating when I started staring at a blank project. But then something funny happened — I got completely sucked in. Before I knew it, I was putting in 5+ hours a day, deep in the weeds, learning as fast as I could and loving every second of it.
+
+Then school came back, life got busy, and I had to step away for a while.
+
+Fast forward to recently: I found out that as a university student, I have access to GitHub Copilot Pro — completely free. That changed everything. I was able to bring the project back to life right inside my IDE on my local machine, now supercharged by some of the most powerful models available today — GPT‑5.3‑Codex, Claude's Opus 4.6 — and the difference in what I can build and how fast I can learn has been remarkable.
+
+This project has pushed me to grow as a developer in ways I didn't expect. Building something from nothing — especially in a domain I'd never touched — taught me more in a few months than I could have imagined. And having AI as a genuine collaborator (not just a search engine) has made the entire experience feel like the future of how we'll build software.
+
+Still a lot of road ahead, but I'm proud of where it's going.
+
+If you're a student and haven't checked whether your university offers GitHub Copilot Pro — go look right now. It's a game changer. Literally, in my case. 🎮
+
+#GameDev #OpenSource #GitHubCopilot #AI #StudentDeveloper #Minecraft #SideProject #LearningInPublic
