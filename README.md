@@ -1,62 +1,141 @@
 # Atlas
 
-Atlas is a TypeScript voxel sandbox built with React, Three.js, and Vite, with optional Electron packaging for desktop builds.
+Atlas is a voxel sandbox game built with TypeScript, React, Three.js, and Vite, with an Electron desktop wrapper for native Windows builds.
+
+## Highlights
+
+- Procedural voxel world generation with chunk streaming
+- Real-time meshing/generation workers for smooth gameplay
+- Inventory, crafting, drops, and interaction systems
+- In-game UI suite (main menu, pause, HUD, chat, debug screen)
+- Panorama-based menu backgrounds and feature editor tooling
+- Browser development flow + desktop installer packaging
 
 ## Tech Stack
 
-- React + TypeScript
-- Three.js + @react-three/fiber
-- Vite
-- Electron (optional desktop runtime)
+- React 18 + TypeScript
+- Three.js + @react-three/fiber + @react-three/drei
+- Vite 5
+- Electron 40 + electron-builder
 
-## Development
+## Requirements
 
-Prerequisites: Node.js 18+
+- Node.js 18+
+- npm 9+
+- Windows is required for the provided NSIS desktop build flow
 
-1. Install dependencies:
+## Quick Start
 
-    npm install
+1) Install dependencies
 
-2. Run in browser mode:
+```bash
+npm install
+```
 
-    npm run dev
+2) Run browser development server
 
-3. Run in Electron mode:
+```bash
+npm run dev
+```
 
-    npm run electron:dev
+3) Run Electron development mode
 
-## Build
+```bash
+npm run electron:dev
+```
 
-- Browser build:
+## Scripts
 
-   npm run build
+- `npm run dev` — start Vite dev server (`http://localhost:5173`)
+- `npm run build` — production web build into `dist/`
+- `npm run preview` — preview built web output
+- `npm run typecheck` — run TypeScript checking (`tsc --noEmit`)
+- `npm run lint` — run ESLint
+- `npm run check` — currently aliases lint
+- `npm run format` — run Prettier write
+- `npm run format:check` — run Prettier check
+- `npm run electron:dev` — run Vite + Electron together
+- `npm run electron:build` — build web assets + create Windows installer
 
-- Electron installer build (Windows NSIS):
+## Desktop Build Output
 
-   npm run electron:build
+Running:
 
-## Quality Gates
+```bash
+npm run electron:build
+```
 
-- Type check:
+produces:
 
-   npm run typecheck
+- Installer executable in `release/` (e.g. `Atlas Setup x.y.z.exe`)
+- Unpacked runtime in `release/win-unpacked/`
 
-- Lint:
+`release/` is intentionally ignored by Git.
 
-   npm run lint
+## Versioning
 
-- Combined check:
+Project version is sourced from `package.json` and used across:
 
-   npm run check
+- Installer naming/metadata (electron-builder)
+- In-game version display (main menu + debug/F3)
 
-- Format files:
+Recommended bump commands:
 
-   npm run format
+```bash
+npm version patch
+# or
+npm version minor
+npm version major
+```
 
-## Architecture (High-Level)
+Then rebuild with:
 
-- `App.tsx` orchestrates game/app mode, UI overlays, and session flow.
-- `systems/WorldManager.ts` owns chunk lifecycle and worker coordination.
-- `systems/world/workers/world.worker.ts` performs generation/meshing off the main thread.
-- `systems/world/WorldStorage.ts` provides world/chunk persistence.
-- `components/ui/*` contains HUD/menu/inventory/debug interfaces.
+```bash
+npm run electron:build
+```
+
+## Project Structure
+
+```text
+atlas/
+  src/
+    components/      # Rendering, gameplay components, UI
+    systems/         # World, player, sound, texture systems
+    hooks/           # Reusable gameplay hooks
+    utils/           # Utility modules
+    data/            # Code-defined block/command data
+    App.tsx          # App/game orchestration
+    index.tsx        # React entrypoint
+    constants.ts     # Shared constants + APP_VERSION
+    types.ts         # Shared types/enums
+    recipes.ts       # Crafting recipe logic/data
+  electron/          # Main/preload process code
+  public/            # Static assets
+  data/              # Runtime/editor data (e.g. panoramas)
+  docs/              # Planning and analysis docs
+  build/             # Desktop build resources (icon, etc.)
+```
+
+## Notes on Data & Storage
+
+- In development, panorama captures are stored under `data/panoramas/`.
+- In packaged desktop builds, panorama files are stored under Electron `userData`.
+- World/chunk persistence uses IndexedDB via world storage systems.
+
+## Troubleshooting
+
+- If `electron:dev` exits immediately, verify Vite is running on `http://localhost:5173`.
+- If desktop packaging fails due signing/symlink issues on Windows, this project already disables executable sign/edit for local unsigned builds.
+- Large chunk-size warnings during web build are warnings only and do not block output.
+
+## Repository Hygiene
+
+Ignored by default:
+
+- `node_modules/`
+- `dist/`
+- `release/`
+- `.env*` (except `.env.example`)
+- common OS/editor artifacts
+
+Keep `package-lock.json` committed for reproducible installs.
