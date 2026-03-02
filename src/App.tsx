@@ -60,6 +60,7 @@ const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
 const PANORAMA_CAPTURE_KEY = 'F8';
 const WEB_PANORAMA_PREFIX = 'web:';
+const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/atlas-default-panorama.png';
 const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
@@ -231,11 +232,7 @@ const App: React.FC = () => {
   
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
-  const [menuBackgroundMode, setMenuBackgroundMode] = useState<'dirt' | 'panorama'>(() => {
-      if (typeof window === 'undefined') return 'dirt';
-      const saved = window.localStorage.getItem(MENU_BACKGROUND_MODE_KEY);
-      return saved === 'panorama' ? 'panorama' : 'dirt';
-  });
+    const [menuBackgroundMode, setMenuBackgroundMode] = useState<'dirt' | 'panorama'>('panorama');
   const [menuPanoramaPath, setMenuPanoramaPath] = useState<string | null>(() => {
       if (typeof window === 'undefined') return null;
       return window.localStorage.getItem(MENU_PANORAMA_PATH_KEY);
@@ -251,10 +248,10 @@ const App: React.FC = () => {
           return [];
       }
   });
-    const [menuPanoramaDataUrl, setMenuPanoramaDataUrl] = useState<string | null>(() => {
-            if (typeof window === 'undefined') return null;
-            return window.localStorage.getItem(MENU_PANORAMA_DATA_KEY);
-    });
+        const [menuPanoramaDataUrl, setMenuPanoramaDataUrl] = useState<string | null>(() => {
+            if (typeof window === 'undefined') return DEFAULT_MENU_PANORAMA_URL;
+            return window.localStorage.getItem(MENU_PANORAMA_DATA_KEY) || DEFAULT_MENU_PANORAMA_URL;
+        });
         const [menuPanoramaBlur, setMenuPanoramaBlur] = useState<number>(() => {
             if (typeof window === 'undefined') return 3;
             const raw = window.localStorage.getItem(MENU_PANORAMA_BLUR_KEY);
@@ -1004,8 +1001,8 @@ const App: React.FC = () => {
       setMenuPanoramaLibrary(prev => prev.filter(item => item !== filePath));
       setMenuPanoramaPath(prev => {
           if (prev !== filePath) return prev;
-          setMenuPanoramaDataUrl(null);
-          setMenuBackgroundMode('dirt');
+          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
+          setMenuBackgroundMode('panorama');
           return null;
       });
   }, []);
@@ -1446,7 +1443,7 @@ const App: React.FC = () => {
 
       if (!menuPanoramaPath) {
           revokeCurrentWebObjectUrl();
-          setMenuPanoramaDataUrl(null);
+          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
           setMenuPanoramaFaceDataUrls(null);
           return;
       }
@@ -1462,10 +1459,10 @@ const App: React.FC = () => {
                       revokeCurrentWebObjectUrl();
 
                       if (!blob) {
-                          setMenuPanoramaDataUrl(null);
+                          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
                           setMenuPanoramaLibrary(prev => prev.filter((entry) => entry !== menuPanoramaPath));
                           setMenuPanoramaPath(prev => (prev === menuPanoramaPath ? null : prev));
-                          setMenuBackgroundMode(prev => (prev === 'panorama' ? 'dirt' : prev));
+                          setMenuBackgroundMode('panorama');
                           return;
                       }
 
@@ -1475,13 +1472,13 @@ const App: React.FC = () => {
                   } catch {
                       if (!disposed) {
                           revokeCurrentWebObjectUrl();
-                          setMenuPanoramaDataUrl(null);
+                          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
                       }
                   }
               })();
           } else {
               revokeCurrentWebObjectUrl();
-              setMenuPanoramaDataUrl(null);
+              setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
           }
           return;
       }
