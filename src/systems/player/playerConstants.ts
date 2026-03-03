@@ -1,5 +1,5 @@
 
-// Dimensions (Minecraft-like)
+// Dimensions
 export const PLAYER_WIDTH = 0.6;
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_HEIGHT_SNEAK = 1.5;

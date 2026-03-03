@@ -53,7 +53,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 />
             )}
             <div className="flex flex-col items-center w-[400px] gap-6">
-                <h1 className="text-white font-minecraft text-xl shadow-black drop-shadow-md">
+                <h1 className="text-white font-game text-xl shadow-black drop-shadow-md">
                     {phase || 'Loading'}
                 </h1>
                 
@@ -64,7 +64,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     />
                 </div>
                 
-                <div className="text-gray-400 font-minecraft text-sm">
+                <div className="text-gray-400 font-game text-sm">
                     {details || 'Please wait...'} ({clampedPercent}%)
                 </div>
             </div>

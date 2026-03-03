@@ -25,7 +25,7 @@ export const PackWizard: React.FC<PackWizardProps> = ({ onClose, onSave, existin
     };
 
     return (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto font-minecraft">
+        <div className="fixed inset-0 z-[700] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-auto font-game">
             <div className="bg-[#c6c6c6] border-4 border-white border-b-[#444] border-r-[#444] p-8 w-[400px] text-black shadow-2xl">
                 <h2 className="text-xl font-bold mb-6 uppercase tracking-wider border-b-2 border-black/10 pb-2">New Mod Pack</h2>
                 

@@ -52,7 +52,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ steps, current
     const tooltipY = tooltipOnTop ? boxY - 180 : boxY + boxH + 20;
 
     return (
-        <div className="fixed inset-0 z-[600] pointer-events-none overflow-hidden font-minecraft">
+        <div className="fixed inset-0 z-[600] pointer-events-none overflow-hidden font-game">
             {/* Darkened Mask with hole using SVG */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none">
                 <defs>

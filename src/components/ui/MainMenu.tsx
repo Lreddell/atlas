@@ -40,7 +40,7 @@ interface MainMenuProps {
 }
 
 const SPLASHES = [
-    "Also try Minecraft!", "Procedural!", "Voxel based!", "React + Three.js!", "Infinite world!", 
+    "Procedural!", "Voxel based!", "React + Three.js!", "Infinite world!", 
     "Open source!", "Made with AI!", "100% bugs!", "Check out the code!", "Don't dig down!", 
     "Uses Web Workers!", "Greedy meshing!", "Now with biomes!", "Hello World!", 
     "Powered by Vite!", "Diamonds!", "Look behind you!", "Splashes are random!", 
@@ -96,7 +96,7 @@ const ULTRA_RARE_SPLASHES = [
 const ULTRA_RARE_SPLASH_CHANCE = 0.01;
 
 /**
- * Minecraft-style color map for legacy formatting codes.
+ * Legacy color map for formatting codes.
  *
  * Usage in splash strings:
  * - Color: §0..§9, §a..§f
@@ -156,10 +156,10 @@ const getVisibleSplashLength = (value: string) => {
 };
 
 /**
- * Parses a splash string with Minecraft-style § formatting into renderable styled segments.
+ * Parses a splash string with § formatting into renderable styled segments.
  *
  * Important behavior:
- * - A color code also clears active styles (Minecraft Java-like behavior)
+ * - A color code also clears active styles
  * - §r resets color + all styles to defaults
  * - Unknown codes are treated as literal text
  */
@@ -270,7 +270,7 @@ const MCButton: React.FC<{
                 className={`
                     ${width} ${small ? 'h-8 text-sm' : 'h-10'} relative border-2 select-none outline-none group
                     ${colors}
-                    font-minecraft text-shadow-md
+                    font-game text-shadow-md
                     ${disabled ? 'opacity-70 cursor-not-allowed grayscale' : 'hover:brightness-110 active:border-white active:border-b-white active:border-r-white'}
                 `}
             >
@@ -278,7 +278,7 @@ const MCButton: React.FC<{
                 <span className="relative top-0 group-active:top-[1px]">{label}</span>
             </button>
             {disabled && isHovered && tooltip && (
-                <div className="absolute left-[105%] top-1/2 transform -translate-y-1/2 bg-[#100010] border-2 border-[#2a0b4d] text-white px-2 py-1 text-sm whitespace-nowrap z-50 font-minecraft">
+                <div className="absolute left-[105%] top-1/2 transform -translate-y-1/2 bg-[#100010] border-2 border-[#2a0b4d] text-white px-2 py-1 text-sm whitespace-nowrap z-50 font-game">
                     {tooltip}
                 </div>
             )}
@@ -318,7 +318,7 @@ const MCSlider: React.FC<{
             <div className="absolute inset-0 bg-[#8b8b8b] border border-[#555] pointer-events-none">
                 <div className="absolute top-0 bottom-0 bg-[#a0a0a0] border-r-2 border-black/20" style={{ width: `${percentage}%` }} />
             </div>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-white font-minecraft text-shadow-md">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-white font-game text-shadow-md">
                 {label}: {formatValue ? formatValue(value) : `${Math.round(percentage)}%`}
             </div>
         </div>
@@ -578,7 +578,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     debugFlyMode
                 />
-                <div className="absolute top-3 left-3 text-white text-xs font-minecraft bg-black/55 border border-white/30 px-2 py-1 pointer-events-none">
+                <div className="absolute top-3 left-3 text-white text-xs font-game bg-black/55 border border-white/30 px-2 py-1 pointer-events-none">
                     Panorama Debug Fly • F5 toggle • WASD/Space/Shift • Mouse look • Esc to exit
                 </div>
             </div>
@@ -595,29 +595,29 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                     <div className="flex flex-col gap-6 w-[400px]">
                         <div className="space-y-1">
-                            <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">World Name</label>
+                            <label className="text-gray-400 text-xs font-game uppercase pl-1">World Name</label>
                             <input
                                 autoFocus
                                 type="text"
                                 value={worldName}
                                 onChange={(e) => setWorldName(e.target.value)}
-                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-minecraft px-3 outline-none"
+                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-game px-3 outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">World Seed (Leave blank for random)</label>
+                            <label className="text-gray-400 text-xs font-game uppercase pl-1">World Seed (Leave blank for random)</label>
                             <input
                                 type="text"
                                 value={seed}
                                 onChange={(e) => setSeed(e.target.value)}
-                                placeholder="e.g. minecraft"
-                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-minecraft px-3 outline-none"
+                                placeholder="e.g. atlas"
+                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-game px-3 outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">Game Mode</label>
+                            <label className="text-gray-400 text-xs font-game uppercase pl-1">Game Mode</label>
                             <MCButton
                                 label={`Game Mode: ${gameMode.charAt(0).toUpperCase() + gameMode.slice(1)}`}
                                 onClick={() => {
@@ -627,7 +627,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                 }}
                                 width="w-full"
                             />
-                            <p className="text-[10px] text-gray-500 font-minecraft italic pl-1 leading-tight">
+                            <p className="text-[10px] text-gray-500 font-game italic pl-1 leading-tight">
                                 {gameMode === 'survival' && "Search for resources, craft, gain levels, health and hunger."}
                                 {gameMode === 'creative' && "Unlimited resources, free flying and destroy blocks instantly."}
                                 {gameMode === 'spectator' && "You can look but don't touch."}
@@ -635,18 +635,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">World Edit Preset (.json)</label>
+                            <label className="text-gray-400 text-xs font-game uppercase pl-1">World Edit Preset (.json)</label>
                             <select
                                 value={selectedWorldGenPresetId}
                                 onChange={(e) => setSelectedWorldGenPresetId(e.target.value)}
-                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-minecraft px-3 outline-none"
+                                className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-game px-3 outline-none"
                             >
                                 <option value="">Default Terrain</option>
                                 {worldGenPresets.map((preset) => (
                                     <option key={preset.id} value={preset.id}>{preset.name}</option>
                                 ))}
                             </select>
-                            <p className="text-[10px] text-gray-500 font-minecraft italic pl-1 leading-tight">
+                            <p className="text-[10px] text-gray-500 font-game italic pl-1 leading-tight">
                                 Presets are saved from Editor Features → World Editor.
                             </p>
                         </div>
@@ -684,11 +684,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                 <div>
                                     <div className="font-bold text-lg text-[#eee] flex items-center gap-2">
                                         <span>{w.name}</span>
-                                        <span className="text-[10px] font-minecraft px-2 py-0.5 rounded border border-white/20 bg-black/35 text-blue-200">
+                                        <span className="text-[10px] font-game px-2 py-0.5 rounded border border-white/20 bg-black/35 text-blue-200">
                                             Preset: {w.worldGenPresetName || 'Default Terrain'}
                                         </span>
                                     </div>
-                                    <div className="text-xs text-gray-400 font-minecraft">
+                                    <div className="text-xs text-gray-400 font-game">
                                         {w.id.split('-')[0]} • {w.gameMode} • {new Date(w.lastPlayed).toLocaleDateString()} {new Date(w.lastPlayed).toLocaleTimeString()}
                                     </div>
                                 </div>
@@ -749,7 +749,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                     {panoramaSubmenu === 'manager' && (
                         <>
-                            <div className="w-full bg-black/50 border-2 border-white/20 mb-4 p-2 text-xs text-gray-300 font-minecraft">
+                            <div className="w-full bg-black/50 border-2 border-white/20 mb-4 p-2 text-xs text-gray-300 font-game">
                                 Capture from in-game using {panoramaCaptureHotkey}, import an existing panorama PNG, and open Settings for panorama tuning.
                             </div>
 
@@ -809,7 +809,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                     {panoramaSubmenu === 'settings' && (
                         <>
-                            <div className="w-full bg-black/50 border-2 border-white/20 mb-4 p-2 text-xs text-gray-300 font-minecraft">
+                            <div className="w-full bg-black/50 border-2 border-white/20 mb-4 p-2 text-xs text-gray-300 font-game">
                                 Panorama appearance settings apply to menu and loading backgrounds.
                             </div>
 
@@ -943,7 +943,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70">
                     <div className="w-[560px] bg-[#151515] border-2 border-white border-b-[#373737] border-r-[#373737] p-6">
                         <h2 className="text-white text-2xl font-bold text-shadow-md mb-2">First Time Here?</h2>
-                        <p className="text-gray-200 font-minecraft text-sm leading-relaxed mb-6">
+                        <p className="text-gray-200 font-game text-sm leading-relaxed mb-6">
                             Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
                             Open it now?
                         </p>

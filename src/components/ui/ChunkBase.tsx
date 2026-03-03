@@ -602,7 +602,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 type="text" 
                                 value={localSeedInput} 
                                 onChange={e => setLocalSeedInput(e.target.value)}
-                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-minecraft focus:border-blue-500 outline-none placeholder:text-gray-800"
+                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-game focus:border-blue-500 outline-none placeholder:text-gray-800"
                                 placeholder="Seed..."
                             />
                             {localSeedInput !== worldManager.getSeed().toString() && (

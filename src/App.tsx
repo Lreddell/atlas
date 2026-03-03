@@ -159,7 +159,7 @@ async function waitForFovToSettle(getCurrentFov: () => number, targetFov: number
 
 type CubeFaceKey = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
-function buildMinecraftPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
+function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
     const atlas = document.createElement('canvas');
     atlas.width = faceSize * 4;
     atlas.height = faceSize * 3;
@@ -171,7 +171,7 @@ function buildMinecraftPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElemen
         ctx.drawImage(source, cellX * faceSize, cellY * faceSize, faceSize, faceSize);
     };
 
-    // Minecraft-like panorama layout:
+    // Panorama layout:
     // row 0:      [ ][4][ ][ ]
     // row 1:      [0][1][2][3]
     // row 2:      [ ][5][ ][ ]
@@ -925,7 +925,7 @@ const App: React.FC = () => {
       ];
 
       return {
-          atlasDataUrl: buildMinecraftPanoramaAtlas(faces, captureSize),
+          atlasDataUrl: buildPanoramaAtlas(faces, captureSize),
           cubeFaces: orderedFaceDataUrls,
       };
   }, [fov]);
@@ -2006,7 +2006,7 @@ const App: React.FC = () => {
 
             {isCapturingPanorama && (
                 <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">
-                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-minecraft text-sm">
+                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-game text-sm">
                         Capturing panorama… input locked
                     </div>
                 </div>
