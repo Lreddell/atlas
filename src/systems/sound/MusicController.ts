@@ -111,6 +111,26 @@ class MusicController {
         return { min: this.minDelay / 1000, max: this.maxDelay / 1000 };
     }
 
+    public skipTrack() {
+        const context = this.currentContext || this.pendingContext || 'generic';
+        const pack = MUSIC_PACKS[context] || MUSIC_PACKS.generic;
+        if (!pack || pack.length === 0) return false;
+
+        this.currentContext = context;
+        this.pendingContext = context;
+        this.contextStableTime = Date.now();
+
+        const fadeOut = this.currentContext === 'MENU' ? 0.2 : 0.8;
+        const silence = this.currentContext === 'MENU' ? 0 : 250;
+
+        soundManager.stopMusic(fadeOut);
+        this.isPlaying = false;
+        this.isTransitioning = true;
+        this.lastFinishTime = 0;
+        this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
+        return true;
+    }
+
     public update(inMenu: boolean, gameMode: string, biomeId: string) {
         // 1. Determine Target Context
         let targetContext = "generic";

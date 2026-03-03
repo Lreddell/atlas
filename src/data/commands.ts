@@ -1,5 +1,5 @@
 
-export const COMMANDS = ['/gamemode', '/time', '/phase', '/locate', '/tp', '/sound', '/playsound', '/shootingstar'];
+export const COMMANDS = ['/gamemode', '/time', '/phase', '/locate', '/tp', '/sound', '/music', '/playsound', '/shootingstar'];
 
 export const SUBCOMMANDS: Record<string, string[]> = {
     '/gamemode': ['survival', 'creative', 'spectator'],
@@ -8,6 +8,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/locate': ['biome'],
     '/tp': [], // Coordinates usually
     '/sound': ['reload', 'volume'],
+    '/music': ['skip'],
     '/playsound': [],
     '/shootingstar': ['spawn']
 };

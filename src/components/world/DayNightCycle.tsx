@@ -517,7 +517,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         
         const distFromNew = Math.abs(phaseIndex - 4); 
         const factor = 1 - (distFromNew / 4);
-        const phaseIntensity = 0.65 + (0.2 * factor);
+        const phaseBrightnessFactor = factor * 0.72;
+        const phaseIntensity = 0.63 + (0.2 * phaseBrightnessFactor);
 
         if (moonCoreRef.current && (!moonCoreRef.current.userData.lastPhase || moonCoreRef.current.userData.lastPhase !== phaseIndex)) {
              moonCoreRef.current.userData.lastPhase = phaseIndex;
@@ -676,16 +677,16 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             moonLightRef.current.position.set(snappedX + moonDir.x * lightDistance, snappedY + moonDir.y * lightDistance, snappedZ + moonDir.z * lightDistance);
             moonLightRef.current.up.set(0, 0, 1);
             moonLightRef.current.updateMatrixWorld();
-            moonLightRef.current.intensity = (NIGHT_DIRECTIONAL_MAX * factor) * (1 - dayFactor);
+            moonLightRef.current.intensity = (NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor) * (1 - dayFactor);
         }
 
         const DAY_AMBIENT = 0.6;
         const NIGHT_AMBIENT_BASE = 0.2; 
         const NIGHT_AMBIENT_VAR = 0.1;
-        const nightAmbient = NIGHT_AMBIENT_BASE + (NIGHT_AMBIENT_VAR * factor);
+        const nightAmbient = NIGHT_AMBIENT_BASE + (NIGHT_AMBIENT_VAR * phaseBrightnessFactor);
         
         const currentAmbient = THREE.MathUtils.lerp(nightAmbient, DAY_AMBIENT, dayFactor);
-        const currentDirectional = THREE.MathUtils.lerp(NIGHT_DIRECTIONAL_MAX * factor, DAY_DIRECTIONAL_INTENSITY, dayFactor);
+        const currentDirectional = THREE.MathUtils.lerp(NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor, DAY_DIRECTIONAL_INTENSITY, dayFactor);
         
         // Update local ambient light directly for performance
         if (ambientLightRef.current) {

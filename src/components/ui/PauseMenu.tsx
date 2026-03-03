@@ -5,6 +5,7 @@ import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
 import { setCloudTexture } from '../world/Clouds';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
+import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 
 interface PauseMenuProps {
     onResume: () => void;
@@ -41,7 +42,7 @@ interface PauseMenuProps {
     showMenuBackground?: boolean;
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'controls';
+type MenuScreen = 'main' | 'video' | 'audio' | 'help';
 
 // Minecraft Button Component
 const MCButton: React.FC<{
@@ -165,6 +166,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     showMenuBackground = true,
 }) => {
     const [screen, setScreen] = useState<MenuScreen>('main');
+    const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
+    const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Audio State
@@ -229,7 +232,10 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MCButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
                     <MCButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
-                <MCButton label="Controls..." disabled width="w-80" />
+                <div className="flex gap-3">
+                    <MCButton label="Controls..." disabled width="w-[9.5rem]" />
+                    <MCButton label="Help..." onClick={() => setScreen('help')} width="w-[9.5rem]" />
+                </div>
                 {!isMainMenu && <MCButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
                 {isMainMenu && <MCButton label="Done" onClick={onResume} width="w-80" />}
             </div>
@@ -321,6 +327,53 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         </div>
     );
 
+    const renderHelp = () => {
+        const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === tutorialTab) || TUTORIAL_SECTIONS[0];
+
+        return (
+            <div className="flex flex-col gap-2 items-center w-[820px]">
+                <h1 className="text-white text-xl mb-2 font-bold text-shadow-lg">Help</h1>
+
+                <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-minecraft">
+                    Tutorial wiki. You can always return here through Options &gt; Help.
+                </div>
+
+                <div className="w-full flex flex-wrap justify-center gap-2 mb-2">
+                    {TUTORIAL_SECTIONS.map((section) => (
+                        <MCButton
+                            key={section.id}
+                            label={section.title}
+                            onClick={() => setTutorialTab(section.id)}
+                            width="w-[152px]"
+                        />
+                    ))}
+                </div>
+
+                <div className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4">
+                    <h2 className="text-white text-lg font-bold text-shadow-md mb-1">{activeSection.title}</h2>
+                    <p className="text-blue-200 text-sm font-minecraft mb-3">{activeSection.subtitle}</p>
+
+                    <div className="space-y-3 mb-4">
+                        {activeSection.paragraphs.map((paragraph) => (
+                            <p key={paragraph} className="text-gray-100 text-sm leading-relaxed font-minecraft">{paragraph}</p>
+                        ))}
+                    </div>
+
+                    <div className="border-t border-white/15 pt-3">
+                        <h3 className="text-white text-sm font-bold mb-2 font-minecraft">Highlights</h3>
+                        <ul className="space-y-1">
+                            {activeSection.bullets.map((bullet) => (
+                                <li key={bullet} className="text-gray-200 text-sm font-minecraft">• {bullet}</li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+
+                <MCButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            </div>
+        );
+    };
+
     return (
         <div 
             className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px]' : ''}`}
@@ -338,6 +391,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                 />
             )}
+            {showMainMenuSubmenuOverlay && <div className="absolute inset-0 bg-black/60 pointer-events-none" />}
             <style>{`
                 .text-shadow-lg { text-shadow: 2px 2px 0px #3f3f3f; }
                 .text-shadow-md { text-shadow: 1px 1px 0px #3f3f3f; }
@@ -351,6 +405,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}
+                    {screen === 'help' && renderHelp()}
                 </div>
             </div>
         </div>
