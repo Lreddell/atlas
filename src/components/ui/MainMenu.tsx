@@ -237,7 +237,7 @@ const parseSplashFormatting = (value: string): ParsedSplashSegment[] => {
     return parsedSegments;
 };
 
-const MCButton: React.FC<{
+const MenuButton: React.FC<{
     label: string;
     onClick?: () => void;
     width?: string;
@@ -286,7 +286,7 @@ const MCButton: React.FC<{
     );
 };
 
-const MCSlider: React.FC<{
+const MenuSlider: React.FC<{
     label: string;
     value: number;
     min: number;
@@ -611,14 +611,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                 type="text"
                                 value={seed}
                                 onChange={(e) => setSeed(e.target.value)}
-                                placeholder="e.g. minecraft"
+                                placeholder="e.g. atlas"
                                 className="w-full h-10 bg-black border-2 border-[#333] focus:border-blue-500 text-white font-minecraft px-3 outline-none"
                             />
                         </div>
 
                         <div className="space-y-1">
                             <label className="text-gray-400 text-xs font-minecraft uppercase pl-1">Game Mode</label>
-                            <MCButton
+                            <MenuButton
                                 label={`Game Mode: ${gameMode.charAt(0).toUpperCase() + gameMode.slice(1)}`}
                                 onClick={() => {
                                     const modes: any[] = ['survival', 'creative', 'spectator'];
@@ -652,8 +652,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                         </div>
 
                         <div className="flex gap-4 mt-4">
-                            <MCButton label="Cancel" onClick={() => setView('select')} width="w-[192px]" />
-                            <MCButton label="Create World" onClick={handleCreateWorld} variant="primary" width="w-[192px]" />
+                            <MenuButton label="Cancel" onClick={() => setView('select')} width="w-[192px]" />
+                            <MenuButton label="Create World" onClick={handleCreateWorld} variant="primary" width="w-[192px]" />
                         </div>
                     </div>
                 </div>
@@ -701,37 +701,37 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                     <div className="flex flex-col gap-3 w-full">
                         <div className="flex gap-4 justify-center">
-                            <MCButton
+                            <MenuButton
                                 label="Play Selected World"
                                 onClick={handlePlaySelected}
                                 disabled={!selectedWorldId}
                                 variant="primary"
                                 width="w-[280px]"
                             />
-                            <MCButton
+                            <MenuButton
                                 label="Create New World"
                                 onClick={() => setView('create')}
                                 width="w-[280px]"
                             />
                         </div>
                         <div className="flex gap-4 justify-center">
-                            <MCButton
+                            <MenuButton
                                 label="Delete"
                                 onClick={handleDeleteWorld}
                                 disabled={!selectedWorldId}
                                 variant="danger"
                                 width="w-[185px]"
                             />
-                            <MCButton label="Cancel" onClick={() => setView('main')} width="w-[185px]" />
+                            <MenuButton label="Cancel" onClick={() => setView('main')} width="w-[185px]" />
                         </div>
                         <div className="flex gap-4 justify-center">
-                            <MCButton
+                            <MenuButton
                                 label="Export"
                                 onClick={handleExportWorld}
                                 disabled={!selectedWorldId}
                                 width="w-[185px]"
                             />
-                            <MCButton
+                            <MenuButton
                                 label="Import World"
                                 onClick={handleImportWorld}
                                 width="w-[185px]"
@@ -770,7 +770,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                                 <div className="text-[10px] text-gray-400 truncate">{filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}</div>
                                             </div>
                                             <div className="flex gap-2 shrink-0">
-                                                <MCButton
+                                                <MenuButton
                                                     label={isActive ? 'Using' : 'Use'}
                                                     onClick={() => onUsePanorama(filePath)}
                                                     disabled={isActive}
@@ -778,7 +778,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                                     small
                                                     variant="primary"
                                                 />
-                                                <MCButton
+                                                <MenuButton
                                                     label="Delete"
                                                     onClick={() => onDeletePanoramaFromDisk(filePath)}
                                                     disabled={!canDeletePanoramaFromDisk}
@@ -794,15 +794,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             </div>
 
                             <div className="flex gap-4 justify-center w-full">
-                                <MCButton
+                                <MenuButton
                                     label="Import Panorama"
                                     onClick={onImportPanorama}
                                     disabled={!canImportPanorama}
                                     tooltip={!canImportPanorama ? 'Desktop build only' : undefined}
                                     width="w-[220px]"
                                 />
-                                <MCButton label="Settings" onClick={() => setPanoramaSubmenu('settings')} width="w-[220px]" />
-                                <MCButton label="Back" onClick={() => setView('main')} width="w-[220px]" />
+                                <MenuButton label="Settings" onClick={() => setPanoramaSubmenu('settings')} width="w-[220px]" />
+                                <MenuButton label="Back" onClick={() => setView('main')} width="w-[220px]" />
                             </div>
                         </>
                     )}
@@ -814,7 +814,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             </div>
 
                             <div className="flex gap-4 justify-center w-full mb-4">
-                                <MCButton
+                                <MenuButton
                                     label={`Background: ${usingPanorama ? 'Panorama' : 'Dirt'}`}
                                     onClick={onToggleBackground}
                                     disabled={!hasPanoramaBackground && backgroundMode === 'dirt'}
@@ -824,7 +824,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 w-full mb-6 justify-items-center">
-                                <MCSlider
+                                <MenuSlider
                                     label="Menu Panorama Blur"
                                     value={panoramaBlur}
                                     min={0}
@@ -834,7 +834,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                     width="w-[460px]"
                                     formatValue={(v) => `${v.toFixed(1)} px`}
                                 />
-                                <MCSlider
+                                <MenuSlider
                                     label="Menu Gradient"
                                     value={panoramaGradient}
                                     min={0}
@@ -844,7 +844,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                     width="w-[460px]"
                                     formatValue={(v) => `${Math.round(v * 100)}%`}
                                 />
-                                <MCSlider
+                                <MenuSlider
                                     label="Rotation Speed"
                                     value={panoramaRotationSpeed}
                                     min={0}
@@ -857,7 +857,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             </div>
 
                             <div className="flex gap-4 justify-center w-full">
-                                <MCButton label="Back to Panorama" onClick={() => setPanoramaSubmenu('manager')} width="w-[320px]" />
+                                <MenuButton label="Back to Panorama" onClick={() => setPanoramaSubmenu('manager')} width="w-[320px]" />
                             </div>
                         </>
                     )}
@@ -870,9 +870,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 <div className="relative z-10 flex flex-col items-center">
                     <h1 className={submenuHeadingClass}>Editor Features</h1>
                     <div className="flex flex-col gap-4 w-[420px]">
-                        <MCButton label="World Editor" onClick={onChunkBase} width="w-full" variant="primary" />
-                        <MCButton label="Feature Editor" onClick={onFeatureEditor} disabled tooltip="Coming soon!" width="w-full" />
-                        <MCButton label="Back" onClick={() => setView('main')} width="w-full" />
+                        <MenuButton label="World Editor" onClick={onChunkBase} width="w-full" variant="primary" />
+                        <MenuButton label="Feature Editor" onClick={onFeatureEditor} disabled tooltip="Coming soon!" width="w-full" />
+                        <MenuButton label="Back" onClick={() => setView('main')} width="w-full" />
                     </div>
                 </div>
             );
@@ -902,16 +902,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-4 w-[400px]">
-                    <MCButton label="Singleplayer" onClick={() => setView('select')} width="w-full" variant="primary" />
-                    <MCButton label="Editor Features" onClick={() => setView('editors')} width="w-full" />
-                    <MCButton label="Panorama Settings" onClick={() => setView('settings')} width="w-full" />
-                    <MCButton label="Multiplayer" disabled tooltip="Coming soon!" width="w-full" />
+                    <MenuButton label="Singleplayer" onClick={() => setView('select')} width="w-full" variant="primary" />
+                    <MenuButton label="Editor Features" onClick={() => setView('editors')} width="w-full" />
+                    <MenuButton label="Panorama Settings" onClick={() => setView('settings')} width="w-full" />
+                    <MenuButton label="Multiplayer" disabled tooltip="Coming soon!" width="w-full" />
                     <div className="flex gap-4 w-full">
-                        <MCButton label="Options..." onClick={onOptions} width="w-[192px]" />
+                        <MenuButton label="Options..." onClick={onOptions} width="w-[192px]" />
                         {isBrowserMode ? (
-                            <MCButton label="Tutorial..." onClick={() => onOptions({ openTutorial: true })} width="w-[192px]" />
+                            <MenuButton label="Tutorial..." onClick={() => onOptions({ openTutorial: true })} width="w-[192px]" />
                         ) : (
-                            <MCButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? "Cannot quit in browser" : undefined} width="w-[192px]" />
+                            <MenuButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? "Cannot quit in browser" : undefined} width="w-[192px]" />
                         )}
                     </div>
                 </div>
@@ -948,8 +948,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                             Open it now?
                         </p>
                         <div className="flex gap-4 justify-center">
-                            <MCButton label="Yes, Show Tutorial" onClick={handleTutorialPromptAccept} width="w-[220px]" variant="primary" />
-                            <MCButton label="No, Thanks" onClick={handleTutorialPromptDecline} width="w-[220px]" />
+                            <MenuButton label="Yes, Show Tutorial" onClick={handleTutorialPromptAccept} width="w-[220px]" variant="primary" />
+                            <MenuButton label="No, Thanks" onClick={handleTutorialPromptDecline} width="w-[220px]" />
                         </div>
                     </div>
                 </div>

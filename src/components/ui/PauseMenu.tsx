@@ -48,7 +48,7 @@ interface PauseMenuProps {
 type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
 
 // Minecraft Button Component
-const MCButton: React.FC<{
+const MenuButton: React.FC<{
     label: string;
     onClick?: () => void;
     width?: string;
@@ -85,7 +85,7 @@ const MCButton: React.FC<{
 };
 
 // Minecraft Slider Component
-const MCSlider: React.FC<{
+const MenuSlider: React.FC<{
     label: string;
     value: number; // 0 to 1 usually, or range
     min: number;
@@ -144,7 +144,7 @@ const MCToggle: React.FC<{
     onChange: (val: boolean) => void;
     width?: string;
 }> = ({ label, value, onChange, width = 'w-72' }) => (
-    <MCButton 
+    <MenuButton 
         label={`${label}: ${value ? 'ON' : 'OFF'}`} 
         onClick={() => onChange(!value)}
         width={width}
@@ -239,17 +239,17 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">{isMainMenu ? 'Options' : 'Game Menu'}</h1>
             
             <div className="flex flex-col gap-3 w-full items-center">
-                {!isMainMenu && <MCButton label="Back to Game" onClick={onResume} width="w-80" />}
+                {!isMainMenu && <MenuButton label="Back to Game" onClick={onResume} width="w-80" />}
                 <div className="flex gap-3">
-                    <MCButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
-                    <MCButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
+                    <MenuButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
+                    <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
                 <div className="flex gap-3">
-                    <MCButton label="Controls..." disabled width={isBrowserMode ? 'w-80' : 'w-[9.5rem]'} />
-                    {!isBrowserMode && <MCButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />}
+                    <MenuButton label="Controls..." disabled width={isBrowserMode ? 'w-80' : 'w-[9.5rem]'} />
+                    {!isBrowserMode && <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />}
                 </div>
-                {!isMainMenu && <MCButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
-                {isMainMenu && <MCButton label="Done" onClick={onResume} width="w-80" />}
+                {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
+                {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-80" />}
             </div>
         </div>
     );
@@ -260,26 +260,26 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">Video Settings</h1>
             
             <div className="grid grid-cols-2 gap-4 mb-4">
-                <MCSlider 
+                <MenuSlider 
                     label="Brightness" 
                     value={brightness} min={0} max={1} step={0.05} 
                     onChange={setBrightness} width="w-64"
                     formatValue={(v) => v === 0 ? 'Moody' : (v === 1 ? 'Bright' : `+${Math.round(v*100)}%`)}
                 />
-                <MCSlider 
+                <MenuSlider 
                     label="Render Distance" 
                     value={renderDistance} min={4} max={48} step={1} 
                     onChange={setRenderDistance} width="w-64"
                     formatValue={(v) => `${v} Chunks`}
                 />
-                <MCSlider 
+                <MenuSlider 
                     label="FOV" 
                     value={fov} min={30} max={110} step={1} 
                     onChange={setFov} width="w-64"
                     formatValue={(v) => v === 70 ? 'Normal' : v.toString()}
                 />
                 
-                <MCSlider 
+                <MenuSlider 
                     label="Max Framerate" 
                     value={maxFps} min={10} max={260} step={10}
                     onChange={setMaxFps} width="w-64"
@@ -298,11 +298,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 {/* Custom Environment */}
                 <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
-                    <MCButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={!cloudsEnabled} />
+                    <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={!cloudsEnabled} />
                 </div>
             </div>
 
-            <MCButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
         </div>
     );
 
@@ -312,12 +312,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">Music & Sounds</h1>
             
             <div className="mb-4 flex gap-4">
-                <MCSlider 
+                <MenuSlider 
                     label="Master Volume" 
                     value={volumes.master} min={0} max={1} 
                     onChange={(v) => updateVolume('master', v)} width="w-64"
                 />
-                <MCSlider 
+                <MenuSlider 
                     label="Music Delay" 
                     value={musicDelay} min={0} max={300} step={5}
                     onChange={updateMusicDelay} width="w-64"
@@ -326,16 +326,16 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
-                <MCSlider label="Music" value={volumes.music} min={0} max={1} onChange={(v) => updateVolume('music', v)} width="w-64" />
-                <MCSlider label="Weather" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-64" />
-                <MCSlider label="Blocks" value={volumes.blocks} min={0} max={1} onChange={(v) => updateVolume('blocks', v)} width="w-64" />
-                <MCSlider label="Hostile Creatures" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-64" />
-                <MCSlider label="Friendly Creatures" value={volumes.neutral} min={0} max={1} onChange={(v) => updateVolume('neutral', v)} width="w-64" />
-                <MCSlider label="Players" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-64" />
-                <MCSlider label="Voice/Speech" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-64" />
+                <MenuSlider label="Music" value={volumes.music} min={0} max={1} onChange={(v) => updateVolume('music', v)} width="w-64" />
+                <MenuSlider label="Weather" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-64" />
+                <MenuSlider label="Blocks" value={volumes.blocks} min={0} max={1} onChange={(v) => updateVolume('blocks', v)} width="w-64" />
+                <MenuSlider label="Hostile Creatures" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-64" />
+                <MenuSlider label="Friendly Creatures" value={volumes.neutral} min={0} max={1} onChange={(v) => updateVolume('neutral', v)} width="w-64" />
+                <MenuSlider label="Players" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-64" />
+                <MenuSlider label="Voice/Speech" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-64" />
             </div>
 
-            <MCButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
         </div>
     );
 
@@ -352,7 +352,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
                 <div className="w-full flex flex-wrap justify-center gap-2 mb-2">
                     {TUTORIAL_SECTIONS.map((section) => (
-                        <MCButton
+                        <MenuButton
                             key={section.id}
                             label={section.title}
                             onClick={() => setTutorialTab(section.id)}
@@ -381,7 +381,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     </div>
                 </div>
 
-                <MCButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+                <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
             </div>
         );
     };
