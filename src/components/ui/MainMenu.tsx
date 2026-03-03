@@ -1,18 +1,21 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
+import { musicController } from '../../systems/sound/MusicController';
 import { ExportedWorldData, WorldStorage, WorldMetadata } from '../../systems/world/WorldStorage';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { APP_DISPLAY_VERSION } from '../../constants';
 import { getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
 
 const PANORAMA_DEBUG_HOTKEY = 'F5';
+const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
+const TUTORIAL_PROMPTED_KEY = 'atlas.tutorial.prompted.v2';
 
 interface MainMenuProps {
     onStart: (worldId: string) => void;
     onChunkBase: () => void;
     onFeatureEditor: () => void;
-    onOptions: () => void;
+    onOptions: (opts?: { openTutorial?: boolean }) => void;
     onQuit?: () => void;
     backgroundMode: 'dirt' | 'panorama';
     panoramaBackgroundDataUrl: string | null;
@@ -354,6 +357,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [panoramaDebugFly, setPanoramaDebugFly] = useState(false);
     const [splash, setSplash] = useState('');
     const [splashFontSize, setSplashFontSize] = useState(20);
+    const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
 
     // World Selection State
     const [worlds, setWorlds] = useState<WorldMetadata[]>([]);
@@ -366,6 +370,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [worldGenPresets, setWorldGenPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedWorldGenPresetId, setSelectedWorldGenPresetId] = useState('');
     const hasFaceCubemap = !!panoramaFaceDataUrls && panoramaFaceDataUrls.length === 6;
+    const isBrowserMode = !onQuit;
 
     const refreshWorldGenPresets = async () => {
         const presets = await listWorldGenPresetsAsync();
@@ -391,7 +396,35 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     useEffect(() => {
         void loadWorlds();
         void refreshWorldGenPresets();
+
+        if (typeof window !== 'undefined') {
+            const hasSeenTutorialScreen = window.localStorage.getItem(TUTORIAL_SCREEN_SEEN_KEY) === 'true';
+            const hasBeenPrompted = window.localStorage.getItem(TUTORIAL_PROMPTED_KEY) === 'true';
+            if (!hasSeenTutorialScreen && !hasBeenPrompted) {
+                setShowTutorialPrompt(true);
+            }
+        }
     }, []);
+
+    const markTutorialPrompted = () => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(TUTORIAL_PROMPTED_KEY, 'true');
+    };
+
+    const handleTutorialPromptAccept = () => {
+        soundManager.resume();
+        musicController.update(true, 'survival', 'plains');
+        markTutorialPrompted();
+        setShowTutorialPrompt(false);
+        onOptions({ openTutorial: true });
+    };
+
+    const handleTutorialPromptDecline = () => {
+        soundManager.resume();
+        musicController.update(true, 'survival', 'plains');
+        markTutorialPrompted();
+        setShowTutorialPrompt(false);
+    };
 
     useEffect(() => {
         if (view === 'create') {
@@ -875,7 +908,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     <MCButton label="Multiplayer" disabled tooltip="Coming soon!" width="w-full" />
                     <div className="flex gap-4 w-full">
                         <MCButton label="Options..." onClick={onOptions} width="w-[192px]" />
-                        <MCButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? "Cannot quit in browser" : undefined} width="w-[192px]" />
+                        {isBrowserMode ? (
+                            <MCButton label="Tutorial..." onClick={() => onOptions({ openTutorial: true })} width="w-[192px]" />
+                        ) : (
+                            <MCButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? "Cannot quit in browser" : undefined} width="w-[192px]" />
+                        )}
                     </div>
                 </div>
 
@@ -901,6 +938,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             )}
             {showSubmenuOverlay && <div className={`absolute inset-0 ${submenuOverlayClass} pointer-events-none`} />}
             {renderMenuContent()}
+
+            {showTutorialPrompt && (
+                <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70">
+                    <div className="w-[560px] bg-[#151515] border-2 border-white border-b-[#373737] border-r-[#373737] p-6">
+                        <h2 className="text-white text-2xl font-bold text-shadow-md mb-2">First Time Here?</h2>
+                        <p className="text-gray-200 font-minecraft text-sm leading-relaxed mb-6">
+                            Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
+                            Open it now?
+                        </p>
+                        <div className="flex gap-4 justify-center">
+                            <MCButton label="Yes, Show Tutorial" onClick={handleTutorialPromptAccept} width="w-[220px]" variant="primary" />
+                            <MCButton label="No, Thanks" onClick={handleTutorialPromptDecline} width="w-[220px]" />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

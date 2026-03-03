@@ -212,6 +212,7 @@ const App: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
+    const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
     const [, setAmbientIntensity] = useState(0.6);
     const [, setDirectionalIntensity] = useState(0.8);
@@ -508,6 +509,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
       soundManager.init().catch(e => console.warn("Sound init warning:", e));
+
+      if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
+          musicController.update(true, 'survival', 'plains');
+      }
+
       const interval = setInterval(() => {
           if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
               musicController.update(true, 'survival', 'plains');
@@ -1828,7 +1834,10 @@ const App: React.FC = () => {
               onStart={handleStartGame}
               onChunkBase={() => setAppState('chunkbase')}
               onFeatureEditor={() => setAppState('featureEditor')}
-              onOptions={() => setAppState('options')}
+              onOptions={(opts) => {
+                  setOpenOptionsInHelp(!!opts?.openTutorial);
+                  setAppState('options');
+              }}
               onQuit={isElectron ? quitApp : undefined}
               backgroundMode={menuBackgroundMode}
               panoramaBackgroundDataUrl={menuPanoramaDataUrl}
@@ -1874,7 +1883,10 @@ const App: React.FC = () => {
       {bootReady && appState === 'options' && (
           <PauseMenu
               isMainMenu={true}
-              onResume={() => setAppState('menu')} 
+              onResume={() => {
+                  setOpenOptionsInHelp(false);
+                  setAppState('menu');
+              }} 
               renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov}
               workersEnabled={workersEnabled} setWorkersEnabled={(val) => { setWorkersEnabled(val); worldManager.setWorkersEnabled(val); }}
               shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled}
@@ -1882,6 +1894,7 @@ const App: React.FC = () => {
               antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)}
               chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
+              initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
               panoramaRotationSpeed={menuPanoramaRotationSpeed}
