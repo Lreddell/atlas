@@ -1895,6 +1895,7 @@ const App: React.FC = () => {
               chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
+              onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
               panoramaRotationSpeed={menuPanoramaRotationSpeed}

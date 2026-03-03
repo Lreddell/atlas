@@ -43,6 +43,7 @@ interface PauseMenuProps {
     isMainMenu?: boolean;
     showMenuBackground?: boolean;
     initialScreen?: 'main' | 'video' | 'audio' | 'tutorial';
+    onTutorialClose?: () => void;
 }
 
 type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
@@ -168,6 +169,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     isMainMenu = false,
     showMenuBackground = true,
     initialScreen = 'main',
+    onTutorialClose,
 }) => {
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
@@ -381,7 +383,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     </div>
                 </div>
 
-                <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+                <MenuButton label="Done" onClick={() => onTutorialClose ? onTutorialClose() : setScreen('main')} width="w-64" />
             </div>
         );
     };
