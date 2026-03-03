@@ -234,7 +234,7 @@ class MusicController {
             if (!started) {
                 // If it failed to start (e.g. file is empty or missing), release lock and try again shortly
                 this.isPlaying = false;
-                this.nextPlayTime = Date.now() + 5000;
+                this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 1000);
             }
         });
     }

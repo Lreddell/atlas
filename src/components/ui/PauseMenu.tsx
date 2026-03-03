@@ -7,7 +7,7 @@ import { setCloudTexture } from '../world/Clouds';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 
-const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen';
+const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 
 interface PauseMenuProps {
     onResume: () => void;
@@ -42,9 +42,10 @@ interface PauseMenuProps {
     panoramaFaceDataUrls?: string[] | null;
     isMainMenu?: boolean;
     showMenuBackground?: boolean;
+    initialScreen?: 'main' | 'video' | 'audio' | 'tutorial';
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'help';
+type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
 
 // Minecraft Button Component
 const MCButton: React.FC<{
@@ -166,10 +167,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     panoramaFaceDataUrls,
     isMainMenu = false,
     showMenuBackground = true,
+    initialScreen = 'main',
 }) => {
-    const [screen, setScreen] = useState<MenuScreen>('main');
+    const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
+    const isBrowserMode = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') === -1;
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Audio State
@@ -200,16 +203,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     }, []);
 
     useEffect(() => {
-        if (!isMainMenu || typeof window === 'undefined') return;
-        const hasSeenTutorialScreen = window.localStorage.getItem(TUTORIAL_SCREEN_SEEN_KEY) === 'true';
-        if (!hasSeenTutorialScreen) {
-            setScreen('help');
-        }
-    }, [isMainMenu]);
-
-    useEffect(() => {
         if (typeof window === 'undefined') return;
-        if (screen === 'help') {
+        if (screen === 'tutorial') {
             window.localStorage.setItem(TUTORIAL_SCREEN_SEEN_KEY, 'true');
         }
     }, [screen]);
@@ -250,8 +245,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MCButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
                 <div className="flex gap-3">
-                    <MCButton label="Controls..." disabled width="w-[9.5rem]" />
-                    <MCButton label="Help..." onClick={() => setScreen('help')} width="w-[9.5rem]" />
+                    <MCButton label="Controls..." disabled width={isBrowserMode ? 'w-80' : 'w-[9.5rem]'} />
+                    {!isBrowserMode && <MCButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />}
                 </div>
                 {!isMainMenu && <MCButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
                 {isMainMenu && <MCButton label="Done" onClick={onResume} width="w-80" />}
@@ -344,15 +339,15 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         </div>
     );
 
-    const renderHelp = () => {
+    const renderTutorial = () => {
         const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === tutorialTab) || TUTORIAL_SECTIONS[0];
 
         return (
             <div className="flex flex-col gap-2 items-center w-[820px]">
-                <h1 className="text-white text-xl mb-2 font-bold text-shadow-lg">Help</h1>
+                <h1 className="text-white text-xl mb-2 font-bold text-shadow-lg">Tutorial</h1>
 
                 <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-minecraft">
-                    Tutorial wiki. You can always return here through Options &gt; Help.
+                    Tutorial wiki. You can always return here through Options &gt; Tutorial.
                 </div>
 
                 <div className="w-full flex flex-wrap justify-center gap-2 mb-2">
@@ -422,7 +417,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}
-                    {screen === 'help' && renderHelp()}
+                    {screen === 'tutorial' && renderTutorial()}
                 </div>
             </div>
         </div>
