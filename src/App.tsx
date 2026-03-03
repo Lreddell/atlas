@@ -159,7 +159,7 @@ async function waitForFovToSettle(getCurrentFov: () => number, targetFov: number
 
 type CubeFaceKey = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
-function buildMinecraftPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
+function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
     const atlas = document.createElement('canvas');
     atlas.width = faceSize * 4;
     atlas.height = faceSize * 3;
@@ -925,7 +925,7 @@ const App: React.FC = () => {
       ];
 
       return {
-          atlasDataUrl: buildMinecraftPanoramaAtlas(faces, captureSize),
+          atlasDataUrl: buildPanoramaAtlas(faces, captureSize),
           cubeFaces: orderedFaceDataUrls,
       };
   }, [fov]);
