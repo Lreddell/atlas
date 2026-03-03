@@ -1101,6 +1101,17 @@ const App: React.FC = () => {
           else if (['survival', 's', '0'].includes(mode)) { setGameMode('survival'); logMsg("Set game mode to Survival", 'success'); } 
           else if (['spectator', 'sp', '3'].includes(mode)) { setGameMode('spectator'); logMsg("Set game mode to Spectator", 'success'); } 
           else { logMsg("Unknown gamemode. Use survival/creative/spectator", 'error'); }
+      } else if (parts[0] === '/music') {
+          if (parts[1] === 'skip') {
+              const skipped = musicController.skipTrack();
+              if (skipped) {
+                  logMsg('Skipping to the next song', 'success');
+              } else {
+                  logMsg('No music track available for the current context', 'error');
+              }
+          } else {
+              logMsg('Usage: /music skip', 'error');
+          }
       } else if (parts[0] === '/sound') {
           if (parts[1] === 'reload') {
               soundManager.init();
