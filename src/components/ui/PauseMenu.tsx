@@ -7,6 +7,8 @@ import { setCloudTexture } from '../world/Clouds';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 
+const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen';
+
 interface PauseMenuProps {
     onResume: () => void;
     onQuitToTitle?: () => void; // Callback for quitting to title
@@ -196,6 +198,21 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         const range = musicController.getDelayRange();
         setMusicDelay(range.min);
     }, []);
+
+    useEffect(() => {
+        if (!isMainMenu || typeof window === 'undefined') return;
+        const hasSeenTutorialScreen = window.localStorage.getItem(TUTORIAL_SCREEN_SEEN_KEY) === 'true';
+        if (!hasSeenTutorialScreen) {
+            setScreen('help');
+        }
+    }, [isMainMenu]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (screen === 'help') {
+            window.localStorage.setItem(TUTORIAL_SCREEN_SEEN_KEY, 'true');
+        }
+    }, [screen]);
 
     const updateVolume = (cat: string, val: number) => {
         setVolumes(p => ({...p, [cat]: val}));
