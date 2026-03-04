@@ -159,7 +159,7 @@ async function waitForFovToSettle(getCurrentFov: () => number, targetFov: number
 
 type CubeFaceKey = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
-function buildMinecraftPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
+function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
     const atlas = document.createElement('canvas');
     atlas.width = faceSize * 4;
     atlas.height = faceSize * 3;
@@ -925,7 +925,7 @@ const App: React.FC = () => {
       ];
 
       return {
-          atlasDataUrl: buildMinecraftPanoramaAtlas(faces, captureSize),
+          atlasDataUrl: buildPanoramaAtlas(faces, captureSize),
           cubeFaces: orderedFaceDataUrls,
       };
   }, [fov]);
@@ -1895,6 +1895,7 @@ const App: React.FC = () => {
               chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
+              onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
               panoramaRotationSpeed={menuPanoramaRotationSpeed}
@@ -1949,7 +1950,7 @@ const App: React.FC = () => {
                 {/* Streamer runs logic loop for loading */}
                 <ChunkStreamer /> 
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
-                <GameLoop isPaused={worldPaused && appState !== 'loading'} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
+                <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} setAmbientIntensity={setAmbientIntensity} setDirectionalIntensity={setDirectionalIntensity} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
                 {cloudsEnabled && <Clouds isPaused={worldPaused} renderDistance={renderDistance} />}
                 

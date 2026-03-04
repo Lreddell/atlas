@@ -11,8 +11,27 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/og-image.png" />
+    <script>
+      window.tailwind = {
+        config: {
+          theme: {
+            extend: {
+              fontFamily: {
+                minecraft: ['Monocraft', 'monospace'],
+              },
+            },
+          },
+        },
+      }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      @font-face {
+        font-family: 'Monocraft';
+        src: url('https://cdn.jsdelivr.net/gh/IdreesInc/Monocraft@main/dist/Monocraft-ttf/Monocraft.ttf') format('truetype');
+        font-weight: normal;
+        font-style: normal;
+      }
       body, html, #root {
         margin: 0;
         padding: 0;
