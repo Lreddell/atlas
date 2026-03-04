@@ -29,15 +29,20 @@ const cloudFrontMaterial = new THREE.MeshLambertMaterial({
     side: THREE.FrontSide
 });
 
+// Tracks the natural (day/night-adjusted) opacity before any fade multiplier
+let cloudNaturalOpacity = 0.8;
+// Animated 0→1 on first cloud appearance; stays at 1 when not fading
+let cloudFadeMultiplier = 1.0;
+
 export const updateCloudColor = (dayFactor: number) => {
     const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4); 
     const dayColor = new THREE.Color(0xFFFFFF);
     cloudBackMaterial.color.lerpColors(nightColor, dayColor, dayFactor);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
-    // Slight opacity adjustment based on time
-    const opacity = 0.6 + (0.2 * dayFactor);
-    cloudBackMaterial.opacity = opacity;
-    cloudFrontMaterial.opacity = opacity;
+    // Slight opacity adjustment based on time; respect the current fade multiplier
+    cloudNaturalOpacity = 0.6 + (0.2 * dayFactor);
+    cloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+    cloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
 };
 
 // Event system for manual overrides
@@ -47,7 +52,7 @@ export const setCloudTexture = (url: string) => {
     if (onTextureUpdate) onTextureUpdate(url);
 };
 
-export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number }> = ({ isPaused, renderDistance }) => {
+export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeInEnabled?: boolean, visible?: boolean }> = ({ isPaused, renderDistance, fadeInEnabled = true, visible = true }) => {
     const { camera } = useThree();
     const [cloudData, setCloudData] = useState<{ width: number, height: number, data: Uint8Array } | null>(null);
     
@@ -58,6 +63,29 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number }> = (
     
     const cloudGroupRef = useRef<THREE.Group>(null);
     const offsetRef = useRef(0);
+
+    // Unified fade state
+    const fadeRef = useRef({
+        active: false,
+        startMs: 0,
+        isOut: false,    // true = fading out (1→0), false = fading in (0→1)
+        duration: 0.8,
+        hasLoaded: false // set true after the first geometry is built
+    });
+    const prevVisibleRef = useRef(visible);
+
+    // Guarantee materials start at zero opacity on mount so there's no flash
+    // before the fade-in animation begins.  Runs synchronously during the first
+    // render — before any useEffect, useFrame, or DayNightCycle updateCloudColor.
+    const didInitRef = useRef(false);
+    if (!didInitRef.current) {
+        didInitRef.current = true;
+        if (fadeInEnabled && visible) {
+            cloudFadeMultiplier = 0;
+            cloudBackMaterial.opacity = 0;
+            cloudFrontMaterial.opacity = 0;
+        }
+    }
     
     // Tracks the grid position currently requested/processing
     const lastRequestedGridPos = useRef({ u: -99999, v: -99999 });
@@ -179,6 +207,63 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number }> = (
         lastRequestedGridPos.current = { u: -99999, v: -99999 };
     }, [renderDistance, cloudData]);
 
+    // 3. Handle visibility changes (fade-in when re-shown, fade-out when hidden)
+    //    Initial appearance fade-in is handled inside rebuildGeometry, NOT here.
+    useEffect(() => {
+        const wasVisible = prevVisibleRef.current;
+        prevVisibleRef.current = visible;
+
+        // Only act on actual transitions, not initial mount or geometry rebuilds
+        if (visible === wasVisible) return;
+
+        const f = fadeRef.current;
+
+        if (visible) {
+            // Became visible (was hidden)
+            f.isOut = false;
+            if (f.hasLoaded) {
+                // Force a geometry rebuild so clouds appear at current position
+                lastRequestedGridPos.current = { u: -99999, v: -99999 };
+                if (fadeInEnabled) {
+                    cloudFadeMultiplier = 0;
+                    cloudBackMaterial.opacity = 0;
+                    cloudFrontMaterial.opacity = 0;
+                    f.active = true;
+                    f.startMs = performance.now();
+                    f.duration = 0.8;
+                } else {
+                    cloudFadeMultiplier = 1.0;
+                    cloudBackMaterial.opacity = cloudNaturalOpacity;
+                    cloudFrontMaterial.opacity = cloudNaturalOpacity;
+                }
+            }
+        } else {
+            // Became hidden (was visible)
+            if (fadeInEnabled && f.hasLoaded) {
+                f.active = true;
+                f.isOut = true;
+                f.startMs = performance.now();
+                f.duration = 0.5;
+            } else {
+                f.active = false;
+                cloudFadeMultiplier = 0;
+                cloudBackMaterial.opacity = 0;
+                cloudFrontMaterial.opacity = 0;
+            }
+        }
+    }, [visible, fadeInEnabled]);
+
+    // 4. Reset instantly if fade is disabled mid-session
+    useEffect(() => {
+        if (!fadeInEnabled) {
+            const f = fadeRef.current;
+            f.active = false;
+            cloudFadeMultiplier = visible ? 1.0 : 0;
+            cloudBackMaterial.opacity = visible ? cloudNaturalOpacity : 0;
+            cloudFrontMaterial.opacity = visible ? cloudNaturalOpacity : 0;
+        }
+    }, [fadeInEnabled, visible]);
+
     const rebuildGeometry = (centerU: number, centerV: number) => {
         if (!cloudData) return;
 
@@ -282,13 +367,56 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number }> = (
         geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
         geo.setIndex(indices);
         geo.computeBoundingSphere();
+
+        // Trigger fade-in on the VERY FIRST geometry build.
+        // Must happen before setCloudState so the material is already at opacity 0
+        // when R3F draws the first frame that includes this geometry.
+        const f = fadeRef.current;
+        if (!f.hasLoaded && visible) {
+            f.hasLoaded = true;
+            if (fadeInEnabled) {
+                cloudFadeMultiplier = 0;
+                cloudBackMaterial.opacity = 0;
+                cloudFrontMaterial.opacity = 0;
+                f.active = true;
+                f.isOut = false;
+                f.startMs = performance.now();
+                f.duration = 0.8;
+            }
+        } else if (!f.hasLoaded) {
+            f.hasLoaded = true; // loaded while invisible – just mark it
+        }
         
         // Update State
         setCloudState({ geometry: geo, u: centerU, v: centerV });
     };
 
     useFrame((_, delta) => {
-        if (isPaused || !cloudData) return;
+        // Fade animation runs every frame regardless of pause state
+        const f = fadeRef.current;
+        if (f.active) {
+            const elapsed = (performance.now() - f.startMs) / 1000;
+            const progress = THREE.MathUtils.clamp(elapsed / f.duration, 0, 1);
+            const eased = progress * progress * (3 - 2 * progress);
+            const multiplier = f.isOut ? (1.0 - eased) : eased;
+
+            cloudFadeMultiplier = multiplier;
+            cloudBackMaterial.opacity = cloudNaturalOpacity * multiplier;
+            cloudFrontMaterial.opacity = cloudNaturalOpacity * multiplier;
+
+            if (progress >= 1) {
+                f.active = false;
+                if (!f.isOut) {
+                    // Fade-in complete: restore full opacity via updateCloudColor path
+                    cloudFadeMultiplier = 1.0;
+                    cloudBackMaterial.opacity = cloudNaturalOpacity;
+                    cloudFrontMaterial.opacity = cloudNaturalOpacity;
+                }
+            }
+        }
+
+        // Skip movement/rebuild when fully hidden and not animating
+        if ((!visible && !f.active) || isPaused || !cloudData) return;
 
         offsetRef.current += delta * CLOUD_SPEED;
         const worldWidth = cloudData.width * CLOUD_SCALE;
@@ -322,6 +450,8 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number }> = (
     });
 
     if (!cloudState.geometry) return null;
+    // Keep rendering during fade-out; hide only when fully invisible and not animating
+    if (!visible && !fadeRef.current.active) return null;
 
     return (
         <group ref={cloudGroupRef}>

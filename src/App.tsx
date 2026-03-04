@@ -314,6 +314,51 @@ const App: React.FC = () => {
       return next;
   }, [chunks]);
 
+  // ── Chunk fade-out tracking ──
+  // We keep departing chunks in the render list so their ChunkMesh can animate out.
+  // Using refs mutated inside useMemo guarantees no one-frame gap where a chunk
+  // vanishes and then reappears as fading (which would unmount+remount and lose geometry).
+  const prevRenderedKeysRef = useRef<Map<string, RenderedChunk>>(new Map());
+  const fadingOutMapRef = useRef<Map<string, RenderedChunk>>(new Map());
+  const [fadingVersion, setFadingVersion] = useState(0);
+
+  const allDisplayedChunks = useMemo(() => {
+      const currentKeys = new Set(renderedChunks.map(c => `${c.cx},${c.cz}`));
+
+      // Detect newly departed chunks
+      if (chunkFadeEnabled) {
+          for (const [key, chunk] of prevRenderedKeysRef.current) {
+              if (!currentKeys.has(key) && !fadingOutMapRef.current.has(key)) {
+                  fadingOutMapRef.current.set(key, chunk);
+              }
+          }
+      }
+
+      // Remove fading chunks that returned to active, or all if fade disabled
+      if (!chunkFadeEnabled) {
+          fadingOutMapRef.current.clear();
+      } else {
+          for (const key of fadingOutMapRef.current.keys()) {
+              if (currentKeys.has(key)) {
+                  fadingOutMapRef.current.delete(key);
+              }
+          }
+      }
+
+      prevRenderedKeysRef.current = new Map(renderedChunks.map(c => [`${c.cx},${c.cz}`, c]));
+
+      const result: (RenderedChunk & { fadingOut: boolean })[] = [
+          ...renderedChunks.map(c => ({ ...c, fadingOut: false })),
+          ...[...fadingOutMapRef.current.values()].map(c => ({ ...c, fadingOut: true }))
+      ];
+      return result;
+  }, [renderedChunks, chunkFadeEnabled, fadingVersion]);
+
+  const handleChunkFadeOutComplete = useCallback((cx: number, cz: number) => {
+      fadingOutMapRef.current.delete(`${cx},${cz}`);
+      setFadingVersion(v => v + 1);
+  }, []);
+
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
     }, []);
@@ -1952,10 +1997,10 @@ const App: React.FC = () => {
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} setAmbientIntensity={setAmbientIntensity} setDirectionalIntensity={setDirectionalIntensity} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
-                {cloudsEnabled && <Clouds isPaused={worldPaused} renderDistance={renderDistance} />}
+                <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
                 
                 <Suspense fallback={null}>
-                    {renderedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} detailLevel={c.detailLevel} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} />)}
+                    {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} detailLevel={c.detailLevel} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />

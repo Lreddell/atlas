@@ -27,6 +27,8 @@ interface ChunkMeshProps {
   detailLevel?: 'full';
   shadowsEnabled?: boolean;
   fadeInEnabled?: boolean;
+  fadingOut?: boolean;
+  onFadeOutComplete?: () => void;
 }
 
 const setupMaterial = (
@@ -125,7 +127,7 @@ export const updateChunkMaterials = (sunlight: number, brightness: number = 0.5)
   CHUNK_UNIFORMS.uBrightness.value = brightness;
 };
 
-export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true }) => {
+export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
   const [geometries, setGeometries] = useState<{ 
       opaque: THREE.BufferGeometry | null, 
       cutout: THREE.BufferGeometry | null,
@@ -135,6 +137,10 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
   const geometriesRef = useRef(geometries);
   const fadeStartedAtRef = useRef(0);
   const fadeActiveRef = useRef(false);
+  const fadeOutActiveRef = useRef(false);
+  const fadeOutStartedAtRef = useRef(0);
+  const fadingOutRef = useRef(fadingOut);
+  const onFadeOutCompleteRef = useRef(onFadeOutComplete);
   const lastFadeStartMsRef = useRef(0);
   const lastClearedMsRef = useRef(-Infinity);
   const hasRenderedMeshRef = useRef(false);
@@ -171,6 +177,41 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
     geometriesRef.current = geometries;
   }, [geometries]);
 
+  // Sync refs for fadingOut prop and callback
+  useEffect(() => { fadingOutRef.current = fadingOut; }, [fadingOut]);
+  useEffect(() => { onFadeOutCompleteRef.current = onFadeOutComplete; }, [onFadeOutComplete]);
+
+  // Start fade-out when fadingOut prop becomes true
+  useEffect(() => {
+    if (fadingOut) {
+      if (!fadeInEnabled) {
+        // No animation — immediately signal completion
+        onFadeOutCompleteRef.current?.();
+        return;
+      }
+      const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
+      if (!hasAny) {
+        onFadeOutCompleteRef.current?.();
+        return;
+      }
+      if (!fadeOutActiveRef.current) {
+        fadeActiveRef.current = false; // cancel any in-progress fade-in
+        fadeOutActiveRef.current = true;
+        fadeOutStartedAtRef.current = performance.now();
+        materialOpaque.transparent = true;
+        materialOpaque.depthWrite = false;
+        materialCutout.transparent = true;
+        materialCutout.depthWrite = false;
+        materialTransparent.transparent = true;
+        materialTransparent.depthWrite = false;
+      }
+    } else if (fadeOutActiveRef.current) {
+      // Chunk returned to active — cancel fade-out
+      fadeOutActiveRef.current = false;
+      applyFinalMaterialState();
+    }
+  }, [fadingOut, fadeInEnabled, materialOpaque, materialCutout, materialTransparent]);
+
   useEffect(() => {
     return () => {
       materialOpaque.dispose();
@@ -182,6 +223,7 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
   useEffect(() => {
     if (fadeInEnabled) return;
     fadeActiveRef.current = false;
+    fadeOutActiveRef.current = false;
     materialOpaque.transparent = false;
     materialOpaque.depthWrite = true;
     materialOpaque.opacity = 1;
@@ -215,12 +257,34 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
     // Subscribe to Mesh updates from the new Streaming system
     const unsubscribe = worldManager.subscribeMesh(cx, cz, (data) => {
         if (!data) {
+          // If already fading out (via prop or previous null), just ignore
+          if (fadeOutActiveRef.current) return;
+          // If the component is marked as fading out via prop, ignore
+          if (fadingOutRef.current) return;
+          const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
+          if (fadeInEnabled && hasAny) {
+            // Cancel any in-progress fade-in and start fade-out
+            fadeActiveRef.current = false;
+            lastClearedMsRef.current = performance.now();
+            fadeOutActiveRef.current = true;
+            fadeOutStartedAtRef.current = performance.now();
+            // Ensure transparent mode so opacity is honoured
+            materialOpaque.transparent = true;
+            materialOpaque.depthWrite = false;
+            materialCutout.transparent = true;
+            materialCutout.depthWrite = false;
+            materialTransparent.transparent = true;
+            materialTransparent.depthWrite = false;
+            return; // geometry stays until fade-out completes in useFrame
+          }
+          // Instant clear (no geometry or fade disabled)
           lastClearedMsRef.current = performance.now();
+          fadeOutActiveRef.current = false;
           disposeGeometries(geometriesRef.current);
           const cleared = { opaque: null, cutout: null, transparent: null };
           geometriesRef.current = cleared;
           setGeometries(cleared);
-            return;
+          return;
         }
 
         const buildGeo = (buff: any) => {
@@ -244,6 +308,16 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
         };
 
         if (fadeInEnabled) {
+          // If new data arrives while fading out, cancel the fade-out and treat as a clean start
+          if (fadeOutActiveRef.current) {
+            fadeOutActiveRef.current = false;
+            disposeGeometries(geometriesRef.current);
+            geometriesRef.current = { opaque: null, cutout: null, transparent: null };
+          }
+
+          // If the component is marked as fading out via prop, ignore new data
+          if (fadingOutRef.current) return;
+
           const hadAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
           const hasAny = !!(next.opaque || next.cutout || next.transparent);
 
@@ -293,12 +367,37 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
         disposeGeometries(geometriesRef.current);
         geometriesRef.current = { opaque: null, cutout: null, transparent: null };
         fadeActiveRef.current = false;
+        fadeOutActiveRef.current = false;
         hasRenderedMeshRef.current = false;
     };
         }, [cx, cz, fadeInEnabled, materialOpaque, materialCutout, materialTransparent]);
 
   useFrame(() => {
     if (!fadeInEnabled) return;
+
+    if (fadeOutActiveRef.current) {
+      const elapsedSec = (performance.now() - fadeOutStartedAtRef.current) / 1000;
+      const progress = THREE.MathUtils.clamp(elapsedSec / CHUNK_FADE_DURATION_SEC, 0, 1);
+      const eased = 1.0 - progress * progress * (3 - 2 * progress);
+
+      materialOpaque.opacity = eased;
+      materialCutout.opacity = eased;
+      materialTransparent.opacity = 0.6 * eased;
+
+      if (progress >= 1) {
+        fadeOutActiveRef.current = false;
+        disposeGeometries(geometriesRef.current);
+        const cleared = { opaque: null, cutout: null, transparent: null };
+        geometriesRef.current = cleared;
+        setGeometries(cleared);
+        // Do NOT reset material opacity here — setGeometries is async, so the
+        // old geometry is still in the React tree until commit.  Resetting to
+        // full opacity would flash it for one frame.  Materials will be reset
+        // by applyFinalMaterialState when the chunk is re-used, or disposed on unmount.
+        onFadeOutCompleteRef.current?.();
+      }
+      return; // don't run fade-in logic simultaneously
+    }
 
     if (fadeActiveRef.current) {
       const elapsedSec = (performance.now() - fadeStartedAtRef.current) / 1000;
@@ -310,18 +409,7 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
       materialTransparent.opacity = 0.6 * eased;
 
       if (progress >= 1) {
-        fadeActiveRef.current = false;
-        materialOpaque.transparent = false;
-        materialOpaque.depthWrite = true;
-        materialOpaque.opacity = 1;
-
-        materialCutout.transparent = false;
-        materialCutout.depthWrite = true;
-        materialCutout.opacity = 1;
-
-        materialTransparent.transparent = true;
-        materialTransparent.depthWrite = false;
-        materialTransparent.opacity = 0.6;
+        applyFinalMaterialState();
       }
     }
   });
