@@ -1950,7 +1950,7 @@ const App: React.FC = () => {
                 {/* Streamer runs logic loop for loading */}
                 <ChunkStreamer /> 
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
-                <GameLoop isPaused={worldPaused && appState !== 'loading'} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
+                <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} setAmbientIntensity={setAmbientIntensity} setDirectionalIntensity={setDirectionalIntensity} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
                 {cloudsEnabled && <Clouds isPaused={worldPaused} renderDistance={renderDistance} />}
                 
