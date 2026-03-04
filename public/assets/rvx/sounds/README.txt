@@ -16,12 +16,16 @@ Blocks & Interaction:
 - liquid/swim1-2.ogg, liquid/lavapop.ogg
 
 Music:
-- music/menu1.ogg, music/menu2.ogg, music/menu3.ogg
-- music/plains1.ogg, music/plains2.ogg, music/plains3.ogg
-- music/forest1.ogg, music/forest2.ogg, music/forest3.ogg
-- music/desert1.ogg, music/desert2.ogg, music/desert3.ogg
-- music/ocean1.ogg, music/ocean2.ogg, music/ocean3.ogg
-- music/cold1.ogg, music/cold2.ogg, music/cold3.ogg
-- music/cherry1.ogg, music/cherry2.ogg, music/cherry3.ogg
-- music/mesa1.ogg, music/mesa2.ogg, music/mesa3.ogg
-- music/volcanic1.ogg, music/volcanic2.ogg, music/volcanic3.ogg
+- Files now live in subfolders and are auto-discovered:
+	- music/menu/*.ogg
+	- music/creative/*.ogg
+	- music/plains/*.ogg
+	- music/forest/*.ogg
+	- music/desert/*.ogg
+	- music/ocean/*.ogg
+	- music/cold/*.ogg
+	- music/cherry/*.ogg
+	- music/mesa/*.ogg
+	- music/volcanic/*.ogg
+- File names do not matter. Any .ogg files in a folder are eligible for random selection.
+- Add/remove songs by dropping files into these folders (no manifest edits required for music).

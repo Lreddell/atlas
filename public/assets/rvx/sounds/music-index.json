@@ -1,0 +1,47 @@
+{
+    "cherry": [
+        "assets/rvx/sounds/music/cherry/cherry1.ogg",
+        "assets/rvx/sounds/music/cherry/cherry2.ogg",
+        "assets/rvx/sounds/music/cherry/cherry3.ogg"
+    ],
+    "cold": [
+        "assets/rvx/sounds/music/cold/cold1.ogg",
+        "assets/rvx/sounds/music/cold/cold2.ogg",
+        "assets/rvx/sounds/music/cold/cold3.ogg"
+    ],
+    "desert": [
+        "assets/rvx/sounds/music/desert/desert1.ogg",
+        "assets/rvx/sounds/music/desert/desert2.ogg",
+        "assets/rvx/sounds/music/desert/desert3.ogg"
+    ],
+    "forest": [
+        "assets/rvx/sounds/music/forest/forest1.ogg",
+        "assets/rvx/sounds/music/forest/forest2.ogg",
+        "assets/rvx/sounds/music/forest/forest3.ogg"
+    ],
+    "menu": [
+        "assets/rvx/sounds/music/menu/menu1.ogg",
+        "assets/rvx/sounds/music/menu/menu2.ogg",
+        "assets/rvx/sounds/music/menu/menu3.ogg"
+    ],
+    "mesa": [
+        "assets/rvx/sounds/music/mesa/mesa1.ogg",
+        "assets/rvx/sounds/music/mesa/mesa2.ogg",
+        "assets/rvx/sounds/music/mesa/mesa3.ogg"
+    ],
+    "ocean": [
+        "assets/rvx/sounds/music/ocean/ocean1.ogg",
+        "assets/rvx/sounds/music/ocean/ocean2.ogg",
+        "assets/rvx/sounds/music/ocean/ocean3.ogg"
+    ],
+    "plains": [
+        "assets/rvx/sounds/music/plains/plains1.ogg",
+        "assets/rvx/sounds/music/plains/plains2.ogg",
+        "assets/rvx/sounds/music/plains/plains3.ogg"
+    ],
+    "volcanic": [
+        "assets/rvx/sounds/music/volcanic/volcanic1.ogg",
+        "assets/rvx/sounds/music/volcanic/volcanic2.ogg",
+        "assets/rvx/sounds/music/volcanic/volcanic3.ogg"
+    ]
+}
