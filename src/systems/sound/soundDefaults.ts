@@ -56,15 +56,16 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "block.lava.pop": { category: "ambient", "sounds": ["liquid/lavapop"], "volume": 0.8 },
 
     // --- MUSIC ---
-    "music.menu": { category: "music", sounds: ["music/menu1", "music/menu2", "music/menu3"], volume: 0.5 },
+    "music.menu": { category: "music", sounds: ["music/menu"], volume: 0.5 },
+    "music.creative": { category: "music", sounds: ["music/creative"], volume: 0.5 },
 
     // Exclusive Biome Tracks
-    "music.plains": { category: "music", sounds: ["music/plains1", "music/plains2", "music/plains3"], volume: 0.5 },
-    "music.forest": { category: "music", sounds: ["music/forest1", "music/forest2", "music/forest3"], volume: 0.5 },
-    "music.desert": { category: "music", sounds: ["music/desert1", "music/desert2", "music/desert3"], volume: 0.5 },
-    "music.ocean": { category: "music", sounds: ["music/ocean1", "music/ocean2", "music/ocean3"], volume: 0.5 },
-    "music.cold": { category: "music", sounds: ["music/cold1", "music/cold2", "music/cold3"], volume: 0.5 }, // Tundra, Frozen Ocean/River
-    "music.cherry": { category: "music", sounds: ["music/cherry1", "music/cherry2", "music/cherry3"], volume: 0.5 },
-    "music.mesa": { category: "music", sounds: ["music/mesa1", "music/mesa2", "music/mesa3"], volume: 0.5 }, // Red Mesa & Bryce
-    "music.volcanic": { category: "music", sounds: ["music/volcanic1", "music/volcanic2", "music/volcanic3"], volume: 0.5 }
+    "music.plains": { category: "music", sounds: ["music/plains"], volume: 0.5 },
+    "music.forest": { category: "music", sounds: ["music/forest"], volume: 0.5 },
+    "music.desert": { category: "music", sounds: ["music/desert"], volume: 0.5 },
+    "music.ocean": { category: "music", sounds: ["music/ocean"], volume: 0.5 },
+    "music.cold": { category: "music", sounds: ["music/cold"], volume: 0.5 }, // Tundra, Frozen Ocean/River
+    "music.cherry": { category: "music", sounds: ["music/cherry"], volume: 0.5 },
+    "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce
+    "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 }
 };

@@ -9,17 +9,8 @@ const MUSIC_PACKS: Record<string, string[]> = {
     // Menu
     "MENU": ["music.menu"],
 
-    // Game States (Creative mixes everything)
-    "CREATIVE": [
-        "music.plains", 
-        "music.forest", 
-        "music.desert", 
-        "music.ocean", 
-        "music.cold", 
-        "music.cherry", 
-        "music.mesa", 
-        "music.volcanic"
-    ],
+    // Game States
+    "CREATIVE": ["music.creative"],
     
     // Biomes (Exclusive assignments)
     "ocean": ["music.ocean"],

@@ -4,6 +4,7 @@ import { SoundManifest, SoundEventDefinition, SoundOptions } from './soundTypes'
 import { DEFAULT_SOUND_MANIFEST } from './soundDefaults';
 
 const SOUND_VOLUME_KEY_PREFIX = 'atlas.sound.volume.';
+const MUSIC_FOLDER_INDEX_PATH = 'assets/rvx/sounds/music-index.json';
 
 // Helper to build URLs relative to the current location (file or http)
 const assetUrl = (path: string) => {
@@ -35,6 +36,8 @@ class SoundManager {
     private readonly MAX_GLOBAL_SOURCES = 48;
     private readonly MAX_EVENT_SOURCES = 6;
 
+    private musicFolderIndex: Map<string, string[]> = new Map();
+
     // Music Streaming State (Dual Deck for Crossfade)
     private musicDeckA: HTMLAudioElement | null = null;
     private musicDeckB: HTMLAudioElement | null = null;
@@ -57,6 +60,7 @@ class SoundManager {
             if (this.ctx.state === 'suspended') {
                 this.ctx.resume().catch(() => {});
             }
+            await this.loadMusicFolderIndex();
             return;
         }
 
@@ -92,6 +96,8 @@ class SoundManager {
                 } catch (e) {
                     console.debug('Error loading sounds.json, using defaults:', e);
                 }
+
+                await this.loadMusicFolderIndex();
 
                 const categories = new Set<string>([
                     'master', 'music', 'ambient', 'blocks', 'player', 'ui', 'hostile', 'neutral'
@@ -173,6 +179,62 @@ class SoundManager {
         } catch (e) {
             console.warn("Failed to create MediaElementSource for music:", e);
         }
+    }
+
+    private async loadMusicFolderIndex() {
+        this.musicFolderIndex.clear();
+
+        try {
+            const response = await fetch(assetUrl(MUSIC_FOLDER_INDEX_PATH), { cache: 'no-store' });
+            if (!response.ok) {
+                console.warn(`Failed to load music folder index (${response.status}).`);
+                return;
+            }
+
+            const json = await response.json() as Record<string, unknown>;
+            Object.entries(json).forEach(([folderName, tracks]) => {
+                if (!Array.isArray(tracks)) return;
+
+                const normalizedTracks = tracks
+                    .filter((track): track is string => typeof track === 'string')
+                    .map(track => track.replace(/\\/g, '/').replace(/^\/+/, '').trim())
+                    .filter(track => track.length > 0);
+
+                if (normalizedTracks.length > 0) {
+                    this.musicFolderIndex.set(folderName.toLowerCase(), normalizedTracks);
+                }
+            });
+        } catch (e) {
+            console.debug('Error loading music folder index:', e);
+        }
+    }
+
+    private getMusicTracksForEvent(eventId: string, def: SoundEventDefinition): string[] {
+        const eventFolder = eventId.startsWith('music.') ? eventId.slice('music.'.length).toLowerCase() : '';
+        if (eventFolder) {
+            const tracks = this.musicFolderIndex.get(eventFolder);
+            if (tracks && tracks.length > 0) {
+                return tracks;
+            }
+        }
+
+        const folderMarker = eventFolder ? `music/${eventFolder}` : '';
+        return def.sounds
+            .map(soundPath => soundPath.replace(/\\/g, '/').replace(/^\/+/, '').trim())
+            .filter(soundPath => soundPath.length > 0)
+            .filter(soundPath => soundPath.toLowerCase() !== folderMarker);
+    }
+
+    private resolveMusicTrackUrl(trackPath: string): string {
+        const normalizedPath = trackPath.replace(/\\/g, '/').replace(/^\/+/, '').trim();
+        const hasAudioExt = /\.(ogg|mp3|wav)$/i.test(normalizedPath);
+        const withExt = hasAudioExt ? normalizedPath : `${normalizedPath}.ogg`;
+
+        if (withExt.startsWith('assets/')) {
+            return assetUrl(withExt);
+        }
+
+        return assetUrl(`assets/rvx/sounds/${withExt}`);
     }
 
     public resume() {
@@ -299,12 +361,11 @@ class SoundManager {
         const def = this.getDefinition(eventId);
         if (!def || !def.sounds || def.sounds.length === 0) return false;
 
-        const soundPath = def.sounds[Math.floor(Math.random() * def.sounds.length)];
-        let url = soundPath;
-        if (!soundPath.endsWith('.ogg') && !soundPath.endsWith('.mp3') && !soundPath.endsWith('.wav')) {
-            url = soundPath + '.ogg';
-        }
-        const fullUrl = assetUrl(`assets/rvx/sounds/${url}`);
+        const trackPool = this.getMusicTracksForEvent(eventId, def);
+        if (trackPool.length === 0) return false;
+
+        const selectedTrack = trackPool[Math.floor(Math.random() * trackPool.length)];
+        const fullUrl = this.resolveMusicTrackUrl(selectedTrack);
 
         // Select Next Deck
         const nextDeckId = this.activeDeck === 'A' ? 'B' : 'A';
@@ -336,7 +397,7 @@ class SoundManager {
             if (this.activeDeck === nextDeckId && onEnded) onEnded();
         };
         nextDeck.onerror = (e) => {
-            console.warn(`[SoundManager] Music stream error: ${url}`, e);
+            console.warn(`[SoundManager] Music stream error: ${selectedTrack}`, e);
             if (this.activeDeck === nextDeckId && onEnded) onEnded();
         };
 
@@ -344,7 +405,7 @@ class SoundManager {
         try {
             await nextDeck.play();
         } catch (e) {
-            console.warn(`[SoundManager] Play failed (missing file?): ${url}`, e);
+            console.warn(`[SoundManager] Play failed (missing file?): ${selectedTrack}`, e);
             return false;
         }
 
