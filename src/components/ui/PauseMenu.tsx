@@ -295,7 +295,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Web Workers" value={workersEnabled} onChange={setWorkersEnabled} width="w-64" />
                 <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
                 <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
-                <MCToggle label="Chunk Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
+                <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
                 
                 {/* Custom Environment */}
                 <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
