@@ -9,9 +9,6 @@ const CLOUD_LEVEL = 192;
 const CLOUD_HEIGHT = 4;
 const CLOUD_SCALE = 12; // 1 pixel = 12x12 blocks
 const CLOUD_SPEED = 1.0;
-// Minimum milliseconds between successive rebuild-triggered fade-ins (guards against
-// rapid movement causing the clouds to stay near-invisible).
-const REBUILD_FADE_GUARD_MS = 600;
 
 // Two-pass transparent materials: backfaces first, then frontfaces.
 const cloudMaterialSettings: THREE.MeshLambertMaterialParameters = {
@@ -32,20 +29,39 @@ const cloudFrontMaterial = new THREE.MeshLambertMaterial({
     side: THREE.FrontSide
 });
 
+// Separate materials used exclusively for the fading-in new-block overlay geometry.
+const fadingBackMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.BackSide,
+    opacity: 0
+});
+
+const fadingFrontMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.FrontSide,
+    opacity: 0
+});
+
 // Tracks the natural (day/night-adjusted) opacity before any fade multiplier
 let cloudNaturalOpacity = 0.8;
 // Animated 0→1 on first cloud appearance; stays at 1 when not fading
 let cloudFadeMultiplier = 1.0;
+// 0→1 opacity multiplier for the new-block fading overlay
+let fadingCloudMultiplier = 0;
 
 export const updateCloudColor = (dayFactor: number) => {
     const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4); 
     const dayColor = new THREE.Color(0xFFFFFF);
     cloudBackMaterial.color.lerpColors(nightColor, dayColor, dayFactor);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
+    fadingBackMaterial.color.copy(cloudBackMaterial.color);
+    fadingFrontMaterial.color.copy(cloudBackMaterial.color);
     // Slight opacity adjustment based on time; respect the current fade multiplier
     cloudNaturalOpacity = 0.6 + (0.2 * dayFactor);
     cloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     cloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+    fadingBackMaterial.opacity = cloudNaturalOpacity * fadingCloudMultiplier;
+    fadingFrontMaterial.opacity = cloudNaturalOpacity * fadingCloudMultiplier;
 };
 
 // Event system for manual overrides
@@ -63,6 +79,12 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     const [cloudState, setCloudState] = useState<{ geometry: THREE.BufferGeometry | null, u: number, v: number }>({ 
         geometry: null, u: 0, v: 0 
     });
+
+    // Separate geometry for newly appearing cloud blocks that fade in independently,
+    // leaving retained (already-visible) clouds at full opacity.
+    const [fadingCloudState, setFadingCloudState] = useState<{
+        geometry: THREE.BufferGeometry | null, u: number, v: number
+    } | null>(null);
     
     const cloudGroupRef = useRef<THREE.Group>(null);
     const offsetRef = useRef(0);
@@ -96,14 +118,21 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     // Tracks the grid position currently RENDERED (committed to the mesh)
     const renderedGridPosRef = useRef({ u: 0, v: 0 });
 
-    // Tracks when the last rebuild-triggered fade was started (-Infinity = never triggered).
-    // Used to guard against re-triggering the fade too frequently during rapid movement.
-    const lastRebuildFadeTimeRef = useRef(-Infinity);
+    // Tracks the full rendered bounds so we can identify "new" blocks on the next rebuild.
+    const renderedBoundsRef = useRef<{
+        minU: number; maxU: number; minV: number; maxV: number;
+    } | null>(null);
+
+    // Fade state for the new-blocks overlay geometry (separate from the main fade).
+    const newFadeRef = useRef({ active: false, startMs: 0, duration: 0.6 });
 
     // Sync the ref with state immediately after render commit
     useLayoutEffect(() => {
         if (cloudState.geometry) {
             renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v };
+        } else if (fadingCloudState?.geometry) {
+            // Retained region was empty; use the fading geometry's origin instead.
+            renderedGridPosRef.current = { u: fadingCloudState.u, v: fadingCloudState.v };
         }
         // Cleanup old geometry when state changes (React handles the new one)
         return () => {
@@ -112,6 +141,15 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             }
         };
     }, [cloudState]);
+
+    // Cleanup fading geometry when it is replaced or cleared
+    useLayoutEffect(() => {
+        return () => {
+            if (fadingCloudState?.geometry) {
+                fadingCloudState.geometry.dispose();
+            }
+        };
+    }, [fadingCloudState]);
 
     const processImage = (img: HTMLImageElement) => {
         try {
@@ -212,6 +250,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     // 2. Force Rebuild on Settings Change
     useEffect(() => {
         lastRequestedGridPos.current = { u: -99999, v: -99999 };
+        renderedBoundsRef.current = null;
     }, [renderDistance, cloudData]);
 
     // 3. Handle visibility changes (fade-in when re-shown, fade-out when hidden)
@@ -277,7 +316,6 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const { width, height, data } = cloudData;
         
         // Scale coverage based on 2x Render Distance
-        // Ensure the cloud radius covers the full view distance
         const viewDist = (renderDistance * 2) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
 
@@ -286,133 +324,168 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const minV = centerV - radius;
         const maxV = centerV + radius;
 
-        const vertices: number[] = [];
-        const normals: number[] = [];
-        const indices: number[] = [];
-        let vertCount = 0;
         const h = CLOUD_HEIGHT;
 
-        const pushQuad = (
-            x1: number, y1: number, z1: number,
-            x2: number, y2: number, z2: number,
-            x3: number, y3: number, z3: number,
-            x4: number, y4: number, z4: number,
-            nx: number, ny: number, nz: number
-        ) => {
-            vertices.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
-            normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
-            indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
-            vertCount += 4;
-        };
+        // Build a BufferGeometry for blocks in the given iteration range.
+        // Boundary caps are only emitted at the FULL rendering bounds (minU/maxU/minV/maxV),
+        // so internal splits between retained and new regions are seamless.
+        // Blocks in the optional exclude rectangle are skipped (used for new-blocks pass).
+        const buildGeoForRange = (
+            iterMinU: number, iterMaxU: number,
+            iterMinV: number, iterMaxV: number,
+            excludeMinU?: number, excludeMaxU?: number,
+            excludeMinV?: number, excludeMaxV?: number
+        ): THREE.BufferGeometry | null => {
+            const vertices: number[] = [];
+            const normals: number[] = [];
+            const indices: number[] = [];
+            let vertCount = 0;
 
-        for (let u = minU; u <= maxU; u++) {
-            for (let v = minV; v <= maxV; v++) {
-                // Wrap coords for data lookup
-                const du = ((u % width) + width) % width;
-                const dv = ((v % height) + height) % height;
+            const pushQuad = (
+                x1: number, y1: number, z1: number,
+                x2: number, y2: number, z2: number,
+                x3: number, y3: number, z3: number,
+                x4: number, y4: number, z4: number,
+                nx: number, ny: number, nz: number
+            ) => {
+                vertices.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+                normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+                indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
+                vertCount += 4;
+            };
 
-                if (data[dv * width + du] === 0) continue;
+            for (let u = iterMinU; u <= iterMaxU; u++) {
+                for (let v = iterMinV; v <= iterMaxV; v++) {
+                    // Skip the excluded sub-region (retained area when building new-blocks pass)
+                    if (
+                        excludeMinU !== undefined &&
+                        u >= excludeMinU && u <= (excludeMaxU as number) &&
+                        v >= (excludeMinV as number) && v <= (excludeMaxV as number)
+                    ) continue;
 
-                // Local coords relative to the centerU/V origin
-                const lx = (u - centerU) * CLOUD_SCALE;
-                const lz = (v - centerV) * CLOUD_SCALE;
-                
-                const x0 = lx, x1 = lx + CLOUD_SCALE;
-                const y0 = 0, y1 = h;
-                const z0 = lz, z1 = lz + CLOUD_SCALE;
+                    // Wrap coords for data lookup
+                    const du = ((u % width) + width) % width;
+                    const dv = ((v % height) + height) % height;
 
-                // Top (Y+)
-                pushQuad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
-                // Bottom (Y-)
-                pushQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
+                    if (data[dv * width + du] === 0) continue;
 
-                // Right (X+)
-                if (u == maxU) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
-                } else if (data[dv * width + ((du + 1) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
-                }
+                    // Local coords relative to the centerU/V origin
+                    const lx = (u - centerU) * CLOUD_SCALE;
+                    const lz = (v - centerV) * CLOUD_SCALE;
 
-                // Left (X-)
-                if (u == minU) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
-                } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
-                }
+                    const x0 = lx, x1 = lx + CLOUD_SCALE;
+                    const y0 = 0, y1 = h;
+                    const z0 = lz, z1 = lz + CLOUD_SCALE;
 
-                // Front (Z+)
-                if (v == maxV) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
-                } else if (data[((dv + 1) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
-                }
+                    // Top (Y+)
+                    pushQuad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
+                    // Bottom (Y-)
+                    pushQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
-                // Back (Z-)
-                if (v == minV) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
-                } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    // Right (X+) — cap only at the FULL rendering boundary
+                    if (u === maxU) {
+                        pushQuad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
+                    } else if (data[dv * width + ((du + 1) % width)] === 0) {
+                        pushQuad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
+                    }
+
+                    // Left (X-)
+                    if (u === minU) {
+                        pushQuad(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
+                    } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
+                        pushQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
+                    }
+
+                    // Front (Z+)
+                    if (v === maxV) {
+                        pushQuad(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
+                    } else if (data[((dv + 1) % height) * width + du] === 0) {
+                        pushQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
+                    }
+
+                    // Back (Z-)
+                    if (v === minV) {
+                        pushQuad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
+                    } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
+                        pushQuad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    }
                 }
             }
-        }
 
-        if (vertices.length === 0) {
-            setCloudState({ geometry: null, u: centerU, v: centerV });
-            return;
-        }
+            if (vertices.length === 0) return null;
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-        geo.setIndex(indices);
-        geo.computeBoundingSphere();
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+            geo.setIndex(indices);
+            geo.computeBoundingSphere();
+            return geo;
+        };
 
-        // Trigger fade-in on geometry builds.
-        // Must happen before setCloudState so the material is already at opacity 0
-        // when R3F draws the first frame that includes this geometry.
+        // Capture the previous bounds before overwriting, then store the new bounds.
+        const prevBounds = renderedBoundsRef.current;
+        renderedBoundsRef.current = { minU, maxU, minV, maxV };
+
         const f = fadeRef.current;
+
         if (!f.hasLoaded) {
+            // ── First load: build full geometry and fade the whole thing in ──
             f.hasLoaded = true;
-            if (visible && fadeInEnabled) {
+            const geo = buildGeoForRange(minU, maxU, minV, maxV);
+            if (visible && fadeInEnabled && geo) {
                 cloudFadeMultiplier = 0;
                 cloudBackMaterial.opacity = 0;
                 cloudFrontMaterial.opacity = 0;
                 f.active = true;
                 f.isOut = false;
                 f.startMs = performance.now();
-                lastRebuildFadeTimeRef.current = performance.now();
                 f.duration = 0.8;
             }
-        } else if (visible && fadeInEnabled && !f.isOut) {
-            // Subsequent geometry rebuilds (movement / cloud scroll): fade in the new geometry.
-            // Guard prevents re-triggering more than once every 600 ms during rapid movement.
-            const now = performance.now();
-            if (now - lastRebuildFadeTimeRef.current > REBUILD_FADE_GUARD_MS) {
-                lastRebuildFadeTimeRef.current = now;
-                cloudFadeMultiplier = 0;
-                cloudBackMaterial.opacity = 0;
-                cloudFrontMaterial.opacity = 0;
-                f.active = true;
-                f.isOut = false;
-                f.startMs = now;
-                f.duration = 0.6;
+            setCloudState({ geometry: geo, u: centerU, v: centerV });
+            setFadingCloudState(null);
+
+        } else {
+            // ── Movement rebuild: keep retained blocks visible, fade only new blocks ──
+
+            // Compute intersection of old and new bounds (the retained region).
+            const retMinU = prevBounds ? Math.max(prevBounds.minU, minU) : minU;
+            const retMaxU = prevBounds ? Math.min(prevBounds.maxU, maxU) : maxU;
+            const retMinV = prevBounds ? Math.max(prevBounds.minV, minV) : minV;
+            const retMaxV = prevBounds ? Math.min(prevBounds.maxV, maxV) : maxV;
+            const hasOverlap = retMinU <= retMaxU && retMinV <= retMaxV;
+
+            if (!hasOverlap || !visible || !fadeInEnabled || f.isOut) {
+                // No previous overlap or fade disabled: show full geometry instantly.
+                const geo = buildGeoForRange(minU, maxU, minV, maxV);
+                setCloudState({ geometry: geo, u: centerU, v: centerV });
+                setFadingCloudState(null);
+            } else {
+                // Retained geometry (intersection region) — rendered at full opacity immediately.
+                const retGeo = buildGeoForRange(retMinU, retMaxU, retMinV, retMaxV);
+
+                // New-blocks geometry (full bounds minus intersection) — fades in.
+                const newGeo = buildGeoForRange(
+                    minU, maxU, minV, maxV,
+                    retMinU, retMaxU, retMinV, retMaxV
+                );
+
+                setCloudState({ geometry: retGeo, u: centerU, v: centerV });
+
+                if (newGeo) {
+                    fadingCloudMultiplier = 0;
+                    fadingBackMaterial.opacity = 0;
+                    fadingFrontMaterial.opacity = 0;
+                    newFadeRef.current = { active: true, startMs: performance.now(), duration: 0.6 };
+                    setFadingCloudState({ geometry: newGeo, u: centerU, v: centerV });
+                } else {
+                    setFadingCloudState(null);
+                }
             }
         }
-        
-        // Update State
-        setCloudState({ geometry: geo, u: centerU, v: centerV });
     };
 
     useFrame((_, delta) => {
-        // Fade animation runs every frame regardless of pause state
+        // Fade animation for the main cloud geometry (initial load + visibility toggles)
         const f = fadeRef.current;
         if (f.active) {
             const elapsed = (performance.now() - f.startMs) / 1000;
@@ -435,8 +508,27 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             }
         }
 
+        // Fade animation for the new-blocks overlay geometry
+        const nf = newFadeRef.current;
+        if (nf.active) {
+            const elapsed = (performance.now() - nf.startMs) / 1000;
+            const progress = THREE.MathUtils.clamp(elapsed / nf.duration, 0, 1);
+            const eased = progress * progress * (3 - 2 * progress);
+
+            fadingCloudMultiplier = eased;
+            fadingBackMaterial.opacity = cloudNaturalOpacity * eased;
+            fadingFrontMaterial.opacity = cloudNaturalOpacity * eased;
+
+            if (progress >= 1) {
+                nf.active = false;
+                fadingCloudMultiplier = 1.0;
+                fadingBackMaterial.opacity = cloudNaturalOpacity;
+                fadingFrontMaterial.opacity = cloudNaturalOpacity;
+            }
+        }
+
         // Skip movement/rebuild when fully hidden and not animating
-        if ((!visible && !f.active) || isPaused || !cloudData) return;
+        if ((!visible && !f.active && !nf.active) || isPaused || !cloudData) return;
 
         offsetRef.current += delta * CLOUD_SPEED;
         const worldWidth = cloudData.width * CLOUD_SCALE;
@@ -469,24 +561,44 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         }
     });
 
-    if (!cloudState.geometry) return null;
+    if (!cloudState.geometry && !fadingCloudState?.geometry) return null;
     // Keep rendering during fade-out; hide only when fully invisible and not animating
-    if (!visible && !fadeRef.current.active) return null;
+    if (!visible && !fadeRef.current.active && !newFadeRef.current.active) return null;
 
     return (
         <group ref={cloudGroupRef}>
-            <mesh
-                geometry={cloudState.geometry}
-                material={cloudBackMaterial}
-                renderOrder={-101}
-                frustumCulled={false}
-            />
-            <mesh
-                geometry={cloudState.geometry}
-                material={cloudFrontMaterial}
-                renderOrder={-100} // Render AFTER backfaces and BEFORE terrain/water (0).
-                frustumCulled={false}
-            />
+            {cloudState.geometry && (
+                <>
+                    <mesh
+                        geometry={cloudState.geometry}
+                        material={cloudBackMaterial}
+                        renderOrder={-101}
+                        frustumCulled={false}
+                    />
+                    <mesh
+                        geometry={cloudState.geometry}
+                        material={cloudFrontMaterial}
+                        renderOrder={-100}
+                        frustumCulled={false}
+                    />
+                </>
+            )}
+            {fadingCloudState?.geometry && (
+                <>
+                    <mesh
+                        geometry={fadingCloudState.geometry}
+                        material={fadingBackMaterial}
+                        renderOrder={-99}
+                        frustumCulled={false}
+                    />
+                    <mesh
+                        geometry={fadingCloudState.geometry}
+                        material={fadingFrontMaterial}
+                        renderOrder={-98}
+                        frustumCulled={false}
+                    />
+                </>
+            )}
         </group>
     );
 };
