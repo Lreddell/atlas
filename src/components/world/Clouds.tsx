@@ -9,9 +9,6 @@ const CLOUD_LEVEL = 192;
 const CLOUD_HEIGHT = 4;
 const CLOUD_SCALE = 12; // 1 pixel = 12x12 blocks
 const CLOUD_SPEED = 1.0;
-// Minimum milliseconds between successive rebuild-triggered fade-ins (guards against
-// rapid movement causing the clouds to stay near-invisible).
-const REBUILD_FADE_GUARD_MS = 600;
 
 // Two-pass transparent materials: backfaces first, then frontfaces.
 const cloudMaterialSettings: THREE.MeshLambertMaterialParameters = {
@@ -95,10 +92,6 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     
     // Tracks the grid position currently RENDERED (committed to the mesh)
     const renderedGridPosRef = useRef({ u: 0, v: 0 });
-
-    // Tracks when the last rebuild-triggered fade was started (-Infinity = never triggered).
-    // Used to guard against re-triggering the fade too frequently during rapid movement.
-    const lastRebuildFadeTimeRef = useRef(-Infinity);
 
     // Sync the ref with state immediately after render commit
     useLayoutEffect(() => {
@@ -388,22 +381,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 f.active = true;
                 f.isOut = false;
                 f.startMs = performance.now();
-                lastRebuildFadeTimeRef.current = performance.now();
                 f.duration = 0.8;
-            }
-        } else if (visible && fadeInEnabled && !f.isOut) {
-            // Subsequent geometry rebuilds (movement / cloud scroll): fade in the new geometry.
-            // Guard prevents re-triggering more than once every 600 ms during rapid movement.
-            const now = performance.now();
-            if (now - lastRebuildFadeTimeRef.current > REBUILD_FADE_GUARD_MS) {
-                lastRebuildFadeTimeRef.current = now;
-                cloudFadeMultiplier = 0;
-                cloudBackMaterial.opacity = 0;
-                cloudFrontMaterial.opacity = 0;
-                f.active = true;
-                f.isOut = false;
-                f.startMs = now;
-                f.duration = 0.6;
             }
         }
         
