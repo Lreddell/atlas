@@ -81,8 +81,8 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     const [cloudState, setCloudState] = useState<{
         existingGeo: THREE.BufferGeometry | null,
         newGeo: THREE.BufferGeometry | null,
-        u: number, v: number, radius: number
-    }>({ existingGeo: null, newGeo: null, u: 0, v: 0, radius: 0 });
+        u: number, v: number
+    }>({ existingGeo: null, newGeo: null, u: 0, v: 0 });
     
     const cloudGroupRef = useRef<THREE.Group>(null);
     const offsetRef = useRef(0);
@@ -124,13 +124,17 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     // Tracks the grid position currently requested/processing
     const lastRequestedGridPos = useRef({ u: -99999, v: -99999 });
     
-    // Tracks the grid position and radius currently RENDERED (committed to the mesh)
-    const renderedGridPosRef = useRef({ u: 0, v: 0, radius: 0 });
+    // Tracks the grid position currently RENDERED (committed to the mesh)
+    const renderedGridPosRef = useRef({ u: 0, v: 0 });
+
+    // Tracks the exact rendered bounds so we can identify new tiles on the next rebuild
+    // without depending on renderDistance (which may change between rebuilds).
+    const renderedBoundsRef = useRef<{ minU: number; maxU: number; minV: number; maxV: number } | null>(null);
 
     // Sync the ref with state immediately after render commit
     useLayoutEffect(() => {
         if (cloudState.existingGeo || cloudState.newGeo) {
-            renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v, radius: cloudState.radius };
+            renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v };
         }
         // Cleanup old geometry when state changes (React handles the new one)
         return () => {
@@ -238,6 +242,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     // 2. Force Rebuild on Settings Change
     useEffect(() => {
         lastRequestedGridPos.current = { u: -99999, v: -99999 };
+        renderedBoundsRef.current = null;
     }, [renderDistance, cloudData]);
 
     // 3. Handle visibility changes (fade-in when re-shown, fade-out when hidden)
@@ -332,12 +337,9 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const f = fadeRef.current;
         const isFirstLoad = !f.hasLoaded;
 
-        // Old rendered bounds — used to classify tiles as existing (already visible) vs new.
-        const oldCenter = renderedGridPosRef.current;
-        const oldMinU = oldCenter.u - oldCenter.radius;
-        const oldMaxU = oldCenter.u + oldCenter.radius;
-        const oldMinV = oldCenter.v - oldCenter.radius;
-        const oldMaxV = oldCenter.v + oldCenter.radius;
+        // Capture previous bounds, then record the new bounds for the next rebuild.
+        const prevBounds = renderedBoundsRef.current;
+        renderedBoundsRef.current = { minU, maxU, minV, maxV };
 
         // Separate vertex/index buffers for existing tiles (stable opacity) and new tiles (fade-in).
         const existingVerts: number[] = [];
@@ -397,9 +399,9 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 // On first load all tiles are "existing" (fade in with cloudFadeMultiplier).
                 // On subsequent rebuilds, classify by whether the tile was within the previous rendered
                 // bounds (inclusive: tiles at the old edges were rendered before and should stay stable).
-                const isExisting = isFirstLoad || (
-                    u >= oldMinU && u <= oldMaxU &&
-                    v >= oldMinV && v <= oldMaxV
+                const isExisting = isFirstLoad || (prevBounds !== null &&
+                    u >= prevBounds.minU && u <= prevBounds.maxU &&
+                    v >= prevBounds.minV && v <= prevBounds.maxV
                 );
                 const pushQuad = isExisting ? pushQuadExisting : pushQuadNew;
 
@@ -501,7 +503,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         }
         
         // Update State
-        setCloudState({ existingGeo, newGeo, u: centerU, v: centerV, radius });
+        setCloudState({ existingGeo, newGeo, u: centerU, v: centerV });
     };
 
     useFrame((_, delta) => {
