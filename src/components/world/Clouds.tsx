@@ -135,6 +135,9 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     useLayoutEffect(() => {
         if (cloudState.existingGeo || cloudState.newGeo) {
             renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v };
+        } else if (fadingCloudState?.geometry) {
+            // Retained region was empty; use the fading geometry's origin instead.
+            renderedGridPosRef.current = { u: fadingCloudState.u, v: fadingCloudState.v };
         }
         // Cleanup old geometry when state changes (React handles the new one)
         return () => {
@@ -142,6 +145,15 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             cloudState.newGeo?.dispose();
         };
     }, [cloudState]);
+
+    // Cleanup fading geometry when it is replaced or cleared
+    useLayoutEffect(() => {
+        return () => {
+            if (fadingCloudState?.geometry) {
+                fadingCloudState.geometry.dispose();
+            }
+        };
+    }, [fadingCloudState]);
 
     const processImage = (img: HTMLImageElement) => {
         try {
@@ -325,7 +337,6 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const { width, height, data } = cloudData;
         
         // Scale coverage based on 2x Render Distance
-        // Ensure the cloud radius covers the full view distance
         const viewDist = (renderDistance * 2) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
 
@@ -380,21 +391,31 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             newVC += 4;
         };
 
-        for (let u = minU; u <= maxU; u++) {
-            for (let v = minV; v <= maxV; v++) {
-                // Wrap coords for data lookup
-                const du = ((u % width) + width) % width;
-                const dv = ((v % height) + height) % height;
+            const pushQuad = (
+                x1: number, y1: number, z1: number,
+                x2: number, y2: number, z2: number,
+                x3: number, y3: number, z3: number,
+                x4: number, y4: number, z4: number,
+                nx: number, ny: number, nz: number
+            ) => {
+                vertices.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+                normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+                indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
+                vertCount += 4;
+            };
 
-                if (data[dv * width + du] === 0) continue;
+            for (let u = iterMinU; u <= iterMaxU; u++) {
+                for (let v = iterMinV; v <= iterMaxV; v++) {
+                    // Skip the excluded sub-region (retained area when building new-blocks pass)
+                    if (
+                        excludeMinU !== undefined &&
+                        u >= excludeMinU && u <= (excludeMaxU as number) &&
+                        v >= (excludeMinV as number) && v <= (excludeMaxV as number)
+                    ) continue;
 
-                // Local coords relative to the centerU/V origin
-                const lx = (u - centerU) * CLOUD_SCALE;
-                const lz = (v - centerV) * CLOUD_SCALE;
-                
-                const x0 = lx, x1 = lx + CLOUD_SCALE;
-                const y0 = 0, y1 = h;
-                const z0 = lz, z1 = lz + CLOUD_SCALE;
+                    // Wrap coords for data lookup
+                    const du = ((u % width) + width) % width;
+                    const dv = ((v % height) + height) % height;
 
                 // On first load all tiles are "existing" (fade in with cloudFadeMultiplier).
                 // On subsequent rebuilds, classify by whether the tile was within the previous rendered
@@ -410,43 +431,48 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 // Bottom (Y-)
                 pushQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
-                // Right (X+)
-                if (u == maxU) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
-                } else if (data[dv * width + ((du + 1) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
-                }
+                    // Local coords relative to the centerU/V origin
+                    const lx = (u - centerU) * CLOUD_SCALE;
+                    const lz = (v - centerV) * CLOUD_SCALE;
 
-                // Left (X-)
-                if (u == minU) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
-                } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
-                }
+                    const x0 = lx, x1 = lx + CLOUD_SCALE;
+                    const y0 = 0, y1 = h;
+                    const z0 = lz, z1 = lz + CLOUD_SCALE;
 
-                // Front (Z+)
-                if (v == maxV) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
-                } else if (data[((dv + 1) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
-                }
+                    // Top (Y+)
+                    pushQuad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
+                    // Bottom (Y-)
+                    pushQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
-                // Back (Z-)
-                if (v == minV) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
-                } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    // Right (X+) — cap only at the FULL rendering boundary
+                    if (u === maxU) {
+                        pushQuad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
+                    } else if (data[dv * width + ((du + 1) % width)] === 0) {
+                        pushQuad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
+                    }
+
+                    // Left (X-)
+                    if (u === minU) {
+                        pushQuad(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
+                    } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
+                        pushQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
+                    }
+
+                    // Front (Z+)
+                    if (v === maxV) {
+                        pushQuad(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
+                    } else if (data[((dv + 1) % height) * width + du] === 0) {
+                        pushQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
+                    }
+
+                    // Back (Z-)
+                    if (v === minV) {
+                        pushQuad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
+                    } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
+                        pushQuad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    }
                 }
             }
-        }
 
         // Build existingGeo (stable, already-visible tiles)
         let existingGeo: THREE.BufferGeometry | null = null;
@@ -479,7 +505,8 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         if (isFirstLoad) {
             // First ever build: fade in everything via cloudFadeMultiplier.
             f.hasLoaded = true;
-            if (visible && fadeInEnabled) {
+            const geo = buildGeoForRange(minU, maxU, minV, maxV);
+            if (visible && fadeInEnabled && geo) {
                 cloudFadeMultiplier = 0;
                 cloudBackMaterial.opacity = 0;
                 cloudFrontMaterial.opacity = 0;
@@ -507,7 +534,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     };
 
     useFrame((_, delta) => {
-        // Fade animation runs every frame regardless of pause state
+        // Fade animation for the main cloud geometry (initial load + visibility toggles)
         const f = fadeRef.current;
         if (f.active) {
             const elapsed = (performance.now() - f.startMs) / 1000;
@@ -554,7 +581,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         }
 
         // Skip movement/rebuild when fully hidden and not animating
-        if ((!visible && !f.active) || isPaused || !cloudData) return;
+        if ((!visible && !f.active && !nf.active) || isPaused || !cloudData) return;
 
         offsetRef.current += delta * CLOUD_SPEED;
         const worldWidth = cloudData.width * CLOUD_SCALE;
@@ -589,7 +616,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
 
     if (!cloudState.existingGeo && !cloudState.newGeo) return null;
     // Keep rendering during fade-out; hide only when fully invisible and not animating
-    if (!visible && !fadeRef.current.active) return null;
+    if (!visible && !fadeRef.current.active && !newFadeRef.current.active) return null;
 
     return (
         <group ref={cloudGroupRef}>
