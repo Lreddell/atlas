@@ -8,7 +8,7 @@ import { CHUNK_SIZE } from '../../constants';
 const CLOUD_LEVEL = 192;
 const CLOUD_HEIGHT = 4;
 const CLOUD_SCALE = 12; // 1 pixel = 12x12 blocks
-const CLOUD_SPEED = 1.0; 
+const CLOUD_SPEED = 1.0;
 
 // Two-pass transparent materials: backfaces first, then frontfaces.
 const cloudMaterialSettings: THREE.MeshLambertMaterialParameters = {
@@ -29,20 +29,56 @@ const cloudFrontMaterial = new THREE.MeshLambertMaterial({
     side: THREE.FrontSide
 });
 
+// Separate materials for newly-revealed cloud tiles that fade in independently.
+const newCloudBackMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.BackSide,
+    opacity: 0
+});
+
+const newCloudFrontMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.FrontSide,
+    opacity: 0
+});
+
+// Separate materials for tiles leaving the view that fade out independently.
+const leavingCloudBackMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.BackSide
+});
+
+const leavingCloudFrontMaterial = new THREE.MeshLambertMaterial({
+    ...cloudMaterialSettings,
+    side: THREE.FrontSide
+});
+
 // Tracks the natural (day/night-adjusted) opacity before any fade multiplier
 let cloudNaturalOpacity = 0.8;
 // Animated 0→1 on first cloud appearance; stays at 1 when not fading
 let cloudFadeMultiplier = 1.0;
+// Animated 0→1 for newly-revealed cloud tiles; stays at 1 otherwise
+let newCloudFadeMultiplier = 1.0;
+// Animated 1→0 for tiles leaving the view; stays at 0 when nothing is leaving
+let leavingCloudMultiplier = 0.0;
 
 export const updateCloudColor = (dayFactor: number) => {
-    const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4); 
+    const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
     const dayColor = new THREE.Color(0xFFFFFF);
     cloudBackMaterial.color.lerpColors(nightColor, dayColor, dayFactor);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
-    // Slight opacity adjustment based on time; respect the current fade multiplier
+    newCloudBackMaterial.color.copy(cloudBackMaterial.color);
+    newCloudFrontMaterial.color.copy(cloudBackMaterial.color);
+    leavingCloudBackMaterial.color.copy(cloudBackMaterial.color);
+    leavingCloudFrontMaterial.color.copy(cloudBackMaterial.color);
+    // Slight opacity adjustment based on time; respect the current fade multipliers
     cloudNaturalOpacity = 0.6 + (0.2 * dayFactor);
     cloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     cloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+    newCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * newCloudFadeMultiplier;
+    newCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * newCloudFadeMultiplier;
+    leavingCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * leavingCloudMultiplier;
+    leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * leavingCloudMultiplier;
 };
 
 // Event system for manual overrides
@@ -55,16 +91,22 @@ export const setCloudTexture = (url: string) => {
 export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeInEnabled?: boolean, visible?: boolean }> = ({ isPaused, renderDistance, fadeInEnabled = true, visible = true }) => {
     const { camera } = useThree();
     const [cloudData, setCloudData] = useState<{ width: number, height: number, data: Uint8Array } | null>(null);
-    
-    // We bundle geometry and its origin together to ensure they stay in sync during React updates
-    const [cloudState, setCloudState] = useState<{ geometry: THREE.BufferGeometry | null, u: number, v: number }>({ 
-        geometry: null, u: 0, v: 0 
-    });
-    
+
+    // Cloud state bundles all three geometry sets with their common origin (u, v).
+    // existingGeo: cloud tiles already in view (stable full opacity).
+    // newGeo: newly-revealed cloud tiles at the edges (fade in independently).
+    // leavingGeo: tiles that have just left the view (fade out independently).
+    const [cloudState, setCloudState] = useState<{
+        existingGeo: THREE.BufferGeometry | null,
+        newGeo: THREE.BufferGeometry | null,
+        leavingGeo: THREE.BufferGeometry | null,
+        u: number, v: number
+    }>({ existingGeo: null, newGeo: null, leavingGeo: null, u: 0, v: 0 });
+
     const cloudGroupRef = useRef<THREE.Group>(null);
     const offsetRef = useRef(0);
 
-    // Unified fade state
+    // Unified fade state (global: initial load, show/hide)
     const fadeRef = useRef({
         active: false,
         startMs: 0,
@@ -72,10 +114,25 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         duration: 0.8,
         hasLoaded: false // set true after the first geometry is built
     });
+
+    // Fade state for newly-revealed tiles only (0→1)
+    const newTileFadeRef = useRef({
+        active: false,
+        startMs: 0,
+        duration: 0.8
+    });
+
+    // Fade state for tiles leaving the view (1→0)
+    const leavingTileFadeRef = useRef({
+        active: false,
+        startMs: 0,
+        duration: 0.5
+    });
+
     const prevVisibleRef = useRef(visible);
 
     // Guarantee materials start at zero opacity on mount so there's no flash
-    // before the fade-in animation begins.  Runs synchronously during the first
+    // before the fade-in animation begins. Runs synchronously during the first
     // render — before any useEffect, useFrame, or DayNightCycle updateCloudColor.
     const didInitRef = useRef(false);
     if (!didInitRef.current) {
@@ -84,25 +141,34 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             cloudFadeMultiplier = 0;
             cloudBackMaterial.opacity = 0;
             cloudFrontMaterial.opacity = 0;
+            newCloudFadeMultiplier = 1.0; // on first load all tiles are existingGeo
+            newCloudBackMaterial.opacity = 0;
+            newCloudFrontMaterial.opacity = 0;
+            leavingCloudMultiplier = 0.0;
+            leavingCloudBackMaterial.opacity = 0;
+            leavingCloudFrontMaterial.opacity = 0;
         }
     }
-    
+
     // Tracks the grid position currently requested/processing
     const lastRequestedGridPos = useRef({ u: -99999, v: -99999 });
-    
+
     // Tracks the grid position currently RENDERED (committed to the mesh)
     const renderedGridPosRef = useRef({ u: 0, v: 0 });
 
+    // Tracks the exact rendered bounds so we can identify new and leaving tiles on the next rebuild.
+    const renderedBoundsRef = useRef<{ minU: number; maxU: number; minV: number; maxV: number } | null>(null);
+
     // Sync the ref with state immediately after render commit
     useLayoutEffect(() => {
-        if (cloudState.geometry) {
+        if (cloudState.existingGeo || cloudState.newGeo) {
             renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v };
         }
-        // Cleanup old geometry when state changes (React handles the new one)
+        // Cleanup old geometry when state changes
         return () => {
-            if (cloudState.geometry) {
-                cloudState.geometry.dispose();
-            }
+            cloudState.existingGeo?.dispose();
+            cloudState.newGeo?.dispose();
+            cloudState.leavingGeo?.dispose();
         };
     }, [cloudState]);
 
@@ -116,7 +182,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 ctx.drawImage(img, 0, 0);
                 const imageData = ctx.getImageData(0, 0, img.width, img.height);
                 const pixels = imageData.data;
-                
+
                 const data = new Uint8Array(img.width * img.height);
                 let validPixels = 0;
 
@@ -130,7 +196,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                         data[i] = 0;
                     }
                 }
-                
+
                 if (validPixels > 0) {
                     setCloudData({ width: img.width, height: img.height, data });
                     console.log(`[Clouds] Texture processed: ${img.width}x${img.height}`);
@@ -145,15 +211,15 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
 
     const generateProceduralClouds = () => {
         console.log("[Clouds] Generating procedural cloud pattern...");
-        const width = 256; 
+        const width = 256;
         const height = 256;
         const data = new Uint8Array(width * height);
-        
+
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 let n = GlobalNoise.terrain.noise2D(x * 0.03, y * 0.03);
                 n += GlobalNoise.terrain.noise2D(x * 0.1, y * 0.1) * 0.5;
-                data[y * width + x] = n > 0.4 ? 255 : 0; 
+                data[y * width + x] = n > 0.4 ? 255 : 0;
             }
         }
         setCloudData({ width, height, data });
@@ -171,7 +237,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             const rawPath = 'assets/textures/environment/clouds.png';
             const candidates = [`/${rawPath}`, rawPath];
             let loaded = false;
-            
+
             for (const url of candidates) {
                 try {
                     const response = await fetch(url);
@@ -205,6 +271,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     // 2. Force Rebuild on Settings Change
     useEffect(() => {
         lastRequestedGridPos.current = { u: -99999, v: -99999 };
+        renderedBoundsRef.current = null;
     }, [renderDistance, cloudData]);
 
     // 3. Handle visibility changes (fade-in when re-shown, fade-out when hidden)
@@ -219,7 +286,13 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const f = fadeRef.current;
 
         if (visible) {
-            // Became visible (was hidden)
+            // Became visible (was hidden).
+            // Cancel any in-progress per-tile fades so all clouds follow cloudFadeMultiplier.
+            newTileFadeRef.current.active = false;
+            leavingTileFadeRef.current.active = false;
+            newCloudFadeMultiplier = 1.0;
+            leavingCloudMultiplier = 0.0;
+
             f.isOut = false;
             if (f.hasLoaded) {
                 // Force a geometry rebuild so clouds appear at current position
@@ -228,6 +301,10 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                     cloudFadeMultiplier = 0;
                     cloudBackMaterial.opacity = 0;
                     cloudFrontMaterial.opacity = 0;
+                    newCloudBackMaterial.opacity = 0;
+                    newCloudFrontMaterial.opacity = 0;
+                    leavingCloudBackMaterial.opacity = 0;
+                    leavingCloudFrontMaterial.opacity = 0;
                     f.active = true;
                     f.startMs = performance.now();
                     f.duration = 0.8;
@@ -235,10 +312,17 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                     cloudFadeMultiplier = 1.0;
                     cloudBackMaterial.opacity = cloudNaturalOpacity;
                     cloudFrontMaterial.opacity = cloudNaturalOpacity;
+                    newCloudBackMaterial.opacity = cloudNaturalOpacity;
+                    newCloudFrontMaterial.opacity = cloudNaturalOpacity;
+                    leavingCloudBackMaterial.opacity = 0;
+                    leavingCloudFrontMaterial.opacity = 0;
                 }
             }
         } else {
-            // Became hidden (was visible)
+            // Became hidden (was visible).
+            // Cancel per-tile fades — the global fade-out handles all clouds.
+            newTileFadeRef.current.active = false;
+            leavingTileFadeRef.current.active = false;
             if (fadeInEnabled && f.hasLoaded) {
                 f.active = true;
                 f.isOut = true;
@@ -249,6 +333,12 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 cloudFadeMultiplier = 0;
                 cloudBackMaterial.opacity = 0;
                 cloudFrontMaterial.opacity = 0;
+                newCloudFadeMultiplier = 1.0;
+                newCloudBackMaterial.opacity = 0;
+                newCloudFrontMaterial.opacity = 0;
+                leavingCloudMultiplier = 0.0;
+                leavingCloudBackMaterial.opacity = 0;
+                leavingCloudFrontMaterial.opacity = 0;
             }
         }
     }, [visible, fadeInEnabled]);
@@ -258,19 +348,36 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         if (!fadeInEnabled) {
             const f = fadeRef.current;
             f.active = false;
+            newTileFadeRef.current.active = false;
+            leavingTileFadeRef.current.active = false;
             cloudFadeMultiplier = visible ? 1.0 : 0;
+            newCloudFadeMultiplier = 1.0;
+            leavingCloudMultiplier = 0.0;
             cloudBackMaterial.opacity = visible ? cloudNaturalOpacity : 0;
             cloudFrontMaterial.opacity = visible ? cloudNaturalOpacity : 0;
+            newCloudBackMaterial.opacity = visible ? cloudNaturalOpacity : 0;
+            newCloudFrontMaterial.opacity = visible ? cloudNaturalOpacity : 0;
+            leavingCloudBackMaterial.opacity = 0;
+            leavingCloudFrontMaterial.opacity = 0;
         }
     }, [fadeInEnabled, visible]);
+
+    // Helper: build a BufferGeometry from pre-filled vertex/normal/index arrays.
+    const buildGeo = (verts: number[], norms: number[], idxs: number[]): THREE.BufferGeometry => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(norms, 3));
+        geo.setIndex(idxs);
+        geo.computeBoundingSphere();
+        return geo;
+    };
 
     const rebuildGeometry = (centerU: number, centerV: number) => {
         if (!cloudData) return;
 
         const { width, height, data } = cloudData;
-        
+
         // Scale coverage based on 2x Render Distance
-        // Ensure the cloud radius covers the full view distance
         const viewDist = (renderDistance * 2) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
 
@@ -279,120 +386,227 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const minV = centerV - radius;
         const maxV = centerV + radius;
 
-        const vertices: number[] = [];
-        const normals: number[] = [];
-        const indices: number[] = [];
-        let vertCount = 0;
+        const f = fadeRef.current;
+        const isFirstLoad = !f.hasLoaded;
+
+        // Capture previous bounds, then record the new bounds for the next rebuild.
+        const prevBounds = renderedBoundsRef.current;
+        renderedBoundsRef.current = { minU, maxU, minV, maxV };
+
         const h = CLOUD_HEIGHT;
 
-        const pushQuad = (
+        // Vertex/index buffers for each geometry category.
+        const existingVerts: number[] = [], existingNorms: number[] = [], existingIdxs: number[] = [];
+        const newVerts: number[] = [], newNorms: number[] = [], newIdxs: number[] = [];
+        const leavingVerts: number[] = [], leavingNorms: number[] = [], leavingIdxs: number[] = [];
+        let existingVC = 0, newVC = 0, leavingVC = 0;
+
+        const pushExisting = (
             x1: number, y1: number, z1: number,
             x2: number, y2: number, z2: number,
             x3: number, y3: number, z3: number,
             x4: number, y4: number, z4: number,
             nx: number, ny: number, nz: number
         ) => {
-            vertices.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
-            normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
-            indices.push(vertCount, vertCount + 1, vertCount + 2, vertCount, vertCount + 2, vertCount + 3);
-            vertCount += 4;
+            existingVerts.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+            existingNorms.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+            existingIdxs.push(existingVC, existingVC + 1, existingVC + 2, existingVC, existingVC + 2, existingVC + 3);
+            existingVC += 4;
         };
 
+        const pushNew = (
+            x1: number, y1: number, z1: number,
+            x2: number, y2: number, z2: number,
+            x3: number, y3: number, z3: number,
+            x4: number, y4: number, z4: number,
+            nx: number, ny: number, nz: number
+        ) => {
+            newVerts.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+            newNorms.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+            newIdxs.push(newVC, newVC + 1, newVC + 2, newVC, newVC + 2, newVC + 3);
+            newVC += 4;
+        };
+
+        const pushLeaving = (
+            x1: number, y1: number, z1: number,
+            x2: number, y2: number, z2: number,
+            x3: number, y3: number, z3: number,
+            x4: number, y4: number, z4: number,
+            nx: number, ny: number, nz: number
+        ) => {
+            leavingVerts.push(x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4);
+            leavingNorms.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+            leavingIdxs.push(leavingVC, leavingVC + 1, leavingVC + 2, leavingVC, leavingVC + 2, leavingVC + 3);
+            leavingVC += 4;
+        };
+
+        // --- Pass 1: Build existing + new tiles (tiles in the NEW bounds) ---
         for (let u = minU; u <= maxU; u++) {
             for (let v = minV; v <= maxV; v++) {
-                // Wrap coords for data lookup
                 const du = ((u % width) + width) % width;
                 const dv = ((v % height) + height) % height;
-
                 if (data[dv * width + du] === 0) continue;
 
                 // Local coords relative to the centerU/V origin
                 const lx = (u - centerU) * CLOUD_SCALE;
                 const lz = (v - centerV) * CLOUD_SCALE;
-                
                 const x0 = lx, x1 = lx + CLOUD_SCALE;
                 const y0 = 0, y1 = h;
                 const z0 = lz, z1 = lz + CLOUD_SCALE;
 
+                // On first load all tiles are "existing" (fade in with cloudFadeMultiplier).
+                // On subsequent rebuilds, classify by whether the tile was within the previous rendered
+                // bounds (inclusive: tiles at the old edges were rendered before and should stay stable).
+                const isExisting = isFirstLoad || (prevBounds !== null &&
+                    u >= prevBounds.minU && u <= prevBounds.maxU &&
+                    v >= prevBounds.minV && v <= prevBounds.maxV
+                );
+                const push = isExisting ? pushExisting : pushNew;
+
                 // Top (Y+)
-                pushQuad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
+                push(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
                 // Bottom (Y-)
-                pushQuad(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
+                push(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
                 // Right (X+)
-                if (u == maxU) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
+                if (u === maxU) {
+                    push(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
                 } else if (data[dv * width + ((du + 1) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
+                    push(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
                 }
 
                 // Left (X-)
-                if (u == minU) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
+                if (u === minU) {
+                    push(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
                 } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
+                    push(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
                 }
 
                 // Front (Z+)
-                if (v == maxV) {
-                    // Boundary Cap
-                    pushQuad(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
+                if (v === maxV) {
+                    push(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
                 } else if (data[((dv + 1) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
+                    push(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
                 }
 
                 // Back (Z-)
-                if (v == minV) {
-                    // Boundary Cap
-                    pushQuad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
+                if (v === minV) {
+                    push(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
                 } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
-                    // Standard Outward Face
-                    pushQuad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    push(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
                 }
             }
         }
 
-        if (vertices.length === 0) {
-            setCloudState({ geometry: null, u: centerU, v: centerV });
+        // --- Pass 2: Build leaving tiles (in prevBounds but NOT in the new bounds) ---
+        // Skip on first load (nothing was rendered before) or if no prevBounds.
+        if (!isFirstLoad && prevBounds !== null && fadeInEnabled && visible && !f.isOut) {
+            // Iterate only the regions of prevBounds that fall outside the new bounds.
+            // We do this by iterating the full prevBounds and skipping tiles in the new bounds.
+            for (let u = prevBounds.minU; u <= prevBounds.maxU; u++) {
+                for (let v = prevBounds.minV; v <= prevBounds.maxV; v++) {
+                    // Skip tiles that are still in the new bounds (they're in existingGeo)
+                    if (u >= minU && u <= maxU && v >= minV && v <= maxV) continue;
+
+                    const du = ((u % width) + width) % width;
+                    const dv = ((v % height) + height) % height;
+                    if (data[dv * width + du] === 0) continue;
+
+                    // Local coords relative to the NEW centerU/V origin
+                    // (so these tiles render at correct world positions in the shared group)
+                    const lx = (u - centerU) * CLOUD_SCALE;
+                    const lz = (v - centerV) * CLOUD_SCALE;
+                    const x0 = lx, x1 = lx + CLOUD_SCALE;
+                    const y0 = 0, y1 = h;
+                    const z0 = lz, z1 = lz + CLOUD_SCALE;
+
+                    // Top (Y+)
+                    pushLeaving(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, 0, 1, 0);
+                    // Bottom (Y-)
+                    pushLeaving(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
+
+                    // Sides — no boundary caps for leaving tiles (they're interior to the old bounds)
+                    if (data[dv * width + ((du + 1) % width)] === 0) {
+                        pushLeaving(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
+                    }
+                    if (data[dv * width + ((du - 1 + width) % width)] === 0) {
+                        pushLeaving(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
+                    }
+                    if (data[((dv + 1) % height) * width + du] === 0) {
+                        pushLeaving(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
+                    }
+                    if (data[((dv - 1 + height) % height) * width + du] === 0) {
+                        pushLeaving(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
+                    }
+                }
+            }
+        }
+
+        // Build geometry objects from the filled buffers.
+        const existingGeo = existingVerts.length > 0 ? buildGeo(existingVerts, existingNorms, existingIdxs) : null;
+        const newGeo = newVerts.length > 0 ? buildGeo(newVerts, newNorms, newIdxs) : null;
+        const leavingGeo = leavingVerts.length > 0 ? buildGeo(leavingVerts, leavingNorms, leavingIdxs) : null;
+
+        if (!existingGeo && !newGeo && !leavingGeo) {
+            setCloudState({ existingGeo: null, newGeo: null, leavingGeo: null, u: centerU, v: centerV });
             return;
         }
 
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-        geo.setIndex(indices);
-        geo.computeBoundingSphere();
-
-        // Trigger fade-in on the VERY FIRST geometry build.
-        // Must happen before setCloudState so the material is already at opacity 0
+        // Trigger fade animations.
+        // Must happen before setCloudState so materials are already at the right opacity
         // when R3F draws the first frame that includes this geometry.
-        const f = fadeRef.current;
-        if (!f.hasLoaded && visible) {
+        if (isFirstLoad) {
+            // First ever build: fade in everything via cloudFadeMultiplier.
             f.hasLoaded = true;
-            if (fadeInEnabled) {
+            if (visible && fadeInEnabled) {
                 cloudFadeMultiplier = 0;
                 cloudBackMaterial.opacity = 0;
                 cloudFrontMaterial.opacity = 0;
+                newCloudBackMaterial.opacity = 0;
+                newCloudFrontMaterial.opacity = 0;
+                leavingCloudBackMaterial.opacity = 0;
+                leavingCloudFrontMaterial.opacity = 0;
                 f.active = true;
                 f.isOut = false;
                 f.startMs = performance.now();
                 f.duration = 0.8;
             }
-        } else if (!f.hasLoaded) {
-            f.hasLoaded = true; // loaded while invisible – just mark it
+        } else {
+            if (newGeo && visible && fadeInEnabled && !f.isOut) {
+                // Fade in newly-revealed tiles.
+                const ntf = newTileFadeRef.current;
+                ntf.active = true;
+                ntf.startMs = performance.now();
+                ntf.duration = 0.8;
+                newCloudFadeMultiplier = 0;
+                newCloudBackMaterial.opacity = 0;
+                newCloudFrontMaterial.opacity = 0;
+            }
+
+            if (leavingGeo && visible && fadeInEnabled && !f.isOut) {
+                // Fade out tiles leaving the view.
+                leavingCloudMultiplier = 1.0;
+                leavingCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+                leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+                const ltf = leavingTileFadeRef.current;
+                ltf.active = true;
+                ltf.startMs = performance.now();
+                ltf.duration = 0.5;
+            } else {
+                // No leaving tiles (or fade disabled): ensure the leaving multiplier is cleared.
+                leavingCloudMultiplier = 0.0;
+                leavingCloudBackMaterial.opacity = 0;
+                leavingCloudFrontMaterial.opacity = 0;
+                leavingTileFadeRef.current.active = false;
+            }
         }
-        
+
         // Update State
-        setCloudState({ geometry: geo, u: centerU, v: centerV });
+        setCloudState({ existingGeo, newGeo, leavingGeo, u: centerU, v: centerV });
     };
 
     useFrame((_, delta) => {
-        // Fade animation runs every frame regardless of pause state
+        // Global fade animation (initial load + visibility toggles)
         const f = fadeRef.current;
         if (f.active) {
             const elapsed = (performance.now() - f.startMs) / 1000;
@@ -403,20 +617,70 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
             cloudFadeMultiplier = multiplier;
             cloudBackMaterial.opacity = cloudNaturalOpacity * multiplier;
             cloudFrontMaterial.opacity = cloudNaturalOpacity * multiplier;
+            // Per-tile materials also follow the global multiplier
+            newCloudBackMaterial.opacity = cloudNaturalOpacity * multiplier * newCloudFadeMultiplier;
+            newCloudFrontMaterial.opacity = cloudNaturalOpacity * multiplier * newCloudFadeMultiplier;
+            leavingCloudBackMaterial.opacity = cloudNaturalOpacity * multiplier * leavingCloudMultiplier;
+            leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * multiplier * leavingCloudMultiplier;
 
             if (progress >= 1) {
                 f.active = false;
                 if (!f.isOut) {
-                    // Fade-in complete: restore full opacity via updateCloudColor path
+                    // Fade-in complete: restore full opacity
                     cloudFadeMultiplier = 1.0;
                     cloudBackMaterial.opacity = cloudNaturalOpacity;
                     cloudFrontMaterial.opacity = cloudNaturalOpacity;
+                    newCloudBackMaterial.opacity = cloudNaturalOpacity * newCloudFadeMultiplier;
+                    newCloudFrontMaterial.opacity = cloudNaturalOpacity * newCloudFadeMultiplier;
+                    leavingCloudBackMaterial.opacity = cloudNaturalOpacity * leavingCloudMultiplier;
+                    leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * leavingCloudMultiplier;
                 }
             }
         }
 
+        // New-tile fade animation (0→1, only newly-revealed tiles)
+        const ntf = newTileFadeRef.current;
+        if (ntf.active) {
+            const elapsed = (performance.now() - ntf.startMs) / 1000;
+            const progress = THREE.MathUtils.clamp(elapsed / ntf.duration, 0, 1);
+            const eased = progress * progress * (3 - 2 * progress);
+            newCloudFadeMultiplier = eased;
+            newCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * eased;
+            newCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * eased;
+
+            if (progress >= 1) {
+                ntf.active = false;
+                newCloudFadeMultiplier = 1.0;
+                newCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+                newCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+            }
+        }
+
+        // Leaving-tile fade animation (1→0, tiles going out of range)
+        const ltf = leavingTileFadeRef.current;
+        if (ltf.active) {
+            const elapsed = (performance.now() - ltf.startMs) / 1000;
+            const progress = THREE.MathUtils.clamp(elapsed / ltf.duration, 0, 1);
+            const eased = progress * progress * (3 - 2 * progress);
+            leavingCloudMultiplier = 1.0 - eased;
+            leavingCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * leavingCloudMultiplier;
+            leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * leavingCloudMultiplier;
+
+            if (progress >= 1) {
+                ltf.active = false;
+                leavingCloudMultiplier = 0.0;
+                leavingCloudBackMaterial.opacity = 0;
+                leavingCloudFrontMaterial.opacity = 0;
+                // Clear the leaving geometry now that it has fully faded out.
+                setCloudState(prev => {
+                    prev.leavingGeo?.dispose();
+                    return { ...prev, leavingGeo: null };
+                });
+            }
+        }
+
         // Skip movement/rebuild when fully hidden and not animating
-        if ((!visible && !f.active) || isPaused || !cloudData) return;
+        if ((!visible && !f.active && !ntf.active && !ltf.active) || isPaused || !cloudData) return;
 
         offsetRef.current += delta * CLOUD_SPEED;
         const worldWidth = cloudData.width * CLOUD_SCALE;
@@ -440,7 +704,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         if (cloudGroupRef.current) {
             // Position cloud group based on the GEOMETRY's origin (renderedU/V)
             const { u, v } = renderedGridPosRef.current;
-            
+
             cloudGroupRef.current.position.set(
                 u * CLOUD_SCALE + offsetRef.current,
                 CLOUD_LEVEL,
@@ -449,24 +713,55 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         }
     });
 
-    if (!cloudState.geometry) return null;
+    const anyGeo = cloudState.existingGeo || cloudState.newGeo || cloudState.leavingGeo;
+    if (!anyGeo) return null;
     // Keep rendering during fade-out; hide only when fully invisible and not animating
-    if (!visible && !fadeRef.current.active) return null;
+    if (!visible && !fadeRef.current.active && !newTileFadeRef.current.active && !leavingTileFadeRef.current.active) return null;
 
     return (
         <group ref={cloudGroupRef}>
-            <mesh
-                geometry={cloudState.geometry}
-                material={cloudBackMaterial}
-                renderOrder={-101}
-                frustumCulled={false}
-            />
-            <mesh
-                geometry={cloudState.geometry}
-                material={cloudFrontMaterial}
-                renderOrder={-100} // Render AFTER backfaces and BEFORE terrain/water (0).
-                frustumCulled={false}
-            />
+            {cloudState.existingGeo && <>
+                <mesh
+                    geometry={cloudState.existingGeo}
+                    material={cloudBackMaterial}
+                    renderOrder={-101}
+                    frustumCulled={false}
+                />
+                <mesh
+                    geometry={cloudState.existingGeo}
+                    material={cloudFrontMaterial}
+                    renderOrder={-100}
+                    frustumCulled={false}
+                />
+            </>}
+            {cloudState.newGeo && <>
+                <mesh
+                    geometry={cloudState.newGeo}
+                    material={newCloudBackMaterial}
+                    renderOrder={-101}
+                    frustumCulled={false}
+                />
+                <mesh
+                    geometry={cloudState.newGeo}
+                    material={newCloudFrontMaterial}
+                    renderOrder={-100}
+                    frustumCulled={false}
+                />
+            </>}
+            {cloudState.leavingGeo && <>
+                <mesh
+                    geometry={cloudState.leavingGeo}
+                    material={leavingCloudBackMaterial}
+                    renderOrder={-101}
+                    frustumCulled={false}
+                />
+                <mesh
+                    geometry={cloudState.leavingGeo}
+                    material={leavingCloudFrontMaterial}
+                    renderOrder={-100}
+                    frustumCulled={false}
+                />
+            </>}
         </group>
     );
 };
