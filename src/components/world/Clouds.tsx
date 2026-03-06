@@ -129,6 +129,15 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         duration: 0.5
     });
 
+    // Pending per-tile fade setup deferred to useLayoutEffect so it applies only
+    // after the new geometry is committed — preventing the old geometry from
+    // flashing at the wrong opacity for one frame.
+    const pendingFadeSetupRef = useRef<{
+        setupNewTileFade: boolean;
+        setupLeavingTileFade: boolean;
+        clearLeavingTileFade: boolean;
+    } | null>(null);
+
     const prevVisibleRef = useRef(visible);
 
     // Guarantee materials start at zero opacity on mount so there's no flash
@@ -164,6 +173,38 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         if (cloudState.existingGeo || cloudState.newGeo) {
             renderedGridPosRef.current = { u: cloudState.u, v: cloudState.v };
         }
+
+        // Apply deferred per-tile fade setup now that the new geometry is in the scene.
+        // Doing this here (post-commit) instead of in rebuildGeometry prevents the
+        // still-rendered old geometry from flashing at the wrong opacity for one frame.
+        const pending = pendingFadeSetupRef.current;
+        if (pending) {
+            pendingFadeSetupRef.current = null;
+            if (pending.setupNewTileFade) {
+                newCloudFadeMultiplier = 0;
+                newCloudBackMaterial.opacity = 0;
+                newCloudFrontMaterial.opacity = 0;
+                const ntf = newTileFadeRef.current;
+                ntf.active = true;
+                ntf.startMs = performance.now();
+                ntf.duration = 0.8;
+            }
+            if (pending.setupLeavingTileFade) {
+                leavingCloudMultiplier = 1.0;
+                leavingCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+                leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
+                const ltf = leavingTileFadeRef.current;
+                ltf.active = true;
+                ltf.startMs = performance.now();
+                ltf.duration = 0.5;
+            } else if (pending.clearLeavingTileFade) {
+                leavingCloudMultiplier = 0.0;
+                leavingCloudBackMaterial.opacity = 0;
+                leavingCloudFrontMaterial.opacity = 0;
+                leavingTileFadeRef.current.active = false;
+            }
+        }
+
         // Cleanup old geometry when state changes
         return () => {
             cloudState.existingGeo?.dispose();
@@ -572,33 +613,16 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 f.duration = 0.8;
             }
         } else {
-            if (newGeo && visible && fadeInEnabled && !f.isOut) {
-                // Fade in newly-revealed tiles.
-                const ntf = newTileFadeRef.current;
-                ntf.active = true;
-                ntf.startMs = performance.now();
-                ntf.duration = 0.8;
-                newCloudFadeMultiplier = 0;
-                newCloudBackMaterial.opacity = 0;
-                newCloudFrontMaterial.opacity = 0;
-            }
-
-            if (leavingGeo && visible && fadeInEnabled && !f.isOut) {
-                // Fade out tiles leaving the view.
-                leavingCloudMultiplier = 1.0;
-                leavingCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
-                leavingCloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
-                const ltf = leavingTileFadeRef.current;
-                ltf.active = true;
-                ltf.startMs = performance.now();
-                ltf.duration = 0.5;
-            } else {
-                // No leaving tiles (or fade disabled): ensure the leaving multiplier is cleared.
-                leavingCloudMultiplier = 0.0;
-                leavingCloudBackMaterial.opacity = 0;
-                leavingCloudFrontMaterial.opacity = 0;
-                leavingTileFadeRef.current.active = false;
-            }
+            // Defer per-tile fade setup to useLayoutEffect so it only takes effect after
+            // the new geometry is committed — the old geometry continues at its current
+            // opacity this frame instead of snapping to the wrong value.
+            const setupNewTileFade = !!(newGeo && visible && fadeInEnabled && !f.isOut);
+            const setupLeavingTileFade = !!(leavingGeo && visible && fadeInEnabled && !f.isOut);
+            pendingFadeSetupRef.current = {
+                setupNewTileFade,
+                setupLeavingTileFade,
+                clearLeavingTileFade: !setupLeavingTileFade,
+            };
         }
 
         // Update State
