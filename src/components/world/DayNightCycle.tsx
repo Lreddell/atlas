@@ -452,16 +452,15 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         },
         setPhase: (targetPhase: number) => {
             const currentTicks = worldManager.getTime();
-            // Calculate current moon cycle based on noon-change rule (see below)
-            const currentMoonCycle = Math.floor((currentTicks - 6000) / TICK_CYCLE);
+            const currentMoonCycle = Math.floor(currentTicks / TICK_CYCLE);
             const currentPhase = (currentMoonCycle % 8 + 8) % 8;
-            
+
             let diff = targetPhase - currentPhase;
             while (diff < 0) diff += 8;
-            
-            // Advance by full days to shift the phase cycle
+
+            // Advance by full days to shift the phase cycle.
             const ticksToAdd = diff * TICK_CYCLE;
-            
+
             worldManager.setTime(currentTicks + ticksToAdd);
         }
     }));
@@ -496,7 +495,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         return { positions, phases, speeds };
     }, []);
 
-    useFrame(({ clock }) => {
+    useFrame(({ clock }, delta) => {
         if (isPaused) return;
 
         // Read time directly from WorldManager (synced with game ticks)
@@ -510,9 +509,9 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const daysPassed = Math.floor(ticks / TICK_CYCLE);
         daysPassedRef.current = daysPassed;
 
-        // Moon phase cycle: Increments at Noon (6000 ticks) so the visible change happens when moon is invisible/nadir.
-        const moonCycle = Math.floor((ticks - 6000) / TICK_CYCLE);
-        // Handle negative cycles for early game ticks < 6000
+        // Moon phase cycle: increments each new day at sunrise/day start so
+        // sleeping to the next morning advances the visible phase.
+        const moonCycle = Math.floor(ticks / TICK_CYCLE);
         const phaseIndex = (moonCycle % 8 + 8) % 8;
         
         const distFromNew = Math.abs(phaseIndex - 4); 
@@ -616,7 +615,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             skyMeshRef.current.position.copy(camera.position);
         }
 
-        const sunFade = THREE.MathUtils.smoothstep(h, -0.2, 0.1);
+        const twilightDayBlend = THREE.MathUtils.smoothstep(h, -0.08, 0.08);
+        const sunFade = twilightDayBlend;
         
         if (sunGroupRef.current && sunCoreRef.current) {
             sunGroupRef.current.position.copy(camera.position).add(sunDir.clone().multiplyScalar(radius));
@@ -701,7 +701,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             starsRef.current.position.copy(camera.position); 
             starsRef.current.rotation.z = phi;
             
-            const starOpacity = THREE.MathUtils.clamp(1.0 - (dayFactor * 1.5), 0, 1);
+            const starOpacity = 1.0 - twilightDayBlend;
             starMaterial.uniforms.uOpacity.value = starOpacity;
             starMaterial.uniforms.uTime.value = clock.elapsedTime;
             
@@ -716,7 +716,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
             const nightFactor = THREE.MathUtils.clamp((0.2 - dayFactor) / 0.2, 0, 1);
             const targetBiomeBlend = isSnowyBiome ? 1 : 0;
-            auroraBiomeBlendRef.current = THREE.MathUtils.lerp(auroraBiomeBlendRef.current, targetBiomeBlend, 0.015);
+            auroraBiomeBlendRef.current = THREE.MathUtils.damp(auroraBiomeBlendRef.current, targetBiomeBlend, 0.75, delta);
 
             const intensityPulse = 0.75 + 0.25 * Math.sin(clock.elapsedTime * 0.05);
             const auroraOpacity = nightFactor * auroraBiomeBlendRef.current * 0.35 * intensityPulse;

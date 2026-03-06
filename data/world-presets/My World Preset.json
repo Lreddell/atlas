@@ -1,0 +1,116 @@
+{
+  "name": "My World Preset",
+  "createdAt": 1772773967658,
+  "updatedAt": 1772773967658,
+  "config": {
+    "noise": {
+      "temperature": {
+        "scale": 0.01,
+        "type": "perlin",
+        "octaves": 1,
+        "lacunarity": 2,
+        "gain": 0.5,
+        "amplification": 1.5
+      },
+      "weirdness": {
+        "scale": 0.002,
+        "type": "perlin",
+        "octaves": 1,
+        "lacunarity": 2,
+        "gain": 0.5,
+        "amplification": 1
+      },
+      "continentalness": {
+        "scale": 0.001,
+        "type": "perlin",
+        "octaves": 1,
+        "lacunarity": 2,
+        "gain": 0.5,
+        "offset": -0.15
+      },
+      "river": {
+        "scale": 0.004,
+        "type": "perlin",
+        "octaves": 1,
+        "lacunarity": 2,
+        "gain": 0.5,
+        "jitter": 0.5
+      },
+      "terrain": {
+        "scale": 0,
+        "scale1": 0.01,
+        "scale2": 0.05,
+        "type": "perlin",
+        "octaves": 1,
+        "lacunarity": 2,
+        "gain": 0.5
+      }
+    },
+    "terrainShape": {
+      "coastPower": 2.2,
+      "landOffset": 0.12,
+      "oceanBaseDepth": 38,
+      "oceanDeepBase": 26,
+      "oceanScale": 8
+    },
+    "biomes": {
+      "ocean": {
+        "continentalnessMax": -0.3,
+        "base": 38,
+        "scale": 8
+      },
+      "tundra": {
+        "maxTemp": -0.7,
+        "base": 75,
+        "scale": 35
+      },
+      "river": {
+        "width": 0.012,
+        "base": 58,
+        "scale": 5
+      },
+      "volcanic": {
+        "minTemp": 0.8,
+        "minWeird": 0.5,
+        "base": 80,
+        "scale": 85
+      },
+      "mesaBryce": {
+        "minTemp": 0.65,
+        "minWeird": 0.3,
+        "maxWeird": 0.45,
+        "base": 72,
+        "scale": 10
+      },
+      "mesa": {
+        "minTemp": 0.6,
+        "base": 72,
+        "scale": 10
+      },
+      "desert": {
+        "minTemp": 0.35,
+        "base": 72,
+        "scale": 15
+      },
+      "plains": {
+        "minTemp": 0,
+        "base": 70,
+        "scale": 20
+      },
+      "forest": {
+        "minTemp": -0.4,
+        "base": 72,
+        "scale": 25
+      },
+      "cherry": {
+        "minTemp": -0.7,
+        "base": 85,
+        "scale": 45
+      }
+    },
+    "height": {
+      "globalScale": 1,
+      "seaLevel": 63
+    }
+  }
+}

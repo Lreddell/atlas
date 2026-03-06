@@ -54,9 +54,12 @@ class MusicController {
     // Track when the last track finished to allow live-updating delays
     private lastFinishTime: number = 0; 
     
+    // Track the last played track to prevent repeats
+    private lastPlayedTrack: string | null = null;
+    
     // Configurable delays (in ms)
-    private minDelay: number = 15000;
-    private maxDelay: number = 60000;
+    private minDelay: number = 5000;
+    private maxDelay: number = 15000;
     
     // To debounce context changes
     private pendingContext: string | null = null;
@@ -70,8 +73,8 @@ class MusicController {
 
         const minRaw = window.localStorage.getItem(MUSIC_DELAY_MIN_KEY);
         const maxRaw = window.localStorage.getItem(MUSIC_DELAY_MAX_KEY);
-        const minSeconds = minRaw == null ? 15 : Number(minRaw);
-        const maxSeconds = maxRaw == null ? 60 : Number(maxRaw);
+        const minSeconds = minRaw == null ? 5 : Number(minRaw);
+        const maxSeconds = maxRaw == null ? 15 : Number(maxRaw);
 
         if (!Number.isFinite(minSeconds) || !Number.isFinite(maxSeconds)) return;
 
@@ -102,6 +105,30 @@ class MusicController {
         return { min: this.minDelay / 1000, max: this.maxDelay / 1000 };
     }
 
+    public forcePlayForWorldEntry(gameMode: string, biomeId: string) {
+        let targetContext = 'generic';
+        const fadeOut = FAST_FADE_OUT;
+
+        if (gameMode === 'creative') {
+            targetContext = 'CREATIVE';
+        } else if (MUSIC_PACKS[biomeId]) {
+            targetContext = biomeId;
+        }
+
+        this.currentContext = targetContext;
+        this.pendingContext = targetContext;
+        this.contextStableTime = Date.now();
+        this.isTransitioning = true;
+        this.isPlaying = false;
+        this.lastFinishTime = 0;
+        this.lastPlayedTrack = null;
+        this.nextPlayTime = Date.now() + (fadeOut * 1000);
+
+        // Fade out menu music first, then let the normal update loop start
+        // world music immediately after the fade completes.
+        soundManager.stopMusic(fadeOut);
+    }
+
     public skipTrack() {
         const context = this.currentContext || this.pendingContext || 'generic';
         const pack = MUSIC_PACKS[context] || MUSIC_PACKS.generic;
@@ -118,6 +145,7 @@ class MusicController {
         this.isPlaying = false;
         this.isTransitioning = true;
         this.lastFinishTime = 0;
+        // Don't reset lastPlayedTrack - skip should also avoid repeating the same song
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
         return true;
     }
@@ -180,6 +208,7 @@ class MusicController {
         console.log(`[Music] Switching to ${newContext} (Fast: ${isFast})`);
         const previousContext = this.currentContext;
         this.currentContext = newContext;
+        this.lastPlayedTrack = null; // Reset track history when switching contexts
 
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
@@ -212,7 +241,18 @@ class MusicController {
 
         const effectiveFadeTime = this.currentContext === 'MENU' ? 0 : fadeTime;
 
-        const trackId = pack[Math.floor(Math.random() * pack.length)];
+        // If there are multiple tracks, exclude the last played track
+        let availableTracks = pack;
+        if (pack.length > 1 && this.lastPlayedTrack !== null) {
+            availableTracks = pack.filter(track => track !== this.lastPlayedTrack);
+            // If all tracks are filtered out (shouldn't happen), use all tracks
+            if (availableTracks.length === 0) {
+                availableTracks = pack;
+            }
+        }
+
+        const trackId = availableTracks[Math.floor(Math.random() * availableTracks.length)];
+        this.lastPlayedTrack = trackId; // Store the track we're about to play
         
         // Optimistically lock to prevent double triggers
         this.isPlaying = true;

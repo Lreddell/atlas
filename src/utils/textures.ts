@@ -412,6 +412,45 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         noise(0.1);
     });
 
+    // 123: Cactus Top
+    withTile(123, () => {
+        fill('#2e7d32');
+        ctx.fillStyle = '#2e7d32';
+        ctx.fillRect(0, 0, 16, 16);
+
+        ctx.fillStyle = '#256b2a';
+        [
+            [1, 1, 3, 2], [6, 2, 2, 2], [10, 1, 3, 3],
+            [3, 5, 4, 3], [9, 6, 3, 2], [12, 4, 2, 4],
+            [1, 9, 3, 3], [6, 10, 4, 2], [11, 10, 3, 3],
+            [4, 13, 3, 2], [9, 13, 2, 2]
+        ].forEach(([x, y, w, h]) => ctx.fillRect(x, y, w, h));
+
+        ctx.fillStyle = '#1f5f25';
+        [
+            [2, 3, 2, 2], [8, 4, 2, 3], [5, 8, 2, 2], [12, 9, 2, 2], [7, 12, 2, 2]
+        ].forEach(([x, y, w, h]) => ctx.fillRect(x, y, w, h));
+
+        ctx.fillStyle = '#000000';
+        [[1,4], [13,6], [6,2], [10,12], [3,9], [8,5], [12,11]].forEach(([sx, sy]) => ctx.fillRect(sx, sy, 1, 1));
+        noise(0.06, 0.55);
+    });
+
+    // 124: Cactus Bottom (lime green)
+    withTile(124, () => {
+        fill('#7cb342');
+        ctx.fillStyle = '#9ccc65';
+        ctx.fillRect(2, 2, 12, 12);
+        ctx.fillStyle = '#7cb342';
+        ctx.fillRect(1, 1, 14, 1);
+        ctx.fillRect(1, 14, 14, 1);
+        ctx.fillRect(1, 1, 1, 14);
+        ctx.fillRect(14, 1, 1, 14);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(3, 3, 6, 1);
+        noise(0.06, 0.6);
+    });
+
     // 22: Dead Bush
     withTile(22, () => {
         ctx.fillStyle = '#6d4c41';

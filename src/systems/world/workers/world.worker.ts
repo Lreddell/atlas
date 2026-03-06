@@ -1,16 +1,24 @@
 import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
 import { reseedGlobalNoise } from '../../../utils/noise';
+import { loadGenConfig, resetGenConfig } from '../genConfig';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, chunk, metaData, neighbors, lights, ticket } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket } = e.data;
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
         console.log(`[Worker] Reseeded with: ${seed}`);
+    }
+    else if (type === 'SET_GEN_CONFIG') {
+        resetGenConfig();
+        if (config) {
+            loadGenConfig(config);
+        }
+        console.log('[Worker] Applied world generation config');
     }
     else if (type === 'GEN') {
         const result = generateChunk(cx, cz);
