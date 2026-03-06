@@ -35,5 +35,5 @@ export const createWorldState = (): WorldState => ({
     listeners: new Map(),
     furnaces: new Map(),
     chests: new Map(),
-    time: 6000 // Start at Noon
+    time: 1000 // Start at Day
 });

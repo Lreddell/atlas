@@ -112,6 +112,12 @@ export function resolveTexture(
             texIdx = 79;
         }
     }
+    // 8. Cactus
+    else if (type === BlockType.CACTUS) {
+        if (dy === 1) texIdx = 123; // Top
+        else if (dy === -1) texIdx = 124; // Bottom
+        else texIdx = 21; // Side
+    }
     
     // --- UV Calculation with PADDING ---
     const { width, height } = getAtlasDimensions();

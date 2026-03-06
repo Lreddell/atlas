@@ -34,6 +34,7 @@ import { RenderStats } from './components/RenderStats';
 
 import { worldManager } from './systems/WorldManager';
 import { WorldStorage } from './systems/world/WorldStorage';
+import { getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH } from './systems/player/playerConstants';
@@ -209,6 +210,7 @@ const App: React.FC = () => {
   const [lastDamageTime, setLastDamageTime] = useState(0);
   const [showDeathScreen, setShowDeathScreen] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
+    const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -280,6 +282,7 @@ const App: React.FC = () => {
     const webPanoramaObjectUrlRef = useRef<string | null>(null);
 
   const activeWorldIdRef = useRef<string | null>(null); // Track active world ID for auto-save
+  const activeWorldGenConfigRef = useRef<any>(null); // Store active world's GenConfig to restore after World Editor
 
   const isNativeLoop = vsync;
   const canvasFrameloop = isNativeLoop ? 'always' : 'never';
@@ -583,8 +586,14 @@ const App: React.FC = () => {
       if (isSleeping) {
           const timeout = setTimeout(() => {
               const current = worldManager.getTime();
-              const nextSunrise = Math.ceil((current + 100) / 24000) * 24000;
-              worldManager.setTime(nextSunrise);
+              const nextMorning = (Math.floor(current / 24000) + 1) * 24000 + 1000;
+              worldManager.setTime(nextMorning);
+              if (pendingBedSpawnRef.current) {
+                  const { x, y, z } = pendingBedSpawnRef.current;
+                  worldManager.setSpawnPoint(x, y, z, false);
+                  worldManager.log('Spawn point set to your bed.', 'success');
+                  pendingBedSpawnRef.current = null;
+              }
               setIsSleeping(false);
           }, 3000); 
           return () => clearTimeout(timeout);
@@ -1654,11 +1663,24 @@ const App: React.FC = () => {
     setHealth(20); setHunger(20); setSaturation(5); foodStateRef.current = createFoodState(); setBreath(MAX_BREATH); setRespawnKey(prev => prev + 1); setIsOnFire(false);
     
     // 1. Try Bed Spawn
-    let spawn = worldManager.getSpawnPoint();
+    let spawn = null as { x: number, y: number, z: number } | null;
+    const bedSpawn = worldManager.getSpawnPoint();
+    if (bedSpawn) {
+        worldManager.ensureChunk(Math.floor(bedSpawn.x / CHUNK_SIZE), Math.floor(bedSpawn.z / CHUNK_SIZE));
+        const bedType = worldManager.getBlock(Math.floor(bedSpawn.x), Math.floor(bedSpawn.y), Math.floor(bedSpawn.z), false);
+        if (bedType === BlockType.BED_FOOT || bedType === BlockType.BED_HEAD) {
+            spawn = worldManager.findSafeSpawnPosition(bedSpawn.x, bedSpawn.z);
+        } else {
+            worldManager.clearSpawnPoint();
+        }
+    }
     
     // 2. Try World Spawn (Safe Surface)
     if (!spawn) {
-        spawn = worldManager.getWorldSpawn();
+        const worldSpawn = worldManager.getWorldSpawn();
+        if (worldSpawn) {
+            spawn = worldManager.findSafeSpawnPosition(worldSpawn.x, worldSpawn.z);
+        }
     }
 
     // 3. Fallback: Find new safe spawn at 0,0
@@ -1692,6 +1714,7 @@ const App: React.FC = () => {
           setIsPaused(false);
           lastAppliedChunkKeyRef.current = null;
           activeWorldIdRef.current = null;
+          activeWorldGenConfigRef.current = null;
           worldManager.reset();
           musicController.update(true, 'survival', 'plains');
           soundManager.play("ui.click");
@@ -1723,6 +1746,9 @@ const App: React.FC = () => {
           }
       }
       
+      // Store the world's GenConfig so it can be restored after World Editor visits
+      activeWorldGenConfigRef.current = meta.worldGenConfig ? JSON.parse(JSON.stringify(meta.worldGenConfig)) : null;
+      
       // 2. Configure World Manager
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
@@ -1731,7 +1757,7 @@ const App: React.FC = () => {
           worldManager.setWorldSpawn(meta.worldSpawn.x, meta.worldSpawn.y, meta.worldSpawn.z);
       }
       if (meta.spawnPoint) {
-          worldManager.setSpawnPoint(meta.spawnPoint.x, meta.spawnPoint.y, meta.spawnPoint.z);
+          worldManager.setSpawnPoint(meta.spawnPoint.x, meta.spawnPoint.y, meta.spawnPoint.z, false);
       }
       
       setGameMode(meta.gameMode);
@@ -1807,6 +1833,13 @@ const App: React.FC = () => {
       });
 
       // 5. Finalize
+      {
+          const bx = Math.floor(playerPosRef.current.x);
+          const bz = Math.floor(playerPosRef.current.z);
+          const biome = getBiome(bx, bz);
+          musicController.forcePlayForWorldEntry(meta.gameMode, biome.id);
+      }
+
       setAppState('game');
       setIsPaused(false);
       wantsGameplayRef.current = true;
@@ -1951,7 +1984,24 @@ const App: React.FC = () => {
           />
       )}
 
-    {bootReady && appState === 'chunkbase' && <ChunkBase onBack={() => setAppState('menu')} />}
+    {bootReady && appState === 'chunkbase' && <ChunkBase onBack={() => {
+        // Always restore or reset GenConfig when closing World Editor
+        if (activeWorldIdRef.current && activeWorldGenConfigRef.current) {
+            // Restore the active world's custom config
+            resetGenConfig();
+            loadGenConfig(activeWorldGenConfigRef.current);
+            console.log('[WorldEditor] Restored active world\'s GenConfig');
+        } else if (activeWorldIdRef.current && !activeWorldGenConfigRef.current) {
+            // Active world has no custom config, reset to defaults
+            resetGenConfig();
+            console.log('[WorldEditor] Reset to defaults for active world');
+        } else {
+            // No world loaded - reset to defaults to prevent parameter pollution
+            resetGenConfig();
+            console.log('[WorldEditor] Reset to defaults (no world loaded)');
+        }
+        setAppState('menu');
+    }} />}
 
       {/* Game Scene (Visible during Loading to run Preload, but hidden by overlay) */}
       {(appState === 'game' || appState === 'loading') && (
@@ -2010,7 +2060,7 @@ const App: React.FC = () => {
                     isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} 
                     spawnDrop={(t:any,x:any,y:any,z:any) => worldManager.spawnDrop(t, x, y, z)} setBreakingVisual={setBreakingVisual} 
                     setOpenContainer={(val:any) => { setOpenContainer(val); isInventoryOpenRef.current = !!val; if(val) enterUIMode(); }} 
-                    openContainer={openContainer} gameMode={gameMode} setCursorStack={setCursorStack} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping}
+                    openContainer={openContainer} gameMode={gameMode} setCursorStack={setCursorStack} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={(x:number, y:number, z:number) => { pendingBedSpawnRef.current = { x, y, z }; }}
                 />
                 
                 {!isCapturingPanorama && breakingVisual && <group position={[breakingVisual.pos[0]+0.5, breakingVisual.pos[1]+0.5, breakingVisual.pos[2]+0.5]}><mesh><boxGeometry args={[1.01, 1.01, 1.01]} /><meshBasicMaterial color={breakingVisual.noDrop ? '#4b0000' : 'black'} transparent opacity={breakingVisual.progress * 0.7} depthTest={true} depthWrite={false} /></mesh></group>}

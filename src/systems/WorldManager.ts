@@ -12,6 +12,7 @@ import { getBiome } from './world/biomes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
+import { GenConfig } from './world/genConfig';
 
 // --- Types ---
 enum ChunkStage {
@@ -180,10 +181,8 @@ export class WorldManager {
       this.activeSeed = seedNum;
       
       reseedGlobalNoise(this.activeSeed);
-      
-      if (this.worker) {
-          this.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
-      }
+
+      this.syncWorkerWorldGenState();
       
       console.log(`[WorldManager] Context set: ID=${worldId}, Seed=${this.activeSeed}`);
   }
@@ -222,8 +221,7 @@ export class WorldManager {
       if (this.worker) {
           this.worker.terminate();
           this.initWorker();
-          // Ensure new worker gets the current seed
-          this.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+          this.syncWorkerWorldGenState();
       }
       
       this.log("World State Reset", 'success');
@@ -249,6 +247,7 @@ export class WorldManager {
             };
             
             this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+            this.syncWorkerWorldGenState();
             this.workerStatusMessage = "Workers Active";
             console.log("Unified World Worker Initialized");
       } catch (e) {
@@ -265,6 +264,16 @@ export class WorldManager {
         this.worker = null;
     }
   }
+
+    private syncWorkerWorldGenState() {
+            if (!this.worker) return;
+
+            this.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+            this.worker.postMessage({
+                    type: 'SET_GEN_CONFIG',
+                    config: JSON.parse(JSON.stringify(GenConfig))
+            });
+    }
 
     private scheduleStreamingPump() {
             if (this.streamingPumpScheduled) return;
@@ -920,7 +929,14 @@ export class WorldManager {
 
   getTime(): number { return this.state.time; }
   setTime(t: number) { this.state.time = t; }
-  setSpawnPoint(x: number, y: number, z: number) { this.spawnPoint = { x, y, z }; this.log("Respawn point set", 'success'); }
+  setSpawnPoint(x: number, y: number, z: number, announce: boolean = true, message: string = "Respawn point set") {
+      this.spawnPoint = { x, y, z };
+      if (announce) this.log(message, 'success');
+  }
+  clearSpawnPoint(message: string = "Respawn point reset", type: 'info'|'error'|'success' = 'error') {
+      this.spawnPoint = null;
+      if (message) this.log(message, type);
+  }
   getSpawnPoint() { return this.spawnPoint; }
   setWorldSpawn(x: number, y: number, z: number) { this.worldSpawn = { x, y, z }; }
   getWorldSpawn() { return this.worldSpawn; }
@@ -1017,7 +1033,10 @@ export class WorldManager {
       if(val !== this.workersEnabled) {
           this.workersEnabled = val; 
           this.resetPipeline(); 
-          if(val) { this.initWorker(); } 
+          if(val) {
+              this.initWorker();
+              this.syncWorkerWorldGenState();
+          } 
           else { this.terminateWorker(); this.workerStatusMessage = "Workers Disabled"; }
           this.scheduleStreamingPump();
       }

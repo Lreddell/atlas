@@ -16,7 +16,7 @@ import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
-    setInventory, isDead, foodStateRef, setIsSleeping
+    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
 }: any) => {
     const { camera, scene } = useThree();
     const raycaster = useRef(new THREE.Raycaster());
@@ -176,11 +176,7 @@ export const InteractionController = ({
                             worldManager.log("You can sleep only at night", "error");
                         } else {
                             setIsSleeping(true);
-                            if (targetType === BlockType.BED_HEAD) {
-                                worldManager.setSpawnPoint(bx, by, bz);
-                            } else {
-                                worldManager.setSpawnPoint(bx, by, bz);
-                            }
+                            onSleepInBed?.(bx, by, bz);
                         }
                         return;
                     }
@@ -460,8 +456,16 @@ export const InteractionController = ({
                         }
                         
                         const otherType = worldManager.getBlock(ox, by, oz, false);
+                        const spawnPoint = worldManager.getSpawnPoint();
+                        const spawnMatchesThisBed = !!spawnPoint && (
+                            (spawnPoint.x === bx && spawnPoint.y === by && spawnPoint.z === bz) ||
+                            (spawnPoint.x === ox && spawnPoint.y === by && spawnPoint.z === oz)
+                        );
                         if (otherType === BlockType.BED_HEAD || otherType === BlockType.BED_FOOT) {
                             worldManager.setBlock(ox, by, oz, BlockType.AIR);
+                        }
+                        if (spawnMatchesThisBed) {
+                            worldManager.clearSpawnPoint('Warning: Your spawn point has been reset because your bed was broken.', 'error');
                         }
                     }
 

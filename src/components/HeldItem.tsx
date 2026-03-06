@@ -327,4 +327,6 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         </group>,
         camera
     );
+
+    
 };

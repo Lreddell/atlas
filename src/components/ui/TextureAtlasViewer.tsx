@@ -75,6 +75,8 @@ export const TextureAtlasViewer: React.FC<TextureAtlasViewerProps> = ({ onClose 
             69: "Bed Side Left",
             70: "Bed End",
             71: "Bed Inner",
+            123: "Cactus Top",
+            124: "Cactus Bottom",
 
             // Tools
             32: "Wood Pickaxe", 36: "Wood Axe", 39: "Wood Shovel", 105: "Wood Sword", 106: "Wood Hoe",

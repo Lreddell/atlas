@@ -156,7 +156,7 @@ class WorldStorageSystem {
             created: Date.now(),
             lastPlayed: Date.now(),
             gameMode,
-            time: 6000, // Start at Noon
+            time: 1000, // Start at Day
             ...(worldGenConfigSnapshot ? { worldGenConfig: worldGenConfigSnapshot } : {}),
             ...(worldGenPresetId ? { worldGenPresetId } : {}),
             ...(worldGenPresetName ? { worldGenPresetName } : {}),

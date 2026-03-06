@@ -221,5 +221,6 @@ export function getTextureRows(): number {
         const slot = BLOCKS[key as unknown as BlockType].textureSlot;
         if (slot !== undefined && slot > maxSlot) maxSlot = slot;
     }
+    maxSlot = Math.max(maxSlot, 124);
     return Math.ceil((maxSlot + 1) / ATLAS_COLS);
 }
