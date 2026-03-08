@@ -45,7 +45,7 @@ import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
 import { BIOMES } from './systems/world/biomes';
 import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
-import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, setBloodMoonOverride } from './systems/world/celestialEvents';
+import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
@@ -1870,9 +1870,7 @@ const App: React.FC = () => {
           const bz = Math.floor(playerPosRef.current.z);
           const biome = getBiome(bx, bz);
           const inCaves = shouldUseCaveMusic(bx, by, bz);
-          const time = worldManager.getTime() % 24000;
-          const isNight = time > 12542 && time < 23459;
-          const inBloodMoon = isNight && getLunarNightEventState(worldManager.getTime(), 24000, worldManager.getSeed()).isBloodMoon;
+          const inBloodMoon = isBloodMoonMusicActive(worldManager.getTime(), 24000, worldManager.getSeed());
           musicController.forcePlayForWorldEntry(meta.gameMode, biome.id, inCaves, inBloodMoon);
       }
 

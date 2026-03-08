@@ -43,6 +43,12 @@ const MUSIC_PACKS: Record<string, string[]> = {
 const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
 const CAVE_STABILITY_THRESHOLD = 4000; // Underground should react much faster than biome travel
 const BLOOD_MOON_STABILITY_THRESHOLD = 0;
+const BLOOD_MOON_LOOP_CROSSFADE = 10.0;
+const BLOOD_MOON_LOOP_CROSSFADE_TICKS = BLOOD_MOON_LOOP_CROSSFADE * 20;
+const BLOOD_MOON_LOOP_DISABLE_WINDOW_TICKS = BLOOD_MOON_LOOP_CROSSFADE_TICKS * 2;
+const BLOOD_MOON_FADE_IN = 10.0;
+const BLOOD_MOON_FADE_OUT = 10.0;
+const STANDARD_FADE_IN = 3.0;
 const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
 const TRANSITION_SILENCE = 0; // 0 seconds of absolute silence between tracks
 
@@ -71,6 +77,7 @@ class MusicController {
 
     // Transition State
     private isTransitioning: boolean = false;
+    private bloodMoonLoopCrossfadePending: boolean = false;
 
     constructor() {
         if (typeof window === 'undefined') return;
@@ -113,7 +120,7 @@ class MusicController {
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;
 
-        if (inBloodMoon) {
+        if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
         } else if (gameMode === 'creative') {
             targetContext = 'CREATIVE';
@@ -128,6 +135,7 @@ class MusicController {
         this.contextStableTime = Date.now();
         this.isTransitioning = true;
         this.isPlaying = false;
+        this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = 0;
         this.lastPlayedTrack = null;
         this.nextPlayTime = Date.now() + (fadeOut * 1000);
@@ -153,18 +161,19 @@ class MusicController {
         this.isPlaying = false;
         this.isTransitioning = true;
         this.lastFinishTime = 0;
+        this.bloodMoonLoopCrossfadePending = false;
         // Don't reset lastPlayedTrack - skip should also avoid repeating the same song
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
         return true;
     }
 
-    public update(inMenu: boolean, gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
+    public update(inMenu: boolean, gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false, bloodMoonTicksRemaining: number | null = null) {
         // 1. Determine Target Context
         let targetContext = "generic";
         
         if (inMenu) {
             targetContext = "MENU";
-        } else if (inBloodMoon) {
+        } else if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
         } else if (gameMode === 'creative') {
             targetContext = "CREATIVE";
@@ -201,6 +210,11 @@ class MusicController {
             }
         }
 
+        if (this.shouldCrossfadeBloodMoonLoop(targetContext, bloodMoonTicksRemaining)) {
+            this.crossfadeBloodMoonLoop();
+            return;
+        }
+
         // 3. Playback Logic
         
         // If we are in the middle of a biome switch silence gap
@@ -208,15 +222,14 @@ class MusicController {
             // Wait until the silence timer (stored in nextPlayTime) expires
             if (now >= this.nextPlayTime) {
                 this.isTransitioning = false;
-                // Start the new track with a standard fade-in
-                this.playNextTrack(3.0);
+                this.playNextTrack(this.getFadeInForContext(this.currentContext));
             }
             return;
         }
 
         // Normal playlist logic (Same biome)
         if (!this.isPlaying && now >= this.nextPlayTime) {
-            this.playNextTrack(3.0); 
+            this.playNextTrack(this.getFadeInForContext(this.currentContext)); 
         }
     }
 
@@ -234,10 +247,12 @@ class MusicController {
         console.log(`[Music] Switching to ${newContext} (Fast: ${isFast})`);
         const previousContext = this.currentContext;
         this.currentContext = newContext;
+        this.bloodMoonLoopCrossfadePending = false;
         this.lastPlayedTrack = null; // Reset track history when switching contexts
 
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
+        const leavingBloodMoon = previousContext === 'BLOODMOON' && newContext !== 'BLOODMOON';
 
         let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
         let silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
@@ -248,6 +263,8 @@ class MusicController {
         } else if (leavingMenuForWorld) {
             fadeOut = FAST_FADE_OUT;
             silence = FAST_SILENCE;
+        } else if (leavingBloodMoon) {
+            fadeOut = BLOOD_MOON_FADE_OUT;
         }
 
         // 1. Stop current music with fade out
@@ -261,9 +278,29 @@ class MusicController {
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
     }
 
-    private playNextTrack(fadeTime = 3.0) {
+    private shouldCrossfadeBloodMoonLoop(targetContext: string, bloodMoonTicksRemaining: number | null) {
+        if (this.currentContext !== 'BLOODMOON' || targetContext !== 'BLOODMOON') return false;
+        if (!this.isPlaying || this.isTransitioning || this.bloodMoonLoopCrossfadePending) return false;
+        if (bloodMoonTicksRemaining !== null && bloodMoonTicksRemaining <= BLOOD_MOON_LOOP_DISABLE_WINDOW_TICKS) return false;
+
+        const timeRemaining = soundManager.getActiveMusicTimeRemaining();
+        return timeRemaining !== null && timeRemaining <= BLOOD_MOON_LOOP_CROSSFADE;
+    }
+
+    private crossfadeBloodMoonLoop() {
+        this.bloodMoonLoopCrossfadePending = true;
+        this.playNextTrack(BLOOD_MOON_LOOP_CROSSFADE).finally(() => {
+            this.bloodMoonLoopCrossfadePending = false;
+        });
+    }
+
+    private getFadeInForContext(context: string) {
+        return context === 'BLOODMOON' ? BLOOD_MOON_FADE_IN : STANDARD_FADE_IN;
+    }
+
+    private playNextTrack(fadeTime = STANDARD_FADE_IN, fadeOutTime: number = fadeTime) {
         const pack = MUSIC_PACKS[this.currentContext] || MUSIC_PACKS["generic"];
-        if (!pack || pack.length === 0) return;
+        if (!pack || pack.length === 0) return Promise.resolve();
 
         // If there are multiple tracks, exclude the last played track
         let availableTracks = pack;
@@ -283,9 +320,9 @@ class MusicController {
 
         // Try to play
         // We pass a callback for when it finishes
-        soundManager.playMusic(trackId, fadeTime, () => {
+        return soundManager.playMusic(trackId, fadeTime, () => {
             this.onTrackFinished();
-        }).then(started => {
+        }, fadeOutTime).then(started => {
             if (!started) {
                 // If it failed to start (e.g. file is empty or missing), release lock and retry after a long delay
                 this.isPlaying = false;
@@ -296,6 +333,7 @@ class MusicController {
 
     private onTrackFinished() {
         this.isPlaying = false;
+        this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = Date.now();
         this.scheduleNextTrack();
     }
