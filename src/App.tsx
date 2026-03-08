@@ -726,11 +726,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
         if (openContainer || isPaused || !isLocked || showCommandInput || isDead || isSleeping || appState !== 'game') return;
+                if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        return;
+                }
         if (e.deltaY > 0) setSelectedSlot(s => (s + 1) % 9);
         if (e.deltaY < 0) setSelectedSlot(s => (s - 1 + 9) % 9);
     };
-    window.addEventListener('wheel', onWheel);
-    return () => window.removeEventListener('wheel', onWheel);
+        window.addEventListener('wheel', onWheel, { passive: false });
+        return () => window.removeEventListener('wheel', onWheel, { passive: false } as EventListenerOptions);
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
   const handleCollect = useCallback((id: string, type: BlockType, count: number) => {
@@ -1668,6 +1672,41 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => { window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown); }, [handleKeyDown]);
+
+  useEffect(() => {
+      if (isElectron) return;
+
+      const shouldBlockBrowserShortcuts = appState === 'game'
+          && !openContainer
+          && !isPaused
+          && isLocked
+          && !showCommandInput
+          && !isDead
+          && !isSleeping
+          && !showAtlasViewer
+          && !isCapturingPanorama;
+
+      if (!shouldBlockBrowserShortcuts) return;
+
+      const blockBrowserShortcut = (event: KeyboardEvent) => {
+          if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
+
+          event.preventDefault();
+      };
+
+      const blockZoomWheel = (event: WheelEvent) => {
+          if (!(event.ctrlKey || event.metaKey)) return;
+          event.preventDefault();
+      };
+
+      window.addEventListener('keydown', blockBrowserShortcut, { capture: true });
+      window.addEventListener('wheel', blockZoomWheel, { capture: true, passive: false });
+
+      return () => {
+          window.removeEventListener('keydown', blockBrowserShortcut, { capture: true } as EventListenerOptions);
+          window.removeEventListener('wheel', blockZoomWheel, { capture: true } as EventListenerOptions);
+      };
+  }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron]);
 
   useEffect(() => {
       if (!isCapturingPanorama) return;
