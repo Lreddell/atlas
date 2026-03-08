@@ -14,3 +14,10 @@ declare interface Window {
 		scanMusicFolders?: () => Promise<unknown>;
 	};
 }
+
+declare interface Navigator {
+	keyboard?: {
+		lock?: (keyCodes?: string[]) => Promise<void>;
+		unlock?: () => void;
+	};
+}
