@@ -560,19 +560,38 @@ const App: React.FC = () => {
   useEffect(() => {
       soundManager.init().catch(e => console.warn("Sound init warning:", e));
 
-      if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
+      if (soundManager.isPlaybackReady() && (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor')) {
           musicController.update(true, 'survival', 'plains');
       }
 
-      // Resume AudioContext on any interaction/state change (browser autoplay policy)
-      soundManager.resume();
-
       const interval = setInterval(() => {
-          if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
+          if (soundManager.isPlaybackReady() && (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor')) {
               musicController.update(true, 'survival', 'plains');
           }
       }, 1000);
       return () => clearInterval(interval);
+  }, [appState]);
+
+  useEffect(() => {
+      const tryUnlockAudio = async () => {
+          const resumed = await soundManager.resume();
+          if (!resumed) return;
+
+          if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
+              musicController.update(true, 'survival', 'plains');
+          }
+      };
+
+      const events: Array<keyof WindowEventMap> = ['pointerdown', 'touchstart', 'keydown'];
+      events.forEach((eventName) => {
+          window.addEventListener(eventName, tryUnlockAudio, { capture: true, passive: true });
+      });
+
+      return () => {
+          events.forEach((eventName) => {
+              window.removeEventListener(eventName, tryUnlockAudio, { capture: true } as EventListenerOptions);
+          });
+      };
   }, [appState]);
 
   useLayoutEffect(() => {
