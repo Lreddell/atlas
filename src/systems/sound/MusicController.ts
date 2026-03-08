@@ -10,7 +10,9 @@ const MUSIC_PACKS: Record<string, string[]> = {
     "MENU": ["music.menu"],
 
     // Game States
+    "BLOODMOON": ["music.bloodmoon"],
     "CREATIVE": ["music.creative"],
+    "CAVES": ["music.caves"],
     
     // Biomes (Exclusive assignments)
     "ocean": ["music.ocean"],
@@ -39,8 +41,10 @@ const MUSIC_PACKS: Record<string, string[]> = {
 
 // Biome Switch Config
 const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
+const CAVE_STABILITY_THRESHOLD = 4000; // Underground should react much faster than biome travel
+const BLOOD_MOON_STABILITY_THRESHOLD = 0;
 const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
-const TRANSITION_SILENCE = 1000; // 1 second of absolute silence between tracks
+const TRANSITION_SILENCE = 0; // 0 seconds of absolute silence between tracks
 
 // Fast Transition Config (Menu Switching)
 const FAST_FADE_OUT = 2.0; 
@@ -105,12 +109,16 @@ class MusicController {
         return { min: this.minDelay / 1000, max: this.maxDelay / 1000 };
     }
 
-    public forcePlayForWorldEntry(gameMode: string, biomeId: string) {
+    public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;
 
-        if (gameMode === 'creative') {
+        if (inBloodMoon) {
+            targetContext = 'BLOODMOON';
+        } else if (gameMode === 'creative') {
             targetContext = 'CREATIVE';
+        } else if (inCaves) {
+            targetContext = 'CAVES';
         } else if (MUSIC_PACKS[biomeId]) {
             targetContext = biomeId;
         }
@@ -150,14 +158,18 @@ class MusicController {
         return true;
     }
 
-    public update(inMenu: boolean, gameMode: string, biomeId: string) {
+    public update(inMenu: boolean, gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         // 1. Determine Target Context
         let targetContext = "generic";
         
         if (inMenu) {
             targetContext = "MENU";
+        } else if (inBloodMoon) {
+            targetContext = 'BLOODMOON';
         } else if (gameMode === 'creative') {
             targetContext = "CREATIVE";
+        } else if (inCaves) {
+            targetContext = "CAVES";
         } else {
             // Use biome ID directly if it exists in our packs, otherwise fallback
             if (MUSIC_PACKS[biomeId]) {
@@ -177,7 +189,11 @@ class MusicController {
 
         // Only switch if context has been stable for the threshold (6 seconds) OR if switching to/from MENU (instant)
         const isMenuSwitch = targetContext === "MENU" || this.currentContext === "MENU";
-        const threshold = isMenuSwitch ? 0 : BIOME_STABILITY_THRESHOLD;
+        const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
+        const isCaveSwitch = targetContext === "CAVES" || this.currentContext === "CAVES";
+        const threshold = isMenuSwitch
+            ? 0
+            : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
         if (this.pendingContext && now - this.contextStableTime >= threshold) {
             if (this.pendingContext !== this.currentContext) {
@@ -205,6 +221,16 @@ class MusicController {
     }
 
     private switchContext(newContext: string, isFast: boolean = false) {
+        // Don't stop current music if the new context has no available tracks
+        const newPack = MUSIC_PACKS[newContext] || MUSIC_PACKS['generic'];
+        const hasNewTracks = newPack?.some(eventId => soundManager.hasTracksForEvent(eventId)) ?? false;
+        if (!hasNewTracks) {
+            console.log(`[Music] Context ${newContext} has no tracks, staying in ${this.currentContext || 'current'}.`);
+            this.pendingContext = this.currentContext;
+            this.contextStableTime = Date.now();
+            return;
+        }
+
         console.log(`[Music] Switching to ${newContext} (Fast: ${isFast})`);
         const previousContext = this.currentContext;
         this.currentContext = newContext;
@@ -239,8 +265,6 @@ class MusicController {
         const pack = MUSIC_PACKS[this.currentContext] || MUSIC_PACKS["generic"];
         if (!pack || pack.length === 0) return;
 
-        const effectiveFadeTime = this.currentContext === 'MENU' ? 0 : fadeTime;
-
         // If there are multiple tracks, exclude the last played track
         let availableTracks = pack;
         if (pack.length > 1 && this.lastPlayedTrack !== null) {
@@ -259,13 +283,13 @@ class MusicController {
 
         // Try to play
         // We pass a callback for when it finishes
-        soundManager.playMusic(trackId, effectiveFadeTime, () => {
+        soundManager.playMusic(trackId, fadeTime, () => {
             this.onTrackFinished();
         }).then(started => {
             if (!started) {
-                // If it failed to start (e.g. file is empty or missing), release lock and try again shortly
+                // If it failed to start (e.g. file is empty or missing), release lock and retry after a long delay
                 this.isPlaying = false;
-                this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 1000);
+                this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 30000);
             }
         });
     }

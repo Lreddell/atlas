@@ -52,6 +52,8 @@
     "music.desert": { "category": "music", "sounds": ["music/desert"], "volume": 0.5 },
     "music.ocean": { "category": "music", "sounds": ["music/ocean"], "volume": 0.5 },
     "music.cold": { "category": "music", "sounds": ["music/cold"], "volume": 0.5 },
+    "music.caves": { "category": "music", "sounds": ["music/caves"], "volume": 0.45 },
+    "music.bloodmoon": { "category": "music", "sounds": ["music/bloodmoon"], "volume": 0.48 },
     "music.cherry": { "category": "music", "sounds": ["music/cherry"], "volume": 0.5 },
     "music.mesa": { "category": "music", "sounds": ["music/mesa"], "volume": 0.5 },
     "music.volcanic": { "category": "music", "sounds": ["music/volcanic"], "volume": 0.5 }

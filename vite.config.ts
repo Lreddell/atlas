@@ -28,7 +28,7 @@ const copyBuildIconPlugin = {
 
 const MUSIC_ROOT_DIR = resolve(__dirname, 'public', 'assets', 'rvx', 'sounds', 'music')
 const MUSIC_INDEX_PATH = resolve(__dirname, 'public', 'assets', 'rvx', 'sounds', 'music-index.json')
-const AUDIO_FILE_REGEX = /\.(ogg|mp3|wav)$/i
+const AUDIO_FILE_REGEX = /\.(ogg|mp3|wav|flac|m4a|opus|aac|webm)$/i
 
 const generateMusicFolderIndex = () => {
   const index: Record<string, string[]> = {}

@@ -3,7 +3,32 @@ import { useRef, useEffect } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import { soundManager } from '../systems/sound/SoundManager';
 import { musicController } from '../systems/sound/MusicController';
+import { worldManager } from '../systems/WorldManager';
 import { getBiome } from '../systems/world/biomes';
+import { getLunarNightEventState } from '../systems/world/celestialEvents';
+import { BlockType } from '../types';
+
+const CAVE_DEPTH_THRESHOLD = 14;
+const CAVE_MAX_SKY_LIGHT = 2;
+const CAVE_MAX_Y = 56;
+
+export function shouldUseCaveMusic(x: number, y: number, z: number) {
+    const terrainHeight = worldManager.getTerrainHeight(x, z);
+    const undergroundDepth = terrainHeight - y;
+    if (undergroundDepth < CAVE_DEPTH_THRESHOLD || y > CAVE_MAX_Y) return false;
+
+    const headLight = worldManager.getLight(x, y, z).sky;
+    const feetLight = worldManager.getLight(x, Math.max(y - 1, 0), z).sky;
+    if (headLight > CAVE_MAX_SKY_LIGHT || feetLight > CAVE_MAX_SKY_LIGHT) return false;
+
+    const headBlock = worldManager.getBlock(x, y, z, false);
+    const feetBlock = worldManager.getBlock(x, Math.max(y - 1, 0), z, false);
+    if (headBlock === BlockType.WATER || headBlock === BlockType.LAVA || feetBlock === BlockType.WATER || feetBlock === BlockType.LAVA) {
+        return false;
+    }
+
+    return true;
+}
 
 // Update audio listener pos each frame AND Drive Music Controller
 export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext = false }: { isPaused: boolean, gameMode: string, keepMenuMusicContext?: boolean }) => {
@@ -29,11 +54,16 @@ export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext 
             }
 
             const x = Math.floor(camera.position.x);
+            const y = Math.floor(camera.position.y);
             const z = Math.floor(camera.position.z);
             // Guard biome lookup
-            if (Number.isFinite(x) && Number.isFinite(z)) {
+            if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
                 const biome = getBiome(x, z);
-                musicController.update(false, gameMode, biome.id);
+                const inCaves = shouldUseCaveMusic(x, y, z);
+                const time = worldManager.getTime() % 24000;
+                const isNight = time > 12542 && time < 23459;
+                const inBloodMoon = isNight && getLunarNightEventState(worldManager.getTime(), 24000, worldManager.getSeed()).isBloodMoon;
+                musicController.update(false, gameMode, biome.id, inCaves, inBloodMoon);
             }
         }
     });

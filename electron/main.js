@@ -322,6 +322,48 @@ ipcMain.handle('worldPreset:delete', async (_event, payload) => {
   }
 });
 
+const AUDIO_EXTENSIONS = new Set(['.ogg', '.mp3', '.wav', '.flac', '.m4a', '.opus', '.aac', '.webm']);
+
+const getMusicDir = () => {
+  if (app.isPackaged) {
+    return path.join(__dirname, '../dist/assets/rvx/sounds/music');
+  }
+  return path.join(process.cwd(), 'public/assets/rvx/sounds/music');
+};
+
+ipcMain.handle('music:scanFolders', async () => {
+  try {
+    const musicDir = getMusicDir();
+    const index = {};
+    let entries;
+    try {
+      entries = await fs.readdir(musicDir, { withFileTypes: true });
+    } catch {
+      return { ok: true, index };
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const folderName = entry.name.toLowerCase();
+      const folderPath = path.join(musicDir, entry.name);
+      let files;
+      try {
+        files = await fs.readdir(folderPath, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const tracks = files
+        .filter(f => f.isFile() && AUDIO_EXTENSIONS.has(path.extname(f.name).toLowerCase()))
+        .map(f => `assets/rvx/sounds/music/${entry.name}/${f.name}`);
+      if (tracks.length > 0) {
+        index[folderName] = tracks;
+      }
+    }
+    return { ok: true, index };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error), index: {} };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

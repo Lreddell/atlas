@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld('atlasDesktop', {
   readWorldPreset: (id) => ipcRenderer.invoke('worldPreset:read', { id }),
   saveWorldPreset: (name, config) => ipcRenderer.invoke('worldPreset:save', { name, config }),
   deleteWorldPreset: (id) => ipcRenderer.invoke('worldPreset:delete', { id }),
+  scanMusicFolders: () => ipcRenderer.invoke('music:scanFolders'),
 });
