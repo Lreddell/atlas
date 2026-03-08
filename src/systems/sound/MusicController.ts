@@ -38,9 +38,9 @@ const MUSIC_PACKS: Record<string, string[]> = {
 };
 
 // Biome Switch Config
-const BIOME_STABILITY_THRESHOLD = 6000; // 6 seconds to confirm biome change
+const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
 const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
-const TRANSITION_SILENCE = 3000; // 3 seconds of absolute silence between tracks
+const TRANSITION_SILENCE = 1000; // 1 second of absolute silence between tracks
 
 // Fast Transition Config (Menu Switching)
 const FAST_FADE_OUT = 2.0; 
