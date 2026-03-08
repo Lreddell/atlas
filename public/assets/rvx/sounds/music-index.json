@@ -1,4 +1,7 @@
 {
+  "bloodmoon": [
+    "assets/rvx/sounds/music/bloodmoon/Blood_Moon_-_Rhino_X.ogg"
+  ],
   "caves": [
     "assets/rvx/sounds/music/caves/Expedition_-_Rhino_X.ogg",
     "assets/rvx/sounds/music/caves/Vibey_Cave_Melodies_-_Rhino_X.ogg"

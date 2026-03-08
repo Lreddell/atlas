@@ -5,7 +5,7 @@ import { soundManager } from '../systems/sound/SoundManager';
 import { musicController } from '../systems/sound/MusicController';
 import { worldManager } from '../systems/WorldManager';
 import { getBiome } from '../systems/world/biomes';
-import { getLunarNightEventState } from '../systems/world/celestialEvents';
+import { getBloodMoonMusicTicksRemaining, isBloodMoonMusicActive } from '../systems/world/celestialEvents';
 import { BlockType } from '../types';
 
 const CAVE_DEPTH_THRESHOLD = 14;
@@ -60,10 +60,10 @@ export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext 
             if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
                 const biome = getBiome(x, z);
                 const inCaves = shouldUseCaveMusic(x, y, z);
-                const time = worldManager.getTime() % 24000;
-                const isNight = time > 12542 && time < 23459;
-                const inBloodMoon = isNight && getLunarNightEventState(worldManager.getTime(), 24000, worldManager.getSeed()).isBloodMoon;
-                musicController.update(false, gameMode, biome.id, inCaves, inBloodMoon);
+                const ticks = worldManager.getTime();
+                const inBloodMoon = isBloodMoonMusicActive(ticks, 24000, worldManager.getSeed());
+                const bloodMoonTicksRemaining = getBloodMoonMusicTicksRemaining(ticks, 24000);
+                musicController.update(false, gameMode, biome.id, inCaves, inBloodMoon, bloodMoonTicksRemaining);
             }
         }
     });

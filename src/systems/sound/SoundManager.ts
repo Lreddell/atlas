@@ -398,7 +398,7 @@ class SoundManager {
      * Plays streaming music. Use for long audio files.
      * Guaranteed not to crash on missing files or fetch errors.
      */
-    public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void) {
+    public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void, fadeOutTime: number = fadeTime) {
         if (!this.enabled || !this.ctx) return false;
 
         // Try resuming context if suspended (browser autoplay policy)
@@ -470,13 +470,13 @@ class SoundManager {
         if (prevDeck && prevGain && this.activeDeck) {
             prevGain.gain.cancelScheduledValues(now);
             prevGain.gain.setValueAtTime(prevGain.gain.value, now);
-            prevGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+            prevGain.gain.linearRampToValueAtTime(0, now + fadeOutTime);
             
             setTimeout(() => {
                 if (this.activeDeck !== (nextDeckId === 'A' ? 'B' : 'A')) return; 
                 prevDeck.pause();
                 prevDeck.currentTime = 0;
-            }, fadeTime * 1000 + 100);
+            }, fadeOutTime * 1000 + 100);
         }
 
         this.activeDeck = nextDeckId;
@@ -522,6 +522,21 @@ class SoundManager {
         });
         
         this.activeDeck = null;
+    }
+
+    public getActiveMusicTimeRemaining(): number | null {
+        const activeDeck = this.activeDeck === 'A'
+            ? this.musicDeckA
+            : this.activeDeck === 'B'
+                ? this.musicDeckB
+                : null;
+
+        if (!activeDeck || activeDeck.paused) return null;
+
+        const { duration, currentTime } = activeDeck;
+        if (!Number.isFinite(duration) || duration <= 0) return null;
+
+        return Math.max(0, duration - currentTime);
     }
 
     private createFallbackBuffer(path: string): AudioBuffer | null {

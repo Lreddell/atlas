@@ -2,6 +2,8 @@ const DEFAULT_TICK_CYCLE = 24000;
 const BLOOD_MOON_CHANCE = 1 / 96;
 const bloodMoonOverrides = new Map<number, boolean>();
 const LUNAR_NOON_OFFSET = DEFAULT_TICK_CYCLE / 4;
+export const BLOOD_MOON_MUSIC_START_TICK = 11900;
+export const BLOOD_MOON_MUSIC_END_TICK = 23850;
 
 export const BLOOD_MOON_TAG = 'blood_moon';
 
@@ -69,6 +71,20 @@ export function clearBloodMoonOverride(cycleIndex: number) {
 
 export function hasBloodMoonOverride(cycleIndex: number) {
     return bloodMoonOverrides.has(cycleIndex);
+}
+
+export function getBloodMoonMusicTicksRemaining(ticks: number, tickCycle: number = DEFAULT_TICK_CYCLE) {
+    const time = ((ticks % tickCycle) + tickCycle) % tickCycle;
+    if (time < BLOOD_MOON_MUSIC_START_TICK || time > BLOOD_MOON_MUSIC_END_TICK) {
+        return 0;
+    }
+
+    return BLOOD_MOON_MUSIC_END_TICK - time + 1;
+}
+
+export function isBloodMoonMusicActive(ticks: number, tickCycle: number = DEFAULT_TICK_CYCLE, worldSeed: number = 0) {
+    return getBloodMoonMusicTicksRemaining(ticks, tickCycle) > 0
+        && getLunarNightEventState(ticks, tickCycle, worldSeed).isBloodMoon;
 }
 
 export function getLunarNightEventState(ticks: number, tickCycle: number = DEFAULT_TICK_CYCLE, worldSeed: number = 0): LunarNightEventState {
