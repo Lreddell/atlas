@@ -285,6 +285,7 @@ const App: React.FC = () => {
 
   const activeWorldIdRef = useRef<string | null>(null); // Track active world ID for auto-save
   const activeWorldGenConfigRef = useRef<any>(null); // Store active world's GenConfig to restore after World Editor
+    const keyboardLockActiveRef = useRef(false);
 
   const isNativeLoop = vsync;
   const canvasFrameloop = isNativeLoop ? 'always' : 'never';
@@ -367,6 +368,31 @@ const App: React.FC = () => {
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
     }, []);
+
+  const unlockBrowserShortcuts = useCallback(() => {
+      if (isElectron) return;
+      if (!keyboardLockActiveRef.current) return;
+
+      try {
+          navigator.keyboard?.unlock?.();
+      } catch {}
+
+      keyboardLockActiveRef.current = false;
+  }, [isElectron]);
+
+  const lockBrowserShortcuts = useCallback(async () => {
+      if (isElectron) return false;
+      if (!navigator.keyboard?.lock) return false;
+
+      try {
+          await navigator.keyboard.lock();
+          keyboardLockActiveRef.current = true;
+          return true;
+      } catch {
+          keyboardLockActiveRef.current = false;
+          return false;
+      }
+  }, [isElectron]);
 
   // Initial dummy position, will be replaced by handleStartGame
   const [currentSpawnPos, setCurrentSpawnPos] = useState(new THREE.Vector3(0, 150, 0));
@@ -819,6 +845,7 @@ const App: React.FC = () => {
   const resumeFromUserGesture = useCallback((reason: 'escape' | 'button' | 'respawn') => {
       soundManager.resume(); 
       soundManager.preload(['ui.click', 'ui.open', 'ui.close', 'entity.player.hurt', 'block.grass.step', 'block.stone.step', 'block.wood.step']);
+      void lockBrowserShortcuts();
       setIsPaused(false);
       setOpenContainer(null);
       setShowCommandInput(false);
@@ -829,7 +856,7 @@ const App: React.FC = () => {
       wantsGameplayRef.current = true;
       relockWantedRef.current = true;
       requestPointerLockBurst(reason, { force: true });
-  }, [requestPointerLockBurst]);
+    }, [requestPointerLockBurst, lockBrowserShortcuts]);
 
   const resumeGame = useCallback((opts?: { deferPointerLock?: boolean }) => {
       setOpenContainer(null);
@@ -845,12 +872,13 @@ const App: React.FC = () => {
 
   const onLock = useCallback(() => { 
       soundManager.resume();
+      void lockBrowserShortcuts();
       clearPointerLockRetryTimers();
       relockWantedRef.current = false;
       lockRequestInFlightRef.current = false;
       setIsLocked(true); 
       setIsPaused(false);
-  }, [clearPointerLockRetryTimers]);
+  }, [clearPointerLockRetryTimers, lockBrowserShortcuts]);
 
   const onUnlock = useCallback(() => { 
       setIsLocked(false); 
@@ -865,10 +893,11 @@ const App: React.FC = () => {
   const handleGameClick = useCallback((e: React.MouseEvent) => {
       void e;
       soundManager.resume();
+      void lockBrowserShortcuts();
       if (appState === 'game' && !isPaused && !isLocked && !openContainer && !showCommandInput && !isDead && !isSleeping && !showAtlasViewer) {
           resumeFromUserGesture('button');
       }
-  }, [isPaused, isLocked, openContainer, showCommandInput, isDead, isSleeping, showAtlasViewer, resumeFromUserGesture, appState]);
+  }, [isPaused, isLocked, openContainer, showCommandInput, isDead, isSleeping, showAtlasViewer, resumeFromUserGesture, appState, lockBrowserShortcuts]);
 
   const tryRecoverPointerLock = useCallback((reason: string) => {
       if (appState !== 'game') return;
@@ -1707,6 +1736,31 @@ const App: React.FC = () => {
           window.removeEventListener('wheel', blockZoomWheel, { capture: true } as EventListenerOptions);
       };
   }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron]);
+
+  useEffect(() => {
+      const shouldHoldShortcutLock = !isElectron
+          && appState === 'game'
+          && !openContainer
+          && !isPaused
+          && isLocked
+          && !showCommandInput
+          && !isDead
+          && !isSleeping
+          && !showAtlasViewer
+          && !isCapturingPanorama;
+
+      if (!shouldHoldShortcutLock) {
+          unlockBrowserShortcuts();
+      }
+
+      return () => {
+          if (!shouldHoldShortcutLock) {
+              unlockBrowserShortcuts();
+          }
+      };
+  }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron, unlockBrowserShortcuts]);
+
+  useEffect(() => () => unlockBrowserShortcuts(), [unlockBrowserShortcuts]);
 
   useEffect(() => {
       if (!isCapturingPanorama) return;
