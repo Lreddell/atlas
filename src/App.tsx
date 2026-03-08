@@ -28,6 +28,7 @@ import { LoadingScreen } from './components/ui/LoadingScreen';
 import { MenuPanoramaBackground } from './components/ui/MenuPanoramaBackground';
 import { CameraControls, CameraControlsHandle } from './components/CameraControls';
 import { AudioListenerUpdater } from './components/AudioListenerUpdater';
+import { shouldUseCaveMusic } from './components/AudioListenerUpdater';
 import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
@@ -44,6 +45,7 @@ import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
 import { BIOMES } from './systems/world/biomes';
 import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
+import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
@@ -561,6 +563,9 @@ const App: React.FC = () => {
       if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
           musicController.update(true, 'survival', 'plains');
       }
+
+      // Resume AudioContext on any interaction/state change (browser autoplay policy)
+      soundManager.resume();
 
       const interval = setInterval(() => {
           if (appState === 'menu' || appState === 'options' || appState === 'chunkbase' || appState === 'featureEditor') {
@@ -1264,6 +1269,32 @@ const App: React.FC = () => {
           } else {
               logMsg('Usage: /shootingstar spawn', 'error');
           }
+      } else if (parts[0] === '/bloodmoon') {
+          const targetCycle = (() => {
+              const mode = parts[2] === 'next' ? 'next' : 'current';
+              const cycle = getMoonCycleIndex(worldManager.getTime());
+              return mode === 'next' ? cycle + 1 : cycle;
+          })();
+
+          if (parts[1] === 'force') {
+              setBloodMoonOverride(targetCycle, true);
+              const scope = targetCycle === getMoonCycleIndex(worldManager.getTime()) ? 'current' : 'next';
+              logMsg(`Forced a blood moon for the ${scope} lunar cycle`, 'success');
+          } else if (parts[1] === 'clear') {
+              clearBloodMoonOverride(targetCycle);
+              const scope = targetCycle === getMoonCycleIndex(worldManager.getTime()) ? 'current' : 'next';
+              logMsg(`Cleared blood moon override for the ${scope} lunar cycle`, 'success');
+          } else if (parts[1] === 'query') {
+              const currentCycle = getMoonCycleIndex(worldManager.getTime());
+              const currentEvent = getLunarNightEventState(worldManager.getTime(), 24000, worldManager.getSeed());
+              const nextTicks = (currentCycle + 1) * 24000;
+              const nextEvent = getLunarNightEventState(nextTicks, 24000, worldManager.getSeed());
+              const currentOverride = hasBloodMoonOverride(currentCycle) ? 'override' : 'natural';
+              const nextOverride = hasBloodMoonOverride(currentCycle + 1) ? 'override' : 'natural';
+              logMsg(`Current cycle: ${currentEvent.eventId} (${currentOverride}), next cycle: ${nextEvent.eventId} (${nextOverride})`, 'info');
+          } else {
+              logMsg('Usage: /bloodmoon <force|clear|query> [current|next]', 'error');
+          }
       } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
       setCommandValue(''); 
       setShowSuggestions(false);
@@ -1835,9 +1866,14 @@ const App: React.FC = () => {
       // 5. Finalize
       {
           const bx = Math.floor(playerPosRef.current.x);
+          const by = Math.floor(playerPosRef.current.y);
           const bz = Math.floor(playerPosRef.current.z);
           const biome = getBiome(bx, bz);
-          musicController.forcePlayForWorldEntry(meta.gameMode, biome.id);
+          const inCaves = shouldUseCaveMusic(bx, by, bz);
+          const time = worldManager.getTime() % 24000;
+          const isNight = time > 12542 && time < 23459;
+          const inBloodMoon = isNight && getLunarNightEventState(worldManager.getTime(), 24000, worldManager.getSeed()).isBloodMoon;
+          musicController.forcePlayForWorldEntry(meta.gameMode, biome.id, inCaves, inBloodMoon);
       }
 
       setAppState('game');

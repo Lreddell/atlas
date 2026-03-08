@@ -44,6 +44,8 @@ class SoundManager {
     private musicGainA: GainNode | null = null;
     private musicGainB: GainNode | null = null;
     private activeDeck: 'A' | 'B' | null = null;
+    private musicStopTimeoutA: number | null = null;
+    private musicStopTimeoutB: number | null = null;
 
     // Temp vectors for listener update to reduce GC
     private tmpPos = new THREE.Vector3();
@@ -56,11 +58,11 @@ class SoundManager {
 
     public async init() {
         if (this.ctx) {
-            // Already initialized
+            // Already initialized — just resume if suspended, don't reload the folder index
+            // (reloading clears the index causing a brief gap where tracks appear missing)
             if (this.ctx.state === 'suspended') {
                 this.ctx.resume().catch(() => {});
             }
-            await this.loadMusicFolderIndex();
             return;
         }
 
@@ -181,9 +183,48 @@ class SoundManager {
         }
     }
 
-    private async loadMusicFolderIndex() {
-        this.musicFolderIndex.clear();
+    private clearMusicStopTimeout(deckId: 'A' | 'B') {
+        const timeoutId = deckId === 'A' ? this.musicStopTimeoutA : this.musicStopTimeoutB;
+        if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+        }
 
+        if (deckId === 'A') {
+            this.musicStopTimeoutA = null;
+        } else {
+            this.musicStopTimeoutB = null;
+        }
+    }
+
+    private async loadMusicFolderIndex() {
+        // Build into a temp map first, then swap atomically so there is never
+        // a window where the index is empty while music is already playing.
+        const newIndex = new Map<string, string[]>();
+
+        // In Electron: dynamically scan the music folder (any filename, any audio extension)
+        if (typeof window !== 'undefined' && (window as any).atlasDesktop?.scanMusicFolders) {
+            try {
+                const result = await (window as any).atlasDesktop.scanMusicFolders() as { ok: boolean; index?: Record<string, unknown> };
+                if (result?.ok && result.index) {
+                    Object.entries(result.index).forEach(([folderName, tracks]) => {
+                        if (!Array.isArray(tracks)) return;
+                        const normalizedTracks = (tracks as unknown[])
+                            .filter((t): t is string => typeof t === 'string')
+                            .map(t => t.replace(/\\/g, '/').replace(/^\/+/, '').trim())
+                            .filter(t => t.length > 0);
+                        if (normalizedTracks.length > 0) {
+                            newIndex.set(folderName.toLowerCase(), normalizedTracks);
+                        }
+                    });
+                    this.musicFolderIndex = newIndex;
+                    return;
+                }
+            } catch (e) {
+                console.debug('Electron music scan failed, falling back to index file:', e);
+            }
+        }
+
+        // Fall back to static music-index.json (web / no Electron)
         try {
             const response = await fetch(assetUrl(MUSIC_FOLDER_INDEX_PATH), { cache: 'no-store' });
             if (!response.ok) {
@@ -201,12 +242,19 @@ class SoundManager {
                     .filter(track => track.length > 0);
 
                 if (normalizedTracks.length > 0) {
-                    this.musicFolderIndex.set(folderName.toLowerCase(), normalizedTracks);
+                    newIndex.set(folderName.toLowerCase(), normalizedTracks);
                 }
             });
+            this.musicFolderIndex = newIndex;
         } catch (e) {
             console.debug('Error loading music folder index:', e);
         }
+    }
+
+    public hasTracksForEvent(eventId: string): boolean {
+        const def = this.getDefinition(eventId);
+        if (!def) return false;
+        return this.getMusicTracksForEvent(eventId, def).length > 0;
     }
 
     private getMusicTracksForEvent(eventId: string, def: SoundEventDefinition): string[] {
@@ -227,7 +275,7 @@ class SoundManager {
 
     private resolveMusicTrackUrl(trackPath: string): string {
         const normalizedPath = trackPath.replace(/\\/g, '/').replace(/^\/+/, '').trim();
-        const hasAudioExt = /\.(ogg|mp3|wav)$/i.test(normalizedPath);
+        const hasAudioExt = /\.(ogg|mp3|wav|flac|m4a|opus|aac|webm)$/i.test(normalizedPath);
         const withExt = hasAudioExt ? normalizedPath : `${normalizedPath}.ogg`;
 
         if (withExt.startsWith('assets/')) {
@@ -377,6 +425,8 @@ class SoundManager {
 
         if (!nextDeck || !nextGain) return false;
 
+        this.clearMusicStopTimeout(nextDeckId);
+
         // Prepare Next Deck
         try {
             nextDeck.src = fullUrl;
@@ -438,10 +488,12 @@ class SoundManager {
         const now = this.ctx.currentTime;
 
         [
-            { deck: this.musicDeckA, gain: this.musicGainA },
-            { deck: this.musicDeckB, gain: this.musicGainB }
-        ].forEach(({ deck, gain }) => {
+            { deckId: 'A' as const, deck: this.musicDeckA, gain: this.musicGainA },
+            { deckId: 'B' as const, deck: this.musicDeckB, gain: this.musicGainB }
+        ].forEach(({ deckId, deck, gain }) => {
             if (deck && gain) {
+                this.clearMusicStopTimeout(deckId);
+
                 // Remove listeners
                 deck.onended = null;
                 deck.onerror = null;
@@ -449,11 +501,23 @@ class SoundManager {
                 gain.gain.cancelScheduledValues(now);
                 gain.gain.setValueAtTime(gain.gain.value, now);
                 gain.gain.linearRampToValueAtTime(0, now + fadeTime);
-                
-                setTimeout(() => {
+
+                const timeoutId = window.setTimeout(() => {
+                    if (this.activeDeck === deckId) return;
                     deck.pause();
                     deck.currentTime = 0;
+                    if (deckId === 'A') {
+                        this.musicStopTimeoutA = null;
+                    } else {
+                        this.musicStopTimeoutB = null;
+                    }
                 }, fadeTime * 1000 + 100);
+
+                if (deckId === 'A') {
+                    this.musicStopTimeoutA = timeoutId;
+                } else {
+                    this.musicStopTimeoutB = timeoutId;
+                }
             }
         });
         

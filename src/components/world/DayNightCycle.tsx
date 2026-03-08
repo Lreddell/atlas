@@ -8,6 +8,7 @@ import { updateChunkMaterials } from '../ChunkMesh';
 import { updateCloudColor } from './Clouds';
 import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
+import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 
 // Shader for the skybox gradient with Directional Sunset
 const SkyMaterial = {
@@ -209,7 +210,7 @@ const AuroraCurtainFragmentShader = `
 `;
 
 // Shooting Star Component
-const ShootingStar = ({ dayFactor, isPaused }: { dayFactor: number, isPaused: boolean }) => {
+const ShootingStar = ({ dayFactor, isPaused, isBloodMoon }: { dayFactor: number, isPaused: boolean, isBloodMoon: boolean }) => {
     const groupRef = useRef<THREE.Group>(null);
     const [active, setActive] = useState(false);
     const progress = useRef(0);
@@ -245,7 +246,9 @@ const ShootingStar = ({ dayFactor, isPaused }: { dayFactor: number, isPaused: bo
 
         endPos.current.copy(startPos.current).add(moveDir.multiplyScalar(moveDist));
 
-        const colors = ['#00ffff', '#e0ffff', '#d8bfd8', '#7fffd4', '#fffacd'];
+        const colors = isBloodMoon
+            ? ['#ff6b6b', '#ff4d4d', '#c62828', '#ff8a80', '#b71c1c']
+            : ['#00ffff', '#e0ffff', '#d8bfd8', '#7fffd4', '#fffacd'];
         const col = new THREE.Color(colors[Math.floor(Math.random() * colors.length)]);
         material.uniforms.uColor.value = col;
 
@@ -264,7 +267,7 @@ const ShootingStar = ({ dayFactor, isPaused }: { dayFactor: number, isPaused: bo
 
         window.addEventListener('atlas:shootingstar:spawn', onSpawn);
         return () => window.removeEventListener('atlas:shootingstar:spawn', onSpawn);
-    }, [isPaused]);
+    }, [isPaused, isBloodMoon]);
 
     // Custom shader for the trail
     const material = useMemo(() => new THREE.ShaderMaterial({
@@ -379,6 +382,12 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const auroraBiomeBlendRef = useRef(0);
     
     const TICK_CYCLE = 24000;
+    const moonTintColor = useMemo(() => new THREE.Color(), []);
+    const moonGlowTintColor = useMemo(() => new THREE.Color(), []);
+    const bloodMoonSkyTint = useMemo(() => new THREE.Color(), []);
+    const bloodMoonFogTint = useMemo(() => new THREE.Color(), []);
+    const moonLightTintColor = useMemo(() => new THREE.Color(), []);
+    const ambientLightTintColor = useMemo(() => new THREE.Color(), []);
 
     // Performance: Limit shadows to 8 chunks max, regardless of render distance
     const MAX_SHADOW_CHUNKS = 8;
@@ -452,7 +461,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         },
         setPhase: (targetPhase: number) => {
             const currentTicks = worldManager.getTime();
-            const currentMoonCycle = Math.floor(currentTicks / TICK_CYCLE);
+            const currentMoonCycle = getMoonCycleIndex(currentTicks, TICK_CYCLE);
             const currentPhase = (currentMoonCycle % 8 + 8) % 8;
 
             let diff = targetPhase - currentPhase;
@@ -509,15 +518,16 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const daysPassed = Math.floor(ticks / TICK_CYCLE);
         daysPassedRef.current = daysPassed;
 
-        // Moon phase cycle: increments each new day at sunrise/day start so
-        // sleeping to the next morning advances the visible phase.
-        const moonCycle = Math.floor(ticks / TICK_CYCLE);
-        const phaseIndex = (moonCycle % 8 + 8) % 8;
+        // Moon phase cycle: increments later at noon rather than sunrise, so
+        // the visible lunar phase persists through the morning and rolls over midday.
+        const lunarEvent = getLunarNightEventState(ticks, TICK_CYCLE, worldManager.getSeed());
+        const phaseIndex = lunarEvent.phaseIndex;
+        const isBloodMoon = lunarEvent.isBloodMoon;
         
         const distFromNew = Math.abs(phaseIndex - 4); 
         const factor = 1 - (distFromNew / 4);
         const phaseBrightnessFactor = factor * 0.72;
-        const phaseIntensity = 0.63 + (0.2 * phaseBrightnessFactor);
+        const phaseIntensity = (0.63 + (0.2 * phaseBrightnessFactor)) * lunarEvent.nightBrightnessMultiplier;
 
         if (moonCoreRef.current && (!moonCoreRef.current.userData.lastPhase || moonCoreRef.current.userData.lastPhase !== phaseIndex)) {
              moonCoreRef.current.userData.lastPhase = phaseIndex;
@@ -539,6 +549,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // Use -0.05 for transition to full darkness instead of -0.15
         const dayFactor = THREE.MathUtils.smoothstep(h, -0.05, 0.2);
         if (Math.abs(dayFactor - currentDayFactor) > 0.01) setCurrentDayFactor(dayFactor);
+        const nightFactor = 1 - dayFactor;
+        const moonVisibility = moonFadeFromHeight(-h);
+        const twilightBloodBlend = THREE.MathUtils.smoothstep(1 - dayFactor, 0.08, 0.9);
+        const bloodMoonBlend = moonVisibility * twilightBloodBlend;
 
         const effectiveSunlight = THREE.MathUtils.lerp(phaseIntensity, 1.0, dayFactor);
         
@@ -558,6 +572,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const colSunsetZenith = new THREE.Color(0x2c3e50); 
         const colSunsetHorizonSun = new THREE.Color(0xff6b35);
         const colSunsetHorizonMoon = new THREE.Color(0x0d0d26);
+        bloodMoonSkyTint.set(lunarEvent.skyTintHex);
+        bloodMoonFogTint.set(lunarEvent.fogTintHex);
         
         let targetZenith = new THREE.Color();
         let targetHorizonSun = new THREE.Color();
@@ -590,6 +606,13 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             targetHorizonSun.copy(colNightHorizon);
             targetHorizonMoon.copy(colNightHorizon);
             targetFog.copy(colNightHorizon);
+        }
+
+        if (isBloodMoon && bloodMoonBlend > 0) {
+            targetZenith.lerp(bloodMoonSkyTint, bloodMoonBlend * 0.34);
+            targetHorizonSun.lerp(bloodMoonFogTint, bloodMoonBlend * 0.12);
+            targetHorizonMoon.lerp(bloodMoonSkyTint, bloodMoonBlend * 0.48);
+            targetFog.lerp(bloodMoonFogTint, bloodMoonBlend * 0.3);
         }
 
         skyMat.uniforms.uZenithColor.value.copy(targetZenith);
@@ -634,7 +657,9 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         }
 
         const moonH = -h;
-        const moonFade = THREE.MathUtils.smoothstep(moonH, -0.2, 0.1);
+        const moonFade = moonFadeFromHeight(moonH);
+        moonTintColor.set(lunarEvent.moonColorHex);
+        moonGlowTintColor.set(lunarEvent.moonGlowHex);
 
         if (moonGroupRef.current && moonCoreRef.current) {
             moonGroupRef.current.position.copy(camera.position).add(moonDir.clone().multiplyScalar(radius));
@@ -643,10 +668,12 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             moonGroupRef.current.rotation.z = Math.PI / 8;
             
             // Fade using color
-            (moonCoreRef.current.material as THREE.MeshBasicMaterial).color.setScalar(moonFade);
+            (moonCoreRef.current.material as THREE.MeshBasicMaterial).color.copy(moonTintColor).multiplyScalar(moonFade);
             
             const sprite = moonGroupRef.current.children[0] as THREE.Sprite;
-            if (sprite) (sprite.material as THREE.SpriteMaterial).color.setScalar(0.4 * moonFade);
+            if (sprite) {
+                (sprite.material as THREE.SpriteMaterial).color.copy(moonGlowTintColor).multiplyScalar(0.4 * moonFade);
+            }
 
             moonGroupRef.current.visible = moonFade > 0;
         }
@@ -677,19 +704,23 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             moonLightRef.current.position.set(snappedX + moonDir.x * lightDistance, snappedY + moonDir.y * lightDistance, snappedZ + moonDir.z * lightDistance);
             moonLightRef.current.up.set(0, 0, 1);
             moonLightRef.current.updateMatrixWorld();
-            moonLightRef.current.intensity = (NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor) * (1 - dayFactor);
+            moonLightTintColor.set(lunarEvent.moonLightHex);
+            moonLightRef.current.color.copy(moonLightTintColor);
+            moonLightRef.current.intensity = (NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor * lunarEvent.moonLightMultiplier) * nightFactor;
         }
 
         const DAY_AMBIENT = 0.6;
         const NIGHT_AMBIENT_BASE = 0.2; 
         const NIGHT_AMBIENT_VAR = 0.1;
-        const nightAmbient = NIGHT_AMBIENT_BASE + (NIGHT_AMBIENT_VAR * phaseBrightnessFactor);
+        const nightAmbient = (NIGHT_AMBIENT_BASE + (NIGHT_AMBIENT_VAR * phaseBrightnessFactor)) * lunarEvent.nightBrightnessMultiplier;
         
         const currentAmbient = THREE.MathUtils.lerp(nightAmbient, DAY_AMBIENT, dayFactor);
-        const currentDirectional = THREE.MathUtils.lerp(NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor, DAY_DIRECTIONAL_INTENSITY, dayFactor);
+        const currentDirectional = THREE.MathUtils.lerp(NIGHT_DIRECTIONAL_MAX * phaseBrightnessFactor * lunarEvent.moonLightMultiplier, DAY_DIRECTIONAL_INTENSITY, dayFactor);
         
         // Update local ambient light directly for performance
         if (ambientLightRef.current) {
+            ambientLightTintColor.set(lunarEvent.ambientLightHex);
+            ambientLightRef.current.color.copy(ambientLightTintColor).lerp(new THREE.Color(0xffffff), dayFactor);
             ambientLightRef.current.intensity = currentAmbient;
         }
         
@@ -737,7 +768,12 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 [0.34, 0.90, 0.48,  0.50, 0.78, 0.52,  0.82, 0.80, 0.50], // 6: last quarter – green/purple
                 [0.36, 0.92, 0.50,  0.48, 0.80, 0.54,  0.80, 0.78, 0.52], // 7: waning crescent
             ];
-            const theme = phaseThemes[phaseIndex] || phaseThemes[0];
+            const bloodMoonTheme: [number,number,number,number,number,number,number,number,number] = [
+                0.995, 0.92, 0.24,
+                0.975, 0.88, 0.36,
+                0.94, 0.58, 0.46,
+            ];
+            const theme = isBloodMoon ? bloodMoonTheme : (phaseThemes[phaseIndex] || phaseThemes[0]);
 
             const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.07);
             const pulse2 = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.03 + 1.2);
@@ -748,15 +784,25 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 mat.uniforms.uTime.value = clock.elapsedTime;
                 mat.uniforms.uOpacity.value = auroraOpacity * (0.6 + 0.4 * localPulse);
                 // Apply moon-phase color theme with slow per-ribbon variation
-                mat.uniforms.uColorA.value.setHSL(theme[0] + pulse * 0.03 + p * 0.008, theme[1], theme[2]);
-                mat.uniforms.uColorB.value.setHSL(theme[3] + pulse2 * 0.04 + p * 0.006, theme[4], theme[5]);
-                mat.uniforms.uColorC.value.setHSL(theme[6] + pulse * 0.05 + p * 0.005, theme[7], theme[8]);
+                if (isBloodMoon) {
+                    mat.uniforms.uColorA.value.setHSL(theme[0] + pulse * 0.008 + p * 0.002, theme[1], theme[2]);
+                    mat.uniforms.uColorB.value.setHSL(theme[3] + pulse2 * 0.01 + p * 0.002, theme[4], theme[5]);
+                    mat.uniforms.uColorC.value.setHSL(theme[6] + pulse * 0.012 + p * 0.002, theme[7], theme[8]);
+                } else {
+                    mat.uniforms.uColorA.value.setHSL(theme[0] + pulse * 0.03 + p * 0.008, theme[1], theme[2]);
+                    mat.uniforms.uColorB.value.setHSL(theme[3] + pulse2 * 0.04 + p * 0.006, theme[4], theme[5]);
+                    mat.uniforms.uColorC.value.setHSL(theme[6] + pulse * 0.05 + p * 0.005, theme[7], theme[8]);
+                }
             }
 
             auroraGroupRef.current.position.set(camera.position.x, camera.position.y, camera.position.z);
             auroraGroupRef.current.visible = auroraOpacity > 0.01;
         }
     });
+
+    function moonFadeFromHeight(moonHeight: number) {
+        return THREE.MathUtils.smoothstep(moonHeight, -0.2, 0.1);
+    }
 
     return (
         <>
@@ -810,7 +856,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
             {/* Shooting Star effect attached to camera location but rendered independently */}
             <group position={camera.position}>
-                <ShootingStar dayFactor={currentDayFactor} isPaused={isPaused} />
+                <ShootingStar dayFactor={currentDayFactor} isPaused={isPaused} isBloodMoon={getLunarNightEventState(worldManager.getTime(), TICK_CYCLE, worldManager.getSeed()).isBloodMoon} />
             </group>
             
             <group ref={sunGroupRef}>

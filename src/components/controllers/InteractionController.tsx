@@ -13,6 +13,7 @@ import {
 } from '../../systems/player/playerConstants';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
+import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
@@ -170,10 +171,13 @@ export const InteractionController = ({
                         setOpenContainer({ type: 'chest', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
-                        const time = worldManager.getTime() % 24000;
+                        const currentTicks = worldManager.getTime();
+                        const time = currentTicks % 24000;
                         const isNight = time > 12542 && time < 23459;
                         if (!isNight) {
                             worldManager.log("You can sleep only at night", "error");
+                        } else if (getLunarNightEventState(currentTicks, 24000, worldManager.getSeed()).isBloodMoon) {
+                            worldManager.log("You cannot sleep during a blood moon", "error");
                         } else {
                             setIsSleeping(true);
                             onSleepInBed?.(bx, by, bz);
