@@ -285,10 +285,20 @@ class SoundManager {
         return assetUrl(`assets/rvx/sounds/${withExt}`);
     }
 
-    public resume() {
-        if (!this.enabled || !this.ctx) return;
-        if (this.ctx.state === 'suspended') {
-            this.ctx.resume().catch(e => console.warn('Audio resume failed', e));
+    public isPlaybackReady() {
+        return !!this.enabled && !!this.ctx && this.ctx.state === 'running';
+    }
+
+    public async resume() {
+        if (!this.enabled || !this.ctx) return false;
+        if (this.ctx.state === 'running') return true;
+
+        try {
+            await this.ctx.resume();
+            return this.ctx.state === 'running';
+        } catch (e) {
+            console.warn('Audio resume failed', e);
+            return false;
         }
     }
 
@@ -400,11 +410,7 @@ class SoundManager {
      */
     public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void, fadeOutTime: number = fadeTime) {
         if (!this.enabled || !this.ctx) return false;
-
-        // Try resuming context if suspended (browser autoplay policy)
-        if (this.ctx.state === 'suspended') {
-            try { await this.ctx.resume(); } catch(e) { return false; }
-        }
+        if (this.ctx.state !== 'running') return false;
 
         const def = this.getDefinition(eventId);
         if (!def || !def.sounds || def.sounds.length === 0) return false;
@@ -702,6 +708,7 @@ class SoundManager {
 
     private async playSoundInternal(eventId: string, pos: {x:number, y:number, z:number} | null, opts?: SoundOptions) {
         if (!this.enabled || !this.ctx) return;
+        if (this.ctx.state !== 'running') return;
 
         try {
             const def = this.getDefinition(eventId);
