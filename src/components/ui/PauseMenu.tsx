@@ -16,8 +16,6 @@ interface PauseMenuProps {
     setRenderDistance: (dist: number) => void;
     fov: number;
     setFov: (fov: number) => void;
-    workersEnabled: boolean;
-    setWorkersEnabled: (val: boolean) => void;
     shadowsEnabled: boolean;
     setShadowsEnabled: (val: boolean) => void;
     cloudsEnabled: boolean;
@@ -154,7 +152,7 @@ const MCToggle: React.FC<{
 
 export const PauseMenu: React.FC<PauseMenuProps> = ({ 
     onResume, onQuitToTitle, renderDistance, setRenderDistance, fov, setFov, 
-    workersEnabled, setWorkersEnabled, shadowsEnabled, setShadowsEnabled,
+    shadowsEnabled, setShadowsEnabled,
     cloudsEnabled, setCloudsEnabled,
     mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing, 
     chunkFadeEnabled, setChunkFadeEnabled,
@@ -189,7 +187,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         neutral: 1.0
     });
     
-    const [musicDelay, setMusicDelay] = useState(15);
+    const [musicDelay, setMusicDelay] = useState(() => musicController.getDelayRange().min);
 
     useEffect(() => {
         // Load initial volumes
@@ -198,10 +196,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             newVols[cat] = soundManager.getVolume(cat);
         });
         setVolumes(newVols);
-        
-        // Load initial delay
-        const range = musicController.getDelayRange();
-        setMusicDelay(range.min);
     }, []);
 
     useEffect(() => {
@@ -218,7 +212,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     
     const updateMusicDelay = (val: number) => {
         setMusicDelay(val);
-        musicController.setDelayRange(val, val + 45); // Set Max to val + 45s
+        // Keep configured and displayed delay values aligned.
+        musicController.setDelayRange(val, val);
     };
 
     const handleCloudUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -292,7 +287,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
                 <MCToggle label="Sun Shadows" value={shadowsEnabled} onChange={setShadowsEnabled} width="w-64" />
                 <MCToggle label="Clouds" value={cloudsEnabled} onChange={setCloudsEnabled} width="w-64" />
-                <MCToggle label="Web Workers" value={workersEnabled} onChange={setWorkersEnabled} width="w-64" />
                 <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
                 <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
                 <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />

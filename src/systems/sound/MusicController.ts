@@ -69,7 +69,7 @@ class MusicController {
     
     // Configurable delays (in ms)
     private minDelay: number = 5000;
-    private maxDelay: number = 15000;
+    private maxDelay: number = 5000;
     
     // To debounce context changes
     private pendingContext: string | null = null;
@@ -85,24 +85,37 @@ class MusicController {
         const minRaw = window.localStorage.getItem(MUSIC_DELAY_MIN_KEY);
         const maxRaw = window.localStorage.getItem(MUSIC_DELAY_MAX_KEY);
         const minSeconds = minRaw == null ? 5 : Number(minRaw);
-        const maxSeconds = maxRaw == null ? 15 : Number(maxRaw);
+        const maxSeconds = maxRaw == null ? minSeconds : Number(maxRaw);
 
         if (!Number.isFinite(minSeconds) || !Number.isFinite(maxSeconds)) return;
 
         const clampedMin = Math.max(0, minSeconds);
         const clampedMax = Math.max(clampedMin, maxSeconds);
+
+        // Keep startup behavior in sync with the single delay value shown in UI.
         this.minDelay = clampedMin * 1000;
-        this.maxDelay = clampedMax * 1000;
+        this.maxDelay = clampedMin * 1000;
+
+        // Migrate older saved ranges (min..max) to a single value to prevent desync.
+        if (clampedMax !== clampedMin) {
+            window.localStorage.setItem(MUSIC_DELAY_MIN_KEY, String(clampedMin));
+            window.localStorage.setItem(MUSIC_DELAY_MAX_KEY, String(clampedMin));
+        }
     }
 
     public setDelayRange(minSeconds: number, maxSeconds: number) {
-        this.minDelay = minSeconds * 1000;
-        this.maxDelay = maxSeconds * 1000;
-        console.log(`[Music] Delay set to ${minSeconds}s - ${maxSeconds}s`);
+        const clampedMin = Math.max(0, minSeconds);
+        const clampedMax = Math.max(0, maxSeconds);
+
+        // Normalize to one effective delay so configured value and behavior match.
+        const normalizedDelaySeconds = Math.min(clampedMin, clampedMax);
+        this.minDelay = normalizedDelaySeconds * 1000;
+        this.maxDelay = normalizedDelaySeconds * 1000;
+        console.log(`[Music] Delay set to ${normalizedDelaySeconds}s`);
 
         if (typeof window !== 'undefined') {
-            window.localStorage.setItem(MUSIC_DELAY_MIN_KEY, String(minSeconds));
-            window.localStorage.setItem(MUSIC_DELAY_MAX_KEY, String(maxSeconds));
+            window.localStorage.setItem(MUSIC_DELAY_MIN_KEY, String(normalizedDelaySeconds));
+            window.localStorage.setItem(MUSIC_DELAY_MAX_KEY, String(normalizedDelaySeconds));
         }
         
         // Live update: If we are currently waiting for a track (and not in a special transition)
