@@ -249,6 +249,17 @@ ipcMain.handle('panorama:delete', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('panorama:getDefaultPath', async () => {
+  try {
+    const dir = getPanoramaStorageDir();
+    const defaultFile = path.join(dir, 'panorama-2026-03-10-07-06-34.png');
+    await fs.access(defaultFile);
+    return { filePath: defaultFile };
+  } catch {
+    return { filePath: null };
+  }
+});
+
 ipcMain.handle('worldPreset:list', async () => {
   try {
     const dir = getWorldPresetStorageDir();
