@@ -50,6 +50,7 @@ import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from 
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
+import { getSpawnSearchCenter } from './utils/noise';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type ChunkDetailLevel = 'full';
@@ -1826,9 +1827,10 @@ const App: React.FC = () => {
         }
     }
 
-    // 3. Fallback: Find new safe spawn at 0,0
+    // 3. Fallback: use seed-derived center instead of (0,0)
     if (!spawn) {
-        const safe = worldManager.findSafeSpawnPosition(0, 0);
+        const center = getSpawnSearchCenter(worldManager.getSeed());
+        const safe = worldManager.findSafeSpawnPosition(center.x, center.z);
         spawn = { x: safe.x, y: safe.y, z: safe.z };
         worldManager.setWorldSpawn(safe.x, safe.y, safe.z);
     }
@@ -1933,29 +1935,8 @@ const App: React.FC = () => {
           setCursorStack(null);
           setHealth(20); setHunger(20); setSaturation(5); setBreath(MAX_BREATH);
           
-          // Calculate Spawn
-          const SEA_LEVEL = 65;
-          let startX = 0; let startZ = 0; let radius = 0; let checks = 0;
-          const MAX_CHECKS = 1000;
-
-          while (checks < MAX_CHECKS) {
-              const steps = Math.max(8, Math.floor(2 * Math.PI * radius / 16)); 
-              for (let i = 0; i < steps; i++) {
-                  checks++;
-                  const angle = (i / steps) * Math.PI * 2;
-                  const x = Math.floor(Math.cos(angle) * radius);
-                  const z = Math.floor(Math.sin(angle) * radius);
-                  const h = worldManager.getTerrainHeight(x, z);
-                  
-                  if (h > SEA_LEVEL) {
-                      startX = x; startZ = z; radius = 99999; break;
-                  }
-              }
-              radius += 32;
-              if (radius > 5000) break;
-          }
-
-          const safePos = worldManager.findSafeSpawnPosition(startX, startZ);
+          // Use seed-aware spawn search
+          const safePos = worldManager.findBestInitialSpawn();
           const safeVec = new THREE.Vector3(safePos.x, safePos.y, safePos.z);
           worldManager.setWorldSpawn(safePos.x, safePos.y, safePos.z);
           

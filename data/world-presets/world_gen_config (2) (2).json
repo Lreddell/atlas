@@ -1,16 +1,16 @@
 {
-  "name": "My World Preset",
-  "createdAt": 1772773967658,
-  "updatedAt": 1772773967658,
+  "name": "world_gen_config (2) (2)",
+  "createdAt": 1773097499877,
+  "updatedAt": 1773097499877,
   "config": {
     "noise": {
       "temperature": {
-        "scale": 0.01,
+        "scale": 0.0004,
         "type": "perlin",
-        "octaves": 1,
+        "octaves": 5,
         "lacunarity": 2,
-        "gain": 0.5,
-        "amplification": 1.5
+        "gain": 0.3,
+        "amplification": 2.7
       },
       "weirdness": {
         "scale": 0.002,
@@ -21,18 +21,18 @@
         "amplification": 1
       },
       "continentalness": {
-        "scale": 0.001,
+        "scale": 0.0006,
         "type": "perlin",
-        "octaves": 1,
-        "lacunarity": 2,
+        "octaves": 3,
+        "lacunarity": 3.2,
         "gain": 0.5,
         "offset": -0.15
       },
       "river": {
         "scale": 0.004,
         "type": "perlin",
-        "octaves": 1,
-        "lacunarity": 2,
+        "octaves": 3,
+        "lacunarity": 1.7,
         "gain": 0.5,
         "jitter": 0.5
       },

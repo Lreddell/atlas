@@ -10,7 +10,7 @@ import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
-import { reseedGlobalNoise } from '../utils/noise';
+import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
 
@@ -845,7 +845,7 @@ export class WorldManager {
    * If only water is found, it spawns on the water surface (64).
    */
   public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
-      const SEA_LEVEL = 63;
+      const seaLevel = GenConfig.height.seaLevel;
       const searchRadius = 128; 
       
       // Force Ensure Center Chunk exists so collision works immediately
@@ -865,7 +865,7 @@ export class WorldManager {
                   // Use Noise Math directly - reliable and fast
                   const terrainY = WorldGen.getTerrainHeight(x, z);
 
-                  if (terrainY > SEA_LEVEL) {
+                  if (terrainY > seaLevel) {
                       // Found Land!
                       // Ensure chunk exists for collision
                       this.ensureChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
@@ -879,9 +879,83 @@ export class WorldManager {
 
       // If no land found, we are in deep ocean/river. Spawn on water surface.
       console.warn("[Spawn] No land found, spawning on water surface.");
-      // We know it's water because terrainY <= SEA_LEVEL
-      // Water level is 63, so surface is y=64. Spawn at 64.5 to be slightly above.
-      return { x: targetX, y: SEA_LEVEL + 1.5, z: targetZ };
+      return { x: targetX, y: seaLevel + 1.5, z: targetZ };
+  }
+
+  public getSeaLevel(): number {
+      return GenConfig.height.seaLevel;
+  }
+
+  public scoreSpawnCandidate(x: number, z: number): number {
+      const seaLevel = GenConfig.height.seaLevel;
+      const biome = getBiome(x, z);
+      const height = WorldGen.getTerrainHeight(x, z);
+
+      // Reject ocean, river, and volcanic
+      if (biome.id === 'ocean' || biome.id === 'frozen_ocean') return -1;
+      if (biome.id === 'river' || biome.id === 'frozen_river') return -1;
+      if (biome.id === 'volcanic') return -1;
+      if (height <= seaLevel) return -1;
+
+      let score = 100;
+
+      // Prefer moderate elevation
+      const elevAboveSea = height - seaLevel;
+      if (elevAboveSea > 0 && elevAboveSea < 40) score += 20;
+      else if (elevAboveSea >= 40) score -= Math.min(elevAboveSea - 40, 30);
+
+      // Penalize steep slope
+      const sr = GenConfig.spawn.slopePenaltyRadius;
+      const h0 = height;
+      const maxSlope = Math.max(
+          Math.abs(h0 - WorldGen.getTerrainHeight(x + sr, z)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x - sr, z)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x, z + sr)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x, z - sr))
+      );
+      score -= Math.min(maxSlope * 2, GenConfig.spawn.maxSlopePenalty);
+
+      // Prefer friendly biomes
+      if (biome.id === 'plains') score += 15;
+      else if (biome.id === 'forest') score += 10;
+      else if (biome.id === 'cherry_grove') score += 10;
+      else if (biome.id === 'desert') score -= 5;
+      else if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') score -= 5;
+
+      return score;
+  }
+
+  public findBestInitialSpawn(): { x: number, y: number, z: number } {
+      const center = getSpawnSearchCenter(this.activeSeed);
+      const searchRadius = GenConfig.spawn.searchRadius;
+
+      let bestX = center.x;
+      let bestZ = center.z;
+      let bestScore = -Infinity;
+
+      // Spiral outward from seed-derived center
+      for (let r = 0; r <= searchRadius; r += 32) {
+          const steps = Math.max(8, Math.floor(2 * Math.PI * r / 16));
+          for (let i = 0; i < steps; i++) {
+              const angle = (i / steps) * Math.PI * 2;
+              const x = Math.floor(center.x + Math.cos(angle) * r);
+              const z = Math.floor(center.z + Math.sin(angle) * r);
+
+              const score = this.scoreSpawnCandidate(x, z);
+              if (score > bestScore) {
+                  bestScore = score;
+                  bestX = x;
+                  bestZ = z;
+              }
+
+              // Good enough — stop early
+              if (bestScore >= 120) {
+                  return this.findSafeSpawnPosition(bestX, bestZ);
+              }
+          }
+      }
+
+      return this.findSafeSpawnPosition(bestX, bestZ);
   }
 
   // Helper to synchronously force generation if missing (prevents falling through world on start)

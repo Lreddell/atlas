@@ -51,6 +51,18 @@ export const DEFAULTS = {
     height: {
         globalScale: 1.0,
         seaLevel: 63
+    },
+    climateWarp: {
+        enabled: false,
+        frequency: 0.0005,
+        amplitude: 80
+    },
+    spawn: {
+        searchRadius: 1024,
+        slopePenaltyRadius: 4,
+        maxSlopePenalty: 10,
+        preferredElevationMin: 64,
+        preferredElevationMax: 100
     }
 };
 
@@ -83,6 +95,12 @@ function applyState(source: typeof DEFAULTS) {
     // Height
     GenConfig.height.globalScale = source.height.globalScale;
     GenConfig.height.seaLevel = source.height.seaLevel;
+
+    // Climate Warp
+    GenConfig.climateWarp = clone(source.climateWarp);
+
+    // Spawn
+    GenConfig.spawn = clone(source.spawn);
 }
 
 // Helper to reset to defaults if needed
@@ -174,6 +192,8 @@ export const loadGenConfig = (data: any) => {
             });
         }
         if (data.height) Object.assign(temp.height, data.height);
+        if (data.climateWarp) Object.assign(temp.climateWarp, data.climateWarp);
+        if (data.spawn) Object.assign(temp.spawn, data.spawn);
         
         applyState(temp);
         return true;
