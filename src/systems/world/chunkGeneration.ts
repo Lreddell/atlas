@@ -122,8 +122,8 @@ export function generateChunk(cx: number, cz: number) {
 
     const worldX = cx * CHUNK_SIZE;
     const worldZ = cz * CHUNK_SIZE;
-    const worldSeed = GlobalNoise.seed | 0;
     const noiseSet = GlobalNoise;
+    const worldSeed = noiseSet.seed | 0;
     const caveOx = noiseSet.offsets.cave.x;
     const caveOz = noiseSet.offsets.cave.z;
 

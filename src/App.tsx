@@ -95,12 +95,13 @@ const readBooleanSetting = (key: string, fallback: boolean) => {
 };
 
 // --- Streaming Loop Component ---
-const ChunkStreamer = () => {
+const ChunkStreamer: React.FC<{ active: boolean }> = React.memo(({ active }) => {
     useFrame(() => {
+        if (!active) return;
         worldManager.processStreamingJobs();
     });
     return null;
-};
+});
 
 function buildChunkOffsets(r: number) {
     const items: Array<{ dx: number; dz: number; d: number; a: number }> = [];
@@ -303,6 +304,8 @@ const App: React.FC = () => {
   const [acCandidates, setAcCandidates] = useState<string[]>([]);
   const [acIndex, setAcIndex] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const commandHistoryRef = useRef<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
     const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
     const renderChunkOffsets = useMemo(() => buildRenderOffsets(renderDistance), [renderDistance]);
@@ -447,18 +450,6 @@ const App: React.FC = () => {
                     setChunks(nextRender);
                 });
             }, [desiredChunkOffsets, renderChunkOffsets]);
-
-  useEffect(() => {
-      if (appState !== 'game' && appState !== 'loading') return;
-
-      const id = window.setInterval(() => {
-          worldManager.processStreamingJobs();
-      }, 33);
-
-      return () => {
-          window.clearInterval(id);
-      };
-  }, [appState]);
 
   // Sync currentSpawnPos with Player logic for safe reloading of Canvas
   const safeSetSetting = useCallback(<T,>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
@@ -1349,6 +1340,10 @@ const App: React.FC = () => {
               logMsg('Usage: /bloodmoon <force|clear|query> [current|next]', 'error');
           }
       } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
+      if (commandValue.trim()) {
+          commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
+          setHistoryIndex(-1);
+      }
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
@@ -1413,8 +1408,30 @@ const App: React.FC = () => {
             return;
         }
 
-        if (e.key === 'ArrowUp') { e.preventDefault(); if (acCandidates.length > 0) setAcIndex(prev => (prev + 1) % acCandidates.length); return; } 
-        if (e.key === 'ArrowDown') { e.preventDefault(); if (acCandidates.length > 0) setAcIndex(prev => (prev - 1 + acCandidates.length) % acCandidates.length); return; }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (showSuggestions && acCandidates.length > 0) { setAcIndex(prev => (prev + 1) % acCandidates.length); return; }
+            const hist = commandHistoryRef.current;
+            if (hist.length > 0) {
+                const newIdx = Math.min(historyIndex + 1, hist.length - 1);
+                setHistoryIndex(newIdx);
+                setCommandValue(hist[newIdx]);
+            }
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (showSuggestions && acCandidates.length > 0) { setAcIndex(prev => (prev - 1 + acCandidates.length) % acCandidates.length); return; }
+            if (historyIndex > 0) {
+                const newIdx = historyIndex - 1;
+                setHistoryIndex(newIdx);
+                setCommandValue(commandHistoryRef.current[newIdx]);
+            } else {
+                setHistoryIndex(-1);
+                setCommandValue('');
+            }
+            return;
+        }
         if (e.key === 'Tab') {
             e.preventDefault();
             if (showSuggestions && acCandidates.length > 0) {
@@ -1483,11 +1500,11 @@ const App: React.FC = () => {
         if (e.key === 'Enter') { e.preventDefault(); if (commandValue.trim()) executeCommand(commandValue); else resumeGame(); } 
         return; 
     }
-    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); isCommandOpenRef.current = true; enterUIMode(); return; }
+    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, resumeFromUserGesture, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, resumeFromUserGesture, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2169,7 +2186,7 @@ const App: React.FC = () => {
                 {!isNativeLoop && <FPSLimiter limit={effectiveMaxFps} />}
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
                 {/* Streamer runs logic loop for loading */}
-                <ChunkStreamer /> 
+                <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} setAmbientIntensity={setAmbientIntensity} setDirectionalIntensity={setDirectionalIntensity} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />

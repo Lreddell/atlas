@@ -127,8 +127,7 @@ export const updateChunkMaterials = (sunlight: number, brightness: number = 0.5)
   CHUNK_UNIFORMS.uBrightness.value = brightness;
 };
 
-export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
-  const [geometries, setGeometries] = useState<{ 
+const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {  const [geometries, setGeometries] = useState<{ 
       opaque: THREE.BufferGeometry | null, 
       cutout: THREE.BufferGeometry | null,
       transparent: THREE.BufferGeometry | null 
@@ -422,3 +421,14 @@ export const ChunkMesh: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = f
     </group>
   );
 };
+
+export const ChunkMesh = React.memo(
+    ChunkMeshImpl,
+    (prev, next) =>
+        prev.cx === next.cx &&
+        prev.cz === next.cz &&
+        prev.detailLevel === next.detailLevel &&
+        prev.shadowsEnabled === next.shadowsEnabled &&
+        prev.fadeInEnabled === next.fadeInEnabled &&
+        prev.fadingOut === next.fadingOut
+);
