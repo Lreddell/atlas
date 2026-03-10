@@ -65,7 +65,8 @@ const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
 const PANORAMA_CAPTURE_KEY = 'F8';
 const WEB_PANORAMA_PREFIX = 'web:';
-const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/default.png';
+const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
+const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
 const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
@@ -1102,6 +1103,11 @@ const App: React.FC = () => {
   }, [isElectron, isCapturingPanorama, capturePanoramaDataUrl]);
 
   const setActivePanorama = useCallback((filePath: string) => {
+      if (filePath === DEFAULT_PANORAMA_ID) {
+          setMenuPanoramaPath(null);
+          setMenuBackgroundMode('panorama');
+          return;
+      }
       setMenuPanoramaPath(filePath);
       setMenuBackgroundMode('panorama');
       setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
@@ -2082,8 +2088,9 @@ const App: React.FC = () => {
               hasPanoramaBackground={!!menuPanoramaDataUrl}
               onToggleBackground={toggleMenuBackgroundMode}
               panoramaCaptureHotkey={PANORAMA_CAPTURE_KEY}
-              panoramaEntries={menuPanoramaLibrary}
-              activePanoramaPath={menuPanoramaPath}
+              panoramaEntries={[...menuPanoramaLibrary, DEFAULT_PANORAMA_ID]}
+              activePanoramaPath={menuPanoramaPath ?? DEFAULT_PANORAMA_ID}
+              defaultPanoramaId={DEFAULT_PANORAMA_ID}
               onUsePanorama={setActivePanorama}
               onImportPanorama={importPanoramaFromDisk}
               canImportPanorama={true}
