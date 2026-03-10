@@ -856,6 +856,7 @@ export class WorldManager {
       // Three buckets: scored > land > water
       let scored: { x: number, z: number, y: number, score: number } | null = null;
       let land: { x: number, z: number, y: number } | null = null;
+      let water: { x: number, z: number, dist2: number } | null = null;
 
       for (let r = 0; r <= safeSearchRadius; r += safeSearchStep) { 
           for (let dx = -r; dx <= r; dx += safeSearchStep) {
@@ -871,12 +872,17 @@ export class WorldManager {
                       scored = { x, z, y: h, score };
                   } else if (h > seaLevel && !land) {
                       land = { x, z, y: h };
+                  } else if (h <= seaLevel) {
+                      const d2 = (x - targetX) * (x - targetX) + (z - targetZ) * (z - targetZ);
+                      if (!water || d2 < water.dist2 || (d2 === water.dist2 && h > WorldGen.getTerrainHeight(water.x, water.z))) {
+                          water = { x, z, dist2: d2 };
+                      }
                   }
               }
           }
       }
 
-      // Priority: scored land > any land > water surface
+      // Priority: scored land > any land > nearest water > emergency fallback
       const pick = scored ?? land;
       if (pick) {
           this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
@@ -884,8 +890,14 @@ export class WorldManager {
           return { x: pick.x + 0.5, y: pick.y + 2, z: pick.z + 0.5 };
       }
 
-      // No land found at all — spawn on water surface
-      console.warn("[Spawn] No land found, spawning on water surface.");
+      if (water) {
+          this.ensureChunk(Math.floor(water.x / CHUNK_SIZE), Math.floor(water.z / CHUNK_SIZE));
+          console.warn(`[Spawn] No land found, spawning on water at ${water.x},${water.z}`);
+          return { x: water.x + 0.5, y: seaLevel + 1.5, z: water.z + 0.5 };
+      }
+
+      // Emergency fallback — nothing scanned at all
+      console.warn("[Spawn] No candidates found, emergency fallback to target.");
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
   }
 
