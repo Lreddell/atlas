@@ -408,200 +408,181 @@ export function generateChunk(cx: number, cz: number) {
     }
 
     // 2. Vegetation Pass
-    for (let x = 3; x < CHUNK_SIZE - 3; x++) {
-        for (let z = 3; z < CHUNK_SIZE - 3; z++) {
-                const wx = worldX + x;
-                const wz = worldZ + z;
-                const biome = getBiome(wx, wz, noiseSet);
-                const treeRnd = seededRand01(wx, 0, wz, 201);
-                
-                if (biome.treeType !== 'none' && treeRnd < biome.treeChance) { 
-                    const terrainY = getTerrainHeight(wx, wz, noiseSet);
-                    if (terrainY <= 63) continue;
-                    const groundY = terrainY;
-                    const idx = index3D(x, groundY, z);
-                    const t = blocks[idx];
-                    
-                    if (t === biome.surfaceBlock || t === BlockType.DIRT || t === BlockType.GRASS || t === BlockType.SNOWY_GRASS || t === BlockType.RED_SAND) {
-                        let currentTree: string = biome.treeType;
-                        if (biome.treeType === 'mixed_forest') currentTree = seededRand01(wx, groundY, wz, 202) < 0.2 ? 'birch' : 'oak';
+    // Trees sample a padded world-space area so that a tree rooted in a
+    // neighbouring chunk can still contribute logs/leaves to this one.
+    // Padding = cherry max lean (4) + canopy radius (3) + 1 safety margin.
+    const TREE_FEATURE_PADDING = 8;
 
-                        if (currentTree === 'oak') {
-                            const treeH = 4 + Math.floor(seededRand01(wx, groundY, wz, 203) * 3);
-                            for(let h = 1; h <= treeH; h++) {
-                                const tIdx = index3D(x, groundY + h, z);
-                                if (tIdx >= 0 && tIdx < blocks.length) {
-                                    blocks[tIdx] = BlockType.LOG;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], groundY + h);
-                                }
-                            }
-                            const leafStart = groundY + treeH - 2;
-                            const leafEnd = groundY + treeH + 1;
-                            for(let ly = leafStart; ly <= leafEnd; ly++) {
-                                const range = ly === leafEnd ? 1 : 2;
-                                for(let lx = x - range; lx <= x + range; lx++) {
-                                    for(let lz = z - range; lz <= z + range; lz++) {
-                                        if (Math.abs(lx - x) + Math.abs(lz - z) <= range) {
-                                            if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
-                                                const lIdx = index3D(lx, ly, lz);
-                                                if (lIdx >= 0 && lIdx < blocks.length && blocks[lIdx] === BlockType.AIR) {
-                                                    blocks[lIdx] = BlockType.LEAVES;
-                                                    colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], ly);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } 
-                        else if (currentTree === 'birch') {
-                            const treeH = 5 + Math.floor(seededRand01(wx, groundY, wz, 204) * 2);
-                            for(let h = 1; h <= treeH; h++) {
-                                const tIdx = index3D(x, groundY + h, z);
-                                if (tIdx >= 0 && tIdx < blocks.length) {
-                                    blocks[tIdx] = BlockType.BIRCH_LOG;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], groundY + h);
-                                }
-                            }
-                            const leafStart = groundY + treeH - 2;
-                            const leafEnd = groundY + treeH + 1;
-                            for(let ly = leafStart; ly <= leafEnd; ly++) {
-                                const range = ly === leafEnd ? 1 : 2;
-                                for(let lx = x - range; lx <= x + range; lx++) {
-                                    for(let lz = z - range; lz <= z + range; lz++) {
-                                        if (Math.abs(lx - x) + Math.abs(lz - z) <= range) {
-                                            if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
-                                                const lIdx = index3D(lx, ly, lz);
-                                                if (lIdx >= 0 && lIdx < blocks.length && blocks[lIdx] === BlockType.AIR) {
-                                                    blocks[lIdx] = BlockType.BIRCH_LEAVES;
-                                                    colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], ly);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else if (currentTree === 'spruce') {
-                            const treeH = 6 + Math.floor(seededRand01(wx, groundY, wz, 205) * 4);
-                            for(let h = 1; h <= treeH; h++) {
-                                const tIdx = index3D(x, groundY + h, z);
-                                if (tIdx >= 0 && tIdx < blocks.length) {
-                                    blocks[tIdx] = BlockType.SPRUCE_LOG;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], groundY + h);
-                                }
-                            }
-                            for(let h = 3; h <= treeH + 1; h++) {
-                                const radius = Math.floor((treeH - h + 1) * 0.4); 
-                                for(let lx = x - radius; lx <= x + radius; lx++) {
-                                    for(let lz = z - radius; lz <= z + radius; lz++) {
-                                        if (Math.abs(lx - x) + Math.abs(lz - z) <= radius + 0.5) {
-                                            if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
-                                                const ly = groundY + h;
-                                                const lIdx = index3D(lx, ly, lz);
-                                                if (lIdx >= 0 && lIdx < blocks.length && blocks[lIdx] === BlockType.AIR) {
-                                                    blocks[lIdx] = BlockType.SPRUCE_LEAVES;
-                                                    colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], ly);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            const topH = groundY + treeH + 1;
-                            const topIdx = index3D(x, topH, z);
-                            if (topIdx >= 0 && topIdx < blocks.length) {
-                                blocks[topIdx] = BlockType.SPRUCE_LEAVES;
-                                colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], topH);
-                            }
-                        }
-                        else if (currentTree === 'cherry') {
-                            const treeH = 5 + Math.floor(seededRand01(wx, groundY, wz, 206) * 2);
-                            let tx = x, tz = z;
-                            for(let h = 1; h <= treeH; h++) {
-                                if (h > 2 && seededRand01(wx, groundY + h, wz, 207) > 0.5) {
-                                    tx += seededRand01(wx + h, groundY, wz, 208) > 0.5 ? 1 : -1;
-                                }
-                                if (h > 2 && seededRand01(wx, groundY + h, wz, 209) > 0.5) {
-                                    tz += seededRand01(wx, groundY, wz + h, 210) > 0.5 ? 1 : -1;
-                                }
-                                
-                                if (tx>=0 && tx<CHUNK_SIZE && tz>=0 && tz<CHUNK_SIZE) {
-                                    const tIdx = index3D(tx, groundY + h, tz);
-                                    if (tIdx >= 0 && tIdx < blocks.length) {
-                                        blocks[tIdx] = BlockType.CHERRY_LOG;
-                                        colHeightmap[tz * CHUNK_SIZE + tx] = Math.max(colHeightmap[tz * CHUNK_SIZE + tx], groundY + h);
-                                    }
-                                }
-                            }
-                            const canopyCenterY = groundY + treeH;
-                            for(let ly = canopyCenterY - 2; ly <= canopyCenterY + 1; ly++) {
-                                const range = ly === canopyCenterY + 1 ? 1 : (ly === canopyCenterY ? 3 : 2);
-                                for(let lx = tx - range; lx <= tx + range; lx++) {
-                                    for(let lz = tz - range; lz <= tz + range; lz++) {
-                                        if (lx>=0 && lx<CHUNK_SIZE && lz>=0 && lz<CHUNK_SIZE) {
-                                            const dist = Math.sqrt((lx-tx)**2 + (lz-tz)**2);
-                                            if (dist <= range + 0.5) {
-                                                const lIdx = index3D(lx, ly, lz);
-                                                if (lIdx >= 0 && lIdx < blocks.length && blocks[lIdx] === BlockType.AIR) {
-                                                    blocks[lIdx] = BlockType.CHERRY_LEAVES;
-                                                    colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], ly);
-                                                }
-                                            }
-                                        }
-                                    }
+    // Places a block at world coordinates only if the position falls inside this chunk.
+    const placeIfInChunk = (wpx: number, wpy: number, wpz: number, blockType: BlockType, onlyAir = false): void => {
+        const lx = wpx - worldX;
+        const lz = wpz - worldZ;
+        if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) return;
+        if (wpy < MIN_Y || wpy > MAX_Y) return;
+        const idx = index3D(lx, wpy, lz);
+        if (onlyAir && blocks[idx] !== BlockType.AIR) return;
+        blocks[idx] = blockType;
+        const colIdx = lz * CHUNK_SIZE + lx;
+        if (wpy > colHeightmap[colIdx]) colHeightmap[colIdx] = wpy;
+    };
+
+    for (let rootWx = worldX - TREE_FEATURE_PADDING; rootWx < worldX + CHUNK_SIZE + TREE_FEATURE_PADDING; rootWx++) {
+        for (let rootWz = worldZ - TREE_FEATURE_PADDING; rootWz < worldZ + CHUNK_SIZE + TREE_FEATURE_PADDING; rootWz++) {
+            const biome = getBiome(rootWx, rootWz, noiseSet);
+            const treeRnd = seededRand01(rootWx, 0, rootWz, 201);
+
+            if (biome.treeType !== 'none' && treeRnd < biome.treeChance) {
+                const terrainY = getTerrainHeight(rootWx, rootWz, noiseSet);
+                if (terrainY <= 63) continue;
+                const groundY = terrainY;
+
+                // World-space surface eligibility — works for both in-chunk and out-of-chunk roots.
+                const rootSurface = biome.surfaceBlock;
+                const isPlantable = rootSurface === BlockType.GRASS || rootSurface === BlockType.SNOWY_GRASS ||
+                                    rootSurface === BlockType.DIRT || rootSurface === BlockType.RED_SAND;
+                if (!isPlantable) continue;
+
+                // When the root falls inside this chunk, validate against the actual placed block.
+                const rootLx = rootWx - worldX;
+                const rootLz = rootWz - worldZ;
+                if (rootLx >= 0 && rootLx < CHUNK_SIZE && rootLz >= 0 && rootLz < CHUNK_SIZE) {
+                    const t = blocks[index3D(rootLx, groundY, rootLz)];
+                    if (t !== biome.surfaceBlock && t !== BlockType.DIRT && t !== BlockType.GRASS &&
+                        t !== BlockType.SNOWY_GRASS && t !== BlockType.RED_SAND) continue;
+                }
+
+                let currentTree: string = biome.treeType;
+                if (biome.treeType === 'mixed_forest') {
+                    currentTree = seededRand01(rootWx, groundY, rootWz, 202) < 0.2 ? 'birch' : 'oak';
+                }
+
+                if (currentTree === 'oak') {
+                    const treeH = 4 + Math.floor(seededRand01(rootWx, groundY, rootWz, 203) * 3);
+                    for (let h = 1; h <= treeH; h++) {
+                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.LOG);
+                    }
+                    const leafStart = groundY + treeH - 2;
+                    const leafEnd = groundY + treeH + 1;
+                    for (let ly = leafStart; ly <= leafEnd; ly++) {
+                        const leafRange = ly === leafEnd ? 1 : 2;
+                        for (let lx = rootWx - leafRange; lx <= rootWx + leafRange; lx++) {
+                            for (let lz = rootWz - leafRange; lz <= rootWz + leafRange; lz++) {
+                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= leafRange) {
+                                    placeIfInChunk(lx, ly, lz, BlockType.LEAVES, true);
                                 }
                             }
                         }
                     }
-                } 
-                else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
-                    const terrainY = getTerrainHeight(wx, wz, noiseSet);
-                    if (terrainY <= 63) continue;
-                    const idx = index3D(x, terrainY, z);
-                    const t = blocks[idx];
-                    if ((t === biome.surfaceBlock || t === BlockType.SAND || t === BlockType.RED_SAND || t === BlockType.TERRACOTTA_ORANGE) && terrainY < MAX_Y - 3) {
-                        const upIdx = index3D(x, terrainY + 1, z);
-                        if (blocks[upIdx] === BlockType.AIR) {
-                            if (biome.id === 'desert' || biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
-                                if (t === BlockType.SAND || t === BlockType.RED_SAND) {
-                                    if (biome.id === 'desert' && seededRand01(wx, terrainY, wz, 211) < 0.4) {
-                                        const h = 1 + Math.floor(seededRand01(wx, terrainY, wz, 212) * 3);
-                                        for(let i=1; i<=h; i++) {
-                                            const cy = terrainY + i;
-                                            const cIdx = index3D(x, cy, z);
-                                            if (cIdx >= 0 && cIdx < blocks.length) {
-                                                blocks[cIdx] = BlockType.CACTUS;
-                                                colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], cy);
-                                            }
-                                        }
-                                    } else {
-                                        blocks[upIdx] = BlockType.DEAD_BUSH;
-                                        colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], terrainY + 1);
-                                    }
-                                } else if (biome.id === 'mesa_bryce' && seededRand01(wx, terrainY, wz, 213) < 0.05) {
-                                    blocks[upIdx] = BlockType.DEAD_BUSH;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], terrainY + 1);
+                } else if (currentTree === 'birch') {
+                    const treeH = 5 + Math.floor(seededRand01(rootWx, groundY, rootWz, 204) * 2);
+                    for (let h = 1; h <= treeH; h++) {
+                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.BIRCH_LOG);
+                    }
+                    const leafStart = groundY + treeH - 2;
+                    const leafEnd = groundY + treeH + 1;
+                    for (let ly = leafStart; ly <= leafEnd; ly++) {
+                        const leafRange = ly === leafEnd ? 1 : 2;
+                        for (let lx = rootWx - leafRange; lx <= rootWx + leafRange; lx++) {
+                            for (let lz = rootWz - leafRange; lz <= rootWz + leafRange; lz++) {
+                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= leafRange) {
+                                    placeIfInChunk(lx, ly, lz, BlockType.BIRCH_LEAVES, true);
                                 }
-                            } else if (biome.id === 'plains' || biome.id === 'forest') {
-                                if (t === BlockType.GRASS) {
-                                    const plantRnd = seededRand01(wx, terrainY, wz, 214);
-                                    if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
-                                    else if (plantRnd < 0.85) blocks[upIdx] = BlockType.DANDELION;
-                                    else blocks[upIdx] = BlockType.ROSE;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], terrainY + 1);
+                            }
+                        }
+                    }
+                } else if (currentTree === 'spruce') {
+                    const treeH = 6 + Math.floor(seededRand01(rootWx, groundY, rootWz, 205) * 4);
+                    for (let h = 1; h <= treeH; h++) {
+                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.SPRUCE_LOG);
+                    }
+                    for (let h = 3; h <= treeH + 1; h++) {
+                        const radius = Math.floor((treeH - h + 1) * 0.4);
+                        for (let lx = rootWx - radius; lx <= rootWx + radius; lx++) {
+                            for (let lz = rootWz - radius; lz <= rootWz + radius; lz++) {
+                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= radius + 0.5) {
+                                    placeIfInChunk(lx, groundY + h, lz, BlockType.SPRUCE_LEAVES, true);
                                 }
-                            } else if (biome.id === 'cherry_grove') {
-                                if (t === BlockType.GRASS) {
-                                    const plantRnd = seededRand01(wx, terrainY, wz, 215);
-                                    if (plantRnd < 0.3) blocks[upIdx] = BlockType.PINK_FLOWER;
-                                    else if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
-                                    colHeightmap[z * CHUNK_SIZE + x] = Math.max(colHeightmap[z * CHUNK_SIZE + x], terrainY + 1);
+                            }
+                        }
+                    }
+                    placeIfInChunk(rootWx, groundY + treeH + 1, rootWz, BlockType.SPRUCE_LEAVES);
+                } else if (currentTree === 'cherry') {
+                    const treeH = 5 + Math.floor(seededRand01(rootWx, groundY, rootWz, 206) * 2);
+                    let tx = rootWx, tz = rootWz;
+                    for (let h = 1; h <= treeH; h++) {
+                        if (h > 2 && seededRand01(rootWx, groundY + h, rootWz, 207) > 0.5) {
+                            tx += seededRand01(rootWx + h, groundY, rootWz, 208) > 0.5 ? 1 : -1;
+                        }
+                        if (h > 2 && seededRand01(rootWx, groundY + h, rootWz, 209) > 0.5) {
+                            tz += seededRand01(rootWx, groundY, rootWz + h, 210) > 0.5 ? 1 : -1;
+                        }
+                        placeIfInChunk(tx, groundY + h, tz, BlockType.CHERRY_LOG);
+                    }
+                    const canopyCenterY = groundY + treeH;
+                    for (let ly = canopyCenterY - 2; ly <= canopyCenterY + 1; ly++) {
+                        const leafRange = ly === canopyCenterY + 1 ? 1 : (ly === canopyCenterY ? 3 : 2);
+                        for (let lx = tx - leafRange; lx <= tx + leafRange; lx++) {
+                            for (let lz = tz - leafRange; lz <= tz + leafRange; lz++) {
+                                const dist = Math.sqrt((lx - tx) ** 2 + (lz - tz) ** 2);
+                                if (dist <= leafRange + 0.5) {
+                                    placeIfInChunk(lx, ly, lz, BlockType.CHERRY_LEAVES, true);
                                 }
                             }
                         }
                     }
                 }
+            } else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
+                // Vegetation plants remain chunk-local — only process roots inside the current chunk.
+                const rootLx = rootWx - worldX;
+                const rootLz = rootWz - worldZ;
+                if (rootLx < 3 || rootLx >= CHUNK_SIZE - 3 || rootLz < 3 || rootLz >= CHUNK_SIZE - 3) continue;
+
+                const terrainY = getTerrainHeight(rootWx, rootWz, noiseSet);
+                if (terrainY <= 63) continue;
+                const idx = index3D(rootLx, terrainY, rootLz);
+                const t = blocks[idx];
+                if ((t === biome.surfaceBlock || t === BlockType.SAND || t === BlockType.RED_SAND || t === BlockType.TERRACOTTA_ORANGE) && terrainY < MAX_Y - 3) {
+                    const upIdx = index3D(rootLx, terrainY + 1, rootLz);
+                    if (blocks[upIdx] === BlockType.AIR) {
+                        if (biome.id === 'desert' || biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
+                            if (t === BlockType.SAND || t === BlockType.RED_SAND) {
+                                if (biome.id === 'desert' && seededRand01(rootWx, terrainY, rootWz, 211) < 0.4) {
+                                    const h = 1 + Math.floor(seededRand01(rootWx, terrainY, rootWz, 212) * 3);
+                                    for (let i = 1; i <= h; i++) {
+                                        const cy = terrainY + i;
+                                        const cIdx = index3D(rootLx, cy, rootLz);
+                                        if (cIdx >= 0 && cIdx < blocks.length) {
+                                            blocks[cIdx] = BlockType.CACTUS;
+                                            colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], cy);
+                                        }
+                                    }
+                                } else {
+                                    blocks[upIdx] = BlockType.DEAD_BUSH;
+                                    colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                }
+                            } else if (biome.id === 'mesa_bryce' && seededRand01(rootWx, terrainY, rootWz, 213) < 0.05) {
+                                blocks[upIdx] = BlockType.DEAD_BUSH;
+                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                            }
+                        } else if (biome.id === 'plains' || biome.id === 'forest') {
+                            if (t === BlockType.GRASS) {
+                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 214);
+                                if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else if (plantRnd < 0.85) blocks[upIdx] = BlockType.DANDELION;
+                                else blocks[upIdx] = BlockType.ROSE;
+                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                            }
+                        } else if (biome.id === 'cherry_grove') {
+                            if (t === BlockType.GRASS) {
+                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 215);
+                                if (plantRnd < 0.3) blocks[upIdx] = BlockType.PINK_FLOWER;
+                                else if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
