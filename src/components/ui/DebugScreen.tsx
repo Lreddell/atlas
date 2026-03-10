@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
-import { getBiome, getGenerationParams } from '../../systems/world/biomes';
+import { getBiome, getClimateDebugInfo } from '../../systems/world/biomes';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE } from '../../constants';
 import { APP_DISPLAY_VERSION } from '../../constants';
@@ -87,7 +87,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                     
                     const light = worldManager.getLight(bx, by, bz);
                     const biome = getBiome(bx, bz);
-                    const climate = getGenerationParams(bx, bz);
+                    const climate = getClimateDebugInfo(bx, bz);
                     const eyePos = pos.clone().add(new THREE.Vector3(0, 1.62, 0));
                     const target = getTargetBlock(eyePos, dir, 5.0);
                     
@@ -106,7 +106,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                         line(`Facing: ${facing} (${axis}) (XY: ${dir.x.toFixed(1)} / ${dir.z.toFixed(1)})`),
                         line(``),
                         line(`Biome: ${biome.name}`),
-                        line(`T: ${climate.temp.toFixed(3)} C: ${climate.continentalness.toFixed(3)} R: ${climate.riverVal.toFixed(3)} W: ${climate.weirdness.toFixed(3)}`),
+                        line(`T: ${climate.temp.toFixed(3)} C: ${climate.continentalness.toFixed(3)} R: ${climate.riverVal.toFixed(3)} W: ${climate.weirdness.toFixed(3)}${climate.warpEnabled ? ' [warp]' : ''}`),
                         line(`Light: ${Math.max(light.sky, light.block)} (${light.sky} sky, ${light.block} block)`),
                         line(`Speed: ${speed.toFixed(2)} m/s`),
                         line(``),

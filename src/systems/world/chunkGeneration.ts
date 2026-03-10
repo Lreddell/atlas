@@ -160,10 +160,10 @@ export function generateChunk(cx: number, cz: number) {
             const wx = worldX + x;
             const wz = worldZ + z;
             
-            const biome = getBiome(wx, wz);
-            const { height, baseHeight } = getTerrainInfo(wx, wz);
+            const biome = getBiome(wx, wz, noiseSet);
+            const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
             
-            const params = getGenerationParams(wx, wz);
+            const params = getGenerationParams(wx, wz, noiseSet);
             const contVal = params.continentalness;
             const riverVal = Math.abs(params.riverVal);
 
@@ -174,7 +174,7 @@ export function generateChunk(cx: number, cz: number) {
             if (!isBeachZone && height >= 60 && height <= 65) {
                  const offsets = [[4,0], [-4,0], [0,4], [0,-4]];
                  for(const [ox, oz] of offsets) {
-                     const nh = getTerrainHeight(wx + ox, wz + oz);
+                     const nh = getTerrainHeight(wx + ox, wz + oz, noiseSet);
                      if ((height >= 63 && nh < 63) || (height < 63 && nh >= 63)) {
                          isBeachZone = true;
                          break;
@@ -215,7 +215,7 @@ export function generateChunk(cx: number, cz: number) {
                     }
 
                     if (biome.id === 'volcanic' && y === height) {
-                        const lavaNoise = noiseSet.cave.noise2D(wx * 0.08, wz * 0.08);
+                        const lavaNoise = noiseSet.cave.noise2D(cwx * 0.08, cwz * 0.08);
                         if (lavaNoise > 0.6) type = BlockType.LAVA;
                         else if (lavaNoise > 0.3) type = BlockType.MAGMA;
                     }
@@ -318,7 +318,7 @@ export function generateChunk(cx: number, cz: number) {
                 const checkExposed = () => isExposed(index, y, x, z);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
-                    const noise = noiseSet.cave.noise3D(wx * 0.15, y * 0.15, wz * 0.15);
+                    const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
                     if (noise > 0.45) { 
                         if (!checkExposed() || seededRand01(wx, y, wz, 101) > 0.5) {
                             blocks[index] = BlockType.COAL_ORE;
@@ -328,10 +328,10 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 let copperChance = getTriangularChance(y, -16, 112, 48);
                 if (copperChance > 0) {
-                    const dripNoise = noiseSet.weirdness.noise3D(wx*0.05, y*0.05, wz*0.05);
-                    const isDripstone = dripNoise > 0.3;
-                    const noise = noiseSet.cave.noise3D(wx * 0.12 + 999, y * 0.12 + 999, wz * 0.12 + 999);
-                    const threshold = isDripstone ? 0.45 : 0.6; 
+                    const copperGeoNoise = noiseSet.weirdness.noise3D(cwx*0.05, y*0.05, cwz*0.05);
+                    const favorCopper = copperGeoNoise > 0.3;
+                    const noise = noiseSet.cave.noise3D(cwx * 0.12 + 999, y * 0.12 + 999, cwz * 0.12 + 999);
+                    const threshold = favorCopper ? 0.45 : 0.6; 
                     if (noise > threshold) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 102) > 0.5) {
                             blocks[index] = BlockType.COPPER_ORE;
@@ -344,7 +344,7 @@ export function generateChunk(cx: number, cz: number) {
                     getTriangularChance(y, 80, 320, 232)
                 );
                 if (ironChance > 0) {
-                    const noise = noiseSet.cave.noise3D(wx * 0.2 + 123, y * 0.2 + 123, wz * 0.2 + 123);
+                    const noise = noiseSet.cave.noise3D(cwx * 0.2 + 123, y * 0.2 + 123, cwz * 0.2 + 123);
                     if (noise > 0.52) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 103) > 0.5) {
                             blocks[index] = BlockType.IRON_ORE;
@@ -361,7 +361,7 @@ export function generateChunk(cx: number, cz: number) {
                     }
                 }
                 if (goldChance > 0) {
-                    const noise = noiseSet.cave.noise3D(wx * 0.25 + 777, y * 0.25 + 777, wz * 0.25 + 777);
+                    const noise = noiseSet.cave.noise3D(cwx * 0.25 + 777, y * 0.25 + 777, cwz * 0.25 + 777);
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (isMesaGold || !checkExposed() || seededRand01(wx, y, wz, 104) > 0.5) {
@@ -372,7 +372,7 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 let lapisChance = getTriangularChance(y, -64, 64, -1);
                 if (lapisChance > 0) {
-                    const noise = noiseSet.cave.noise3D(wx * 0.3 + 444, y * 0.3 + 444, wz * 0.3 + 444);
+                    const noise = noiseSet.cave.noise3D(cwx * 0.3 + 444, y * 0.3 + 444, cwz * 0.3 + 444);
                     if (noise > 0.65) {
                         if (!checkExposed()) {
                             blocks[index] = BlockType.LAPIS_ORE;
@@ -382,7 +382,7 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 if (y <= 16) {
                     const ramp = (16 - y) / (16 - (-64));
-                    const noise = noiseSet.cave.noise3D(wx * 0.35 + 333, y * 0.35 + 333, wz * 0.35 + 333);
+                    const noise = noiseSet.cave.noise3D(cwx * 0.35 + 333, y * 0.35 + 333, cwz * 0.35 + 333);
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 105) > 0.5) {
@@ -394,7 +394,7 @@ export function generateChunk(cx: number, cz: number) {
                 if (biome.name.includes("Volcanic") || biome.name.includes("Mesa") || biome.name.includes("Tundra") || height > 90) {
                     let emeraldChance = getTriangularChance(y, -16, 320, 232);
                     if (emeraldChance > 0) {
-                        const noise = noiseSet.cave.noise3D(wx * 0.35 + 111, y * 0.35 + 111, wz * 0.35 + 111);
+                        const noise = noiseSet.cave.noise3D(cwx * 0.35 + 111, y * 0.35 + 111, cwz * 0.35 + 111);
                         if (noise > 0.75) { 
                             blocks[index] = BlockType.EMERALD_ORE;
                             continue;
@@ -410,11 +410,11 @@ export function generateChunk(cx: number, cz: number) {
         for (let z = 3; z < CHUNK_SIZE - 3; z++) {
                 const wx = worldX + x;
                 const wz = worldZ + z;
-                const biome = getBiome(wx, wz);
+                const biome = getBiome(wx, wz, noiseSet);
                 const treeRnd = seededRand01(wx, 0, wz, 201);
                 
                 if (biome.treeType !== 'none' && treeRnd < biome.treeChance) { 
-                    const terrainY = getTerrainHeight(wx, wz);
+                    const terrainY = getTerrainHeight(wx, wz, noiseSet);
                     if (terrainY <= 63) continue;
                     const groundY = terrainY;
                     const idx = index3D(x, groundY, z);
@@ -554,7 +554,7 @@ export function generateChunk(cx: number, cz: number) {
                     }
                 } 
                 else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
-                    const terrainY = getTerrainHeight(wx, wz);
+                    const terrainY = getTerrainHeight(wx, wz, noiseSet);
                     if (terrainY <= 63) continue;
                     const idx = index3D(x, terrainY, z);
                     const t = blocks[idx];

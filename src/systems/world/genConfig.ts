@@ -62,7 +62,10 @@ export const DEFAULTS = {
         slopePenaltyRadius: 4,
         maxSlopePenalty: 10,
         preferredElevationMin: 64,
-        preferredElevationMax: 100
+        preferredElevationMax: 100,
+        safeSearchRadius: 128,
+        safeSearchStep: 16,
+        earlyAcceptScore: 120
     }
 };
 

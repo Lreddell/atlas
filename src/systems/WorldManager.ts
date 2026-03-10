@@ -846,35 +846,39 @@ export class WorldManager {
    */
   public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
       const seaLevel = GenConfig.height.seaLevel;
-      const searchRadius = 128; 
+      const { safeSearchRadius, safeSearchStep } = GenConfig.spawn;
       
       // Force Ensure Center Chunk exists so collision works immediately
       const centerCx = Math.floor(targetX / CHUNK_SIZE);
       const centerCz = Math.floor(targetZ / CHUNK_SIZE);
       this.ensureChunk(centerCx, centerCz);
 
-      // Spiral search for LAND
-      for (let r = 0; r <= searchRadius; r += 16) { 
-          for (let dx = -r; dx <= r; dx += 16) {
-              for (let dz = -r; dz <= r; dz += 16) {
-                  if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+      let bestX = targetX, bestZ = targetZ, bestY = seaLevel + 1.5, bestScore = -Infinity;
+
+      // Spiral search for best local land
+      for (let r = 0; r <= safeSearchRadius; r += safeSearchStep) { 
+          for (let dx = -r; dx <= r; dx += safeSearchStep) {
+              for (let dz = -r; dz <= r; dz += safeSearchStep) {
+                  if (r > 0 && Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
 
                   const x = Math.floor(targetX + dx);
                   const z = Math.floor(targetZ + dz);
-                  
-                  // Use Noise Math directly - reliable and fast
-                  const terrainY = WorldGen.getTerrainHeight(x, z);
 
-                  if (terrainY > seaLevel) {
-                      // Found Land!
-                      // Ensure chunk exists for collision
-                      this.ensureChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
-                      
-                      console.log(`[Spawn] Found safe land at ${x},${terrainY},${z}`);
-                      return { x: x + 0.5, y: terrainY + 2, z: z + 0.5 };
+                  const score = this.scoreSpawnCandidate(x, z);
+                  if (score > bestScore) {
+                      bestScore = score;
+                      bestX = x;
+                      bestZ = z;
+                      bestY = WorldGen.getTerrainHeight(x, z);
                   }
               }
           }
+      }
+
+      if (bestScore > 0) {
+          this.ensureChunk(Math.floor(bestX / CHUNK_SIZE), Math.floor(bestZ / CHUNK_SIZE));
+          console.log(`[Spawn] Found safe land at ${bestX},${bestY},${bestZ} (score: ${bestScore})`);
+          return { x: bestX + 0.5, y: bestY + 2, z: bestZ + 0.5 };
       }
 
       // If no land found, we are in deep ocean/river. Spawn on water surface.
@@ -899,10 +903,15 @@ export class WorldManager {
 
       let score = 100;
 
-      // Prefer moderate elevation
-      const elevAboveSea = height - seaLevel;
-      if (elevAboveSea > 0 && elevAboveSea < 40) score += 20;
-      else if (elevAboveSea >= 40) score -= Math.min(elevAboveSea - 40, 30);
+      // Prefer elevation within configured range
+      const { preferredElevationMin, preferredElevationMax } = GenConfig.spawn;
+      if (height >= preferredElevationMin && height <= preferredElevationMax) score += 20;
+      else {
+          const dist = height < preferredElevationMin
+              ? preferredElevationMin - height
+              : height - preferredElevationMax;
+          score -= Math.min(dist, 30);
+      }
 
       // Penalize steep slope
       const sr = GenConfig.spawn.slopePenaltyRadius;
@@ -949,7 +958,7 @@ export class WorldManager {
               }
 
               // Good enough — stop early
-              if (bestScore >= 120) {
+              if (bestScore >= GenConfig.spawn.earlyAcceptScore) {
                   return this.findSafeSpawnPosition(bestX, bestZ);
               }
           }
