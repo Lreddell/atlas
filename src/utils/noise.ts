@@ -205,6 +205,60 @@ export function hashSeed(seed: string | number): number {
     return Math.abs(hash);
 }
 
+/**
+ * Deterministic hash combining a numeric seed with a string salt.
+ * Returns a 32-bit integer.
+ */
+export function hashSeedWithSalt(seed: number, salt: string): number {
+    let h = seed | 0;
+    for (let i = 0; i < salt.length; i++) {
+        h = Math.imul(h ^ salt.charCodeAt(i), 2654435761);
+        h ^= h >>> 16;
+    }
+    h = Math.imul(h, 2246822519);
+    h ^= h >>> 13;
+    h = Math.imul(h, 3266489917);
+    h ^= h >>> 16;
+    return h | 0;
+}
+
+/**
+ * Maps a hash value into a numeric range [min, max).
+ */
+export function hashToRange(hash: number, min: number, max: number): number {
+    const u = (hash >>> 0) / 4294967296;
+    return min + u * (max - min);
+}
+
+export interface NoiseOffsets {
+    temperature: { x: number; z: number };
+    continentalness: { x: number; z: number };
+    river: { x: number; z: number };
+    weirdness: { x: number; z: number };
+    terrain: { x: number; z: number };
+    cave: { x: number; z: number };
+    spawn: { x: number; z: number };
+}
+
+function deriveOffset(seed: number, salt: string): { x: number; z: number } {
+    return {
+        x: hashToRange(hashSeedWithSalt(seed, salt + '_x'), -50000, 50000),
+        z: hashToRange(hashSeedWithSalt(seed, salt + '_z'), -50000, 50000)
+    };
+}
+
+function createNoiseOffsets(seed: number): NoiseOffsets {
+    return {
+        temperature: deriveOffset(seed, 'temperature'),
+        continentalness: deriveOffset(seed, 'continentalness'),
+        river: deriveOffset(seed, 'river'),
+        weirdness: deriveOffset(seed, 'weirdness'),
+        terrain: deriveOffset(seed, 'terrain'),
+        cave: deriveOffset(seed, 'cave'),
+        spawn: deriveOffset(seed, 'spawn'),
+    };
+}
+
 export interface NoiseSet {
     terrain: SimpleNoise;
     cave: SimpleNoise;
@@ -212,7 +266,10 @@ export interface NoiseSet {
     continental: SimpleNoise;
     river: SimpleNoise;
     weirdness: SimpleNoise;
+    biomeWarpA: SimpleNoise;
+    biomeWarpB: SimpleNoise;
     seed: number;
+    offsets: NoiseOffsets;
 }
 
 export function createNoiseSet(masterSeed: number): NoiseSet {
@@ -223,7 +280,10 @@ export function createNoiseSet(masterSeed: number): NoiseSet {
         continental: new SimpleNoise(masterSeed + 300),
         river: new SimpleNoise(masterSeed + 400),
         weirdness: new SimpleNoise(masterSeed + 500),
-        seed: masterSeed
+        biomeWarpA: new SimpleNoise(masterSeed + 600),
+        biomeWarpB: new SimpleNoise(masterSeed + 700),
+        seed: masterSeed,
+        offsets: createNoiseOffsets(masterSeed)
     };
 }
 
@@ -235,4 +295,15 @@ export let GlobalNoise = createNoiseSet(12345);
  */
 export function reseedGlobalNoise(masterSeed: number) {
     GlobalNoise = createNoiseSet(masterSeed);
+}
+
+/**
+ * Returns a deterministic spawn-search center derived from the world seed.
+ * Different seeds yield spawn searches in different regions, eliminating origin bias.
+ */
+export function getSpawnSearchCenter(seed: number): { x: number, z: number } {
+    return {
+        x: Math.floor(hashToRange(hashSeedWithSalt(seed, 'spawn_center_x'), -1000, 1000)),
+        z: Math.floor(hashToRange(hashSeedWithSalt(seed, 'spawn_center_z'), -1000, 1000))
+    };
 }

@@ -16,9 +16,12 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
     const freq1 = nc.scale1; 
     const freq2 = nc.scale2;
     const type = nc.type;
+
+    const tox = noiseSet.offsets.terrain.x;
+    const toz = noiseSet.offsets.terrain.z;
     
-    const n1 = sample(noiseSet.terrain, x, z, type, freq1, 1, 2.0, 0.5);
-    const n2 = sample(noiseSet.terrain, x + 100, z + 100, type, freq2, 1, 2.0, 0.5); 
+    const n1 = sample(noiseSet.terrain, x + tox, z + toz, type, freq1, 1, 2.0, 0.5);
+    const n2 = sample(noiseSet.terrain, x + 100 + tox, z + 100 + toz, type, freq2, 1, 2.0, 0.5); 
     
     let elevation = n1 * terrainScale + n2 * (terrainScale / 3); 
     
@@ -35,8 +38,8 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
         const wFactor = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
         const volcanicFactor = tFactor * wFactor;
         
-        const jagged = Math.abs(noiseSet.weirdness.noise2D(x * 0.15, z * 0.15));
-        const jaggedLow = noiseSet.weirdness.noise2D(x * 0.03, z * 0.03);
+        const jagged = Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.15, (z + toz) * 0.15));
+        const jaggedLow = noiseSet.weirdness.noise2D((x + tox) * 0.03, (z + toz) * 0.03);
         
         elevation += (jagged * 12 + jaggedLow * 6) * volcanicFactor;
     }
@@ -50,7 +53,7 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
         const isVolcanic = volcanicTemp * volcanicWeird;
         const volcanicFade = 1.0 - isVolcanic;
 
-        const plateauNoise = noiseSet.terrain.noise2D(x * 0.008, z * 0.008);
+        const plateauNoise = noiseSet.terrain.noise2D((x + tox) * 0.008, (z + toz) * 0.008);
         
         let lowFactor = THREE.MathUtils.smoothstep(plateauNoise, -0.12, -0.08);
         let highFactor = THREE.MathUtils.smoothstep(plateauNoise, 0.08, 0.12);
@@ -62,7 +65,7 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
         let bryceBoost = 0;
 
         if (bryceFactor > 0.01) {
-            const spireNoise = noiseSet.terrain.noise2D(x * 0.1, z * 0.1); 
+            const spireNoise = noiseSet.terrain.noise2D((x + tox) * 0.1, (z + toz) * 0.1); 
             const spireShape = THREE.MathUtils.smoothstep(spireNoise, 0.35, 0.55); 
             
             highFactor = THREE.MathUtils.lerp(highFactor, spireShape, bryceFactor);
@@ -73,10 +76,10 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
 
         const plateauHeight = (lowFactor * 5) + (highFactor * 20) + bryceBoost;
         
-        const rVal = Math.abs(noiseSet.river.noise2D(x * 0.004, z * 0.004) + (jitter * 0.5));
+        const rVal = Math.abs(noiseSet.river.noise2D((x + noiseSet.offsets.river.x) * 0.004, (z + noiseSet.offsets.river.z) * 0.004) + (jitter * 0.5));
         const carvingFactor = THREE.MathUtils.smoothstep(rVal, b.river.width, b.river.width * 3.0);
         
-        const mesaDetail = noiseSet.terrain.noise2D(x * 0.04, z * 0.04) * 1.5;
+        const mesaDetail = noiseSet.terrain.noise2D((x + tox) * 0.04, (z + toz) * 0.04) * 1.5;
         const detailMask = THREE.MathUtils.smoothstep(plateauHeight, 2.0, 6.0);
 
         elevation += (plateauHeight + mesaDetail * detailMask) * edgeFactor * carvingFactor * volcanicFade;
@@ -120,6 +123,9 @@ export function generateChunk(cx: number, cz: number) {
     const worldX = cx * CHUNK_SIZE;
     const worldZ = cz * CHUNK_SIZE;
     const worldSeed = GlobalNoise.seed | 0;
+    const noiseSet = GlobalNoise;
+    const caveOx = noiseSet.offsets.cave.x;
+    const caveOz = noiseSet.offsets.cave.z;
 
     const seededRand01 = (x: number, y: number, z: number, salt: number): number => {
         let h = Math.imul((x | 0) ^ worldSeed, 374761393);
@@ -176,7 +182,9 @@ export function generateChunk(cx: number, cz: number) {
                  }
             }
 
-            const breachNoise = GlobalNoise.cave.noise2D(wx * 0.015, wz * 0.015);
+            const cwx = wx + caveOx;
+            const cwz = wz + caveOz;
+            const breachNoise = noiseSet.cave.noise2D(cwx * 0.015, cwz * 0.015);
             const isBreachZone = breachNoise > 0.05; 
 
             // Loop from top (MAX_Y) down to bottom (MIN_Y)
@@ -207,7 +215,7 @@ export function generateChunk(cx: number, cz: number) {
                     }
 
                     if (biome.id === 'volcanic' && y === height) {
-                        const lavaNoise = GlobalNoise.cave.noise2D(wx * 0.08, wz * 0.08);
+                        const lavaNoise = noiseSet.cave.noise2D(wx * 0.08, wz * 0.08);
                         if (lavaNoise > 0.6) type = BlockType.LAVA;
                         else if (lavaNoise > 0.3) type = BlockType.MAGMA;
                     }
@@ -240,21 +248,21 @@ export function generateChunk(cx: number, cz: number) {
 
                             const wormFreq = 0.02;
                             const wormThresh = 0.15 * surfaceTaper; 
-                            const wc1 = GlobalNoise.cave.noise3D(wx * wormFreq, y * wormFreq * 1.2, wz * wormFreq);
+                            const wc1 = noiseSet.cave.noise3D(cwx * wormFreq, y * wormFreq * 1.2, cwz * wormFreq);
                             if (Math.abs(wc1) < wormThresh) {
-                                const wc2 = GlobalNoise.cave.noise3D(wx * wormFreq + 123.4, y * wormFreq * 1.2 + 123.4, wz * wormFreq + 123.4);
+                                const wc2 = noiseSet.cave.noise3D(cwx * wormFreq + 123.4, y * wormFreq * 1.2 + 123.4, cwz * wormFreq + 123.4);
                                 const wormVal = Math.sqrt(wc1*wc1 + wc2*wc2);
                                 if (wormVal < wormThresh) isCave = true;
                             }
 
                             if (!isCave && depth > 15) {
-                                const megaMask = GlobalNoise.cave.noise3D(wx * 0.005, y * 0.02, wz * 0.005);
+                                const megaMask = noiseSet.cave.noise3D(cwx * 0.005, y * 0.02, cwz * 0.005);
                                 if (megaMask > 0.5) { 
                                     const megaFreq = 0.012; 
                                     const megaThresh = 0.25;
-                                    const mc1 = GlobalNoise.cave.noise3D(wx * megaFreq + 99, y * megaFreq + 99, wz * megaFreq + 99);
+                                    const mc1 = noiseSet.cave.noise3D(cwx * megaFreq + 99, y * megaFreq + 99, cwz * megaFreq + 99);
                                     if (Math.abs(mc1) < megaThresh) {
-                                        const mc2 = GlobalNoise.cave.noise3D(wx * megaFreq + 88, y * megaFreq + 88, wz * megaFreq + 88);
+                                        const mc2 = noiseSet.cave.noise3D(cwx * megaFreq + 88, y * megaFreq + 88, cwz * megaFreq + 88);
                                         const megaVal = Math.sqrt(mc1*mc1 + mc2*mc2);
                                         if (megaVal < megaThresh) isCave = true; 
                                     }
@@ -263,12 +271,12 @@ export function generateChunk(cx: number, cz: number) {
 
                             if (!isCave) {
                                 const noodleFreq = 0.05; 
-                                const noodleMask = GlobalNoise.cave.noise3D(wx * 0.01 + 222, y * 0.01, wz * 0.01 + 222);
+                                const noodleMask = noiseSet.cave.noise3D(cwx * 0.01 + 222, y * 0.01, cwz * 0.01 + 222);
                                 if (noodleMask > 0.2) {
                                     const noodleThresh = 0.08 * surfaceTaper;
-                                    const nc1 = GlobalNoise.cave.noise3D(wx * noodleFreq + 555, y * noodleFreq, wz * noodleFreq + 555);
+                                    const nc1 = noiseSet.cave.noise3D(cwx * noodleFreq + 555, y * noodleFreq, cwz * noodleFreq + 555);
                                     if (Math.abs(nc1) < noodleThresh) {
-                                        const nc2 = GlobalNoise.cave.noise3D(wx * noodleFreq + 444, y * noodleFreq, wz * noodleFreq + 444);
+                                        const nc2 = noiseSet.cave.noise3D(cwx * noodleFreq + 444, y * noodleFreq, cwz * noodleFreq + 444);
                                         const noodleVal = Math.sqrt(nc1*nc1 + nc2*nc2);
                                         if (noodleVal < noodleThresh) isCave = true;
                                     }
@@ -277,7 +285,7 @@ export function generateChunk(cx: number, cz: number) {
                             
                             if (!isCave && depth > 10 && y < 0) {
                                 const cheeseFreq = 0.03;
-                                const cheeseVal = GlobalNoise.cave.noise3D(wx * cheeseFreq + 777, y * cheeseFreq + 777, wz * cheeseFreq + 777);
+                                const cheeseVal = noiseSet.cave.noise3D(cwx * cheeseFreq + 777, y * cheeseFreq + 777, cwz * cheeseFreq + 777);
                                 if (cheeseVal > 0.45) isCave = true; 
                             }
 
@@ -310,7 +318,7 @@ export function generateChunk(cx: number, cz: number) {
                 const checkExposed = () => isExposed(index, y, x, z);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.15, y * 0.15, wz * 0.15);
+                    const noise = noiseSet.cave.noise3D(wx * 0.15, y * 0.15, wz * 0.15);
                     if (noise > 0.45) { 
                         if (!checkExposed() || seededRand01(wx, y, wz, 101) > 0.5) {
                             blocks[index] = BlockType.COAL_ORE;
@@ -320,9 +328,9 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 let copperChance = getTriangularChance(y, -16, 112, 48);
                 if (copperChance > 0) {
-                    const dripNoise = GlobalNoise.weirdness.noise3D(wx*0.05, y*0.05, wz*0.05);
+                    const dripNoise = noiseSet.weirdness.noise3D(wx*0.05, y*0.05, wz*0.05);
                     const isDripstone = dripNoise > 0.3;
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.12 + 999, y * 0.12 + 999, wz * 0.12 + 999);
+                    const noise = noiseSet.cave.noise3D(wx * 0.12 + 999, y * 0.12 + 999, wz * 0.12 + 999);
                     const threshold = isDripstone ? 0.45 : 0.6; 
                     if (noise > threshold) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 102) > 0.5) {
@@ -336,7 +344,7 @@ export function generateChunk(cx: number, cz: number) {
                     getTriangularChance(y, 80, 320, 232)
                 );
                 if (ironChance > 0) {
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.2 + 123, y * 0.2 + 123, wz * 0.2 + 123);
+                    const noise = noiseSet.cave.noise3D(wx * 0.2 + 123, y * 0.2 + 123, wz * 0.2 + 123);
                     if (noise > 0.52) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 103) > 0.5) {
                             blocks[index] = BlockType.IRON_ORE;
@@ -353,7 +361,7 @@ export function generateChunk(cx: number, cz: number) {
                     }
                 }
                 if (goldChance > 0) {
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.25 + 777, y * 0.25 + 777, wz * 0.25 + 777);
+                    const noise = noiseSet.cave.noise3D(wx * 0.25 + 777, y * 0.25 + 777, wz * 0.25 + 777);
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (isMesaGold || !checkExposed() || seededRand01(wx, y, wz, 104) > 0.5) {
@@ -364,7 +372,7 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 let lapisChance = getTriangularChance(y, -64, 64, -1);
                 if (lapisChance > 0) {
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.3 + 444, y * 0.3 + 444, wz * 0.3 + 444);
+                    const noise = noiseSet.cave.noise3D(wx * 0.3 + 444, y * 0.3 + 444, wz * 0.3 + 444);
                     if (noise > 0.65) {
                         if (!checkExposed()) {
                             blocks[index] = BlockType.LAPIS_ORE;
@@ -374,7 +382,7 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 if (y <= 16) {
                     const ramp = (16 - y) / (16 - (-64));
-                    const noise = GlobalNoise.cave.noise3D(wx * 0.35 + 333, y * 0.35 + 333, wz * 0.35 + 333);
+                    const noise = noiseSet.cave.noise3D(wx * 0.35 + 333, y * 0.35 + 333, wz * 0.35 + 333);
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
                         if (!checkExposed() || seededRand01(wx, y, wz, 105) > 0.5) {
@@ -386,7 +394,7 @@ export function generateChunk(cx: number, cz: number) {
                 if (biome.name.includes("Volcanic") || biome.name.includes("Mesa") || biome.name.includes("Tundra") || height > 90) {
                     let emeraldChance = getTriangularChance(y, -16, 320, 232);
                     if (emeraldChance > 0) {
-                        const noise = GlobalNoise.cave.noise3D(wx * 0.35 + 111, y * 0.35 + 111, wz * 0.35 + 111);
+                        const noise = noiseSet.cave.noise3D(wx * 0.35 + 111, y * 0.35 + 111, wz * 0.35 + 111);
                         if (noise > 0.75) { 
                             blocks[index] = BlockType.EMERALD_ORE;
                             continue;

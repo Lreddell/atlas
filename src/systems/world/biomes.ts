@@ -125,22 +125,60 @@ export function sample(
 
 export function getGenerationParams(x: number, z: number, noiseSet: NoiseSet = GlobalNoise) {
     const nc = GenConfig.noise;
+    const offsets = noiseSet.offsets;
+
+    // Optional climate domain warp
+    const warpCfg = GenConfig.climateWarp;
+    let wx = x, wz = z;
+    if (warpCfg.enabled) {
+        wx += noiseSet.biomeWarpA.noise2D(x * warpCfg.frequency, z * warpCfg.frequency) * warpCfg.amplitude;
+        wz += noiseSet.biomeWarpB.noise2D(x * warpCfg.frequency, z * warpCfg.frequency) * warpCfg.amplitude;
+    }
+
+    // Per-channel offset coordinates
+    const tx = wx + offsets.temperature.x;
+    const tz = wz + offsets.temperature.z;
+    const cx = wx + offsets.continentalness.x;
+    const cz = wz + offsets.continentalness.z;
+    const rx = wx + offsets.river.x;
+    const rz = wz + offsets.river.z;
+    const wdx = wx + offsets.weirdness.x;
+    const wdz = wz + offsets.weirdness.z;
+
+    const jitter = noiseSet.biome.noise2D(wx * 0.1, wz * 0.1) * 0.02; 
     
-    const jitter = noiseSet.biome.noise2D(x * 0.1, z * 0.1) * 0.02; 
-    
-    const tempRaw = sample(noiseSet.biome, x, z, nc.temperature.type, nc.temperature.scale, nc.temperature.octaves, nc.temperature.lacunarity, nc.temperature.gain);
+    const tempRaw = sample(noiseSet.biome, tx, tz, nc.temperature.type, nc.temperature.scale, nc.temperature.octaves, nc.temperature.lacunarity, nc.temperature.gain);
     const temp = (tempRaw * (nc.temperature.amplification || 1.5)) + jitter;
 
-    const contRaw = sample(noiseSet.continental, x, z, nc.continentalness.type, nc.continentalness.scale, nc.continentalness.octaves, nc.continentalness.lacunarity, nc.continentalness.gain);
+    const contRaw = sample(noiseSet.continental, cx, cz, nc.continentalness.type, nc.continentalness.scale, nc.continentalness.octaves, nc.continentalness.lacunarity, nc.continentalness.gain);
     const continentalness = contRaw + jitter + (nc.continentalness.offset || 0);
     
-    const riverRaw = sample(noiseSet.river, x, z, nc.river.type, nc.river.scale, nc.river.octaves, nc.river.lacunarity, nc.river.gain);
+    const riverRaw = sample(noiseSet.river, rx, rz, nc.river.type, nc.river.scale, nc.river.octaves, nc.river.lacunarity, nc.river.gain);
     const riverVal = riverRaw + (jitter * (nc.river.jitter || 0));
 
-    const weirdRaw = sample(noiseSet.weirdness, x, z, nc.weirdness.type, nc.weirdness.scale, nc.weirdness.octaves, nc.weirdness.lacunarity, nc.weirdness.gain);
+    const weirdRaw = sample(noiseSet.weirdness, wdx, wdz, nc.weirdness.type, nc.weirdness.scale, nc.weirdness.octaves, nc.weirdness.lacunarity, nc.weirdness.gain);
     const weirdness = (weirdRaw * (nc.weirdness.amplification || 1.0)) + jitter;
 
     return { temp, continentalness, riverVal, weirdness, jitter };
+}
+
+export function getClimateDebugInfo(x: number, z: number, noiseSet: NoiseSet = GlobalNoise) {
+    const params = getGenerationParams(x, z, noiseSet);
+    const offsets = noiseSet.offsets;
+    const warpCfg = GenConfig.climateWarp;
+    let wx = x, wz = z;
+    if (warpCfg.enabled) {
+        wx += noiseSet.biomeWarpA.noise2D(x * warpCfg.frequency, z * warpCfg.frequency) * warpCfg.amplitude;
+        wz += noiseSet.biomeWarpB.noise2D(x * warpCfg.frequency, z * warpCfg.frequency) * warpCfg.amplitude;
+    }
+    return {
+        ...params,
+        warpEnabled: warpCfg.enabled,
+        warpedX: wx,
+        warpedZ: wz,
+        tempCoordX: wx + offsets.temperature.x,
+        tempCoordZ: wz + offsets.temperature.z,
+    };
 }
 
 export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): { terrainBase: number, terrainScale: number } {
