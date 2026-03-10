@@ -1,6 +1,7 @@
 
 import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
+import { isSaplingType } from './trees';
 
 const LEAF_TYPES = new Set<BlockType>([
     BlockType.LEAVES,
@@ -24,7 +25,7 @@ export function getOpacity(type: BlockType): number {
 export function isWashable(type: BlockType): boolean {
     if (type === BlockType.AIR) return false;
     // Wash away Torches, Saplings, Grass (if added), etc.
-    if (type === BlockType.TORCH || type === BlockType.SAPLING) return true;
+    if (type === BlockType.TORCH || isSaplingType(type)) return true;
     
     const def = BLOCKS[type];
     if (!def) return false; // Fallback: Unknown blocks are stable

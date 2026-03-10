@@ -13,6 +13,7 @@ import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
+import { tickPlantGrowth } from './world/plantGrowth';
 
 // --- Types ---
 enum ChunkStage {
@@ -1083,6 +1084,15 @@ export class WorldManager {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
       Fluids.processFluids(this.state);
+      tickPlantGrowth({
+          getBlock: (x, y, z) => this.getBlock(x, y, z, false),
+          tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
+          setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
+          getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+          setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
+          getLoadedChunkKeys: () => this.getLoadedChunkKeys(),
+          getSeed: () => this.activeSeed
+      });
   }
 
   getTime(): number { return this.state.time; }
@@ -1135,6 +1145,16 @@ export class WorldManager {
       const meta = WorldStore.getMetadataData(this.state, cx, cz);
       if (!meta) return 0;
       return meta[WorldCoords.index3D(lx, y, lz)];
+  }
+  setMetadataAt(x: number, y: number, z: number, value: number) {
+      if (y < MIN_Y || y > MAX_Y) return;
+      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+      const meta = WorldStore.ensureMetadata(this.state, cx, cz);
+      meta[WorldCoords.index3D(lx, y, lz)] = value;
+      this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+  }
+  getLoadedChunkKeys(): string[] {
+      return Array.from(this.state.chunks.keys());
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }

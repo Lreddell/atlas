@@ -142,7 +142,12 @@ export enum BlockType {
   DIAMOND_HOE = 143,
   
   COPPER_SWORD = 144,
-  COPPER_HOE = 145
+  COPPER_HOE = 145,
+
+  // Saplings (species-specific)
+  SPRUCE_SAPLING = 146,
+  BIRCH_SAPLING = 147,
+  CHERRY_SAPLING = 148
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

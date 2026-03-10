@@ -14,6 +14,7 @@ import {
 import { soundManager } from '../../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 import { getLunarNightEventState } from '../../systems/world/celestialEvents';
+import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
@@ -192,7 +193,7 @@ export const InteractionController = ({
             const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
             const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
             
-            if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
+            if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM || isSaplingType(heldItem.type))) {
                 
                 const now = Date.now();
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
@@ -201,11 +202,23 @@ export const InteractionController = ({
                     if (hit.face.normal.y < 0.9) return;
                 }
 
+                // Sapling placement: must be air target on top of valid soil
+                if (isSaplingType(heldItem.type)) {
+                    if (hit.face.normal.y < 0.9) return; // can only place on top face
+                }
+
                 const px = Math.floor(hit.point.x + hit.face.normal.x * 0.5);
                 const py = Math.floor(hit.point.y + hit.face.normal.y * 0.5);
                 const pz = Math.floor(hit.point.z + hit.face.normal.z * 0.5);
                 
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
+
+                // Sapling soil check: block below must be valid soil, target must be air
+                if (isSaplingType(heldItem.type)) {
+                    const targetBlock = worldManager.tryGetBlock(px, py, pz);
+                    const soilBlock = worldManager.tryGetBlock(px, py - 1, pz);
+                    if (targetBlock !== BlockType.AIR || soilBlock === null || !isValidSoil(soilBlock)) return;
+                }
 
                 const isSneaking = inputState.sneak;
                 const currentEyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;

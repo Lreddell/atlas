@@ -693,8 +693,34 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // Apple
     withTile(50, () => { fill('#ff1744'); noise(0.2); });
 
-    // Sapling
-    withTile(51, () => { fill('#2e7d32'); noise(0.3); });
+    // Oak Sapling
+    withTile(51, () => {
+        ctx.fillStyle = '#6d4c41'; ctx.fillRect(7, 9, 2, 7); // stem
+        ctx.fillStyle = '#2e7d32'; ctx.fillRect(5, 3, 6, 7); ctx.fillRect(4, 4, 8, 5); // canopy
+        ctx.fillStyle = '#388e3c'; ctx.fillRect(6, 4, 4, 4); // highlight
+    });
+    // Spruce Sapling
+    withTile(146, () => {
+        ctx.fillStyle = '#5d4037'; ctx.fillRect(7, 11, 2, 5); // stem
+        ctx.fillStyle = '#1b5e20'; // dark spruce green
+        ctx.fillRect(7, 3, 2, 2); // top
+        ctx.fillRect(5, 5, 6, 2); // mid tier
+        ctx.fillRect(4, 7, 8, 2); // lower tier
+        ctx.fillRect(3, 9, 10, 2); // base tier
+    });
+    // Birch Sapling
+    withTile(147, () => {
+        ctx.fillStyle = '#e0e0e0'; ctx.fillRect(7, 9, 2, 7); // white stem
+        ctx.fillStyle = '#424242'; ctx.fillRect(7, 11, 1, 1); ctx.fillRect(8, 14, 1, 1); // bark marks
+        ctx.fillStyle = '#7cb342'; ctx.fillRect(5, 3, 6, 6); ctx.fillRect(4, 4, 8, 4); // canopy
+        ctx.fillStyle = '#9ccc65'; ctx.fillRect(6, 4, 4, 3); // highlight
+    });
+    // Cherry Sapling
+    withTile(148, () => {
+        ctx.fillStyle = '#5d4037'; ctx.fillRect(7, 9, 2, 7); // stem
+        ctx.fillStyle = '#81c784'; ctx.fillRect(5, 3, 6, 7); ctx.fillRect(4, 4, 8, 5); // canopy
+        ctx.fillStyle = '#f48fb1'; ctx.fillRect(5, 4, 2, 2); ctx.fillRect(9, 5, 2, 2); ctx.fillRect(7, 7, 2, 1); // pink blossoms
+    });
 
     // Raw Iron
     withTile(55, () => {

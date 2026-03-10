@@ -63,6 +63,9 @@ export const Slot: React.FC<SlotProps> = ({
       const is3D = !blockDef.isItem && 
                    item.type !== BlockType.TORCH && 
                    item.type !== BlockType.SAPLING &&
+                   item.type !== BlockType.SPRUCE_SAPLING &&
+                   item.type !== BlockType.BIRCH_SAPLING &&
+                   item.type !== BlockType.CHERRY_SAPLING &&
                    item.type !== BlockType.WATER && 
                    item.type !== BlockType.LAVA &&
                    item.type !== BlockType.DEAD_BUSH &&

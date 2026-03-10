@@ -47,7 +47,10 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.SPRUCE_LOG]: { id: BlockType.SPRUCE_LOG, color: '#3e2723', name: 'Spruce Log', textureSlot: 23, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
   [BlockType.SPRUCE_LEAVES]: { 
       id: BlockType.SPRUCE_LEAVES, color: '#1b5e20', name: 'Spruce Leaves', transparent: true, textureSlot: 24, hardness: 0.2, 
-      drops: [{ type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }], category: 'natural' 
+      drops: [
+          { type: BlockType.SPRUCE_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+      ], category: 'natural' 
   },
   [BlockType.SNOWY_GRASS]: { 
       id: BlockType.SNOWY_GRASS, color: '#ffffff', name: 'Snowy Grass', textureSlot: 25, hardness: 0.6, preferredTool: 'shovel',
@@ -60,7 +63,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.BIRCH_LEAVES]: { 
       id: BlockType.BIRCH_LEAVES, color: '#81c784', name: 'Birch Leaves', transparent: true, textureSlot: 89, hardness: 0.2, 
       drops: [
-          { type: BlockType.SAPLING, chance: 0.05, min: 1, max: 1 }, 
+          { type: BlockType.BIRCH_SAPLING, chance: 0.05, min: 1, max: 1 }, 
           { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
       ], 
       category: 'natural' 
@@ -71,7 +74,10 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.CHERRY_LOG]: { id: BlockType.CHERRY_LOG, color: '#3e1e24', name: 'Cherry Log', textureSlot: 74, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
   [BlockType.CHERRY_LEAVES]: { 
       id: BlockType.CHERRY_LEAVES, color: '#f8bbd0', name: 'Cherry Leaves', transparent: true, textureSlot: 76, hardness: 0.2, 
-      drops: [{ type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }], category: 'natural' 
+      drops: [
+          { type: BlockType.CHERRY_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+      ], category: 'natural' 
   },
   [BlockType.CHERRY_PLANKS]: { id: BlockType.CHERRY_PLANKS, color: '#f48fb1', name: 'Cherry Planks', textureSlot: 77, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
   [BlockType.PINK_FLOWER]: { id: BlockType.PINK_FLOWER, color: '#f48fb1', name: 'Pink Petals', textureSlot: 86, hardness: 0, transparent: true, noCollision: true, category: 'natural' },
@@ -209,7 +215,10 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
       id: BlockType.APPLE, color: '#ff0000', name: 'Apple', textureSlot: 50, hardness: 0, isItem: true, category: 'food',
       nutrition: 4, saturationModifier: 0.3 // 4 * 0.3 * 2 = 2.4 saturation
   },
-  [BlockType.SAPLING]: { id: BlockType.SAPLING, color: '#388e3c', name: 'Sapling', textureSlot: 51, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, category: 'natural' },
+  [BlockType.SAPLING]: { id: BlockType.SAPLING, color: '#388e3c', name: 'Oak Sapling', textureSlot: 51, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.SPRUCE_SAPLING]: { id: BlockType.SPRUCE_SAPLING, color: '#1b5e20', name: 'Spruce Sapling', textureSlot: 146, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.BIRCH_SAPLING]: { id: BlockType.BIRCH_SAPLING, color: '#81c784', name: 'Birch Sapling', textureSlot: 147, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.CHERRY_SAPLING]: { id: BlockType.CHERRY_SAPLING, color: '#f48fb1', name: 'Cherry Sapling', textureSlot: 148, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.WHEAT_SEEDS]: { id: BlockType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, category: 'natural' }
 };
 
