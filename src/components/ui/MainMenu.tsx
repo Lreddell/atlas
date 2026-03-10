@@ -25,6 +25,7 @@ interface MainMenuProps {
     panoramaCaptureHotkey: string;
     panoramaEntries: string[];
     activePanoramaPath: string | null;
+    defaultPanoramaId: string;
     onUsePanorama: (filePath: string) => void;
     onImportPanorama: () => void;
     canImportPanorama: boolean;
@@ -339,6 +340,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     panoramaCaptureHotkey,
     panoramaEntries,
     activePanoramaPath,
+    defaultPanoramaId,
     onUsePanorama,
     onImportPanorama,
     canImportPanorama,
@@ -558,6 +560,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     };
 
     const getPanoramaLabel = (filePath: string) => {
+        if (filePath === defaultPanoramaId) {
+            return 'Default Panorama (Alpha-1.0.1)';
+        }
         if (filePath.startsWith('web:')) {
             return filePath.slice(4) || 'Browser Panorama';
         }
@@ -760,6 +765,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
                                 {panoramaEntries.map((filePath) => {
                                     const isActive = activePanoramaPath === filePath;
+                                    const isDefault = filePath === defaultPanoramaId;
                                     return (
                                         <div
                                             key={filePath}
@@ -767,7 +773,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                         >
                                             <div className="min-w-0">
                                                 <div className="font-bold text-[#eee] truncate">{getPanoramaLabel(filePath)}</div>
-                                                <div className="text-[10px] text-gray-400 truncate">{filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}</div>
+                                                <div className="text-[10px] text-gray-400 truncate">{isDefault ? 'Built-in default panorama' : filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}</div>
                                             </div>
                                             <div className="flex gap-2 shrink-0">
                                                 <MenuButton
@@ -778,15 +784,17 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                                                     small
                                                     variant="primary"
                                                 />
-                                                <MenuButton
-                                                    label="Delete"
-                                                    onClick={() => onDeletePanoramaFromDisk(filePath)}
-                                                    disabled={!canDeletePanoramaFromDisk}
-                                                    tooltip={!canDeletePanoramaFromDisk ? 'Desktop build only' : undefined}
-                                                    width="w-[88px]"
-                                                    small
-                                                    variant="danger"
-                                                />
+                                                {!isDefault && (
+                                                    <MenuButton
+                                                        label="Delete"
+                                                        onClick={() => onDeletePanoramaFromDisk(filePath)}
+                                                        disabled={!canDeletePanoramaFromDisk}
+                                                        tooltip={!canDeletePanoramaFromDisk ? 'Desktop build only' : undefined}
+                                                        width="w-[88px]"
+                                                        small
+                                                        variant="danger"
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     );

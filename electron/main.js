@@ -236,7 +236,9 @@ ipcMain.handle('panorama:delete', async (_event, payload) => {
     const targetPath = String(payload?.filePath || '').trim();
     if (!targetPath) return { ok: false, error: 'Missing file path.' };
 
-    await fs.unlink(targetPath);
+    await fs.unlink(targetPath).catch((err) => {
+      if (err.code !== 'ENOENT') throw err;
+    });
 
     const baseDir = path.dirname(targetPath);
     const baseName = path.basename(targetPath, path.extname(targetPath));
