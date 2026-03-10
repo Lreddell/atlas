@@ -853,9 +853,10 @@ export class WorldManager {
       const centerCz = Math.floor(targetZ / CHUNK_SIZE);
       this.ensureChunk(centerCx, centerCz);
 
-      let bestX = targetX, bestZ = targetZ, bestY = seaLevel + 1.5, bestScore = -Infinity;
+      // Three buckets: scored > land > water
+      let scored: { x: number, z: number, y: number, score: number } | null = null;
+      let land: { x: number, z: number, y: number } | null = null;
 
-      // Spiral search for best local land
       for (let r = 0; r <= safeSearchRadius; r += safeSearchStep) { 
           for (let dx = -r; dx <= r; dx += safeSearchStep) {
               for (let dz = -r; dz <= r; dz += safeSearchStep) {
@@ -863,25 +864,27 @@ export class WorldManager {
 
                   const x = Math.floor(targetX + dx);
                   const z = Math.floor(targetZ + dz);
+                  const h = WorldGen.getTerrainHeight(x, z);
 
                   const score = this.scoreSpawnCandidate(x, z);
-                  if (score > bestScore) {
-                      bestScore = score;
-                      bestX = x;
-                      bestZ = z;
-                      bestY = WorldGen.getTerrainHeight(x, z);
+                  if (score > 0 && (!scored || score > scored.score)) {
+                      scored = { x, z, y: h, score };
+                  } else if (h > seaLevel && !land) {
+                      land = { x, z, y: h };
                   }
               }
           }
       }
 
-      if (bestScore > 0) {
-          this.ensureChunk(Math.floor(bestX / CHUNK_SIZE), Math.floor(bestZ / CHUNK_SIZE));
-          console.log(`[Spawn] Found safe land at ${bestX},${bestY},${bestZ} (score: ${bestScore})`);
-          return { x: bestX + 0.5, y: bestY + 2, z: bestZ + 0.5 };
+      // Priority: scored land > any land > water surface
+      const pick = scored ?? land;
+      if (pick) {
+          this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
+          console.log(`[Spawn] Found land at ${pick.x},${pick.y},${pick.z}${scored ? ` (score: ${scored.score})` : ' (fallback land)'}`);
+          return { x: pick.x + 0.5, y: pick.y + 2, z: pick.z + 0.5 };
       }
 
-      // If no land found, we are in deep ocean/river. Spawn on water surface.
+      // No land found at all — spawn on water surface
       console.warn("[Spawn] No land found, spawning on water surface.");
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
   }

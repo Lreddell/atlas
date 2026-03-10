@@ -106,7 +106,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                         line(`Facing: ${facing} (${axis}) (XY: ${dir.x.toFixed(1)} / ${dir.z.toFixed(1)})`),
                         line(``),
                         line(`Biome: ${biome.name}`),
-                        line(`T: ${climate.temp.toFixed(3)} C: ${climate.continentalness.toFixed(3)} R: ${climate.riverVal.toFixed(3)} W: ${climate.weirdness.toFixed(3)}${climate.warpEnabled ? ' [warp]' : ''}`),
+                        line(`T: ${climate.temp.toFixed(3)} C: ${climate.continentalness.toFixed(3)} R: ${climate.riverVal.toFixed(3)} W: ${climate.weirdness.toFixed(3)}${climate.warpEnabled ? ` [warp ${Math.round(climate.warpedX)}, ${Math.round(climate.warpedZ)}]` : ''}`),
                         line(`Light: ${Math.max(light.sky, light.block)} (${light.sky} sky, ${light.block} block)`),
                         line(`Speed: ${speed.toFixed(2)} m/s`),
                         line(``),

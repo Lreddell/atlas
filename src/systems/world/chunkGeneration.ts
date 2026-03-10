@@ -184,6 +184,8 @@ export function generateChunk(cx: number, cz: number) {
 
             const cwx = wx + caveOx;
             const cwz = wz + caveOz;
+            const wdx = wx + noiseSet.offsets.weirdness.x;
+            const wdz = wz + noiseSet.offsets.weirdness.z;
             const breachNoise = noiseSet.cave.noise2D(cwx * 0.015, cwz * 0.015);
             const isBreachZone = breachNoise > 0.05; 
 
@@ -328,7 +330,7 @@ export function generateChunk(cx: number, cz: number) {
                 }
                 let copperChance = getTriangularChance(y, -16, 112, 48);
                 if (copperChance > 0) {
-                    const copperGeoNoise = noiseSet.weirdness.noise3D(cwx*0.05, y*0.05, cwz*0.05);
+                    const copperGeoNoise = noiseSet.weirdness.noise3D(wdx*0.05, y*0.05, wdz*0.05);
                     const favorCopper = copperGeoNoise > 0.3;
                     const noise = noiseSet.cave.noise3D(cwx * 0.12 + 999, y * 0.12 + 999, cwz * 0.12 + 999);
                     const threshold = favorCopper ? 0.45 : 0.6; 

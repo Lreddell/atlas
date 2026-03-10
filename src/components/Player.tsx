@@ -96,7 +96,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   useEffect(() => {
     camera.rotation.order = 'YXZ'; 
     camera.up.set(0, 1, 0);
-    camera.rotation.z = 0;
+    camera.rotation.set(0, 0, 0);
     
     // Reset physics state to match the new start position
     pos.current.copy(position);
