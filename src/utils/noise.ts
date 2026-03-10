@@ -237,7 +237,6 @@ export interface NoiseOffsets {
     weirdness: { x: number; z: number };
     terrain: { x: number; z: number };
     cave: { x: number; z: number };
-    spawn: { x: number; z: number };
 }
 
 function deriveOffset(seed: number, salt: string): { x: number; z: number } {
@@ -255,7 +254,6 @@ function createNoiseOffsets(seed: number): NoiseOffsets {
         weirdness: deriveOffset(seed, 'weirdness'),
         terrain: deriveOffset(seed, 'terrain'),
         cave: deriveOffset(seed, 'cave'),
-        spawn: deriveOffset(seed, 'spawn'),
     };
 }
 
