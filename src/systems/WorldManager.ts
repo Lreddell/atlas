@@ -149,6 +149,9 @@ export class WorldManager {
   private activeSeed: number = 0;
   private activeWorldId: string | null = null; // ID of the currently loaded world
   private gcCounter: number = 0; // Counter for periodic garbage collection
+
+  private queuesDirty = false;
+  private knownMissingStorageChunks = new Set<string>();
   
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
@@ -177,6 +180,7 @@ export class WorldManager {
    * Call this BEFORE generating any chunks.
    */
   public setWorldContext(worldId: string, seedNum: number) {
+    this.knownMissingStorageChunks.clear();
       this.activeWorldId = worldId;
       this.activeSeed = seedNum;
       
@@ -192,6 +196,8 @@ export class WorldManager {
   }
 
   public reset() {
+    this.queuesDirty = false;
+    this.knownMissingStorageChunks.clear();
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
@@ -285,6 +291,7 @@ export class WorldManager {
     }
 
   private resetPipeline() {
+    this.queuesDirty = true;
       this.inFlightGen = 0;
       this.inFlightMesh = 0;
       this.genStartedAt.clear();
@@ -374,25 +381,33 @@ export class WorldManager {
   }
 
   private enqueueGen(cx: number, cz: number, priority: number) {
-      const key = WorldCoords.getChunkKey(cx, cz);
-      if (this.queuedGenKeys.has(key)) {
-          const existing = this.genQueue.find(j => j.cx === cx && j.cz === cz);
-          if (existing) existing.priority = Math.min(existing.priority, priority);
-          return;
-      }
-      this.queuedGenKeys.add(key);
-      this.genQueue.push({ cx, cz, priority });
+    const key = WorldCoords.getChunkKey(cx, cz);
+    if (this.queuedGenKeys.has(key)) {
+        const existing = this.genQueue.find(j => j.cx === cx && j.cz === cz);
+        if (existing && priority < existing.priority) {
+            existing.priority = priority;
+            this.markQueuesDirty();
+        }
+        return;
+    }
+    this.queuedGenKeys.add(key);
+    this.genQueue.push({ cx, cz, priority });
+    this.markQueuesDirty();
   }
 
   private enqueueMesh(cx: number, cz: number, priority: number) {
-      const key = WorldCoords.getChunkKey(cx, cz);
-      if (this.queuedMeshKeys.has(key)) {
-          const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-          if (existing) existing.priority = Math.min(existing.priority, priority);
-          return;
-      }
-      this.queuedMeshKeys.add(key);
-      this.meshQueue.push({ cx, cz, priority });
+    const key = WorldCoords.getChunkKey(cx, cz);
+    if (this.queuedMeshKeys.has(key)) {
+        const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
+        if (existing && priority < existing.priority) {
+            existing.priority = priority;
+            this.markQueuesDirty();
+        }
+        return;
+    }
+    this.queuedMeshKeys.add(key);
+    this.meshQueue.push({ cx, cz, priority });
+    this.markQueuesDirty();
   }
 
   private queueGen(cx: number, cz: number, priority: number) {
@@ -418,8 +433,9 @@ export class WorldManager {
       if (stage === ChunkStage.MESH_QUEUED) {
           // Using .find() instead of array.find()
           const job = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-          if (job) {
-              job.priority = Math.min(job.priority, priority);
+          if (job && priority < job.priority) {
+            job.priority = priority;
+            this.markQueuesDirty();
           }
           return;
       }
@@ -474,10 +490,6 @@ export class WorldManager {
           this.desiredChunkCursor = 0;
       }
 
-      // Keep queue ordering strongly center-first to avoid near-player holes.
-      this.genQueue.sort((a, b) => a.priority - b.priority);
-      this.meshQueue.sort((a, b) => a.priority - b.priority);
-
       let maxDesiredDistSq = 0;
       for (const c of chunks) {
           const dx = c.cx - center.cx;
@@ -507,6 +519,7 @@ export class WorldManager {
   }
 
   public processStreamingJobs() {
+    this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
       while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
@@ -530,32 +543,36 @@ export class WorldManager {
           
           // Persistence Check: Try load from DB before asking worker to generate
           // MUST have an active world ID to load
-          if (this.activeWorldId) {
-              WorldStorage.loadChunk(this.activeWorldId, job.cx, job.cz).then(data => {
-                  if (this.activeGenTickets.get(key) !== ticket) return;
-                  if (data) {
-                      // Found in storage, use it directly (skip worker)
-                      this.handleWorkerMessage({ 
-                          type: 'GEN_DONE', 
-                          cx: job.cx, 
-                          cz: job.cz, 
-                          ticket,
-                          result: { blocks: data.blocks, light: data.light, meta: data.meta } 
-                      });
-                  } else {
-                      // Not found, proceed to generate
-                      this.triggerWorkerGen(job.cx, job.cz, ticket);
-                  }
-              }).catch((error) => {
-                  console.warn(`[WorldManager] Failed to load chunk ${job.cx},${job.cz} from storage. Falling back to generation.`, error);
-                  if (this.activeGenTickets.get(key) === ticket) {
-                      this.triggerWorkerGen(job.cx, job.cz, ticket);
-                  }
-              });
-          } else {
-              // No persistence context, just generate (e.g. menu background)
-              this.triggerWorkerGen(job.cx, job.cz, ticket);
-          }
+        if (this.activeWorldId) {
+            if (this.knownMissingStorageChunks.has(key)) {
+                this.triggerWorkerGen(job.cx, job.cz, ticket);
+            } else {
+                WorldStorage.loadChunk(this.activeWorldId, job.cx, job.cz).then(data => {
+                    if (this.activeGenTickets.get(key) !== ticket) return;
+
+                    if (data) {
+                        this.knownMissingStorageChunks.delete(key);
+                        this.handleWorkerMessage({
+                            type: 'GEN_DONE',
+                            cx: job.cx,
+                            cz: job.cz,
+                            ticket,
+                            result: { blocks: data.blocks, light: data.light, meta: data.meta }
+                        });
+                    } else {
+                        this.knownMissingStorageChunks.add(key);
+                        this.triggerWorkerGen(job.cx, job.cz, ticket);
+                    }
+                }).catch((error) => {
+                    console.warn(`[WorldManager] Failed to load chunk ${job.cx},${job.cz} from storage. Falling back to generation.`, error);
+                    if (this.activeGenTickets.get(key) === ticket) {
+                        this.triggerWorkerGen(job.cx, job.cz, ticket);
+                    }
+                });
+            }
+        } else {
+            this.triggerWorkerGen(job.cx, job.cz, ticket);
+        }
       }
 
       while (this.inFlightMesh < this.MAX_MESH_IN_FLIGHT && this.meshQueue.length > 0) {
@@ -742,6 +759,7 @@ export class WorldManager {
 
           if (blocks && light && meta) {
               await WorldStorage.saveChunk(this.activeWorldId, cx, cz, { blocks, light, meta });
+              this.knownMissingStorageChunks.delete(key);
           }
       }
   }
@@ -771,6 +789,7 @@ export class WorldManager {
       this.meshStartedAt.delete(key);
       this.activeGenTickets.delete(key);
       this.activeMeshTickets.delete(key);
+      this.knownMissingStorageChunks.delete(key);
       
       if (this.worker) {
           this.worker.postMessage({ type: 'EVICT', cx, cz });
@@ -1013,6 +1032,17 @@ export class WorldManager {
   }
 
   // Helper to synchronously force generation if missing (prevents falling through world on start)
+  private markQueuesDirty() {
+      this.queuesDirty = true;
+  }
+
+  private sortQueuesIfDirty() {
+      if (!this.queuesDirty) return;
+      this.genQueue.sort((a, b) => a.priority - b.priority);
+      this.markQueuesDirty();
+      this.queuesDirty = false;
+  }
+
   public ensureChunk(cx: number, cz: number) {
       if (!WorldStore.getChunkData(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
@@ -1143,12 +1173,12 @@ export class WorldManager {
         if (lz === 0) this.queueMesh(cx, cz - 1, -900);
         else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
 
-        this.meshQueue.sort((a, b) => a.priority - b.priority);
+        this.markQueuesDirty();
         this.processStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
         this.queueMesh(cx, cz, -500);
-        this.meshQueue.sort((a, b) => a.priority - b.priority);
+        this.markQueuesDirty();
         this.processStreamingJobs();
     }
     

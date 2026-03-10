@@ -130,7 +130,15 @@ const opaqueBuffer = new GeometryBuffer();
 const cutoutBuffer = new GeometryBuffer();
 const transparentBuffer = new GeometryBuffer();
 
-const CUTOUT_TYPES = new Set<BlockType>([
+const MAX_BLOCK_ID = Math.max(
+    ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
+);
+
+const IS_CUTOUT = new Uint8Array(MAX_BLOCK_ID + 1);
+const IS_TRANSPARENT = new Uint8Array(MAX_BLOCK_ID + 1);
+const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
+
+[
     BlockType.LEAVES,
     BlockType.SPRUCE_LEAVES,
     BlockType.CHERRY_LEAVES,
@@ -146,15 +154,15 @@ const CUTOUT_TYPES = new Set<BlockType>([
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
     BlockType.PINK_FLOWER
-]);
+].forEach(t => { IS_CUTOUT[t] = 1; });
 
-const TRANSPARENT_TYPES = new Set<BlockType>([
+[
     BlockType.WATER,
     BlockType.GLASS,
     BlockType.ICE
-]);
+].forEach(t => { IS_TRANSPARENT[t] = 1; });
 
-const CROSS_TYPES = new Set<BlockType>([
+[
     BlockType.TORCH,
     BlockType.DEAD_BUSH,
     BlockType.GRASS_PLANT,
@@ -162,11 +170,11 @@ const CROSS_TYPES = new Set<BlockType>([
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
     BlockType.PINK_FLOWER
-]);
+].forEach(t => { IS_CROSS[t] = 1; });
 
 function isOpaqueGreedyCandidate(type: BlockType): boolean {
     if (type === BlockType.AIR) return false;
-    if (CUTOUT_TYPES.has(type) || TRANSPARENT_TYPES.has(type) || CROSS_TYPES.has(type)) return false;
+    if (IS_CUTOUT[type] || IS_TRANSPARENT[type] || IS_CROSS[type]) return false;
     const def = BLOCKS[type];
     return !!def && !def.transparent;
 }
@@ -419,13 +427,13 @@ export function generateGeometryData(
           
           if (!def) continue;
           
-          if (CUTOUT_TYPES.has(type)) {
+          if (IS_CUTOUT[type] === 1) {
               targetBuffer = cutoutBuffer;
-          } else if (TRANSPARENT_TYPES.has(type)) {
+          } else if (IS_TRANSPARENT[type] === 1) {
               targetBuffer = transparentBuffer;
           }
           
-          const isCross = CROSS_TYPES.has(type);
+          const isCross = IS_CROSS[type] === 1;
 
           if (isCross) {
               const raw = getLightFast(x, y, z);
@@ -526,8 +534,8 @@ export function generateGeometryData(
                  if (nType === type) visible = false;
                  else if ((nType as BlockType) === BlockType.AIR) visible = true;
                  else if (nIsFluid && nType !== type) visible = true;
-                 else if (CUTOUT_TYPES.has(nType)) visible = true;
-                 else if (TRANSPARENT_TYPES.has(nType) && nType !== type) visible = true;
+                 else if (IS_CUTOUT[nType] === 1) visible = true;
+                 else if (IS_TRANSPARENT[nType] === 1 && nType !== type) visible = true;
                  else if (!nDef) visible = true; 
                  else if (dir === 'top' && blockHeight < 1.0) visible = true;
                  else visible = false;
@@ -536,9 +544,9 @@ export function generateGeometryData(
                  if ((nType as BlockType) === BlockType.AIR) visible = true;
                  else if (nIsFluid) visible = true; 
                  else if (!nDef) visible = true; 
-                 else if (CUTOUT_TYPES.has(type) && CUTOUT_TYPES.has(nType) && type === nType) visible = false;
-                 else if (def.transparent && CUTOUT_TYPES.has(nType) && type !== nType) visible = true;
-                 else if (def.transparent && TRANSPARENT_TYPES.has(nType) && type !== nType) visible = true;
+                 else if (IS_CUTOUT[type] === 1 && IS_CUTOUT[nType] === 1 && type === nType) visible = false;
+                 else if (def.transparent && IS_CUTOUT[nType] === 1 && type !== nType) visible = true;
+                 else if (def.transparent && IS_TRANSPARENT[nType] === 1 && type !== nType) visible = true;
                  else if (def.transparent) visible = false;
                  else if (!def.transparent && nDef.transparent) visible = true;
                  else if (isBed && (nType as BlockType) === BlockType.AIR) visible = true; 
