@@ -855,8 +855,35 @@ export class WorldManager {
 
       // Three buckets: scored > land > water
       let scored: { x: number, z: number, y: number, score: number } | null = null;
-      let land: { x: number, z: number, y: number } | null = null;
+      let land: { x: number, z: number, y: number, landScore: number } | null = null;
       let water: { x: number, z: number, dist2: number } | null = null;
+
+      // Lightweight fallback land ranking: prefer flat, close, moderate elevation.
+      // Returns a higher value for better candidates. Does NOT call scoreSpawnCandidate.
+      const scoreFallbackLand = (x: number, z: number, h: number): number => {
+          const slopeStep = Math.max(1, Math.min(4, safeSearchStep));
+          const slope = Math.max(
+              Math.abs(h - WorldGen.getTerrainHeight(x + slopeStep, z)),
+              Math.abs(h - WorldGen.getTerrainHeight(x - slopeStep, z)),
+              Math.abs(h - WorldGen.getTerrainHeight(x, z + slopeStep)),
+              Math.abs(h - WorldGen.getTerrainHeight(x, z - slopeStep))
+          );
+          const dist2 = (x - targetX) * (x - targetX) + (z - targetZ) * (z - targetZ);
+          const elevAboveSea = h - seaLevel;
+          const preferredMin = GenConfig.spawn.preferredElevationMin;
+          const preferredMax = GenConfig.spawn.preferredElevationMax;
+
+          // Prefer elevation inside the configured band.
+          // Outside the band, penalize distance from the nearest edge.
+          let elevPenalty = 0;
+          if (elevAboveSea < preferredMin) {
+              elevPenalty = preferredMin - elevAboveSea;
+          } else if (elevAboveSea > preferredMax) {
+              elevPenalty = elevAboveSea - preferredMax;
+          }
+          // Lower slope and distance are better; negate them so higher = better
+          return -(slope * 4) - Math.sqrt(dist2) * 0.5 - elevPenalty;
+      };
 
       for (let r = 0; r <= safeSearchRadius; r += safeSearchStep) { 
           for (let dx = -r; dx <= r; dx += safeSearchStep) {
@@ -870,9 +897,12 @@ export class WorldManager {
                   const score = this.scoreSpawnCandidate(x, z);
                   if (score > 0 && (!scored || score > scored.score)) {
                       scored = { x, z, y: h, score };
-                  } else if (h > seaLevel && !land) {
-                      land = { x, z, y: h };
-                  } else if (h <= seaLevel) {
+                  } else if (h > seaLevel) {
+                      const ls = scoreFallbackLand(x, z, h);
+                      if (!land || ls > land.landScore) {
+                          land = { x, z, y: h, landScore: ls };
+                      }
+                  } else {
                       const d2 = (x - targetX) * (x - targetX) + (z - targetZ) * (z - targetZ);
                       if (!water || d2 < water.dist2 || (d2 === water.dist2 && h > WorldGen.getTerrainHeight(water.x, water.z))) {
                           water = { x, z, dist2: d2 };
