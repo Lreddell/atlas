@@ -135,7 +135,10 @@ const is2DBlock = (type: BlockType): boolean => {
            type === BlockType.DEBUG_CROSS ||
            type === BlockType.WHEAT_SEEDS ||
            type === BlockType.PINK_FLOWER ||
-           type === BlockType.SAPLING;
+           type === BlockType.SAPLING ||
+           type === BlockType.SPRUCE_SAPLING ||
+           type === BlockType.BIRCH_SAPLING ||
+           type === BlockType.CHERRY_SAPLING;
 };
 
 // Cache for scanning pixel data

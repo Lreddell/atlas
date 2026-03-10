@@ -145,6 +145,9 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.BIRCH_LEAVES,
     BlockType.TORCH,
     BlockType.SAPLING,
+    BlockType.SPRUCE_SAPLING,
+    BlockType.BIRCH_SAPLING,
+    BlockType.CHERRY_SAPLING,
     BlockType.LAVA,
     BlockType.BED_FOOT,
     BlockType.BED_HEAD,
@@ -164,6 +167,10 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
 
 [
     BlockType.TORCH,
+    BlockType.SAPLING,
+    BlockType.SPRUCE_SAPLING,
+    BlockType.BIRCH_SAPLING,
+    BlockType.CHERRY_SAPLING,
     BlockType.DEAD_BUSH,
     BlockType.GRASS_PLANT,
     BlockType.ROSE,
