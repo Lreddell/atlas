@@ -38,7 +38,7 @@ export const BIOMES: Record<string, Biome> = {
     },
     PLAINS: {
         id: 'plains', name: 'Plains', surfaceBlock: BlockType.GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
-        terrainScale: 20, terrainBase: 70, treeChance: 0.002, treeType: 'oak', vegetationChance: 0.1, color: '#8db360'
+        terrainScale: 20, terrainBase: 70, treeChance: 0.0009, treeType: 'oak', vegetationChance: 0.25, color: '#8db360'
     },
     FOREST: {
         id: 'forest', name: 'Forest', surfaceBlock: BlockType.GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
@@ -46,7 +46,7 @@ export const BIOMES: Record<string, Biome> = {
     },
     DESERT: {
         id: 'desert', name: 'Desert', surfaceBlock: BlockType.SAND, subBlock: BlockType.SANDSTONE, waterBlock: BlockType.WATER,
-        terrainScale: 15, terrainBase: 72, treeChance: 0, treeType: 'none', vegetationChance: 0.05, color: '#fa9418'
+        terrainScale: 15, terrainBase: 72, treeChance: 0, treeType: 'none', vegetationChance: 0.015, color: '#fa9418'
     },
     TUNDRA: {
         id: 'tundra', name: 'Tundra', surfaceBlock: BlockType.SNOWY_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.ICE,
@@ -58,15 +58,15 @@ export const BIOMES: Record<string, Biome> = {
     },
     RED_MESA: {
         id: 'red_mesa', name: 'Red Mesa', surfaceBlock: BlockType.RED_SAND, subBlock: BlockType.RED_SANDSTONE, waterBlock: BlockType.WATER,
-        terrainScale: 10, terrainBase: 72, treeChance: 0.005, treeType: 'none', vegetationChance: 0.02, color: '#d94515'
+        terrainScale: 10, terrainBase: 72, treeChance: 0.0, treeType: 'none', vegetationChance: 0.02, color: '#d94515'
     },
     MESA_BRYCE: {
         id: 'mesa_bryce', name: 'Mesa Bryce', surfaceBlock: BlockType.RED_SAND, subBlock: BlockType.TERRACOTTA_WHITE, waterBlock: BlockType.WATER,
         terrainScale: 10, terrainBase: 72, treeChance: 0.0, treeType: 'none', vegetationChance: 0.01, color: '#ff6f00'
     },
     VOLCANIC: {
-        id: 'volcanic', name: 'Volcanic Crags', surfaceBlock: BlockType.BASALT, subBlock: BlockType.STONE, waterBlock: BlockType.LAVA,
-        terrainScale: 85, terrainBase: 80, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#444444'
+        id: 'volcanic', name: 'Volcanic Crags', surfaceBlock: BlockType.BASALT, subBlock: BlockType.BASALT, waterBlock: BlockType.LAVA,
+        terrainScale: 85, terrainBase: 85, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#444444'
     }
 };
 
