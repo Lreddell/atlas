@@ -8,6 +8,8 @@ import { getBiome, getBiomeHeightInfo, getGenerationParams, sample } from './bio
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
 import { index3D } from './worldCoords';
+import { generateTreeBlocks, isValidSoil } from './trees';
+import type { TreeKind } from './trees';
 
 export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): { height: number, baseHeight: number } {
     const { terrainBase, terrainScale } = getBiomeHeightInfo(x, z, noiseSet);
@@ -106,6 +108,57 @@ function getStrataBlock(y: number): BlockType {
     ];
     const idx = Math.abs(Math.floor(y)) % pattern.length;
     return pattern[idx];
+}
+
+/**
+ * Resolve the actual surface block at a world column, matching the terrain pass logic.
+ * This accounts for beach/riverbank conversion to SAND, mesa RED_SAND, and GRASS→DIRT below sea level.
+ */
+function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalNoise): BlockType {
+    const biome = getBiome(wx, wz, noiseSet);
+    const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
+
+    let surface = biome.surfaceBlock;
+
+    // Mesa/Bryce: surface is RED_SAND if at or below baseHeight + 1
+    if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
+        if (height > baseHeight + 1) {
+            surface = getStrataBlock(height);
+        } else {
+            surface = BlockType.RED_SAND;
+        }
+    }
+
+    // Beach zone detection — matches terrain pass
+    const params = getGenerationParams(wx, wz, noiseSet);
+    const contVal = params.continentalness;
+    const riverVal = Math.abs(params.riverVal);
+
+    const isCoastal = (contVal > -0.55 && contVal < GenConfig.biomes.ocean.continentalnessMax + 0.15);
+    const isRiverBank = (riverVal > GenConfig.biomes.river.width - 0.002 && riverVal < GenConfig.biomes.river.width * 7.0);
+    let isBeachZone = isCoastal || isRiverBank;
+
+    if (!isBeachZone && height >= 60 && height <= 65) {
+        const offsets = [[4,0], [-4,0], [0,4], [0,-4]];
+        for (const [ox, oz] of offsets) {
+            const nh = getTerrainHeight(wx + ox, wz + oz, noiseSet);
+            if ((height >= 63 && nh < 63) || (height < 63 && nh >= 63)) {
+                isBeachZone = true;
+                break;
+            }
+        }
+    }
+
+    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce') {
+        surface = BlockType.SAND;
+    }
+
+    // Grass converts to dirt below sea level
+    if (height < 63 && surface === BlockType.GRASS) {
+        surface = BlockType.DIRT;
+    }
+
+    return surface;
 }
 
 export function generateChunk(cx: number, cz: number) {
@@ -436,100 +489,28 @@ export function generateChunk(cx: number, cz: number) {
                 if (terrainY <= 63) continue;
                 const groundY = terrainY;
 
-                // World-space surface eligibility — works for both in-chunk and out-of-chunk roots.
-                const rootSurface = biome.surfaceBlock;
-                const isPlantable = rootSurface === BlockType.GRASS || rootSurface === BlockType.SNOWY_GRASS ||
-                                    rootSurface === BlockType.DIRT || rootSurface === BlockType.RED_SAND;
-                if (!isPlantable) continue;
+                // Use resolved surface logic that matches the terrain pass (beach/river/mesa overrides).
+                const resolvedSurface = getResolvedSurface(rootWx, rootWz, noiseSet);
+                if (!isValidSoil(resolvedSurface)) continue;
 
-                // When the root falls inside this chunk, validate against the actual placed block.
+                // When the root falls inside this chunk, also validate against the actual placed block.
                 const rootLx = rootWx - worldX;
                 const rootLz = rootWz - worldZ;
                 if (rootLx >= 0 && rootLx < CHUNK_SIZE && rootLz >= 0 && rootLz < CHUNK_SIZE) {
                     const t = blocks[index3D(rootLx, groundY, rootLz)];
-                    if (t !== biome.surfaceBlock && t !== BlockType.DIRT && t !== BlockType.GRASS &&
-                        t !== BlockType.SNOWY_GRASS && t !== BlockType.RED_SAND) continue;
+                    if (!isValidSoil(t)) continue;
                 }
 
-                let currentTree: string = biome.treeType;
+                let treeKind: TreeKind;
                 if (biome.treeType === 'mixed_forest') {
-                    currentTree = seededRand01(rootWx, groundY, rootWz, 202) < 0.2 ? 'birch' : 'oak';
+                    treeKind = seededRand01(rootWx, groundY, rootWz, 202) < 0.2 ? 'birch' : 'oak';
+                } else {
+                    treeKind = biome.treeType as TreeKind;
                 }
 
-                if (currentTree === 'oak') {
-                    const treeH = 4 + Math.floor(seededRand01(rootWx, groundY, rootWz, 203) * 3);
-                    for (let h = 1; h <= treeH; h++) {
-                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.LOG);
-                    }
-                    const leafStart = groundY + treeH - 2;
-                    const leafEnd = groundY + treeH + 1;
-                    for (let ly = leafStart; ly <= leafEnd; ly++) {
-                        const leafRange = ly === leafEnd ? 1 : 2;
-                        for (let lx = rootWx - leafRange; lx <= rootWx + leafRange; lx++) {
-                            for (let lz = rootWz - leafRange; lz <= rootWz + leafRange; lz++) {
-                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= leafRange) {
-                                    placeIfInChunk(lx, ly, lz, BlockType.LEAVES, true);
-                                }
-                            }
-                        }
-                    }
-                } else if (currentTree === 'birch') {
-                    const treeH = 5 + Math.floor(seededRand01(rootWx, groundY, rootWz, 204) * 2);
-                    for (let h = 1; h <= treeH; h++) {
-                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.BIRCH_LOG);
-                    }
-                    const leafStart = groundY + treeH - 2;
-                    const leafEnd = groundY + treeH + 1;
-                    for (let ly = leafStart; ly <= leafEnd; ly++) {
-                        const leafRange = ly === leafEnd ? 1 : 2;
-                        for (let lx = rootWx - leafRange; lx <= rootWx + leafRange; lx++) {
-                            for (let lz = rootWz - leafRange; lz <= rootWz + leafRange; lz++) {
-                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= leafRange) {
-                                    placeIfInChunk(lx, ly, lz, BlockType.BIRCH_LEAVES, true);
-                                }
-                            }
-                        }
-                    }
-                } else if (currentTree === 'spruce') {
-                    const treeH = 6 + Math.floor(seededRand01(rootWx, groundY, rootWz, 205) * 4);
-                    for (let h = 1; h <= treeH; h++) {
-                        placeIfInChunk(rootWx, groundY + h, rootWz, BlockType.SPRUCE_LOG);
-                    }
-                    for (let h = 3; h <= treeH + 1; h++) {
-                        const radius = Math.floor((treeH - h + 1) * 0.4);
-                        for (let lx = rootWx - radius; lx <= rootWx + radius; lx++) {
-                            for (let lz = rootWz - radius; lz <= rootWz + radius; lz++) {
-                                if (Math.abs(lx - rootWx) + Math.abs(lz - rootWz) <= radius + 0.5) {
-                                    placeIfInChunk(lx, groundY + h, lz, BlockType.SPRUCE_LEAVES, true);
-                                }
-                            }
-                        }
-                    }
-                    placeIfInChunk(rootWx, groundY + treeH + 1, rootWz, BlockType.SPRUCE_LEAVES);
-                } else if (currentTree === 'cherry') {
-                    const treeH = 5 + Math.floor(seededRand01(rootWx, groundY, rootWz, 206) * 2);
-                    let tx = rootWx, tz = rootWz;
-                    for (let h = 1; h <= treeH; h++) {
-                        if (h > 2 && seededRand01(rootWx, groundY + h, rootWz, 207) > 0.5) {
-                            tx += seededRand01(rootWx + h, groundY, rootWz, 208) > 0.5 ? 1 : -1;
-                        }
-                        if (h > 2 && seededRand01(rootWx, groundY + h, rootWz, 209) > 0.5) {
-                            tz += seededRand01(rootWx, groundY, rootWz + h, 210) > 0.5 ? 1 : -1;
-                        }
-                        placeIfInChunk(tx, groundY + h, tz, BlockType.CHERRY_LOG);
-                    }
-                    const canopyCenterY = groundY + treeH;
-                    for (let ly = canopyCenterY - 2; ly <= canopyCenterY + 1; ly++) {
-                        const leafRange = ly === canopyCenterY + 1 ? 1 : (ly === canopyCenterY ? 3 : 2);
-                        for (let lx = tx - leafRange; lx <= tx + leafRange; lx++) {
-                            for (let lz = tz - leafRange; lz <= tz + leafRange; lz++) {
-                                const dist = Math.sqrt((lx - tx) ** 2 + (lz - tz) ** 2);
-                                if (dist <= leafRange + 0.5) {
-                                    placeIfInChunk(lx, ly, lz, BlockType.CHERRY_LEAVES, true);
-                                }
-                            }
-                        }
-                    }
+                const treeBlocks = generateTreeBlocks(treeKind, rootWx, groundY, rootWz, worldSeed);
+                for (const tb of treeBlocks) {
+                    placeIfInChunk(tb.wx, tb.wy, tb.wz, tb.type, !tb.isTrunk);
                 }
             } else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
                 // Vegetation plants remain chunk-local — only process roots inside the current chunk.

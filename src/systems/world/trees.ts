@@ -191,5 +191,5 @@ export function getMinClearance(kind: TreeKind): number {
  */
 export function isValidSoil(type: BlockType): boolean {
     return type === BlockType.GRASS || type === BlockType.DIRT ||
-           type === BlockType.SNOWY_GRASS || type === BlockType.RED_SAND;
+           type === BlockType.SNOWY_GRASS;
 }

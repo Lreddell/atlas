@@ -24,6 +24,9 @@ lerna-debug.log*
 !.env.example
 *.local
 
+# Per-player data (panoramas, world presets, etc.)
+data/
+
 # OS junk
 .DS_Store
 Thumbs.db

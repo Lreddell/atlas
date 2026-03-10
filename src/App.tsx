@@ -311,7 +311,7 @@ const App: React.FC = () => {
     const renderChunkOffsets = useMemo(() => buildRenderOffsets(renderDistance), [renderDistance]);
 
   const isDead = health <= 0;
-  const worldPaused = isPaused || isSleeping || appState !== 'game';
+  const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
   const renderedChunks = useMemo<RenderedChunk[]>(() => {
       if (chunks.length === 0) return [];
 
@@ -1186,7 +1186,8 @@ const App: React.FC = () => {
       }
 
       removePanoramaFromLibrary(filePath);
-  }, [isElectron, removePanoramaFromLibrary]);
+      logMsg('Panorama deleted from disk.', 'success');
+  }, [isElectron, removePanoramaFromLibrary, logMsg]);
 
   const toggleMenuBackgroundMode = useCallback(() => {
       if (menuBackgroundMode === 'dirt') {
@@ -1519,6 +1520,20 @@ const App: React.FC = () => {
           window.localStorage.removeItem(MENU_PANORAMA_PATH_KEY);
       }
   }, [menuPanoramaPath]);
+
+  // On first launch (no saved panorama), seed the default built-in panorama path
+  useEffect(() => {
+      if (!isElectron) return;
+      const desktopApi = (window as any).atlasDesktop;
+      if (!desktopApi?.getDefaultPanoramaPath) return;
+      if (window.localStorage.getItem(MENU_PANORAMA_PATH_KEY)) return;
+      desktopApi.getDefaultPanoramaPath().then((result: { filePath: string | null }) => {
+          if (result?.filePath) {
+              setMenuPanoramaPath(result.filePath);
+          }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isElectron]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;

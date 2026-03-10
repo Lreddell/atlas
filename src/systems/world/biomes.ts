@@ -42,7 +42,7 @@ export const BIOMES: Record<string, Biome> = {
     },
     FOREST: {
         id: 'forest', name: 'Forest', surfaceBlock: BlockType.GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
-        terrainScale: 25, terrainBase: 72, treeChance: 0.06, treeType: 'mixed_forest', vegetationChance: 0.15, color: '#056621'
+        terrainScale: 25, terrainBase: 72, treeChance: 0.035, treeType: 'mixed_forest', vegetationChance: 0.15, color: '#056621'
     },
     DESERT: {
         id: 'desert', name: 'Desert', surfaceBlock: BlockType.SAND, subBlock: BlockType.SANDSTONE, waterBlock: BlockType.WATER,
@@ -50,11 +50,11 @@ export const BIOMES: Record<string, Biome> = {
     },
     TUNDRA: {
         id: 'tundra', name: 'Tundra', surfaceBlock: BlockType.SNOWY_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.ICE,
-        terrainScale: 35, terrainBase: 75, treeChance: 0.02, treeType: 'spruce', vegetationChance: 0.05, color: '#ffffff'
+        terrainScale: 35, terrainBase: 75, treeChance: 0.016, treeType: 'spruce', vegetationChance: 0.05, color: '#ffffff'
     },
     CHERRY_GROVE: {
         id: 'cherry_grove', name: 'Cherry Grove', surfaceBlock: BlockType.GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
-        terrainScale: 45, terrainBase: 85, treeChance: 0.035, treeType: 'cherry', vegetationChance: 0.3, color: '#ffc0cb'
+        terrainScale: 45, terrainBase: 85, treeChance: 0.02, treeType: 'cherry', vegetationChance: 0.3, color: '#ffc0cb'
     },
     RED_MESA: {
         id: 'red_mesa', name: 'Red Mesa', surfaceBlock: BlockType.RED_SAND, subBlock: BlockType.RED_SANDSTONE, waterBlock: BlockType.WATER,
