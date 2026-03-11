@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fsSync = require('fs');
 const fs = require('fs/promises');
@@ -27,6 +27,16 @@ async function loadDevUrlWithFallback(mainWindow) {
   throw new Error('Failed to load any dev server URL. Ensure Vite is running.');
 }
 
+const isExternalHttpUrl = (value) => /^https?:\/\//i.test(String(value || '').trim());
+
+const openExternalUrl = async (value) => {
+  const url = String(value || '').trim();
+  if (!isExternalHttpUrl(url)) {
+    throw new Error('Only http(s) URLs are allowed.');
+  }
+  await shell.openExternal(url);
+};
+
 function createWindow() {
   const devIconPath = path.join(__dirname, '../build/icon.ico');
   const windowIcon = fsSync.existsSync(devIconPath) ? devIconPath : undefined;
@@ -43,6 +53,21 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void openExternalUrl(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = mainWindow.webContents.getURL();
+    if (url !== currentUrl && isExternalHttpUrl(url)) {
+      event.preventDefault();
+      void openExternalUrl(url);
+    }
   });
 
   // Production vs Development Logic
@@ -103,6 +128,16 @@ const sanitizePresetName = (value) => {
 };
 
 const toPresetFileName = (name) => `${name}.json`;
+
+ipcMain.handle('system:openExternal', async (_event, payload) => {
+  try {
+    const url = typeof payload === 'string' ? payload : payload?.url;
+    await openExternalUrl(url);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+});
 
 const getUniquePresetName = async (directory, requestedName) => {
   const base = sanitizePresetName(requestedName);

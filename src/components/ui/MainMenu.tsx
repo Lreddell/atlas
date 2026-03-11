@@ -10,6 +10,7 @@ import { getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, WorldGenPresetEnt
 const PANORAMA_DEBUG_HOTKEY = 'F5';
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 const TUTORIAL_PROMPTED_KEY = 'atlas.tutorial.prompted.v2';
+const BUILD_CREDIT_URL = 'https://github.com/Lreddell/atlas';
 
 interface MainMenuProps {
     onStart: (worldId: string) => void;
@@ -579,6 +580,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [selectedWorldGenPresetId, setSelectedWorldGenPresetId] = useState('');
     const hasFaceCubemap = !!panoramaFaceDataUrls && panoramaFaceDataUrls.length === 6;
     const isBrowserMode = !onQuit;
+
+    const handleBuildCreditClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+        if (isBrowserMode) return;
+
+        const openExternal = window.atlasDesktop?.openExternal;
+        if (typeof openExternal !== 'function') return;
+
+        event.preventDefault();
+        void openExternal(BUILD_CREDIT_URL);
+    };
 
     const refreshWorldGenPresets = async () => {
         const presets = await listWorldGenPresetsAsync();
@@ -1433,7 +1444,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 </div>
 
                 <div className="absolute bottom-2 left-2 text-white text-shadow-md">Atlas {APP_DISPLAY_VERSION}</div>
-                <div className="absolute bottom-2 right-2 text-white text-shadow-md">Copyright Ryno LLC. Do not distribute!</div>
+                <a
+                    className="absolute bottom-2 right-2 text-white text-shadow-md hover:underline"
+                    href={BUILD_CREDIT_URL}
+                    onClick={handleBuildCreditClick}
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    Built by Logan Reddell
+                </a>
             </>
         );
     };

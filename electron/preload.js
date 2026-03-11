@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('atlasDesktop', {
   saveWorldPreset: (name, config) => ipcRenderer.invoke('worldPreset:save', { name, config }),
   deleteWorldPreset: (id) => ipcRenderer.invoke('worldPreset:delete', { id }),
   scanMusicFolders: () => ipcRenderer.invoke('music:scanFolders'),
+  openExternal: (url) => ipcRenderer.invoke('system:openExternal', { url }),
 });
