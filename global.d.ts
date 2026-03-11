@@ -12,6 +12,7 @@ declare interface Window {
 		saveWorldPreset?: (name: string, config: unknown) => Promise<unknown>;
 		deleteWorldPreset?: (id: string) => Promise<unknown>;
 		scanMusicFolders?: () => Promise<unknown>;
+		openExternal?: (url: string) => Promise<{ ok: boolean; error?: string }>;
 	};
 }
 
