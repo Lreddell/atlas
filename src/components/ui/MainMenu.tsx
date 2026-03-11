@@ -71,6 +71,16 @@ const SPLASHES = [
     "Everything is fine. Totally.",
     "Mining with confidence issues!", "100% reproducible... maybe!", "Bug fixed in the next timeline!",
     "Hotfix incoming eventually!", "If it flickers, it's dynamic!",
+    "Blood moon build incoming!", "Moon phase certified!", "Touch grass block.", "F3 knows too much!", "F4 sees every pixel!",
+    "F8 for the postcard shot!", "Panorama worthy terrain!", "Chunk fade looks intentional!", "Texture atlas inspected!",
+    "slash command enjoyer", "/gamemode fixes everything!", "/time set day, coward.", "/music skip, DJ player!",
+    "Locate biome, lose afternoon.", "Blood moon? That's content.", "Spectator mode, look but no touch",
+    "Creative mode tax write-off.", "Survival first, patch later.", "Import world, export chaos!",
+    "Saved as atlas-world-export!", "Seedposting encouraged.",
+    "Greedy meshing, greedy dreams.", "Clouds on, excuses off.", "Inventory full, ambitions fuller.",
+    "Moon phase meta incoming.", "Panorama settings perfectionist.", "World Editor remembers.",
+    "Feature Editor arc begins soon.", "Biome hunting hours!", "Debug screen jumpscare!", "Soundtrack swap approved.",
+    "Blood moon arc loading...", "Chunkbase called. Again.",
     "§4§lC§c§lo§6§ll§e§lo§a§lr§2§lm§b§la§9§lt§d§li§5§lc§r!",
 ];
 
@@ -79,19 +89,22 @@ const ULTRA_RARE_SPLASHES = [
     "12 FPS on a supercomputer?",
     "The chunk loaded first try!",
     "Zero crashes today! I swear!",
-    "Herobrine added back in!",
+    "Herobrine added!",
     "Collision worked perfectly!",
     "No TODOs left!",
     "Reproduced on first attempt!",
     "Bug fixed without new bugs!",
     "QA approved this build!",
     "One-line fix. No regrets.",
-    "T H E  V O I D  S T A R E S  B A C K",
+    "§0T H E  V O I D  S T A R E S  B A C K",
     "ChatGPT wrote this splash!",
     "Hey @Grok, why is the entire game broken?",
     "§k??????????????",
     "Playing for the vibes",
-    "You found a rare splash!"
+    "You found a rare splash!",
+    "§4You are amazon's 100,000th customer! Just kidding, but you found a rare splash!",
+    "Congratulations! You've unlocked the secret ultra-rare splash! Celebrate by sharing it with your friends, or maybe even screenshotting it and setting it as your desktop background. Enjoy this moment of pixelated glory!",
+    "§dThis splash is so rare, it only appears once in a blue moon. In fact, it's so elusive that some players have spent hours trying to see it, only to be rewarded with this very message. If you've found this splash, consider yourself part of an exclusive club of Atlas enthusiasts who have witnessed one of the rarest occurrences in the game. Share your discovery and bask in the glory of your ultra-rare find!",
 ];
 
 const ULTRA_RARE_SPLASH_CHANCE = 0.01;
@@ -190,14 +203,19 @@ const OBFUSCATION_SOURCE = [
     ...Array.from({ length: 94 }, (_, index) => String.fromCharCode(index + 33)),
     ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(index + 161)),
 ].join('');
-const SPLASH_FORMAT_MARKER = '\u00C2\u00A7';
+const SPLASH_FORMAT_MARKER = '\u00A7';
+
+const getSplashFormatMarkerLengthAt = (value: string, index: number) => {
+    if (value[index] === SPLASH_FORMAT_MARKER) return 1;
+    return 0;
+};
 
 interface ParsedSplashSegment {
     text: string;
     style: React.CSSProperties;
 }
 
-/** Returns a random replacement character for §k, preserving spaces for readability. */
+/** Returns a random replacement character for §k. */
 const getObfuscatedChar = (_sourceChar: string) => {
     return OBFUSCATION_SOURCE[Math.floor(Math.random() * OBFUSCATION_SOURCE.length)];
 };
@@ -208,14 +226,10 @@ const getObfuscatedChar = (_sourceChar: string) => {
  */
 const getVisibleSplashLength = (value: string) => {
     let visibleCount = 0;
-    const formatMarkerLength = SPLASH_FORMAT_MARKER.length;
     for (let index = 0; index < value.length; index += 1) {
-        if (value.slice(index, index + formatMarkerLength) === SPLASH_FORMAT_MARKER && index + formatMarkerLength < value.length) {
+        const formatMarkerLength = getSplashFormatMarkerLengthAt(value, index);
+        if (formatMarkerLength > 0 && index + formatMarkerLength < value.length) {
             index += formatMarkerLength;
-            continue;
-        }
-        if (value[index] === '§' && index + 1 < value.length) {
-            index += 1;
             continue;
         }
         visibleCount += 1;
@@ -260,10 +274,10 @@ const parseSplashCharacters = (value: string): SplashCharacter[] => {
 
     for (let index = 0; index < value.length; index += 1) {
         const character = value[index];
-        const nextCharacter = value[index + 1]?.toLowerCase();
-        const formatCode = value[index + SPLASH_FORMAT_MARKER.length]?.toLowerCase();
+        const formatMarkerLength = getSplashFormatMarkerLengthAt(value, index);
+        const formatCode = formatMarkerLength > 0 ? value[index + formatMarkerLength]?.toLowerCase() : undefined;
 
-        if (value.slice(index, index + SPLASH_FORMAT_MARKER.length) === SPLASH_FORMAT_MARKER && formatCode) {
+        if (formatMarkerLength > 0 && formatCode) {
             if (formatCode in MC_COLOR_BY_CODE) {
                 currentColor = MC_COLOR_BY_CODE[formatCode];
                 isBold = false;
@@ -299,47 +313,7 @@ const parseSplashCharacters = (value: string): SplashCharacter[] => {
                 continue;
             }
 
-            index += SPLASH_FORMAT_MARKER.length;
-            continue;
-        }
-
-        if (character === 'Â§' && nextCharacter) {
-            if (nextCharacter in MC_COLOR_BY_CODE) {
-                currentColor = MC_COLOR_BY_CODE[nextCharacter];
-                isBold = false;
-                isItalic = false;
-                isUnderlined = false;
-                isStrikethrough = false;
-                isObfuscated = false;
-            } else if (nextCharacter === 'l') {
-                isBold = true;
-            } else if (nextCharacter === 'm') {
-                isStrikethrough = true;
-            } else if (nextCharacter === 'n') {
-                isUnderlined = true;
-            } else if (nextCharacter === 'o') {
-                isItalic = true;
-            } else if (nextCharacter === 'k') {
-                isObfuscated = true;
-            } else if (nextCharacter === 'r') {
-                currentColor = DEFAULT_SPLASH_COLOR;
-                isBold = false;
-                isItalic = false;
-                isUnderlined = false;
-                isStrikethrough = false;
-                isObfuscated = false;
-            } else {
-                const { style, styleKey } = getCurrentStyle();
-                parsedCharacters.push({
-                    char: character,
-                    style,
-                    styleKey,
-                    isAuthoredObfuscated: isObfuscated,
-                });
-                continue;
-            }
-
-            index += 1;
+            index += formatMarkerLength;
             continue;
         }
 
