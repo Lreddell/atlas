@@ -9,7 +9,23 @@ Atlas is a voxel sandbox game built with TypeScript, React, Three.js, and Vite, 
 - Inventory, crafting, drops, and interaction systems
 - In-game UI suite (main menu, pause, HUD, chat, debug screen)
 - Panorama-based menu backgrounds and customization
-- Browser development flow + desktop installer packaging
+- Browser development flow and desktop installer packaging
+
+## License
+
+The **source code** in this repository is licensed under the **MIT License**. See [`LICENSE`](./LICENSE).
+
+Unless explicitly stated otherwise, **all non-code content is All Rights Reserved**. This includes, but is not limited to:
+
+- textures, sprites, models, and other visual assets
+- music, sound effects, and other audio
+- branding, logos, and the name **Atlas**
+- screenshots, videos, written lore, design notes, and other creative content
+- bundled game content and other non-code assets in `public/`, `data/`, `build/`, `docs/`, and similar directories
+
+You may use, copy, modify, and distribute the code under the terms of the MIT License, but you may **not** reuse, redistribute, or create derivative works from the protected non-code content without explicit written permission.
+
+If a file or directory includes its own license or notice, that specific notice controls for that content.
 
 ## Tech Stack
 
@@ -125,7 +141,7 @@ atlas/
 ## Troubleshooting
 
 - If `electron:dev` exits immediately, verify Vite is running on `http://localhost:5173`.
-- If desktop packaging fails due signing/symlink issues on Windows, this project already disables executable sign/edit for local unsigned builds.
+- If desktop packaging fails due to signing/symlink issues on Windows, this project already disables executable sign/edit for local unsigned builds.
 - Large chunk-size warnings during web build are warnings only and do not block output.
 
 ## Repository Hygiene
