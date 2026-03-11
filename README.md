@@ -20,7 +20,7 @@ Unless explicitly stated otherwise, **all non-code content is All Rights Reserve
 - textures, sprites, models, and other visual assets
 - music, sound effects, and other audio
 - branding, logos, and the name **Atlas**
-- screenshots, videos, written lore, design notes, and other creative content
+- written lore, design notes, and other creative content
 - bundled game content and other non-code assets in `public/`, `data/`, `build/`, `docs/`, and similar directories
 
 You may use, copy, modify, and distribute the code under the terms of the MIT License, but you may **not** reuse, redistribute, or create derivative works from the protected non-code content without explicit written permission.
