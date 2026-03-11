@@ -95,6 +95,65 @@ const ULTRA_RARE_SPLASHES = [
 ];
 
 const ULTRA_RARE_SPLASH_CHANCE = 0.01;
+const SPLASH_HOLD_DURATION_MS = 10000;
+const SPLASH_GLYPHIFY_TICK_MS = 50;
+const SPLASH_REVEAL_TICK_MS = 90;
+
+interface SplashCharacter {
+    char: string;
+    style: React.CSSProperties;
+    styleKey: string;
+    isAuthoredObfuscated: boolean;
+}
+
+interface DisplaySplashCharacter {
+    char: string;
+    style: React.CSSProperties;
+    styleKey: string;
+}
+
+
+interface TransitionSlot {
+    id: number;
+    currentCharacter?: SplashCharacter;
+    targetCharacter?: SplashCharacter;
+    isGlyphified: boolean;
+    isRevealed: boolean;
+    displayCharacter: string;
+    displayStyle: React.CSSProperties;
+    displayStyleKey: string;
+}
+
+interface SplashTransitionState {
+    slots: TransitionSlot[];
+    pendingGlyphifySlotIds: number[];
+    pendingAddLeft: SplashCharacter[];
+    pendingAddRight: SplashCharacter[];
+    pendingRemoveLeft: number;
+    pendingRemoveRight: number;
+    targetCharacters: SplashCharacter[];
+    targetRaw: string;
+    targetFontSize: number;
+}
+
+function getRandomArrayItem<T>(items: T[]): T | undefined {
+    return items[Math.floor(Math.random() * items.length)];
+}
+
+function takeRandomArrayItem<T>(items: T[]): T | undefined {
+    if (items.length === 0) return undefined;
+    const index = Math.floor(Math.random() * items.length);
+    const [item] = items.splice(index, 1);
+    return item;
+}
+
+const getRandomSplash = (items: string[]) => getRandomArrayItem(items) ?? '';
+
+const getNextSplash = (previousSplash: string) => {
+    const source = Math.random() < ULTRA_RARE_SPLASH_CHANCE ? ULTRA_RARE_SPLASHES : SPLASHES;
+    const candidates = source.filter((entry) => entry !== previousSplash);
+    return getRandomSplash(candidates.length > 0 ? candidates : source);
+};
 
 /**
  * Minecraft-style color map for legacy formatting codes.
@@ -127,7 +186,11 @@ const MC_COLOR_BY_CODE: Record<string, string> = {
 /** Default splash color when no color code is active (or after §r reset). */
 const DEFAULT_SPLASH_COLOR = '#fde047';
 /** Character pool used for §k obfuscated text effect. */
-const OBFUSCATION_SOURCE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const OBFUSCATION_SOURCE = [
+    ...Array.from({ length: 94 }, (_, index) => String.fromCharCode(index + 33)),
+    ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(index + 161)),
+].join('');
+const SPLASH_FORMAT_MARKER = '\u00C2\u00A7';
 
 interface ParsedSplashSegment {
     text: string;
@@ -135,8 +198,7 @@ interface ParsedSplashSegment {
 }
 
 /** Returns a random replacement character for §k, preserving spaces for readability. */
-const getObfuscatedChar = (sourceChar: string) => {
-    if (sourceChar === ' ') return sourceChar;
+const getObfuscatedChar = (_sourceChar: string) => {
     return OBFUSCATION_SOURCE[Math.floor(Math.random() * OBFUSCATION_SOURCE.length)];
 };
 
@@ -146,7 +208,12 @@ const getObfuscatedChar = (sourceChar: string) => {
  */
 const getVisibleSplashLength = (value: string) => {
     let visibleCount = 0;
+    const formatMarkerLength = SPLASH_FORMAT_MARKER.length;
     for (let index = 0; index < value.length; index += 1) {
+        if (value.slice(index, index + formatMarkerLength) === SPLASH_FORMAT_MARKER && index + formatMarkerLength < value.length) {
+            index += formatMarkerLength;
+            continue;
+        }
         if (value[index] === '§' && index + 1 < value.length) {
             index += 1;
             continue;
@@ -156,6 +223,152 @@ const getVisibleSplashLength = (value: string) => {
     return visibleCount;
 };
 
+const getSplashFontSizeForValue = (value: string) => {
+    const baseSize = 20;
+    const threshold = 20;
+    const visibleLength = Math.max(1, getVisibleSplashLength(value));
+    const scale = Math.max(0.5, Math.min(1, threshold / visibleLength));
+    return baseSize * scale;
+};
+
+const parseSplashCharacters = (value: string): SplashCharacter[] => {
+    const parsedCharacters: SplashCharacter[] = [];
+
+    let currentColor = DEFAULT_SPLASH_COLOR;
+    let isBold = false;
+    let isItalic = false;
+    let isUnderlined = false;
+    let isStrikethrough = false;
+    let isObfuscated = false;
+
+    const getCurrentStyle = () => {
+        const fontWeight = isBold ? 700 : 400;
+        const fontStyle = isItalic ? 'italic' : 'normal';
+        const textDecoration = [isUnderlined ? 'underline' : '', isStrikethrough ? 'line-through' : '']
+            .filter(Boolean)
+            .join(' ');
+        return {
+            style: {
+                color: currentColor,
+                fontWeight,
+                fontStyle,
+                textDecoration,
+            } satisfies React.CSSProperties,
+            styleKey: `${currentColor}|${fontWeight}|${fontStyle}|${textDecoration}`,
+        };
+    };
+
+    for (let index = 0; index < value.length; index += 1) {
+        const character = value[index];
+        const nextCharacter = value[index + 1]?.toLowerCase();
+        const formatCode = value[index + SPLASH_FORMAT_MARKER.length]?.toLowerCase();
+
+        if (value.slice(index, index + SPLASH_FORMAT_MARKER.length) === SPLASH_FORMAT_MARKER && formatCode) {
+            if (formatCode in MC_COLOR_BY_CODE) {
+                currentColor = MC_COLOR_BY_CODE[formatCode];
+                isBold = false;
+                isItalic = false;
+                isUnderlined = false;
+                isStrikethrough = false;
+                isObfuscated = false;
+            } else if (formatCode === 'l') {
+                isBold = true;
+            } else if (formatCode === 'm') {
+                isStrikethrough = true;
+            } else if (formatCode === 'n') {
+                isUnderlined = true;
+            } else if (formatCode === 'o') {
+                isItalic = true;
+            } else if (formatCode === 'k') {
+                isObfuscated = true;
+            } else if (formatCode === 'r') {
+                currentColor = DEFAULT_SPLASH_COLOR;
+                isBold = false;
+                isItalic = false;
+                isUnderlined = false;
+                isStrikethrough = false;
+                isObfuscated = false;
+            } else {
+                const { style, styleKey } = getCurrentStyle();
+                parsedCharacters.push({
+                    char: character,
+                    style,
+                    styleKey,
+                    isAuthoredObfuscated: isObfuscated,
+                });
+                continue;
+            }
+
+            index += SPLASH_FORMAT_MARKER.length;
+            continue;
+        }
+
+        if (character === 'Â§' && nextCharacter) {
+            if (nextCharacter in MC_COLOR_BY_CODE) {
+                currentColor = MC_COLOR_BY_CODE[nextCharacter];
+                isBold = false;
+                isItalic = false;
+                isUnderlined = false;
+                isStrikethrough = false;
+                isObfuscated = false;
+            } else if (nextCharacter === 'l') {
+                isBold = true;
+            } else if (nextCharacter === 'm') {
+                isStrikethrough = true;
+            } else if (nextCharacter === 'n') {
+                isUnderlined = true;
+            } else if (nextCharacter === 'o') {
+                isItalic = true;
+            } else if (nextCharacter === 'k') {
+                isObfuscated = true;
+            } else if (nextCharacter === 'r') {
+                currentColor = DEFAULT_SPLASH_COLOR;
+                isBold = false;
+                isItalic = false;
+                isUnderlined = false;
+                isStrikethrough = false;
+                isObfuscated = false;
+            } else {
+                const { style, styleKey } = getCurrentStyle();
+                parsedCharacters.push({
+                    char: character,
+                    style,
+                    styleKey,
+                    isAuthoredObfuscated: isObfuscated,
+                });
+                continue;
+            }
+
+            index += 1;
+            continue;
+        }
+
+        const { style, styleKey } = getCurrentStyle();
+        parsedCharacters.push({
+            char: character,
+            style,
+            styleKey,
+            isAuthoredObfuscated: isObfuscated,
+        });
+    }
+
+    return parsedCharacters;
+};
+
+const getFullyRevealedDisplayCharacters = (characters: SplashCharacter[]): DisplaySplashCharacter[] =>
+    characters.map((character) => ({
+        char: character.isAuthoredObfuscated ? getObfuscatedChar(character.char) : character.char,
+        style: character.style,
+        styleKey: character.styleKey,
+    }));
+
+const getDisplayCharactersFromSlots = (slots: TransitionSlot[]): DisplaySplashCharacter[] =>
+    slots.map((slot) => ({
+        char: slot.displayCharacter,
+        style: slot.displayStyle,
+        styleKey: slot.displayStyleKey,
+    }));
+
 /**
  * Parses a splash string with Minecraft-style § formatting into renderable styled segments.
  *
@@ -164,8 +377,39 @@ const getVisibleSplashLength = (value: string) => {
  * - §r resets color + all styles to defaults
  * - Unknown codes are treated as literal text
  */
-const parseSplashFormatting = (value: string): ParsedSplashSegment[] => {
+const parseSplashFormatting = (value: any): ParsedSplashSegment[] => {
     const parsedSegments: ParsedSplashSegment[] = [];
+
+    let currentText = '';
+    let currentStyle: React.CSSProperties | null = null;
+    let currentStyleKey = '';
+
+    const pushSegment = () => {
+        if (!currentText || !currentStyle) return;
+        parsedSegments.push({
+            text: currentText,
+            style: currentStyle,
+        });
+        currentText = '';
+    };
+
+    if (Array.isArray(value)) {
+        for (const character of value as DisplaySplashCharacter[]) {
+            if (currentStyleKey && currentStyleKey !== character.styleKey) {
+                pushSegment();
+            }
+
+            if (!currentStyleKey || currentStyleKey !== character.styleKey) {
+                currentStyle = character.style;
+                currentStyleKey = character.styleKey;
+            }
+
+            currentText += character.char;
+        }
+
+        pushSegment();
+        return parsedSegments;
+    }
 
     let currentColor = DEFAULT_SPLASH_COLOR;
     let isBold = false;
@@ -173,23 +417,11 @@ const parseSplashFormatting = (value: string): ParsedSplashSegment[] => {
     let isUnderlined = false;
     let isStrikethrough = false;
     let isObfuscated = false;
-    let currentText = '';
-
-    const pushSegment = () => {
-        if (!currentText) return;
-        parsedSegments.push({
-            text: currentText,
-            style: {
-                color: currentColor,
-                fontWeight: isBold ? 700 : 400,
-                fontStyle: isItalic ? 'italic' : 'normal',
-                textDecoration: [isUnderlined ? 'underline' : '', isStrikethrough ? 'line-through' : '']
-                    .filter(Boolean)
-                    .join(' '),
-            }
-        });
-        currentText = '';
-    };
+    void currentColor;
+    void isBold;
+    void isItalic;
+    void isUnderlined;
+    void isStrikethrough;
 
     for (let index = 0; index < value.length; index += 1) {
         const character = value[index];
@@ -357,7 +589,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [view, setView] = useState<'main' | 'create' | 'select' | 'settings' | 'editors'>('main');
     const [panoramaSubmenu, setPanoramaSubmenu] = useState<'manager' | 'settings'>('manager');
     const [panoramaDebugFly, setPanoramaDebugFly] = useState(false);
-    const [splash, setSplash] = useState('');
+    const [splashCharacters, setSplashCharacters] = useState<DisplaySplashCharacter[]>([]);
     const [splashFontSize, setSplashFontSize] = useState(20);
     const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
 
@@ -381,18 +613,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             if (prev && presets.some((preset) => preset.id === prev)) return prev;
             return '';
         });
-    };
-
-    const refreshSplash = () => {
-        const selectedSplash = Math.random() < ULTRA_RARE_SPLASH_CHANCE
-            ? ULTRA_RARE_SPLASHES[Math.floor(Math.random() * ULTRA_RARE_SPLASHES.length)]
-            : SPLASHES[Math.floor(Math.random() * SPLASHES.length)];
-        setSplash(selectedSplash);
-        const baseSize = 20;
-        const threshold = 20;
-        const visibleLength = Math.max(1, getVisibleSplashLength(selectedSplash));
-        const scale = Math.max(0.5, Math.min(1, threshold / visibleLength));
-        setSplashFontSize(baseSize * scale);
     };
 
     useEffect(() => {
@@ -435,9 +655,310 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     }, [view]);
 
     useEffect(() => {
-        if (view === 'main') {
-            refreshSplash();
-        }
+        if (view !== 'main') return;
+
+        let isDisposed = false;
+        let holdTimeoutId: number | null = null;
+        let phaseIntervalId: number | null = null;
+        let liveGlyphIntervalId: number | null = null;
+        let currentSplashRaw = '';
+        let currentSplashParsed: SplashCharacter[] = [];
+        let nextSlotId = 0;
+
+        const commitSplashCharacters = (characters: DisplaySplashCharacter[]) => {
+            if (!isDisposed) {
+                setSplashCharacters(characters);
+            }
+        };
+
+        const commitSplashFontSize = (value: number) => {
+            if (!isDisposed) {
+                setSplashFontSize(value);
+            }
+        };
+
+        const clearSplashTimers = () => {
+            if (holdTimeoutId !== null) {
+                window.clearTimeout(holdTimeoutId);
+                holdTimeoutId = null;
+            }
+            if (phaseIntervalId !== null) {
+                window.clearInterval(phaseIntervalId);
+                phaseIntervalId = null;
+            }
+            if (liveGlyphIntervalId !== null) {
+                window.clearInterval(liveGlyphIntervalId);
+                liveGlyphIntervalId = null;
+            }
+        };
+
+        const createTransitionSlot = (
+            currentCharacter: SplashCharacter | undefined,
+            targetCharacter: SplashCharacter | undefined,
+            isGlyphified: boolean,
+            displayStyle: React.CSSProperties,
+            displayStyleKey: string,
+        ): TransitionSlot => ({
+            id: nextSlotId++,
+            currentCharacter,
+            targetCharacter,
+            isGlyphified,
+            isRevealed: false,
+            displayCharacter: getObfuscatedChar(''),
+            displayStyle,
+            displayStyleKey,
+        });
+
+        const buildTransitionState = (targetRaw: string): SplashTransitionState => {
+            const targetCharacters = parseSplashCharacters(targetRaw);
+            const slots: TransitionSlot[] = [];
+            const pendingGlyphifySlotIds: number[] = [];
+            let pendingAddLeft: SplashCharacter[] = [];
+            let pendingAddRight: SplashCharacter[] = [];
+            let pendingRemoveLeft = 0;
+            let pendingRemoveRight = 0;
+
+            if (targetCharacters.length >= currentSplashParsed.length) {
+                const addCount = targetCharacters.length - currentSplashParsed.length;
+                const addLeft = Math.floor(addCount / 2);
+                const addRight = Math.ceil(addCount / 2);
+                pendingAddLeft = targetCharacters.slice(0, addLeft);
+                pendingAddRight = targetCharacters.slice(targetCharacters.length - addRight);
+
+                currentSplashParsed.forEach((currentCharacter, index) => {
+                    const slot = createTransitionSlot(
+                        currentCharacter,
+                        targetCharacters[index + addLeft],
+                        false,
+                        currentCharacter.style,
+                        currentCharacter.styleKey,
+                    );
+                    slot.displayCharacter = currentCharacter.isAuthoredObfuscated
+                        ? getObfuscatedChar(currentCharacter.char)
+                        : currentCharacter.char;
+                    slots.push(slot);
+                    pendingGlyphifySlotIds.push(slot.id);
+                });
+            } else {
+                const removeCount = currentSplashParsed.length - targetCharacters.length;
+                const removeLeft = Math.floor(removeCount / 2);
+                const removeRight = Math.ceil(removeCount / 2);
+                pendingRemoveLeft = removeLeft;
+                pendingRemoveRight = removeRight;
+
+                currentSplashParsed.forEach((currentCharacter, index) => {
+                    const targetCharacter =
+                        index < removeLeft || index >= currentSplashParsed.length - removeRight
+                            ? undefined
+                            : targetCharacters[index - removeLeft];
+                    const slot = createTransitionSlot(
+                        currentCharacter,
+                        targetCharacter,
+                        false,
+                        currentCharacter.style,
+                        currentCharacter.styleKey,
+                    );
+                    slot.displayCharacter = currentCharacter.isAuthoredObfuscated
+                        ? getObfuscatedChar(currentCharacter.char)
+                        : currentCharacter.char;
+                    slots.push(slot);
+                    pendingGlyphifySlotIds.push(slot.id);
+                });
+            }
+
+            return {
+                slots,
+                pendingGlyphifySlotIds,
+                pendingAddLeft,
+                pendingAddRight,
+                pendingRemoveLeft,
+                pendingRemoveRight,
+                targetCharacters,
+                targetRaw,
+                targetFontSize: getSplashFontSizeForValue(targetRaw),
+            };
+        };
+
+        const isGlyphifyComplete = (state: SplashTransitionState) =>
+            state.pendingGlyphifySlotIds.length === 0 &&
+            state.pendingAddLeft.length === 0 &&
+            state.pendingAddRight.length === 0 &&
+            state.pendingRemoveLeft === 0 &&
+            state.pendingRemoveRight === 0 &&
+            state.slots.length === state.targetCharacters.length &&
+            state.slots.every((slot) => slot.isGlyphified);
+
+        const rerollGlyphifyDisplay = (state: SplashTransitionState) => {
+            state.slots.forEach((slot) => {
+                if (slot.isGlyphified) {
+                    slot.displayCharacter = getObfuscatedChar(slot.displayCharacter);
+                    return;
+                }
+
+                if (slot.currentCharacter?.isAuthoredObfuscated) {
+                    slot.displayCharacter = getObfuscatedChar(slot.currentCharacter.char);
+                    return;
+                }
+
+                if (slot.currentCharacter) {
+                    slot.displayCharacter = slot.currentCharacter.char;
+                }
+            });
+        };
+
+        const getNextGlyphifyOperation = (state: SplashTransitionState) => {
+            const operations: Array<'glyphify' | 'add-left' | 'add-right' | 'remove-left' | 'remove-right'> = [];
+            const firstSlot = state.slots[0];
+            const lastSlot = state.slots[state.slots.length - 1];
+            if (state.pendingGlyphifySlotIds.length > 0) operations.push('glyphify');
+            if (state.pendingAddLeft.length > 0) operations.push('add-left');
+            if (state.pendingAddRight.length > 0) operations.push('add-right');
+            if (state.pendingRemoveLeft > 0 && firstSlot?.targetCharacter === undefined && firstSlot.isGlyphified) {
+                operations.push('remove-left');
+            }
+            if (state.pendingRemoveRight > 0 && lastSlot?.targetCharacter === undefined && lastSlot.isGlyphified) {
+                operations.push('remove-right');
+            }
+            return getRandomArrayItem(operations);
+        };
+
+        const applyGlyphifyOperation = (
+            state: SplashTransitionState,
+            operation: 'glyphify' | 'add-left' | 'add-right' | 'remove-left' | 'remove-right',
+        ) => {
+            if (operation === 'glyphify') {
+                const slotId = takeRandomArrayItem(state.pendingGlyphifySlotIds);
+                if (slotId === undefined) return;
+                const slot = state.slots.find((entry) => entry.id === slotId);
+                if (!slot) return;
+                slot.isGlyphified = true;
+                slot.displayCharacter = getObfuscatedChar(slot.displayCharacter);
+                return;
+            }
+
+            if (operation === 'add-left') {
+                const targetCharacter = state.pendingAddLeft.pop();
+                if (!targetCharacter) return;
+                const slot = createTransitionSlot(undefined, targetCharacter, true, targetCharacter.style, targetCharacter.styleKey);
+                slot.displayCharacter = getObfuscatedChar(targetCharacter.char);
+                state.slots.unshift(slot);
+                return;
+            }
+
+            if (operation === 'add-right') {
+                const targetCharacter = state.pendingAddRight.shift();
+                if (!targetCharacter) return;
+                const slot = createTransitionSlot(undefined, targetCharacter, true, targetCharacter.style, targetCharacter.styleKey);
+                slot.displayCharacter = getObfuscatedChar(targetCharacter.char);
+                state.slots.push(slot);
+                return;
+            }
+
+            if (operation === 'remove-left') {
+                state.slots.shift();
+                state.pendingRemoveLeft -= 1;
+                return;
+            }
+
+            state.slots.pop();
+            state.pendingRemoveRight -= 1;
+        };
+
+        const startHoldPhase = (raw: string, parsedCharacters: SplashCharacter[]) => {
+            currentSplashRaw = raw;
+            currentSplashParsed = parsedCharacters;
+            commitSplashFontSize(getSplashFontSizeForValue(raw));
+            commitSplashCharacters(getFullyRevealedDisplayCharacters(parsedCharacters));
+
+            if (parsedCharacters.some((character) => character.isAuthoredObfuscated)) {
+                liveGlyphIntervalId = window.setInterval(() => {
+                    commitSplashCharacters(getFullyRevealedDisplayCharacters(parsedCharacters));
+                }, SPLASH_REVEAL_TICK_MS);
+            }
+
+            holdTimeoutId = window.setTimeout(() => {
+                holdTimeoutId = null;
+                startGlyphifyPhase();
+            }, SPLASH_HOLD_DURATION_MS);
+        };
+
+        const startRevealPhase = (state: SplashTransitionState) => {
+            commitSplashFontSize(state.targetFontSize);
+
+            if (state.slots.length === 0) {
+                startHoldPhase(state.targetRaw, state.targetCharacters);
+                return;
+            }
+
+            phaseIntervalId = window.setInterval(() => {
+                state.slots.forEach((slot) => {
+                    if (!slot.isRevealed) {
+                        slot.displayCharacter = getObfuscatedChar(slot.displayCharacter);
+                    }
+                });
+
+                const unrevealedSlots = state.slots.filter((slot) => !slot.isRevealed);
+                const slotToReveal = getRandomArrayItem(unrevealedSlots);
+                if (slotToReveal?.targetCharacter) {
+                    slotToReveal.isRevealed = true;
+                    slotToReveal.displayStyle = slotToReveal.targetCharacter.style;
+                    slotToReveal.displayStyleKey = slotToReveal.targetCharacter.styleKey;
+                    slotToReveal.displayCharacter = slotToReveal.targetCharacter.isAuthoredObfuscated
+                        ? getObfuscatedChar(slotToReveal.targetCharacter.char)
+                        : slotToReveal.targetCharacter.char;
+                }
+
+                commitSplashCharacters(getDisplayCharactersFromSlots(state.slots));
+
+                if (state.slots.every((slot) => slot.isRevealed)) {
+                    if (phaseIntervalId !== null) {
+                        window.clearInterval(phaseIntervalId);
+                        phaseIntervalId = null;
+                    }
+                    startHoldPhase(state.targetRaw, state.targetCharacters);
+                }
+            }, SPLASH_REVEAL_TICK_MS);
+        };
+
+        const startGlyphifyPhase = () => {
+            if (liveGlyphIntervalId !== null) {
+                window.clearInterval(liveGlyphIntervalId);
+                liveGlyphIntervalId = null;
+            }
+
+            const state = buildTransitionState(getNextSplash(currentSplashRaw));
+
+            const runGlyphifyTick = () => {
+                rerollGlyphifyDisplay(state);
+                const operation = getNextGlyphifyOperation(state);
+                if (operation) {
+                    applyGlyphifyOperation(state, operation);
+                }
+
+                commitSplashCharacters(getDisplayCharactersFromSlots(state.slots));
+
+                if (isGlyphifyComplete(state)) {
+                    if (phaseIntervalId !== null) {
+                        window.clearInterval(phaseIntervalId);
+                        phaseIntervalId = null;
+                    }
+                    startRevealPhase(state);
+                }
+            };
+
+            runGlyphifyTick();
+            if (!isGlyphifyComplete(state)) {
+                phaseIntervalId = window.setInterval(runGlyphifyTick, SPLASH_GLYPHIFY_TICK_MS);
+            }
+        };
+
+        const initialSplashRaw = getNextSplash('');
+        startHoldPhase(initialSplashRaw, parseSplashCharacters(initialSplashRaw));
+
+        return () => {
+            isDisposed = true;
+            clearSplashTimers();
+        };
     }, [view]);
 
     useEffect(() => {
@@ -470,7 +991,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [panoramaDebugFly, hasPanoramaBackground, hasFaceCubemap]);
 
-    const formattedSplash = useMemo(() => parseSplashFormatting(splash), [splash]);
+    const formattedSplash = useMemo(() => parseSplashFormatting(splashCharacters), [splashCharacters]);
     const usingPanorama = backgroundMode === 'panorama' && (!!panoramaBackgroundDataUrl || hasFaceCubemap);
     const submenuOverlayClass = usingPanorama ? 'bg-black/60' : 'bg-black/35';
     const loadWorlds = async () => {
@@ -900,12 +1421,25 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 <div className="flex flex-col items-center mb-16 relative">
                     <h1 className="text-7xl font-bold text-[#c6c6c6] text-shadow-xl tracking-tighter">Atlas</h1>
                     <div
-                        className="absolute -right-24 bottom-0 text-yellow-300 font-bold drop-shadow-md whitespace-nowrap"
-                        style={{ fontSize: `${splashFontSize}px`, animation: 'pulse-scale 0.5s infinite alternate ease-in-out' }}
+                        className="absolute pointer-events-none w-max"
+                        style={{
+                            left: 'calc(100% - 0.4rem)',
+                            top: 'calc(100% - 0.55rem)',
+                            transform: 'translateX(-50%)',
+                        }}
                     >
-                        {formattedSplash.map((segment, index) => (
-                            <span key={`${index}-${segment.text}`} style={segment.style}>{segment.text}</span>
-                        ))}
+                        <div
+                            className="text-yellow-300 font-bold drop-shadow-md whitespace-nowrap"
+                            style={{
+                                fontSize: `${splashFontSize}px`,
+                                animation: 'pulse-scale 0.5s infinite alternate ease-in-out',
+                                transformOrigin: 'center top',
+                            }}
+                        >
+                            {formattedSplash.map((segment, index) => (
+                                <span key={`${index}-${segment.text}`} style={segment.style}>{segment.text}</span>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
