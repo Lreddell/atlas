@@ -144,7 +144,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
         };
         loop();
         return () => cancelAnimationFrame(rafId);
-    }, [dropsCount, chunksCount, renderDistance, fpsRef]);
+    }, [dropsCount, chunksCount, renderDistance, fpsRef, cameraRef, playerPosRef]);
 
     return (
         <div className="absolute inset-0 pointer-events-none z-[100] text-white font-mono text-sm leading-tight drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none p-1 flex justify-between">

@@ -33,13 +33,65 @@ const getUniquePresetName = (existingNames: string[], requestedName: string) => 
     return `${base}-${Date.now()}`;
 };
 
-const normalizeEntry = (entry: any): WorldGenPresetEntry | null => {
-    if (!entry || typeof entry !== 'object') return null;
-    if (typeof entry.id !== 'string' || typeof entry.name !== 'string' || !entry.config) return null;
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+const normalizeConfigSnapshot = (value: unknown): WorldGenConfigSnapshot | null => {
+    if (!isRecord(value)) return null;
+
+    const snapshot = cloneConfig(DEFAULTS);
+
+    if (isRecord(value.noise)) {
+        const noiseValue = value.noise;
+        const noiseKeys = Object.keys(snapshot.noise) as Array<keyof WorldGenConfigSnapshot['noise']>;
+        noiseKeys.forEach((key) => {
+            const incomingNoise = noiseValue[key];
+            if (!isRecord(incomingNoise)) return;
+            const incomingType = incomingNoise.type;
+            Object.assign(snapshot.noise[key], incomingNoise);
+            if (incomingType === 'simplex') {
+                snapshot.noise[key].type = 'opensimplex2';
+            }
+        });
+    }
+
+    if (isRecord(value.terrainShape)) {
+        Object.assign(snapshot.terrainShape, value.terrainShape);
+    }
+
+    if (isRecord(value.biomes)) {
+        const biomeValue = value.biomes;
+        const biomeKeys = Object.keys(snapshot.biomes) as Array<keyof WorldGenConfigSnapshot['biomes']>;
+        biomeKeys.forEach((key) => {
+            const incomingBiome = biomeValue[key];
+            if (!isRecord(incomingBiome)) return;
+            Object.assign(snapshot.biomes[key], incomingBiome);
+        });
+    }
+
+    if (isRecord(value.height)) {
+        Object.assign(snapshot.height, value.height);
+    }
+
+    if (isRecord(value.climateWarp)) {
+        Object.assign(snapshot.climateWarp, value.climateWarp);
+    }
+
+    if (isRecord(value.spawn)) {
+        Object.assign(snapshot.spawn, value.spawn);
+    }
+
+    return snapshot;
+};
+
+const normalizeEntry = (entry: unknown): WorldGenPresetEntry | null => {
+    if (!isRecord(entry)) return null;
+    const config = normalizeConfigSnapshot(entry.config);
+    if (typeof entry.id !== 'string' || typeof entry.name !== 'string' || !config) return null;
     return {
         id: entry.id,
         name: entry.name,
-        config: cloneConfig(entry.config),
+        config,
         createdAt: Number(entry.createdAt) || Date.now(),
         updatedAt: Number(entry.updatedAt) || Date.now(),
     };
@@ -73,7 +125,7 @@ export const listWorldGenPresets = (): WorldGenPresetEntry[] => {
 
 const listWorldGenPresetsDesktop = async (): Promise<WorldGenPresetEntry[]> => {
     const result = await window.atlasDesktop?.listWorldPresets?.();
-    const presetsRaw = (result as any)?.presets;
+    const presetsRaw = result?.presets;
     if (!Array.isArray(presetsRaw)) return [];
     return presetsRaw
         .map(normalizeEntry)
@@ -103,7 +155,7 @@ export const getWorldGenPresetByIdAsync = async (id: string): Promise<WorldGenPr
 
     if (hasDesktopPresetApi()) {
         const result = await window.atlasDesktop?.readWorldPreset?.(id);
-        const preset = normalizeEntry((result as any)?.preset);
+        const preset = normalizeEntry(result?.preset);
         return preset ?? null;
     }
 
@@ -133,7 +185,7 @@ export const saveWorldGenPreset = (name: string, config: WorldGenConfigSnapshot)
 export const saveWorldGenPresetAsync = async (name: string, config: WorldGenConfigSnapshot): Promise<WorldGenPresetEntry | null> => {
     if (hasDesktopPresetApi()) {
         const result = await window.atlasDesktop?.saveWorldPreset?.(name, cloneConfig(config));
-        const preset = normalizeEntry((result as any)?.preset);
+        const preset = normalizeEntry(result?.preset);
         return preset ?? null;
     }
     return saveWorldGenPreset(name, config);
@@ -152,7 +204,7 @@ export const deleteWorldGenPresetAsync = async (id: string): Promise<boolean> =>
     if (!id) return false;
     if (hasDesktopPresetApi()) {
         const result = await window.atlasDesktop?.deleteWorldPreset?.(id);
-        return !!(result as any)?.ok;
+        return !!result?.ok;
     }
     return deleteWorldGenPreset(id);
 };

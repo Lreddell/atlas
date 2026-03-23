@@ -1,10 +1,10 @@
 
 import React, { useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
-import { Vector3, MathUtils } from 'three';
+import { Vector3, MathUtils, PerspectiveCamera } from 'three';
 import { CHUNK_SIZE } from '../constants';
 import { worldManager } from '../systems/WorldManager';
-import { BlockType } from '../types';
+import { BlockType, type GameMode } from '../types';
 import { 
     onKeyDown, onKeyUp, getMovementIntent, inputState
 } from '../systems/player/playerInput';
@@ -13,7 +13,7 @@ import {
     EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING, 
     FIXED_DT, MAX_SUBSTEPS, MAX_BREATH 
 } from '../systems/player/playerConstants';
-import { addExhaustion, EXHAUSTION_COSTS } from '../systems/player/playerFood';
+import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
 
@@ -27,12 +27,12 @@ interface PlayerProps {
   onTakeDamage?: (amount: number) => void;
   isLocked: boolean;
   isPaused: boolean;
-  gameMode: 'survival' | 'creative' | 'spectator';
+  gameMode: GameMode;
   setBreath: (val: number) => void;
   baseFov: number;
   setHeadBlock: (type: BlockType) => void;
   setIsOnFire: (val: boolean) => void;
-  foodStateRef: any; 
+  foodStateRef: React.MutableRefObject<FoodState>;
   isDead: boolean;
     forcedFov?: number | null;
 }
@@ -107,7 +107,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     fallDistance.current = 0;
     
     camera.position.copy(pos.current).add(new Vector3(0, EYE_HEIGHT_STANDING, 0));
-  }, [position]); // Dependency on position ensures we teleport when the parent finishes loading
+  }, [position, camera]); // Dependency on position ensures we teleport when the parent finishes loading
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,7 +151,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     }
 
     if (camera.type === 'PerspectiveCamera') {
-        const pc = camera as any;
+        const pc = camera as PerspectiveCamera;
         if (forcedFov !== null && Number.isFinite(forcedFov)) {
             pc.fov = forcedFov;
         } else {

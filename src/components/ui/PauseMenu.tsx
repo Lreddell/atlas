@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
-import { setCloudTexture } from '../world/Clouds';
+import { setCloudTexture } from '../world/cloudState';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
+import { MenuButton } from './mainMenu/MainMenuControls';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 
@@ -45,43 +46,6 @@ interface PauseMenuProps {
 }
 
 type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
-
-// Minecraft Button Component
-const MenuButton: React.FC<{
-    label: string;
-    onClick?: () => void;
-    width?: string;
-    disabled?: boolean;
-}> = ({ label, onClick, width = 'w-96', disabled = false }) => {
-    return (
-        <button 
-            onClick={(e) => { 
-                e.stopPropagation(); 
-                if (!disabled && onClick) {
-                    soundManager.play("ui.click");
-                    onClick(); 
-                }
-            }}
-            onMouseEnter={() => {
-                if (!disabled) {
-                    soundManager.play("ui.hover", { volume: 0.2, pitch: 2.0 });
-                }
-            }}
-            onMouseLeave={() => {}}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseUp={(e) => e.stopPropagation()}
-            className={`
-                ${width} h-10 relative bg-[#8b8b8b] border-2 border-white border-b-[#373737] border-r-[#373737]
-                text-white font-minecraft text-shadow-md select-none outline-none group
-                ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#a0a0a0] active:border-[#373737] active:border-b-white active:border-r-white'}
-            `}
-        >
-            {/* Inner border effect */}
-            <div className={`absolute inset-[2px] border-2 border-transparent ${!disabled && 'group-active:border-[#6f6f6f]'} pointer-events-none`} />
-            <span className="relative top-0 group-active:top-[1px]">{label}</span>
-        </button>
-    );
-};
 
 // Minecraft Slider Component
 const MenuSlider: React.FC<{
@@ -191,7 +155,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
     useEffect(() => {
         // Load initial volumes
-        const newVols = { ...volumes };
+        const newVols = {} as typeof volumes;
         (['master', 'music', 'ambient', 'blocks', 'player', 'ui', 'hostile', 'neutral'] as const).forEach(cat => {
             newVols[cat] = soundManager.getVolume(cat);
         });
@@ -369,9 +333,9 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
                     <div className="border-t border-white/15 pt-3">
                         <h3 className="text-white text-sm font-bold mb-2 font-minecraft">Highlights</h3>
-                        <ul className="space-y-1">
+                        <ul className="space-y-1 pl-4 list-disc">
                             {activeSection.bullets.map((bullet) => (
-                                <li key={bullet} className="text-gray-200 text-sm font-minecraft">• {bullet}</li>
+                                <li key={bullet} className="text-gray-200 text-sm font-minecraft">{bullet}</li>
                             ))}
                         </ul>
                     </div>

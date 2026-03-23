@@ -53,7 +53,7 @@ npm run electron:dev
 - `npm run preview` previews the built web output
 - `npm run typecheck` runs TypeScript checking with `tsc --noEmit`
 - `npm run lint` runs ESLint
-- `npm run check` currently aliases lint
+- `npm run check` runs TypeScript and ESLint checks
 - `npm run format` runs Prettier write
 - `npm run format:check` runs Prettier check
 - `npm run electron:dev` runs Vite and Electron together
@@ -176,7 +176,7 @@ These third-party materials are **not** covered by Atlas's All Rights Reserved a
 
 ## Third-Party Notice
 
-Atlas currently includes the Monocraft font in `public/assets/fonts/Monocraft-ttf/`.
+Atlas includes the Monocraft font in `public/assets/fonts/Monocraft-ttf/`.
 
 Monocraft is a third-party font by IdreesInc and is licensed separately under the SIL Open Font License 1.1. It is not covered by Atlas's All Rights Reserved asset terms.
 

@@ -101,14 +101,12 @@ export function resolveTexture(
     }
     // 7. Sandstone
     else if (type === BlockType.SANDSTONE || type === BlockType.RED_SANDSTONE) {
-        // Red sandstone has specific top/bottom if we want, for now reuse top logic from normal sandstone or generic
         if (type === BlockType.SANDSTONE) {
             if (dy !== 0) texIdx = 28; 
             else texIdx = 18; 
         } else {
-            // For red sandstone, just use same texture all around or make top different if we draw it
-            // Current atlas only has side drawn at 79. Let's use 79 for all sides for now or reuse 28 tinted?
-            // Let's stick to 79 for all faces for Red Sandstone currently as we didn't draw a specific top
+            // Red sandstone currently uses the side texture on all faces.
+            // Slot 79 is the only dedicated red sandstone atlas tile.
             texIdx = 79;
         }
     }

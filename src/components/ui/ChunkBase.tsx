@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { getBiome, getGenerationParams, BIOMES } from '../../systems/world/biomes';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
 import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
@@ -24,8 +24,9 @@ const ResetBtn = ({ onClick }: { onClick: () => void }) => (
         onClick={onClick} 
         className="ml-2 w-6 flex-shrink-0 flex items-center justify-center bg-[#444] hover:bg-[#555] text-xs rounded text-gray-200 border border-gray-600 aspect-square"
         title="Reset"
+        aria-label="Reset"
     >
-        ↺
+        R
     </button>
 );
 
@@ -103,11 +104,6 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         void refreshPresetList();
     }, []);
 
-    useEffect(() => {
-        let frameId = requestAnimationFrame(draw);
-        return () => cancelAnimationFrame(frameId);
-    }, [center, scale, layers, configVersion, showGrid, showRulers, rulerType, sidebarWidth, previewNoiseSet]);
-
     const forceUpdate = () => {
         setConfigVersion(v => v + 1);
         setHistoryState(getHistoryState());
@@ -132,7 +128,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         if (redo()) forceUpdate();
     };
 
-    const draw = () => {
+    const draw = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -291,7 +287,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
             ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
             ctx.fillRect(RULER_SIZE, 0, width - RULER_SIZE, RULER_SIZE);
             ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-            ctx.fillText("X →", RULER_SIZE + 8, RULER_SIZE / 2);
+        ctx.fillText("X ->", RULER_SIZE + 8, RULER_SIZE / 2);
             ctx.fillStyle = '#ccc'; ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.font = '10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
             const startX = Math.floor(startWX / step) * step;
             const endX = startWX + (width * invScale);
@@ -303,7 +299,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
             }
             ctx.fillStyle = 'rgba(20, 20, 20, 0.9)'; ctx.fillRect(0, RULER_SIZE, RULER_SIZE, height - RULER_SIZE);
             ctx.fillStyle = '#4dabf7'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-            ctx.fillText("Z", RULER_SIZE / 2, RULER_SIZE + 8); ctx.fillText("↓", RULER_SIZE / 2, RULER_SIZE + 20);
+        ctx.fillText("Z", RULER_SIZE / 2, RULER_SIZE + 8); ctx.fillText("v", RULER_SIZE / 2, RULER_SIZE + 20);
             ctx.fillStyle = '#ccc'; ctx.font = '10px monospace';
             const startZ = Math.floor(startWZ / step) * step;
             const endZ = startWZ + (height * invScale);
@@ -325,7 +321,12 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         ctx.moveTo(width/2 - 10, height/2); ctx.lineTo(width/2 + 10, height/2);
         ctx.moveTo(width/2, height/2 - 10); ctx.lineTo(width/2, height/2 + 10);
         ctx.stroke();
-    };
+    }, [center, layers, previewNoiseSet, rulerType, scale, showGrid, showRulers]);
+
+    useEffect(() => {
+        const frameId = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(frameId);
+    }, [configVersion, draw, sidebarWidth]);
 
     const handleMouseMove = (e: React.MouseEvent) => {
         const canvas = canvasRef.current;
@@ -563,7 +564,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 const defaultConfig = (DEFAULTS.biomes as any)[bKey];
                                 return (
                                     <div key={bKey} className="border border-white/10 rounded bg-[#222]">
-                                        <button className="w-full flex items-center gap-3 p-3 hover:bg-[#333] transition-colors" onClick={() => toggleBiomeExpand(bKey)}><div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: meta.color }} /><span className="text-sm font-bold text-gray-200 flex-1 text-left">{meta.name}</span><span className="text-xs text-gray-500">{isExpanded ? '▼' : '▶'}</span></button>
+                                        <button className="w-full flex items-center gap-3 p-3 hover:bg-[#333] transition-colors" onClick={() => toggleBiomeExpand(bKey)}><div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: meta.color }} /><span className="text-sm font-bold text-gray-200 flex-1 text-left">{meta.name}</span><span className="text-xs text-gray-500">{isExpanded ? 'v' : '>'}</span></button>
                                         {isExpanded && (<div className="p-3 space-y-3 bg-[#1a1a1a] border-t border-black/20">{Object.keys(config).map(param => (<div key={param}><div className="flex justify-between items-center text-xs text-gray-400 mb-1"><span className="capitalize">{param.replace(/([A-Z])/g, ' $1').trim()}</span><span className="font-mono text-gray-500 text-[11px]">{config[param]}</span></div>{param === 'base' || param === 'scale' || param === 'deepBase' ? (<input type="range" min="0" max="150" step="1" value={config[param]} onChange={(e) => { config[param] = parseFloat(e.target.value); forceUpdate(); }} onMouseUp={commitChange} onDoubleClick={() => { config[param] = defaultConfig[param]; commitChange(); }} className="w-full h-2 bg-gray-600 appearance-none rounded cursor-pointer accent-blue-500" />) : (<input type="range" min="-1" max="1" step="0.01" value={config[param]} onChange={(e) => { config[param] = parseFloat(e.target.value); forceUpdate(); }} onMouseUp={commitChange} onDoubleClick={() => { config[param] = defaultConfig[param]; commitChange(); }} className="w-full h-2 bg-gray-600 appearance-none rounded cursor-pointer" />)}</div>))}</div>)}
                                     </div>
                                 );
@@ -579,19 +580,19 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                             disabled={!historyState.canUndo}
                             className={`py-1.5 bg-gray-700 font-bold text-xs rounded uppercase tracking-wider transition-colors ${!historyState.canUndo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}
                         >
-                            ↶ Undo
+                            Undo
                         </button>
                         <button
                             onClick={handleRedo}
                             disabled={!historyState.canRedo}
                             className={`py-1.5 bg-gray-700 font-bold text-xs rounded uppercase tracking-wider transition-colors ${!historyState.canRedo ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-600'}`}
                         >
-                            Redo ↷
+                            Redo
                         </button>
                     </div>
                     <button onClick={handleReset} className="py-1.5 bg-red-800 hover:bg-red-700 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Reset Defaults</button>
                     
-                    {/* Seed Area - Moved to Bottom */}
+                    {/* Seed controls */}
                     <div className="mt-1 pt-3 border-t border-white/5 space-y-2">
                         <div className="flex justify-between items-center px-1">
                              <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Preview Seed</label>
@@ -610,13 +611,13 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     onClick={() => setLocalSeedInput(worldManager.getSeed().toString())}
                                     className="px-2 bg-blue-700 hover:bg-blue-600 border border-white/20 rounded active:scale-95 transition-all text-xs flex items-center justify-center"
                                     title="Sync to World"
-                                >🏠</button>
+                                >Sync</button>
                             )}
                             <button 
                                 onClick={handleRandomSeed}
                                 className="px-2 bg-gray-700 hover:bg-gray-600 border border-white/20 rounded active:scale-95 transition-all text-xs"
                                 title="Randomize Seed"
-                            >🎲</button>
+                            >Rand</button>
                         </div>
                     </div>
                 </div>

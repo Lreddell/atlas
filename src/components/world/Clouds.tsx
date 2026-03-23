@@ -1,9 +1,10 @@
 
-import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
+import React, { useRef, useEffect, useState, useLayoutEffect, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { GlobalNoise } from '../../utils/noise';
 import { CHUNK_SIZE } from '../../constants';
+import { registerCloudHandlers } from './cloudState';
 
 const CLOUD_LEVEL = 192;
 const CLOUD_HEIGHT = 4;
@@ -62,7 +63,7 @@ let newCloudFadeMultiplier = 1.0;
 // Animated 1→0 for tiles leaving the view; stays at 0 when nothing is leaving
 let leavingCloudMultiplier = 0.0;
 
-export const updateCloudColor = (dayFactor: number) => {
+const updateCloudColor = (dayFactor: number) => {
     const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
     const dayColor = new THREE.Color(0xFFFFFF);
     cloudBackMaterial.color.lerpColors(nightColor, dayColor, dayFactor);
@@ -84,9 +85,11 @@ export const updateCloudColor = (dayFactor: number) => {
 // Event system for manual overrides
 let onTextureUpdate: ((url: string) => void) | null = null;
 
-export const setCloudTexture = (url: string) => {
+const setCloudTexture = (url: string) => {
     if (onTextureUpdate) onTextureUpdate(url);
 };
+
+registerCloudHandlers({ setTexture: setCloudTexture, updateColor: updateCloudColor });
 
 export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeInEnabled?: boolean, visible?: boolean }> = ({ isPaused, renderDistance, fadeInEnabled = true, visible = true }) => {
     const { camera } = useThree();
@@ -211,7 +214,23 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         };
     }, [cloudState]);
 
-    const processImage = (img: HTMLImageElement) => {
+    const generateProceduralClouds = useCallback(() => {
+        console.log("[Clouds] Generating procedural cloud pattern...");
+        const width = 256;
+        const height = 256;
+        const data = new Uint8Array(width * height);
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let n = GlobalNoise.terrain.noise2D(x * 0.03, y * 0.03);
+                n += GlobalNoise.terrain.noise2D(x * 0.1, y * 0.1) * 0.5;
+                data[y * width + x] = n > 0.4 ? 255 : 0;
+            }
+        }
+        setCloudData({ width, height, data });
+    }, []);
+
+    const processImage = useCallback((img: HTMLImageElement) => {
         try {
             const canvas = document.createElement('canvas');
             canvas.width = img.width;
@@ -246,23 +265,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         } catch (e) {
             generateProceduralClouds();
         }
-    };
-
-    const generateProceduralClouds = () => {
-        console.log("[Clouds] Generating procedural cloud pattern...");
-        const width = 256;
-        const height = 256;
-        const data = new Uint8Array(width * height);
-
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let n = GlobalNoise.terrain.noise2D(x * 0.03, y * 0.03);
-                n += GlobalNoise.terrain.noise2D(x * 0.1, y * 0.1) * 0.5;
-                data[y * width + x] = n > 0.4 ? 255 : 0;
-            }
-        }
-        setCloudData({ width, height, data });
-    };
+    }, [generateProceduralClouds]);
 
     // 1. Initial Load & Listeners
     useEffect(() => {
@@ -305,7 +308,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         })();
 
         return () => { onTextureUpdate = null; };
-    }, []);
+    }, [generateProceduralClouds, processImage]);
 
     // 2. Force Rebuild on Settings Change
     useEffect(() => {

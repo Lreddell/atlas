@@ -1,30 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { CHUNK_LIGHTING_UNIFORMS } from './chunkLightingState';
 
 // Use shared texture from manager
 const getChunkTexture = () => textureAtlasManager.getTexture();
 
-// Export global lighting values for entities/items
-export let globalSunlightValue = 1.0;
-export let globalBrightnessValue = 0.5;
-
-/**
- * Shared uniforms object for all chunk materials.
- * Points all shader instances to the same memory location for lightning-fast global updates.
- */
-const CHUNK_UNIFORMS = {
-  uSunlight: { value: 1.0 },
-  uBrightness: { value: 0.5 }
-};
-
 interface ChunkMeshProps {
   cx: number;
   cz: number;
-  detailLevel?: 'full';
   shadowsEnabled?: boolean;
   fadeInEnabled?: boolean;
   fadingOut?: boolean;
@@ -41,8 +28,8 @@ const setupMaterial = (
 
   mat.onBeforeCompile = (shader) => {
     // Link material uniforms directly to the global shared objects
-    shader.uniforms.uSunlight = CHUNK_UNIFORMS.uSunlight;
-    shader.uniforms.uBrightness = CHUNK_UNIFORMS.uBrightness;
+    shader.uniforms.uSunlight = CHUNK_LIGHTING_UNIFORMS.uSunlight;
+    shader.uniforms.uBrightness = CHUNK_LIGHTING_UNIFORMS.uBrightness;
 
     shader.fragmentShader = `
 uniform float uSunlight;
@@ -117,17 +104,7 @@ setupMaterial(chunkMaterialSolid);
 setupMaterial(chunkMaterialCutout, { alphaWeightSample: true, binaryCutoutAlpha: true });
 setupMaterial(chunkMaterialTransparent, { minLightBase: 0.16 });
 
-export const updateChunkMaterials = (sunlight: number, brightness: number = 0.5) => {
-  globalSunlightValue = sunlight;
-  globalBrightnessValue = brightness;
-  
-  // Update the single shared uniform source. 
-  // All materials referencing these uniforms will update instantly in the next draw call.
-  CHUNK_UNIFORMS.uSunlight.value = sunlight;
-  CHUNK_UNIFORMS.uBrightness.value = brightness;
-};
-
-const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {  const [geometries, setGeometries] = useState<{ 
+const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {  const [geometries, setGeometries] = useState<{ 
       opaque: THREE.BufferGeometry | null, 
       cutout: THREE.BufferGeometry | null,
       transparent: THREE.BufferGeometry | null 
@@ -176,6 +153,22 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsE
     geometriesRef.current = geometries;
   }, [geometries]);
 
+  const applyFinalMaterialState = useCallback(() => {
+    fadeActiveRef.current = false;
+
+    materialOpaque.transparent = false;
+    materialOpaque.depthWrite = true;
+    materialOpaque.opacity = 1;
+
+    materialCutout.transparent = false;
+    materialCutout.depthWrite = true;
+    materialCutout.opacity = 1;
+
+    materialTransparent.transparent = true;
+    materialTransparent.depthWrite = false;
+    materialTransparent.opacity = 0.6;
+  }, [materialOpaque, materialCutout, materialTransparent]);
+
   // Sync refs for fadingOut prop and callback
   useEffect(() => { fadingOutRef.current = fadingOut; }, [fadingOut]);
   useEffect(() => { onFadeOutCompleteRef.current = onFadeOutComplete; }, [onFadeOutComplete]);
@@ -209,7 +202,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsE
       fadeOutActiveRef.current = false;
       applyFinalMaterialState();
     }
-  }, [fadingOut, fadeInEnabled, materialOpaque, materialCutout, materialTransparent]);
+  }, [fadingOut, fadeInEnabled, materialOpaque, materialCutout, materialTransparent, applyFinalMaterialState]);
 
   useEffect(() => {
     return () => {
@@ -236,24 +229,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsE
     materialTransparent.opacity = 0.6;
   }, [fadeInEnabled, materialOpaque, materialCutout, materialTransparent]);
 
-  const applyFinalMaterialState = () => {
-    fadeActiveRef.current = false;
-
-    materialOpaque.transparent = false;
-    materialOpaque.depthWrite = true;
-    materialOpaque.opacity = 1;
-
-    materialCutout.transparent = false;
-    materialCutout.depthWrite = true;
-    materialCutout.opacity = 1;
-
-    materialTransparent.transparent = true;
-    materialTransparent.depthWrite = false;
-    materialTransparent.opacity = 0.6;
-  };
-
   useEffect(() => {
-    // Subscribe to Mesh updates from the new Streaming system
+    // Subscribe to mesh updates from the streaming world manager.
     const unsubscribe = worldManager.subscribeMesh(cx, cz, (data) => {
         if (!data) {
           // If already fading out (via prop or previous null), just ignore
@@ -369,7 +346,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, detailLevel, shadowsE
         fadeOutActiveRef.current = false;
         hasRenderedMeshRef.current = false;
     };
-        }, [cx, cz, fadeInEnabled, materialOpaque, materialCutout, materialTransparent]);
+        }, [cx, cz, fadeInEnabled, materialOpaque, materialCutout, materialTransparent, applyFinalMaterialState]);
 
   useFrame(() => {
     if (!fadeInEnabled) return;
@@ -427,7 +404,6 @@ export const ChunkMesh = React.memo(
     (prev, next) =>
         prev.cx === next.cx &&
         prev.cz === next.cz &&
-        prev.detailLevel === next.detailLevel &&
         prev.shadowsEnabled === next.shadowsEnabled &&
         prev.fadeInEnabled === next.fadeInEnabled &&
         prev.fadingOut === next.fadingOut

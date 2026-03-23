@@ -1,55 +1,59 @@
-
 # Sound Assets Guide
 
-This project supports OGG Vorbis audio files. 
-Sounds are referenced by keys in `public/assets/rvx/sounds.json`.
+Atlas loads sound event definitions from `public/assets/rvx/sounds.json` and resolves audio files under `public/assets/rvx/sounds/`.
 
 ## Directory Structure
 
-Place your audio files in subdirectories matching the paths in `sounds.json`.
-Example structure:
+Keep file paths aligned with the relative paths used in `sounds.json`.
 
+Example layout:
+
+```text
 public/assets/rvx/sounds/
-├── ui/
-│   ├── click.ogg
-│   ├── chestopen.ogg
-│   └── chestclosed.ogg
-├── music/
-│   ├── menu/
-│   │   └── any-name-here.ogg
-│   ├── creative/
-│   │   └── any-name-here.ogg
-│   ├── plains/
-│   │   └── any-name-here.ogg
-│   └── ...
-├── blocks/
-│   ├── step/
-│   │   ├── grass1.ogg
-│   │   ├── stone1.ogg
-│   │   └── wood1.ogg
-│   ├── dig/
-│   │   ├── grass1.ogg
-│   │   └── ...
-├── player/
-│   ├── hurt.ogg
-│   └── ...
-└── random/
-    ├── pop.ogg
-    └── ...
+  ui/
+    click.ogg
+    hover.ogg
+    slider.ogg
+  random/
+    chestopen.ogg
+    chestclosed.ogg
+    pop.ogg
+  step/
+    grass1.ogg
+    stone1.ogg
+    wood1.ogg
+  dig/
+    grass1.ogg
+    stone1.ogg
+  liquid/
+    swim1.ogg
+    lavapop.ogg
+  music/
+    menu/
+      any-name-here.ogg
+    plains/
+      any-name-here.ogg
+    caves/
+      any-name-here.ogg
+```
 
-## Fallback
+## Missing File Fallback
 
-If a file is missing or empty, the engine uses a built-in procedural synthesis to generate a placeholder sound (like a click or pop) so the game doesn't crash or go silent.
+If a non-music sound file is missing or empty, the engine can synthesize a small fallback effect so the game does not go silent. Music does not use that fallback path; missing music stays silent until a real track is available.
 
-## Adding New Sounds
+## Adding Sound Effects
 
-1. Add your .ogg file to the `sounds/` folder.
-2. Edit `public/assets/rvx/sounds.json` (or let the default manifest handle it if you match the default paths).
-3. If adding a new category (e.g. "music"), just specify `"category": "music"` in the JSON definition. The game engine automatically creates a new volume slider for it in the Options menu.
+1. Add your audio file under `public/assets/rvx/sounds/`.
+2. Reference it from `public/assets/rvx/sounds.json` by relative path without the extension.
+3. Use an existing category if you want it exposed through the current options menu sliders: `master`, `music`, `ambient`, `blocks`, `player`, `ui`, `hostile`, or `neutral`.
 
-## Music Folder Auto-Discovery
+If you add a brand-new category name, the audio runtime can create a bus for it, but the options menu slider list is still hard-coded. Add UI support in `src/components/ui/PauseMenu.tsx` if you want the category to have a visible slider.
 
-- Music is discovered from folders under `public/assets/rvx/sounds/music/`.
-- Event keys map to folders by name (for example `music.plains` -> `music/plains/`, `music.creative` -> `music/creative/`).
-- File names are ignored for selection; any `.ogg` file in the folder can be chosen at random.
-- You can add unlimited tracks by dropping files into the folder. No music file list needs to be maintained in `sounds.json`.
+## Music Discovery
+
+- Music events use `music.<folder>` keys in `public/assets/rvx/sounds.json`.
+- Electron scans subfolders under `public/assets/rvx/sounds/music/` at runtime.
+- The web build falls back to `public/assets/rvx/sounds/music-index.json`.
+- Adding tracks to an existing folder is enough for Electron.
+- For browser playback, keep `music-index.json` in sync with any tracks you want discoverable.
+- If you add a new music folder or event, update both `sounds.json` and `music-index.json`.
