@@ -81,7 +81,7 @@ const SPLASHES = [
     "Moon phase meta incoming.", "Panorama settings perfectionist.", "World Editor remembers.",
     "Feature Editor arc begins soon.", "Biome hunting hours!", "Debug screen jumpscare!", "Soundtrack swap approved.",
     "Blood moon arc loading...", "Chunkbase called. Again.",
-    "§4§lC§c§lo§6§ll§e§lo§a§lr§2§lm§b§la§9§lt§d§li§5§lc§r!", "Also try Hytale!", "Does anyone call it x.com?"
+    "§4§lC§c§lo§6§ll§e§lo§a§lr§2§lm§b§la§9§lt§d§li§5§lc§r!", "Also try Hytale!", "Does anyone call it x.com?", "Don't forget to do your taxes!"
 ];
 
 const ULTRA_RARE_SPLASHES = [
