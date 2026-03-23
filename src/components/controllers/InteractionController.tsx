@@ -1,11 +1,18 @@
 
 import { useRef, useEffect, useCallback, useMemo } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
-import { BlockType } from '../../types';
-import { eatFood, EXHAUSTION_COSTS } from '../../systems/player/playerFood';
+import {
+    type BreakingVisual,
+    type GameMode,
+    type OpenContainerState,
+    BlockType,
+    ItemStack,
+} from '../../types';
+import { eatFood, EXHAUSTION_COSTS, type FoodState } from '../../systems/player/playerFood';
 import { inputState } from '../../systems/player/playerInput';
 import { 
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, 
@@ -16,10 +23,27 @@ import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 
+interface InteractionControllerProps {
+    isLocked: boolean;
+    selectedSlot: number;
+    inventory: (ItemStack | null)[];
+    consumeItem: (slot: number) => void;
+    spawnDrop: (type: BlockType, x: number, y: number, z: number) => void;
+    setBreakingVisual: Dispatch<SetStateAction<BreakingVisual | null>>;
+    setOpenContainer: (value: OpenContainerState) => void;
+    openContainer: OpenContainerState;
+    gameMode: GameMode;
+    setInventory: Dispatch<SetStateAction<(ItemStack | null)[]>>;
+    isDead: boolean;
+    foodStateRef: MutableRefObject<FoodState>;
+    setIsSleeping: Dispatch<SetStateAction<boolean>>;
+    onSleepInBed?: (x: number, y: number, z: number) => void;
+}
+
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
-}: any) => {
+}: InteractionControllerProps) => {
     const { camera, scene } = useThree();
     const raycaster = useRef(new THREE.Raycaster());
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
@@ -102,7 +126,7 @@ export const InteractionController = ({
                 
                 const newItem = { type: pickedType, count: 1 };
                 
-                setInventory((prev: any[]) => {
+                setInventory((prev) => {
                     const next = [...prev];
                     const existingIdx = next.findIndex(it => it && it.type === pickedType);
                     
@@ -303,7 +327,7 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, scene, consumeItem, gameMode, isDead, setOpenContainer, setIsSleeping]);
+    }, [camera, scene, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => { 

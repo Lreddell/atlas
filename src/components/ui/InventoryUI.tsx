@@ -1,22 +1,48 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ItemStack, BlockType, CreativeTab, BlockDef } from '../../types';
+import {
+    type DragTargetSlot,
+    type InventoryAction,
+    type InventoryActionHandler,
+    type OpenContainer,
+    type OpenContainerState,
+    ItemStack,
+    BlockType,
+    CreativeTab,
+    BlockDef,
+} from '../../types';
 import { Slot } from './Slot';
 import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
+import { isEditableElement } from '../../utils/dom';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
-    openContainer: any;
-    setOpenContainer: (val: any) => void;
+    openContainer: OpenContainer;
+    setOpenContainer: (val: OpenContainerState) => void;
     selectedSlot: number;
     craftingGrid2x2: (ItemStack | null)[];
     craftingGrid3x3: (ItemStack | null)[];
     craftingOutput: ItemStack | null;
     cursorStack: ItemStack | null;
     setCursorStack: (stack: ItemStack | null) => void;
-    handleInventoryAction: (action: string, collection: string, index: number, data?: any) => void;
+    handleInventoryAction: InventoryActionHandler;
 }
+
+type SlotCollection = DragTargetSlot['collection'];
+
+const SLOT_COLLECTIONS = new Set<SlotCollection>([
+    'inventory',
+    'crafting',
+    'output',
+    'creative',
+    'chest',
+    'furnace_input',
+    'furnace_fuel',
+    'furnace_output',
+]);
+
+const isSlotCollection = (value: string): value is SlotCollection => SLOT_COLLECTIONS.has(value as SlotCollection);
 
 const CREATIVE_TABS: { id: CreativeTab, name: string, icon: BlockType }[] = [
     { id: 'building', name: 'Building', icon: BlockType.BRICK },
@@ -77,7 +103,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, x: number, y: number} | null>(null);
     const [activeTab, setActiveTab] = useState<CreativeTab>('building');
-    const [hoveredSlot, setHoveredSlot] = useState<{ collection: string, index: number } | null>(null);
+    const [hoveredSlot, setHoveredSlot] = useState<DragTargetSlot | null>(null);
     
     const [isDragging, setIsDragging] = useState(false);
     const [dragMode, setDragMode] = useState<'split' | 'one' | 'shift' | null>(null);
@@ -128,6 +154,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
+            if (isEditableElement(e.target)) return;
             if (!hoveredSlot) return;
 
             if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
@@ -165,7 +192,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         ? Math.min(1, Math.max(0, furnaceData.cookTime / furnaceData.maxCookTime))
         : 0;
 
-    const getSlotKey = (collection: string, index: number) => `${collection}-${index}`;
+    const getSlotKey = (collection: SlotCollection, index: number) => `${collection}-${index}`;
 
     const calculateDragDistribution = () => {
         if (!startDragStack || dragSlots.size === 0 || !dragMode) {
@@ -174,9 +201,10 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         
         const distribution: Record<string, number> = {};
         let remainder = startDragStack.count;
-        const targets = Array.from(dragSlots).map((k: string) => {
+        const targets: DragTargetSlot[] = Array.from(dragSlots).flatMap((k: string) => {
             const [c, i] = k.split('-');
-            return { collection: c, index: parseInt(i) };
+            if (!isSlotCollection(c)) return [];
+            return [{ collection: c, index: parseInt(i, 10) }];
         });
 
         if (dragMode === 'one') {
@@ -203,7 +231,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     const dragDist = calculateDragDistribution();
 
-    const handleSlotMouseDown = (collection: string, index: number, e: React.MouseEvent) => {
+    const handleSlotMouseDown = (collection: SlotCollection, index: number, e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
 
@@ -240,7 +268,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         }
         lastClickRef.current = { time: now, key: key };
 
-        let action = 'click';
+        let action: InventoryAction = 'click';
         if (e.type === 'contextmenu' || e.button === 2) action = 'right_click';
         if (e.type === 'auxclick' && e.button === 1) action = 'middle_click';
         if (e.shiftKey && action === 'click') action = 'shift_click';
@@ -253,7 +281,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         }
     };
 
-    const tryAddDragSlot = (collection: string, index: number, item: ItemStack | null) => {
+    const tryAddDragSlot = (collection: SlotCollection, index: number, item: ItemStack | null) => {
         if (!isDragging) return;
         
         const key = getSlotKey(collection, index);
@@ -280,7 +308,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         }
     };
 
-    const handleSlotEnter = (collection: string, index: number, item: ItemStack | null, e: React.MouseEvent) => {
+    const handleSlotEnter = (collection: SlotCollection, index: number, item: ItemStack | null, e: React.MouseEvent) => {
         setHoveredSlot({ collection, index });
         tryAddDragSlot(collection, index, item);
 
@@ -295,13 +323,14 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const handleMouseUp = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (isDragging) {
-            if (startDragStack && dragMode !== 'shift') {
-                const targets = Array.from(dragSlots).map((k: string) => {
+            if (startDragStack && (dragMode === 'split' || dragMode === 'one')) {
+                const targets: DragTargetSlot[] = Array.from(dragSlots).flatMap((k: string) => {
                     const [c, i] = k.split('-');
-                    return { collection: c, index: parseInt(i) };
+                    if (!isSlotCollection(c)) return [];
+                    return [{ collection: c, index: parseInt(i, 10) }];
                 });
                 
-                handleInventoryAction('drag_end', '', 0, { 
+                handleInventoryAction('drag_end', 'none', 0, {
                     mode: dragMode, 
                     slots: targets, 
                     startStack: startDragStack 
@@ -334,7 +363,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 if (slotEl) {
                     const collection = slotEl.getAttribute('data-slot-collection');
                     const index = parseInt(slotEl.getAttribute('data-slot-index') || '-1');
-                    if (collection && index >= 0) {
+                    if (collection && isSlotCollection(collection) && index >= 0) {
                         let item: ItemStack | null = null;
                         if (collection === 'inventory') item = inventory[index];
                         else if (collection === 'crafting') item = (openContainer?.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2)[index];
@@ -360,11 +389,11 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         }
         e.stopPropagation();
         if (cursorStack) {
-            handleInventoryAction('drop_cursor', '', -1);
+            handleInventoryAction('drop_cursor', 'none', -1);
         }
     };
 
-    const renderSlot = (item: ItemStack | null, collection: string, index: number, size: 'large' | 'small' = 'large') => {
+    const renderSlot = (item: ItemStack | null, collection: SlotCollection, index: number, size: 'large' | 'small' = 'large') => {
         let displayItem = item;
         const key = getSlotKey(collection, index);
         const dragAmount = dragDist.distribution[key];

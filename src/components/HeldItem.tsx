@@ -7,7 +7,7 @@ import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
 import { worldManager } from '../systems/WorldManager';
-import { globalSunlightValue } from './ChunkMesh';
+import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
 interface HeldItemProps {

@@ -1,5 +1,35 @@
-// A simple implementation of various noise functions
-// For a real production app, use 'simplex-noise' library.
+// Noise implementations used by terrain and biome generation.
+
+const OPEN_SIMPLEX_2D_SKEW = 0.366025403784439;
+const OPEN_SIMPLEX_2D_UNSKEW = -0.21132486540518713;
+const OPEN_SIMPLEX_2D_RADIUS = 0.5;
+const OPEN_SIMPLEX_2D_NORMALIZER = 0.01001634121365712;
+const OPEN_SIMPLEX_2D_GRADIENTS = [
+  [0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER, 0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER, 0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER, -0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER, -0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER, -0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER, -0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER, 0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.38268343236509 / OPEN_SIMPLEX_2D_NORMALIZER, 0.923879532511287 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER, 0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER, 0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER, 0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER, 0.130526192220051 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER, -0.130526192220051 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER, -0.60876142900872 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER, -0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER, -0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER, -0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER, -0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER, -0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER, -0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER, 0.130526192220051 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER, 0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.608761429008721 / OPEN_SIMPLEX_2D_NORMALIZER, 0.793353340291235 / OPEN_SIMPLEX_2D_NORMALIZER],
+  [-0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER, 0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER],
+] as const;
 
 export class SimpleNoise {
   private p: number[] = [];
@@ -140,53 +170,71 @@ export class SimpleNoise {
       return (1.0 - minDist) * 2.0 - 1.0;
   }
 
-  // --- Simplex 2D (Approximation) ---
-  simplex2D(xin: number, yin: number) {
-      const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
-      const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
-      let s = (xin + yin) * F2;
-      let i = Math.floor(xin + s);
-      let j = Math.floor(yin + s);
-      let t = (i + j) * G2;
-      let X0 = i - t;
-      let Y0 = j - t;
-      let x0 = xin - X0;
-      let y0 = yin - Y0;
-      let i1, j1;
-      if (x0 > y0) { i1=1; j1=0; } else { i1=0; j1=1; }
-      let x1 = x0 - i1 + G2;
-      let y1 = y0 - j1 + G2;
-      let x2 = x0 - 1.0 + 2.0 * G2;
-      let y2 = y0 - 1.0 + 2.0 * G2;
-      let ii = i & 255;
-      let jj = j & 255;
-      let gi0 = this.p[ii + this.p[jj]] % 12;
-      let gi1 = this.p[ii + i1 + this.p[jj + j1]] % 12;
-      let gi2 = this.p[ii + 1 + this.p[jj + 1]] % 12;
-      let n0, n1, n2;
-      let t0 = 0.5 - x0*x0 - y0*y0;
-      if (t0 < 0) n0 = 0.0;
-      else {
-          t0 *= t0;
-          n0 = t0 * t0 * this.dot2(this.grad3[gi0], x0, y0);
-      }
-      let t1 = 0.5 - x1*x1 - y1*y1;
-      if (t1 < 0) n1 = 0.0;
-      else {
-          t1 *= t1;
-          n1 = t1 * t1 * this.dot2(this.grad3[gi1], x1, y1);
-      }
-      let t2 = 0.5 - x2*x2 - y2*y2;
-      if (t2 < 0) n2 = 0.0;
-      else {
-          t2 *= t2;
-          n2 = t2 * t2 * this.dot2(this.grad3[gi2], x2, y2);
-      }
-      return 70.0 * (n0 + n1 + n2);
+  // --- OpenSimplex2(F) 2D ---
+  openSimplex2D(x: number, y: number): number {
+      const s = OPEN_SIMPLEX_2D_SKEW * (x + y);
+      return this.openSimplex2UnskewedBase(x + s, y + s);
   }
 
-  private grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
-  private dot2(g: number[], x: number, y: number) { return g[0]*x + g[1]*y; }
+  // Backward-compatible alias kept for older call sites.
+  simplex2D(x: number, y: number): number {
+      return this.openSimplex2D(x, y);
+  }
+
+  private openSimplex2UnskewedBase(xs: number, ys: number): number {
+      const xsb = Math.floor(xs);
+      const ysb = Math.floor(ys);
+      const xi = xs - xsb;
+      const yi = ys - ysb;
+
+      const t = (xi + yi) * OPEN_SIMPLEX_2D_UNSKEW;
+      const dx0 = xi + t;
+      const dy0 = yi + t;
+
+      let value = 0;
+
+      const a0 = OPEN_SIMPLEX_2D_RADIUS - dx0 * dx0 - dy0 * dy0;
+      if (a0 > 0) {
+          const a0Squared = a0 * a0;
+          value += a0Squared * a0Squared * this.openSimplex2Gradient(xsb, ysb, dx0, dy0);
+      }
+
+      const a1 =
+          (2 * (1 + 2 * OPEN_SIMPLEX_2D_UNSKEW) * (1 / OPEN_SIMPLEX_2D_UNSKEW + 2)) * t
+          + (-2 * (1 + 2 * OPEN_SIMPLEX_2D_UNSKEW) * (1 + 2 * OPEN_SIMPLEX_2D_UNSKEW) + a0);
+      if (a1 > 0) {
+          const dx1 = dx0 - (1 + 2 * OPEN_SIMPLEX_2D_UNSKEW);
+          const dy1 = dy0 - (1 + 2 * OPEN_SIMPLEX_2D_UNSKEW);
+          const a1Squared = a1 * a1;
+          value += a1Squared * a1Squared * this.openSimplex2Gradient(xsb + 1, ysb + 1, dx1, dy1);
+      }
+
+      if (dy0 > dx0) {
+          const dx2 = dx0 - OPEN_SIMPLEX_2D_UNSKEW;
+          const dy2 = dy0 - (OPEN_SIMPLEX_2D_UNSKEW + 1);
+          const a2 = OPEN_SIMPLEX_2D_RADIUS - dx2 * dx2 - dy2 * dy2;
+          if (a2 > 0) {
+              const a2Squared = a2 * a2;
+              value += a2Squared * a2Squared * this.openSimplex2Gradient(xsb, ysb + 1, dx2, dy2);
+          }
+      } else {
+          const dx2 = dx0 - (OPEN_SIMPLEX_2D_UNSKEW + 1);
+          const dy2 = dy0 - OPEN_SIMPLEX_2D_UNSKEW;
+          const a2 = OPEN_SIMPLEX_2D_RADIUS - dx2 * dx2 - dy2 * dy2;
+          if (a2 > 0) {
+              const a2Squared = a2 * a2;
+              value += a2Squared * a2Squared * this.openSimplex2Gradient(xsb + 1, ysb, dx2, dy2);
+          }
+      }
+
+      return value;
+  }
+
+  private openSimplex2Gradient(xsb: number, ysb: number, dx: number, dy: number): number {
+      const hash = this.perm[(this.perm[xsb & 255] + ysb) & 255];
+      const gradient = OPEN_SIMPLEX_2D_GRADIENTS[hash % OPEN_SIMPLEX_2D_GRADIENTS.length];
+      return gradient[0] * dx + gradient[1] * dy;
+  }
 }
 
 /**

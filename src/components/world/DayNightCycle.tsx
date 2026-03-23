@@ -1,11 +1,11 @@
 
-import { useRef, useState, useMemo, useImperativeHandle, forwardRef, useEffect } from 'react';
+import { useRef, useState, useMemo, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHUNK_SIZE } from '../../constants';
 import { createSunTexture, createMoonPhaseTexture, createGlowTexture } from '../../utils/textures';
-import { updateChunkMaterials } from '../ChunkMesh';
-import { updateCloudColor } from './Clouds';
+import { updateChunkMaterials } from '../chunkLightingState';
+import { updateCloudColor } from './cloudState';
 import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
@@ -218,7 +218,35 @@ const ShootingStar = ({ dayFactor, isPaused, isBloodMoon }: { dayFactor: number,
     const startPos = useRef(new THREE.Vector3());
     const endPos = useRef(new THREE.Vector3());
 
-    const spawnStar = () => {
+    // Custom shader for the trail
+    const material = useMemo(() => new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: new THREE.Color('#d4f1f9') }, uOpacity: { value: 1.0 } },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 uColor;
+            uniform float uOpacity;
+            varying vec2 vUv;
+            void main() {
+                // Horizontal gradient for trail (tail at x=0, head at x=1)
+                // pow(vUv.x, 3.0) makes the tail fade out gracefully
+                float alpha = pow(vUv.x, 4.0) * uOpacity; 
+                gl_FragColor = vec4(uColor, alpha);
+            }
+        `,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide
+    }), []);
+
+    const spawnStar = useCallback(() => {
         setActive(true);
         progress.current = 0;
 
@@ -257,7 +285,7 @@ const ShootingStar = ({ dayFactor, isPaused, isBloodMoon }: { dayFactor: number,
             groupRef.current.lookAt(endPos.current);
             groupRef.current.visible = true;
         }
-    };
+    }, [isBloodMoon, material]);
 
     useEffect(() => {
         const onSpawn = () => {
@@ -267,35 +295,7 @@ const ShootingStar = ({ dayFactor, isPaused, isBloodMoon }: { dayFactor: number,
 
         window.addEventListener('atlas:shootingstar:spawn', onSpawn);
         return () => window.removeEventListener('atlas:shootingstar:spawn', onSpawn);
-    }, [isPaused, isBloodMoon]);
-
-    // Custom shader for the trail
-    const material = useMemo(() => new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color('#d4f1f9') }, uOpacity: { value: 1.0 } },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform vec3 uColor;
-            uniform float uOpacity;
-            varying vec2 vUv;
-            void main() {
-                // Horizontal gradient for trail (tail at x=0, head at x=1)
-                // pow(vUv.x, 3.0) makes the tail fade out gracefully
-                float alpha = pow(vUv.x, 4.0) * uOpacity; 
-                gl_FragColor = vec4(uColor, alpha);
-            }
-        `,
-        transparent: true,
-        depthWrite: false,
-        depthTest: true,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide
-    }), []);
+    }, [isPaused, isBloodMoon, spawnStar]);
 
     useFrame((_, delta) => {
         if (isPaused) return;

@@ -1,6 +1,7 @@
 
 import React from 'react';
 import * as THREE from 'three';
+import { MenuButton } from './mainMenu/MainMenuControls';
 
 interface ErrorOverlayProps {
     error: string;
@@ -18,11 +19,8 @@ export const ErrorOverlay: React.FC<ErrorOverlayProps> = ({ error, playerPos }) 
                 Last Known Position: {playerPos.x.toFixed(2)}, {playerPos.y.toFixed(2)}, {playerPos.z.toFixed(2)}
             </div>
         )}
-        <button 
-            className="mt-8 px-6 py-2 bg-white text-black font-bold rounded hover:bg-gray-200"
-            onClick={() => window.location.reload()}
-        >
-            Reload Application
-        </button>
+        <div className="mt-8">
+            <MenuButton label="Reload Application" onClick={() => window.location.reload()} width="w-[260px]" />
+        </div>
     </div>
 );

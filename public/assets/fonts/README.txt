@@ -1,11 +1,11 @@
-Place `Monocraft.ttf` in this folder to bundle the font with Atlas.
+Atlas bundles Monocraft from the `Monocraft-ttf/` directory in this folder.
 
-Expected path:
-`public/assets/fonts/Monocraft.ttf`
+Primary file:
+`public/assets/fonts/Monocraft-ttf/Monocraft.ttf`
 
-The app will try sources in this order:
-1. A locally installed system font named `Monocraft`
-2. This bundled file
-3. The jsDelivr fallback URL in `index.html`
+Additional weights:
+`public/assets/fonts/Monocraft-ttf/weights/`
 
-After adding the file, restart the dev server or rebuild the Electron app.
+`index.html` loads these local files through `@font-face` declarations. There is no CDN fallback for Monocraft in the current app shell.
+
+If you replace the bundled font files, keep the same paths or update the `@font-face` entries in `index.html` to match.

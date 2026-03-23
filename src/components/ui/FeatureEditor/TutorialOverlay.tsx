@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface TutorialStep {
     targetId: string;
@@ -20,7 +20,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ steps, current
     const step = steps[currentStep];
     const requestRef = useRef<number | null>(null);
 
-    const updateRect = () => {
+    const updateRect = useCallback(() => {
         const el = document.getElementById(step.targetId);
         if (el) {
             setRect(el.getBoundingClientRect());
@@ -29,14 +29,14 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ steps, current
             onNext();
         }
         requestRef.current = requestAnimationFrame(updateRect);
-    };
+    }, [onNext, step.targetId]);
 
     useEffect(() => {
         requestRef.current = requestAnimationFrame(updateRect);
         return () => {
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
         };
-    }, [currentStep, step.targetId]);
+    }, [currentStep, step.targetId, updateRect]);
 
     if (!rect) return null;
 

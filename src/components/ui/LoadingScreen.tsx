@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { getDirtBackground } from '../../utils/textures';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 
-// World loading tips — add more entries here to expand the tip pool!
+// World loading tips. Add more entries here to expand the tip pool.
 const LOADING_TIPS = [
     "Press E to open your inventory. Atlas includes both 2x2 and 3x3 crafting.",
     "Use the mouse wheel or number keys 1-9 to switch hotbar slots instantly.",
@@ -43,7 +43,7 @@ const LOADING_TIPS = [
     "Dead bushes can drop sticks, which makes dry biomes useful for quick starter tools.",
     "Grass plants have a chance to drop wheat seeds when broken.",
     "Leaves can drop saplings, sticks, and sometimes apples depending on the tree type.",
-    "This game's first version were made in Google AI Studio. Crazy, right?",
+    "The first version of this game was made in Google AI Studio. Crazy, right?",
     "Atlas is open source! Check out the GitHub repo at github.com/Lreddell/atlas.",
     "The world editor supports custom terrain generation, so you can create your own unique presets and share them with friends!",
 ];
@@ -180,7 +180,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 />
             )}
 
-            {/* Panel — mirrors the PauseMenu overlay panel exactly */}
+            {/* Panel styling matches the pause-menu overlay treatment. */}
             <div className="relative flex flex-col items-center">
                 <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />
                 <div className="relative z-10 flex flex-col items-center gap-5 py-8 px-10 w-[440px]">

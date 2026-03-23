@@ -28,10 +28,11 @@ import { LoadingScreen } from './components/ui/LoadingScreen';
 import { MenuPanoramaBackground } from './components/ui/MenuPanoramaBackground';
 import { CameraControls, CameraControlsHandle } from './components/CameraControls';
 import { AudioListenerUpdater } from './components/AudioListenerUpdater';
-import { shouldUseCaveMusic } from './components/AudioListenerUpdater';
+import { shouldUseCaveMusic } from './systems/sound/caveMusic';
 import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
+import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
 import { WorldStorage } from './systems/world/WorldStorage';
@@ -39,7 +40,14 @@ import { getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH } from './systems/player/playerConstants';
-import { BlockType, ItemStack, Drop } from './types';
+import {
+  type BreakingVisual,
+  type GameMode,
+  type OpenContainerState,
+  BlockType,
+  ItemStack,
+  Drop,
+} from './types';
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
@@ -51,10 +59,10 @@ import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
+import type { WorldGenConfigSnapshot } from './systems/world/worldGenPresets';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
-type ChunkDetailLevel = 'full';
-type RenderedChunk = { cx: number; cz: number; detailLevel: ChunkDetailLevel };
+type RenderedChunk = { cx: number; cz: number };
 
 const MENU_BACKGROUND_MODE_KEY = 'atlas.menu.backgroundMode';
 const MENU_PANORAMA_PATH_KEY = 'atlas.menu.panoramaPath';
@@ -208,7 +216,7 @@ const App: React.FC = () => {
   const [hunger, setHunger] = useState(20);
   const [saturation, setSaturation] = useState(5);
   const [breath, setBreath] = useState(MAX_BREATH);
-  const [gameMode, setGameMode] = useState<'survival' | 'creative' | 'spectator'>('survival');
+  const [gameMode, setGameMode] = useState<GameMode>('survival');
   const [headBlockType, setHeadBlockType] = useState<BlockType>(BlockType.AIR);
   const [isOnFire, setIsOnFire] = useState(false);
   const [respawnKey, setRespawnKey] = useState(0);
@@ -223,7 +231,7 @@ const App: React.FC = () => {
 
     const [, setAmbientIntensity] = useState(0.6);
     const [, setDirectionalIntensity] = useState(0.8);
-  const [breakingVisual, setBreakingVisual] = useState<any>(null);
+  const [breakingVisual, setBreakingVisual] = useState<BreakingVisual | null>(null);
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
@@ -232,7 +240,7 @@ const App: React.FC = () => {
   const [showCommandInput, setShowCommandInput] = useState(false);
   const [commandValue, setCommandValue] = useState('');
   
-    const [workersEnabled, setWorkersEnabled] = useState(() => readBooleanSetting(SETTINGS_WORKERS_ENABLED_KEY, WORKERS_ENABLED));
+    const [workersEnabled] = useState(() => readBooleanSetting(SETTINGS_WORKERS_ENABLED_KEY, WORKERS_ENABLED));
     const [shadowsEnabled, setShadowsEnabled] = useState(() => readBooleanSetting(SETTINGS_SHADOWS_ENABLED_KEY, false));
     const [cloudsEnabled, setCloudsEnabled] = useState(() => readBooleanSetting(SETTINGS_CLOUDS_ENABLED_KEY, true));
     const [mipmapsEnabled, setMipmapsEnabled] = useState(() => readBooleanSetting(SETTINGS_MIPMAPS_ENABLED_KEY, true));
@@ -287,7 +295,7 @@ const App: React.FC = () => {
     const webPanoramaObjectUrlRef = useRef<string | null>(null);
 
   const activeWorldIdRef = useRef<string | null>(null); // Track active world ID for auto-save
-  const activeWorldGenConfigRef = useRef<any>(null); // Store active world's GenConfig to restore after World Editor
+  const activeWorldGenConfigRef = useRef<WorldGenConfigSnapshot | null>(null); // Store active world's GenConfig to restore after World Editor
     const keyboardLockActiveRef = useRef(false);
 
   const isNativeLoop = vsync;
@@ -315,14 +323,7 @@ const App: React.FC = () => {
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
   const renderedChunks = useMemo<RenderedChunk[]>(() => {
       if (chunks.length === 0) return [];
-
-      const next: RenderedChunk[] = [];
-      for (const chunk of chunks) {
-          const detailLevel: ChunkDetailLevel = 'full';
-          next.push({ ...chunk, detailLevel });
-      }
-
-      return next;
+      return chunks.map((chunk) => ({ ...chunk }));
   }, [chunks]);
 
   // ── Chunk fade-out tracking ──
@@ -334,6 +335,7 @@ const App: React.FC = () => {
   const [fadingVersion, setFadingVersion] = useState(0);
 
   const allDisplayedChunks = useMemo(() => {
+      void fadingVersion;
       const currentKeys = new Set(renderedChunks.map(c => `${c.cx},${c.cz}`));
 
       // Detect newly departed chunks
@@ -711,10 +713,13 @@ const App: React.FC = () => {
             setCursorStack(null);
             setCraftingGrid2x2(Array(4).fill(null));
             setCraftingGrid3x3(Array(9).fill(null));
-            if (openContainer) closeInventory();
+            if (openContainer) {
+                setOpenContainer(null);
+                isInventoryOpenRef.current = false;
+            }
         }
     }
-  }, [health]); 
+  }, [health, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]); 
 
   useEffect(() => {
       const unsubscribe = worldManager.subscribeToMessages((msg, type, clickAction) => {
@@ -778,7 +783,7 @@ const App: React.FC = () => {
         }
         return next;
     });
-  }, [gameMode]);
+  }, [gameMode, setInventory]);
 
   const requestPointerLockNow = useCallback(() => {
       lockRequestInFlightRef.current = true;
@@ -849,7 +854,7 @@ const App: React.FC = () => {
       wantsGameplayRef.current = true;
       relockWantedRef.current = true;
       requestPointerLockBurst(reason, { force: true });
-    }, [requestPointerLockBurst, lockBrowserShortcuts]);
+    }, [requestPointerLockBurst, lockBrowserShortcuts, setOpenContainer]);
 
   const resumeGame = useCallback((opts?: { deferPointerLock?: boolean }) => {
       setOpenContainer(null);
@@ -861,7 +866,7 @@ const App: React.FC = () => {
       relockWantedRef.current = true;
       if (opts?.deferPointerLock) return;
       requestPointerLockBurst('resumeGame', { force: true });
-  }, [requestPointerLockBurst]);
+  }, [requestPointerLockBurst, setOpenContainer]);
 
   const onLock = useCallback(() => { 
       soundManager.resume();
@@ -927,18 +932,18 @@ const App: React.FC = () => {
     setCraftingGrid2x2(Array(4).fill(null)); setCraftingGrid3x3(Array(9).fill(null));
     setCursorStack(null); 
     resumeGame(opts);
-  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame]);
+  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
 
   const openInventory = useCallback(() => {
     soundManager.play("ui.open"); 
     if (gameMode === 'creative') setOpenContainer({ type: 'creative' }); else setOpenContainer({ type: 'inventory' });
     isInventoryOpenRef.current = true; 
     enterUIMode();
-  }, [gameMode, enterUIMode]);
+  }, [gameMode, enterUIMode, setOpenContainer]);
 
-  const logMsg = (text: string, type: 'info' | 'error' | 'success' = 'info', clickAction?: string) => { 
+  const logMsg = useCallback((text: string, type: 'info' | 'error' | 'success' = 'info', clickAction?: string) => { 
       setMessages(prev => [...prev.slice(-19), { id: Date.now() + Math.random(), text: text, type, timestamp: Date.now(), clickAction }]);
-  };
+  }, []);
 
     const capturePanoramaDataUrl = useCallback(async () => {
       const controls = controlsRef.current;
@@ -1035,7 +1040,7 @@ const App: React.FC = () => {
   }, [fov]);
 
   const captureAndSavePanorama = useCallback(async () => {
-      const desktopApi = (window as any).atlasDesktop;
+      const desktopApi = window.atlasDesktop;
       if (isElectron && !desktopApi?.savePanorama) {
           logMsg('Desktop panorama API is unavailable.', 'error');
           return;
@@ -1051,7 +1056,12 @@ const App: React.FC = () => {
       try {
           const captureResult = await capturePanoramaDataUrl();
           if (isElectron) {
-              const result = await desktopApi.savePanorama({
+              const savePanorama = desktopApi?.savePanorama;
+              if (!savePanorama) {
+                  throw new Error('Desktop panorama API is unavailable.');
+              }
+
+              const result = await savePanorama({
                   dataUrl: captureResult.atlasDataUrl,
                   cubeFaces: captureResult.cubeFaces,
                   suggestedName
@@ -1067,8 +1077,9 @@ const App: React.FC = () => {
                   throw new Error('No file path returned from save dialog.');
               }
 
-              setMenuPanoramaPath(result.filePath);
-              setMenuPanoramaLibrary(prev => prev.includes(result.filePath) ? prev : [result.filePath, ...prev]);
+              const filePath = result.filePath;
+              setMenuPanoramaPath(filePath);
+              setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
               setMenuPanoramaDataUrl(captureResult.atlasDataUrl);
               setMenuBackgroundMode('panorama');
               logMsg('Panorama saved and set as menu background.', 'success');
@@ -1095,12 +1106,13 @@ const App: React.FC = () => {
 
               logMsg('Panorama captured, stored as blob, and downloaded as PNG.', 'success');
           }
-      } catch (error: any) {
-          logMsg(`Panorama capture failed: ${error?.message || String(error)}`, 'error');
+      } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          logMsg(`Panorama capture failed: ${message}`, 'error');
       } finally {
           setIsCapturingPanorama(false);
       }
-  }, [isElectron, isCapturingPanorama, capturePanoramaDataUrl]);
+  }, [isElectron, isCapturingPanorama, capturePanoramaDataUrl, logMsg]);
 
   const setActivePanorama = useCallback((filePath: string) => {
       if (filePath === DEFAULT_PANORAMA_ID) {
@@ -1146,7 +1158,7 @@ const App: React.FC = () => {
           input.click();
           return;
       }
-      const desktopApi = (window as any).atlasDesktop;
+      const desktopApi = window.atlasDesktop;
       if (!desktopApi?.pickPanorama) {
           alert('Desktop panorama picker API is unavailable.');
           return;
@@ -1161,7 +1173,7 @@ const App: React.FC = () => {
       if (!result?.filePath) return;
 
       setActivePanorama(result.filePath);
-  }, [isElectron, setActivePanorama]);
+  }, [isElectron, setActivePanorama, logMsg]);
 
   const deletePanoramaFromDisk = useCallback(async (filePath: string) => {
       if (!isElectron) {
@@ -1175,7 +1187,7 @@ const App: React.FC = () => {
           return;
       }
 
-      const desktopApi = (window as any).atlasDesktop;
+      const desktopApi = window.atlasDesktop;
       if (!desktopApi?.deletePanorama) {
           alert('Desktop delete API is unavailable.');
           return;
@@ -1207,7 +1219,7 @@ const App: React.FC = () => {
       setMenuBackgroundMode('dirt');
   }, [menuBackgroundMode, menuPanoramaDataUrl]);
 
-  const executeCommand = (cmd: string) => {
+  const executeCommand = useCallback((cmd: string) => {
       const parts = cmd.trim().split(' ');
       logMsg(`> ${cmd}`, 'info');
       
@@ -1354,7 +1366,7 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  };
+  }, [commandValue, logMsg, resumeGame]);
 
   const updateAutocomplete = useCallback((input: string) => {
       const parts = input.trim().split(' ');
@@ -1388,6 +1400,8 @@ const App: React.FC = () => {
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const isEditableTarget = isEditableElement(e.target);
+
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
     if (e.code === 'F4') { 
         e.preventDefault(); 
@@ -1404,14 +1418,7 @@ const App: React.FC = () => {
     }
     
     if (showCommandInput) {
-        const target = e.target as HTMLElement | null;
-        const isTextInputTarget = !!target && (
-            target.tagName === 'INPUT' ||
-            target.tagName === 'TEXTAREA' ||
-            target.isContentEditable
-        );
-
-        if (isTextInputTarget && !['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
+        if (isEditableTarget && !['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Escape'].includes(e.key)) {
             return;
         }
 
@@ -1459,6 +1466,7 @@ const App: React.FC = () => {
     }
 
     if (appState !== 'game') return;
+    if (isEditableTarget && e.key !== 'Escape') return;
 
     if (e.code === PANORAMA_CAPTURE_KEY) {
         e.preventDefault();
@@ -1511,7 +1519,7 @@ const App: React.FC = () => {
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, resumeFromUserGesture, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, executeCommand, updateAutocomplete, logMsg]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -1530,7 +1538,7 @@ const App: React.FC = () => {
   // On first launch (no saved panorama), seed the default built-in panorama path
   useEffect(() => {
       if (!isElectron) return;
-      const desktopApi = (window as any).atlasDesktop;
+      const desktopApi = window.atlasDesktop;
       if (!desktopApi?.getDefaultPanoramaPath) return;
       if (window.localStorage.getItem(MENU_PANORAMA_PATH_KEY)) return;
       desktopApi.getDefaultPanoramaPath().then((result: { filePath: string | null }) => {
@@ -1538,7 +1546,6 @@ const App: React.FC = () => {
               setMenuPanoramaPath(result.filePath);
           }
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isElectron]);
 
   useEffect(() => {
@@ -1635,7 +1642,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
       let disposed = false;
-      const desktopApi = (window as any).atlasDesktop;
+      const desktopApi = window.atlasDesktop;
 
       const revokeCurrentWebObjectUrl = () => {
           if (webPanoramaObjectUrlRef.current) {
@@ -1689,6 +1696,7 @@ const App: React.FC = () => {
       if (!desktopApi?.readPanorama) {
           return;
       }
+      const readPanorama = desktopApi.readPanorama;
 
       const normalized = menuPanoramaPath.replace(/\\/g, '/');
       const slash = normalized.lastIndexOf('/');
@@ -1702,8 +1710,8 @@ const App: React.FC = () => {
       (async () => {
           try {
               const [atlasRead, faceReads] = await Promise.all([
-                  desktopApi.readPanorama(menuPanoramaPath),
-                  Promise.all(facePaths.map((facePath) => desktopApi.readPanorama(facePath))).catch(() => null)
+                  readPanorama(menuPanoramaPath),
+                  Promise.all(facePaths.map((facePath) => readPanorama(facePath))).catch(() => null)
               ]);
 
               if (disposed) return;
@@ -1712,8 +1720,8 @@ const App: React.FC = () => {
                   setMenuPanoramaDataUrl(atlasRead.dataUrl);
               }
 
-              if (faceReads && faceReads.every((face: any) => face?.ok && face?.dataUrl)) {
-                  setMenuPanoramaFaceDataUrls(faceReads.map((face: any) => face.dataUrl));
+              if (faceReads && faceReads.every((face) => face?.ok && face?.dataUrl)) {
+                  setMenuPanoramaFaceDataUrls(faceReads.map((face) => face.dataUrl!));
               } else {
                   setMenuPanoramaFaceDataUrls(null);
               }
@@ -1902,7 +1910,7 @@ const App: React.FC = () => {
           musicController.update(true, 'survival', 'plains');
           soundManager.play("ui.click");
       });
-  }, [saveGame]);
+  }, [saveGame, setOpenContainer]);
 
   // --- Start Game with Preloading & Restore ---
   const handleStartGame = useCallback(async (worldId: string) => {
@@ -2011,7 +2019,7 @@ const App: React.FC = () => {
       relockWantedRef.current = true;
       suppressAutoPauseFor(500);
       requestPointerLockBurst('start-game', { force: true });
-    }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance]);
+    }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory]);
 
   useEffect(() => {
       if (appState !== 'game') return;
@@ -2026,6 +2034,28 @@ const App: React.FC = () => {
       window.close();
     }
   }, [isElectron]);
+
+  const handleInventoryContainerChange = useCallback((val: OpenContainerState) => {
+      if (val === null) {
+          closeInventory();
+          return;
+      }
+      setOpenContainer(val);
+      isInventoryOpenRef.current = true;
+      enterUIMode();
+  }, [closeInventory, enterUIMode, setOpenContainer]);
+
+  const handleInteractionContainerOpen = useCallback((val: OpenContainerState) => {
+      setOpenContainer(val);
+      isInventoryOpenRef.current = !!val;
+      if (val) {
+          enterUIMode();
+      }
+  }, [enterUIMode, setOpenContainer]);
+
+  const handleSpawnDrop = useCallback((type: BlockType, x: number, y: number, z: number) => {
+      worldManager.spawnDrop(type, x, y, z);
+  }, []);
 
   let overlayColor = 'transparent';
   if (headBlockType === BlockType.WATER) overlayColor = 'rgba(0, 0, 100, 0.4)';
@@ -2181,7 +2211,7 @@ const App: React.FC = () => {
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={(val: any) => { if (val === null) closeInventory(); else { setOpenContainer(val); isInventoryOpenRef.current = !!val; if(val) enterUIMode(); } }} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
+                    {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
                     <Chat 
                         messages={messages} 
                         showInput={showCommandInput} 
@@ -2215,7 +2245,7 @@ const App: React.FC = () => {
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
                 
                 <Suspense fallback={null}>
-                    {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} detailLevel={c.detailLevel} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
+                    {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
@@ -2223,9 +2253,9 @@ const App: React.FC = () => {
 
                 <InteractionController 
                     isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} 
-                    spawnDrop={(t:any,x:any,y:any,z:any) => worldManager.spawnDrop(t, x, y, z)} setBreakingVisual={setBreakingVisual} 
-                    setOpenContainer={(val:any) => { setOpenContainer(val); isInventoryOpenRef.current = !!val; if(val) enterUIMode(); }} 
-                    openContainer={openContainer} gameMode={gameMode} setCursorStack={setCursorStack} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={(x:number, y:number, z:number) => { pendingBedSpawnRef.current = { x, y, z }; }}
+                    spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisual} 
+                    setOpenContainer={handleInteractionContainerOpen} 
+                    openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={(x:number, y:number, z:number) => { pendingBedSpawnRef.current = { x, y, z }; }}
                 />
                 
                 {!isCapturingPanorama && breakingVisual && <group position={[breakingVisual.pos[0]+0.5, breakingVisual.pos[1]+0.5, breakingVisual.pos[2]+0.5]}><mesh><boxGeometry args={[1.01, 1.01, 1.01]} /><meshBasicMaterial color={breakingVisual.noDrop ? '#4b0000' : 'black'} transparent opacity={breakingVisual.progress * 0.7} depthTest={true} depthWrite={false} /></mesh></group>}

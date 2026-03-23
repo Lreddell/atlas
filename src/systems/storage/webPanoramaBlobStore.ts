@@ -24,20 +24,19 @@ function openDatabase(): Promise<IDBDatabase> {
     });
 }
 
-function withStore<T>(mode: IDBTransactionMode, handler: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const db = await openDatabase();
-            const tx = db.transaction(STORE_NAME, mode);
-            const store = tx.objectStore(STORE_NAME);
-            const request = handler(store);
+async function withStore<T>(mode: IDBTransactionMode, handler: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+    const db = await openDatabase();
 
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed.'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed.'));
-        } catch (error) {
-            reject(error);
-        }
+    return new Promise<T>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, mode);
+        const store = tx.objectStore(STORE_NAME);
+        const request = handler(store);
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed.'));
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed.'));
+        tx.oncomplete = () => db.close();
+        tx.onabort = () => db.close();
     });
 }
 

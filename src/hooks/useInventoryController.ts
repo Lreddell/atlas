@@ -1,17 +1,28 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ItemStack, BlockType } from '../types';
+import {
+    type DragEndActionData,
+    type Drop,
+    type GameMode,
+    type InventoryActionData,
+    type InventoryActionHandler,
+    type InventoryCollection,
+    type OpenContainerState,
+    ItemStack,
+    BlockType,
+} from '../types';
 import { BLOCKS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { checkRecipe } from '../recipes';
 import * as THREE from 'three';
 import React from 'react';
+import type { ChestState, FurnaceState } from '../systems/world/worldTypes';
 
 const INVENTORY_SIZE = 36;
 
 interface UseInventoryControllerProps {
-    gameMode: 'survival' | 'creative' | 'spectator';
-    setDrops: React.Dispatch<React.SetStateAction<any[]>>;
+    gameMode: GameMode;
+    setDrops: React.Dispatch<React.SetStateAction<Drop[]>>;
     playerPosRef: React.MutableRefObject<THREE.Vector3>;
     cameraRef: React.MutableRefObject<{ getCamera: () => { pos: THREE.Vector3, dir: THREE.Vector3 } } | null>;
 }
@@ -19,7 +30,7 @@ interface UseInventoryControllerProps {
 export const useInventoryController = ({ gameMode, setDrops, playerPosRef, cameraRef }: UseInventoryControllerProps) => {
     const [inventory, setInventory] = useState<(ItemStack | null)[]>(() => Array(INVENTORY_SIZE).fill(null));
     const [cursorStack, setCursorStack] = useState<ItemStack | null>(null);
-    const [openContainer, setOpenContainer] = useState<any>(null);
+    const [openContainer, setOpenContainer] = useState<OpenContainerState>(null);
     const [craftingGrid2x2, setCraftingGrid2x2] = useState<(ItemStack | null)[]>(Array(4).fill(null));
     const [craftingGrid3x3, setCraftingGrid3x3] = useState<(ItemStack | null)[]>(Array(9).fill(null));
     const [craftingOutput, setCraftingOutput] = useState<ItemStack | null>(null);
@@ -34,7 +45,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
     useEffect(() => { cursorRef.current = cursorStack; }, [cursorStack]);
 
     // Helpers
-    const spawnItemDrop = (item: ItemStack) => {
+    const spawnItemDrop = useCallback((item: ItemStack) => {
         const { pos, dir } = cameraRef.current ? cameraRef.current.getCamera() : { pos: playerPosRef.current, dir: new THREE.Vector3(0,0,1) };
         const spawnPos = pos.clone().add(dir.clone().multiplyScalar(0.5));
         const throwVel = dir.multiplyScalar(8.0).add(new THREE.Vector3(0, 2.0, 0));
@@ -48,16 +59,16 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             createdAt: Date.now(), 
             pickupDelay: Date.now() + 1500
         }]);
-    };
+    }, [cameraRef, playerPosRef, setDrops]);
 
-    const getContainerData = () => {
+    const getContainerData = useCallback((): FurnaceState | ChestState | null => {
         if (!openContainer) return null;
-        if (openContainer.type === 'furnace') return worldManager.getFurnace(openContainer.x, openContainer.y, openContainer.z);
-        if (openContainer.type === 'chest') return worldManager.getChest(openContainer.x, openContainer.y, openContainer.z);
+        if (openContainer.type === 'furnace') return worldManager.getFurnace(openContainer.x, openContainer.y, openContainer.z) ?? null;
+        if (openContainer.type === 'chest') return worldManager.getChest(openContainer.x, openContainer.y, openContainer.z) ?? null;
         return null;
-    };
+    }, [openContainer]);
 
-    const updateSlot = (collection: string, index: number, newItem: ItemStack | null) => {
+    const updateSlot = useCallback((collection: InventoryCollection, index: number, newItem: ItemStack | null) => {
         const cData = getContainerData();
         
         if (collection === 'inventory') {
@@ -69,35 +80,35 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         } else if (collection === 'crafting') {
             (openContainer?.type === 'crafting' ? setCraftingGrid3x3 : setCraftingGrid2x2)(prev => { const n = [...prev]; n[index] = newItem; return n; });
         } else if (openContainer?.type === 'furnace' && cData) {
-            const fData = cData as any;
+            const fData = cData as FurnaceState;
             if (collection === 'furnace_input') fData.input = newItem;
             if (collection === 'furnace_fuel') fData.fuel = newItem;
             if (collection === 'furnace_output') fData.output = newItem;
         } else if (openContainer?.type === 'chest' && cData) {
-            const chData = cData as any;
+            const chData = cData as ChestState;
             chData.items[index] = newItem;
             // Force refresh UI for external containers
             setOpenContainer({ ...openContainer });
         }
-    };
+    }, [getContainerData, openContainer, setCraftingGrid2x2, setCraftingGrid3x3, setInventory, setOpenContainer]);
 
-    const getSlot = (collection: string, index: number): ItemStack | null => {
+    const getSlot = useCallback((collection: InventoryCollection, index: number): ItemStack | null => {
         const cData = getContainerData();
         
         if (collection === 'inventory') return inventoryRef.current[index]; // Use REF for current logic
         if (collection === 'crafting') return (openContainer?.type === 'crafting' ? craftingGrid3x3[index] : craftingGrid2x2[index]);
         if (collection === 'output') return craftingOutput;
         if (openContainer?.type === 'furnace' && cData) {
-            const fData = cData as any;
+            const fData = cData as FurnaceState;
             if (collection === 'furnace_input') return fData.input;
             if (collection === 'furnace_fuel') return fData.fuel;
             if (collection === 'furnace_output') return fData.output;
         }
         if (openContainer?.type === 'chest' && cData) {
-            return (cData as any).items[index];
+            return (cData as ChestState).items[index];
         }
         return null;
-    };
+    }, [craftingGrid2x2, craftingGrid3x3, craftingOutput, getContainerData, openContainer]);
 
     // --- ADD TO INVENTORY (Synchronous) ---
     // Moved here to share the shadow state with other inventory actions
@@ -153,13 +164,13 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         return { ...item, count: rem };
     };
 
-    const handleInventoryAction = useCallback((action: string, collection: string, index: number, data?: any) => {
+    const handleInventoryAction = useCallback<InventoryActionHandler>((action, collection, index, data?: InventoryActionData) => {
         const slotItem = getSlot(collection, index);
 
         // --- CREATIVE PICK ---
         if (collection === 'creative') {
             if (action === 'click' && gameMode === 'creative') {
-                if (data?.creativeItem) {
+                if (data && 'creativeItem' in data) {
                     const newStack = { ...data.creativeItem, count: 64 };
                     cursorRef.current = newStack;
                     setCursorStack(newStack);
@@ -183,7 +194,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             // Check using REF to ensure we don't drop items that are already gone in this event loop
             if (!slotItem) return; 
             
-            const dropAll = data?.dropAll;
+            const dropAll = !!(data && 'dropAll' in data && data.dropAll);
             const count = dropAll ? slotItem.count : 1;
             
             // Optimistic update prevention
@@ -199,7 +210,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         // --- SWAP HOTBAR (Number Keys) ---
         if (action === 'swap_hotbar') {
             if (cursorStack) return; // Don't swap if dragging
-            const hotbarIdx = data?.hotbarIdx;
+            const hotbarIdx = data && 'hotbarIdx' in data ? data.hotbarIdx : undefined;
             if (hotbarIdx === undefined || hotbarIdx < 0 || hotbarIdx > 8) return;
             
             // Prevent swapping with self if in inventory
@@ -256,11 +267,13 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             if (collection === 'inventory') {
                 if (openContainer && openContainer.type !== 'creative') {
                     if (openContainer.type === 'chest') {
-                        const chest = getContainerData() as any;
+                        const chest = getContainerData() as ChestState | null;
+                        if (!chest) return;
                         targetList = [...chest.items];
                         updateTarget = (l) => { chest.items = l; setOpenContainer({...openContainer}); };
                     } else if (openContainer.type === 'furnace') {
-                        const f = getContainerData() as any;
+                        const f = getContainerData() as FurnaceState | null;
+                        if (!f) return;
                         const def = BLOCKS[slotItem.type];
                         if (def.isFuel && !f.fuel) {
                             f.fuel = slotItem; updateSlot(collection, index, null); return;
@@ -308,7 +321,8 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
         // --- DRAG END ---
         if (action === 'drag_end') {
-            const { mode, slots, startStack } = data as { mode: 'split'|'one', slots: {collection:string, index:number}[], startStack: ItemStack };
+            if (!data || !('mode' in data)) return;
+            const { mode, slots, startStack } = data as DragEndActionData;
             
             if (mode === 'one') {
                 let remainder = startStack.count;
@@ -406,9 +420,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             
             // 2. Scan Open Container
             const cData = getContainerData();
-            if (cData && openContainer.type === 'chest') {
-                const chest = cData as any;
-                scanList(chest.items, 'chest', (l) => { chest.items = l; setOpenContainer({...openContainer}); });
+            if (cData && openContainer?.type === 'chest') {
+                const chest = cData as ChestState;
+                const openChest = openContainer;
+                scanList(chest.items, 'chest', (l) => { chest.items = l; setOpenContainer({ ...openChest }); });
             }
 
             if (currentStack.count > 0) {
@@ -501,7 +516,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             }
         }
 
-    }, [inventory, cursorStack, openContainer, craftingGrid2x2, craftingGrid3x3, craftingOutput, gameMode, addToInventory]);
+    }, [cursorStack, openContainer, craftingGrid2x2, craftingGrid3x3, gameMode, getContainerData, getSlot, spawnItemDrop, updateSlot]);
 
     // Recipe Check
     React.useEffect(() => {

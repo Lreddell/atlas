@@ -1,6 +1,15 @@
 
 import * as THREE from 'three';
 import { ATLAS_COLS, getTextureRows } from '../data/blocks';
+import { createPaddedAtlasCanvas, sanitizeCutoutTiles } from './atlasCanvasTools';
+import {
+    CUTOUT_TILE_CONFIGS,
+    drawFoliageFamilyTiles,
+    drawOreFamilyTiles,
+    drawTerracottaTiles,
+    drawWoodFamilyTiles,
+} from './atlasTileFamilies';
+import { openAtlasDebugWindow } from './textureAtlasDebug';
 
 // Constants for UV mapping
 export const ATLAS_RAW_TILE_SIZE = 16;
@@ -239,6 +248,12 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         }
     };
 
+    const tilePainter = { ctx, withTile, fill, noise };
+    drawWoodFamilyTiles(tilePainter);
+    drawFoliageFamilyTiles(tilePainter);
+    drawOreFamilyTiles(tilePainter);
+    drawTerracottaTiles(tilePainter);
+
     // 0: Dirt
     withTile(0, () => { fill('#5d4037'); noise(0.2); });
     
@@ -254,51 +269,11 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // 2: Stone
     withTile(2, () => { fill('#9e9e9e'); noise(0.15); });
 
-    // 4: Leaves
-    withTile(4, () => {
-        // Transparent base for cutout leaves
-        ctx.fillStyle = '#388e3c';
-        for(let py=0; py<16; py++) for(let px=0; px<16; px++) if(Math.random() < 0.85) ctx.fillRect(px, py, 1, 1);
-        noise(0.2);
-    });
-
     // 5: Sand
     withTile(5, () => { fill('#fff9c4'); noise(0.2); });
 
     // 6: Bedrock
     withTile(6, () => { fill('#424242'); noise(0.4); });
-
-    // 7: Log Side
-    withTile(7, () => {
-        fill('#5d4037'); // Medium brown base
-        ctx.fillStyle = '#3e2723'; // Dark brown bark stripes
-        ctx.fillRect(3, 0, 2, 16); ctx.fillRect(11, 0, 2, 16);
-        noise(0.1);
-    });
-
-    // 8: Planks
-    withTile(8, () => {
-        fill('#a1887f'); // Base plank color
-        ctx.fillStyle = '#6d4c41'; // Dark grain/seams
-        ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1);
-        ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1);
-        ctx.fillRect(0, 15, 16, 1);
-        ctx.fillRect(6, 0, 1, 4); ctx.fillRect(12, 5, 1, 3);
-        ctx.fillRect(4, 9, 1, 3); ctx.fillRect(10, 13, 1, 3);
-        noise(0.1);
-    });
-
-    // 27: Spruce Planks
-    withTile(27, () => {
-        fill('#5d4037'); // Darker spruce base
-        ctx.fillStyle = '#4e342e';
-        ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1);
-        ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1);
-        ctx.fillRect(0, 15, 16, 1);
-        ctx.fillRect(6, 0, 1, 4); ctx.fillRect(12, 5, 1, 3);
-        ctx.fillRect(4, 9, 1, 3); ctx.fillRect(10, 13, 1, 3);
-        noise(0.1);
-    });
 
     // 9: Brick
     withTile(9, () => {
@@ -328,43 +303,8 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(3, 3, 1, 2); ctx.fillRect(4, 4, 1, 2); ctx.fillRect(10, 11, 2, 1);
     });
 
-    // 12: Grass Side
-    withTile(12, () => {
-        fill('#5d4037'); // Dirt base
-        ctx.fillStyle = '#66bb6a'; ctx.fillRect(0, 0, 16, 4); 
-        for(let i=0; i<16; i++) ctx.fillRect(i, 4, 1, Math.floor(Math.random()*4));
-        noise(0.1);
-    });
-
-    // 13: Log Top
-    withTile(13, () => {
-        fill('#c9ad88'); noise(0.1);
-        ctx.strokeStyle = '#5d4037'; ctx.strokeRect(2.5, 2.5, 11, 11);
-    });
-
     // 14: Water
     withTile(14, () => { fill('#29b6f6'); noise(0.15); });
-
-    // 15: Coal Ore
-    withTile(15, () => {
-        fill('#9e9e9e'); noise(0.15); 
-        ctx.fillStyle = '#212121'; 
-        [[4,4],[5,4],[4,5],[10,10],[11,10],[10,11],[12,5],[6,12]].forEach(([ox, oy]) => ctx.fillRect(ox, oy, 2, 2));
-    });
-
-    // 16: Iron Ore
-    withTile(16, () => {
-        fill('#9e9e9e'); noise(0.15); 
-        ctx.fillStyle = '#d7ccc8'; 
-        [[3,6],[4,6],[4,5],[8,10],[9,10],[8,11],[12,3],[5,13]].forEach(([ox, oy]) => ctx.fillRect(ox, oy, 2, 2));
-    });
-
-    // 58: Copper Ore
-    withTile(58, () => {
-        fill('#9e9e9e'); noise(0.15); 
-        ctx.fillStyle = '#e67e22'; 
-        [[2,5],[3,6],[3,5],[9,11],[10,11],[9,12],[11,4],[6,13]].forEach(([ox, oy]) => ctx.fillRect(ox, oy, 2, 2));
-    });
 
     // 26: Obsidian
     withTile(26, () => {
@@ -482,27 +422,6 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(72, () => {
         ctx.fillStyle = '#000000'; ctx.fillRect(8, 0, 8, 8); ctx.fillRect(0, 8, 8, 8);
         ctx.fillStyle = '#ff00ff'; ctx.fillRect(0, 0, 8, 8); ctx.fillRect(8, 8, 8, 8);
-    });
-
-    // 23: Spruce Log Side
-    withTile(23, () => {
-        fill('#3e2723'); // Spruce bark base
-        ctx.fillStyle = '#2d1e18'; ctx.fillRect(3, 0, 2, 16); ctx.fillRect(11, 0, 2, 16); noise(0.1);
-    });
-
-    // 24: Spruce Leaves
-    withTile(24, () => {
-        ctx.fillStyle = '#1b5e20'; 
-        for(let py=0; py<16; py++) for(let px=0; px<16; px++) if(Math.random() < 0.85) ctx.fillRect(px, py, 1, 1);
-        noise(0.2);
-    });
-
-    // 25: Snowy Grass Side
-    withTile(25, () => {
-        fill('#5d4037'); // Dirt base
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 16, 4); 
-        for(let i=0; i<16; i++) ctx.fillRect(i, 4, 1, Math.floor(Math.random()*4));
-        noise(0.05);
     });
 
     // 43: Crafting Table Top
@@ -762,37 +681,6 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#2e7d32'; [[8,6],[6,9]].forEach(([px, py]) => ctx.fillRect(px, py, 2, 2));
     });
 
-    // Cherry Log Side
-    withTile(74, () => {
-        fill('#3e1e24'); // Cherry bark base
-        ctx.fillStyle = '#2d1e18'; ctx.fillRect(2, 0, 2, 16); ctx.fillRect(9, 0, 3, 16); noise(0.1);
-    });
-
-    // Cherry Log Top
-    withTile(75, () => {
-        fill('#f8bbd0'); // Light pink wood base
-        ctx.strokeStyle = '#3e1e24'; ctx.strokeRect(2.5, 2.5, 11, 11); noise(0.05);
-    });
-
-    // Cherry Leaves
-    withTile(76, () => {
-        ctx.fillStyle = '#f8bbd0'; 
-        for(let py=0; py<16; py++) for(let px=0; px<16; px++) if(Math.random() < 0.85) ctx.fillRect(px, py, 1, 1);
-        ctx.fillStyle = '#f48fb1'; for(let i=0; i<40; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
-    });
-
-    // Cherry Planks
-    withTile(77, () => {
-        fill('#f48fb1'); // Pink plank base
-        ctx.fillStyle = '#d8a0a8'; 
-        ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1);
-        ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1);
-        ctx.fillRect(0, 15, 16, 1);
-        ctx.fillRect(6, 0, 1, 4); ctx.fillRect(12, 5, 1, 3);
-        ctx.fillRect(4, 9, 1, 3); ctx.fillRect(10, 13, 1, 3);
-        noise(0.05);
-    });
-
     // Red Sand
     withTile(78, () => { fill('#bc6a53'); noise(0.2); });
 
@@ -803,13 +691,6 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#a0522d'; ctx.fillRect(0, 4, 16, 1); ctx.fillRect(0, 11, 16, 1);
         noise(0.1);
     });
-
-    // Terracotta
-    withTile(80, () => { fill('#a1887f'); noise(0.05); });
-    // Yellow Terracotta
-    withTile(81, () => { fill('#fbc02d'); noise(0.05); });
-    // Red Terracotta
-    withTile(82, () => { fill('#8d6e63'); noise(0.05); });
 
     // Basalt Side
     withTile(83, () => {
@@ -838,54 +719,6 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         [[9,7],[8,8],[10,8],[9,9]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
         [[6,10],[5,11],[7,11],[6,12]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
     });
-
-    // Birch Log Side
-    withTile(87, () => {
-        fill('#e3dfd3'); // Cream bark base
-        ctx.fillStyle = '#212121'; 
-        ctx.fillRect(2, 3, 3, 1); ctx.fillRect(10, 7, 4, 1);
-        ctx.fillRect(5, 12, 2, 1); ctx.fillRect(1, 14, 3, 1); ctx.fillRect(12, 2, 2, 1);
-        noise(0.05);
-    });
-
-    // Birch Log Top
-    withTile(88, () => {
-        fill('#e3dfd3');
-        ctx.strokeStyle = '#bdbdbd'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, 14, 14); ctx.lineWidth = 1;
-        noise(0.05);
-    });
-
-    // Birch Leaves
-    withTile(89, () => {
-        ctx.fillStyle = '#81c784'; 
-        for(let py=0; py<16; py++) for(let px=0; px<16; px++) if(Math.random() < 0.85) ctx.fillRect(px, py, 1, 1);
-        noise(0.1);
-    });
-
-    // Birch Planks
-    withTile(90, () => {
-        fill('#f0f4c3'); // Pale wood base
-        ctx.fillStyle = '#d4e157'; 
-        ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1);
-        ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1);
-        ctx.fillRect(0, 15, 16, 1);
-        ctx.fillRect(6, 0, 1, 4); ctx.fillRect(12, 5, 1, 3);
-        ctx.fillRect(4, 9, 1, 3); ctx.fillRect(10, 13, 1, 3);
-        noise(0.05);
-    });
-
-    // Terracottas
-    withTile(91, () => { fill('#d1b1a1'); noise(0.05); });
-    withTile(92, () => { fill('#a05425'); noise(0.05); });
-    withTile(93, () => { fill('#95576c'); noise(0.05); });
-    withTile(94, () => { fill('#876b62'); noise(0.05); });
-    withTile(95, () => { fill('#4d3323'); noise(0.05); });
-
-    // Ores
-    withTile(96, () => { fill('#9e9e9e'); noise(0.15); ctx.fillStyle = '#fdd835'; [[4,4],[5,4],[6,5],[10,10],[11,10],[12,9],[5,12]].forEach(([px, py]) => ctx.fillRect(px, py, 2, 2)); });
-    withTile(97, () => { fill('#9e9e9e'); noise(0.15); ctx.fillStyle = '#00e5ff'; [[5,5],[6,6],[10,8],[11,7],[4,12],[8,3],[12,12]].forEach(([px, py]) => ctx.fillRect(px, py, 2, 2)); });
-    withTile(98, () => { fill('#9e9e9e'); noise(0.15); ctx.fillStyle = '#1a237e'; [[4,6],[5,5],[5,6],[6,5],[10,10],[11,10],[10,11],[11,11],[7,3]].forEach(([px, py]) => ctx.fillRect(px, py, 1, 1)); });
-    withTile(99, () => { fill('#9e9e9e'); noise(0.15); ctx.fillStyle = '#00e676'; [[5,5],[10,9],[3,11],[12,4],[8,8]].forEach(([px, py]) => ctx.fillRect(px, py, 2, 2)); });
 
     // Raw Gold
     withTile(100, () => {
@@ -927,163 +760,14 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#3949ab'; [[6,6],[7,7],[8,6]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
     });
 
-    const sanitizeCutoutTile = (
-        tileCol: number,
-        tileRow: number,
-        alphaCutoff = 160,
-        iterations = 4,
-        forcedTransparentRgb?: [number, number, number]
-    ) => {
-        const tileX = tileCol * size;
-        const tileY = tileRow * size;
-        const imageData = ctx.getImageData(tileX, tileY, size, size);
-        const pixels = imageData.data;
-        const tileWidth = size;
+    sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
-        let opaqueRSum = 0;
-        let opaqueGSum = 0;
-        let opaqueBSum = 0;
-        let opaqueCount = 0;
+    const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);
+    if (!paddedAtlas) return document.createElement('canvas');
 
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const idx = (y * tileWidth + x) * 4;
-                const alpha = pixels[idx + 3];
-                pixels[idx + 3] = alpha >= alphaCutoff ? 255 : 0;
-                if (pixels[idx + 3] > 0) {
-                    opaqueRSum += pixels[idx];
-                    opaqueGSum += pixels[idx + 1];
-                    opaqueBSum += pixels[idx + 2];
-                    opaqueCount++;
-                }
-            }
-        }
-
-        for (let pass = 0; pass < iterations; pass++) {
-            const source = new Uint8ClampedArray(pixels);
-
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    const idx = (y * tileWidth + x) * 4;
-                    const alpha = source[idx + 3];
-                    if (alpha > 0) continue;
-
-                    let rSum = 0;
-                    let gSum = 0;
-                    let bSum = 0;
-                    let count = 0;
-
-                    for (let oy = -1; oy <= 1; oy++) {
-                        for (let ox = -1; ox <= 1; ox++) {
-                            if (ox === 0 && oy === 0) continue;
-                            const nx = x + ox;
-                            const ny = y + oy;
-                            if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
-                            const nIdx = (ny * tileWidth + nx) * 4;
-                            const nAlpha = source[nIdx + 3];
-                            if (nAlpha === 0) continue;
-                            rSum += source[nIdx];
-                            gSum += source[nIdx + 1];
-                            bSum += source[nIdx + 2];
-                            count++;
-                        }
-                    }
-
-                    if (count > 0) {
-                        pixels[idx] = Math.round(rSum / count);
-                        pixels[idx + 1] = Math.round(gSum / count);
-                        pixels[idx + 2] = Math.round(bSum / count);
-                    }
-                }
-            }
-        }
-
-        const fallbackR = forcedTransparentRgb?.[0] ?? (opaqueCount > 0 ? Math.round(opaqueRSum / opaqueCount) : 96);
-        const fallbackG = forcedTransparentRgb?.[1] ?? (opaqueCount > 0 ? Math.round(opaqueGSum / opaqueCount) : 144);
-        const fallbackB = forcedTransparentRgb?.[2] ?? (opaqueCount > 0 ? Math.round(opaqueBSum / opaqueCount) : 96);
-
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const idx = (y * tileWidth + x) * 4;
-                if (pixels[idx + 3] !== 0) continue;
-
-                if (pixels[idx] === 0 && pixels[idx + 1] === 0 && pixels[idx + 2] === 0) {
-                    pixels[idx] = fallbackR;
-                    pixels[idx + 1] = fallbackG;
-                    pixels[idx + 2] = fallbackB;
-                    continue;
-                }
-
-                const isNearWhite = pixels[idx] > 180 && pixels[idx + 1] > 180 && pixels[idx + 2] > 180;
-                if (isNearWhite) {
-                    pixels[idx] = fallbackR;
-                    pixels[idx + 1] = fallbackG;
-                    pixels[idx + 2] = fallbackB;
-                }
-            }
-        }
-
-        ctx.putImageData(imageData, tileX, tileY);
-    };
-
-    const cutoutSlots = [4, 22, 24, 29, 30, 31, 51, 73, 76, 86, 89];
-    for (const slot of cutoutSlots) {
-        const tileCol = slot % cols;
-        const tileRow = Math.floor(slot / cols);
-        if (tileRow < rows) {
-            const isSpruceLeaves = slot === 24;
-            const slotCutoff = isSpruceLeaves ? 170 : 160;
-            const forcedRgb: [number, number, number] | undefined = isSpruceLeaves ? [46, 107, 78] : undefined;
-            sanitizeCutoutTile(tileCol, tileRow, slotCutoff, 4, forcedRgb);
-        }
-    }
-
-    
-    // --- 2. Create Padded Atlas ---
-    const paddedCanvas = document.createElement('canvas');
-    const paddedCols = ATLAS_COLS;
-    const paddedRows = rows;
-    
-    const finalWidth = paddedCols * ATLAS_STRIDE;
-    const finalHeight = paddedRows * ATLAS_STRIDE;
-    
-    paddedCanvas.width = finalWidth;
-    paddedCanvas.height = finalHeight;
-    const pCtx = paddedCanvas.getContext('2d');
-    
-    if (!pCtx) return document.createElement('canvas');
-
-    // Hard guarantee no blur in copy
-    pCtx.imageSmoothingEnabled = false;
-    
-    for(let i=0; i < paddedCols * paddedRows; i++) {
-        const col = i % paddedCols;
-        const row = Math.floor(i / paddedCols);
-        const srcX = col * 16;
-        const srcY = row * 16;
-        const destX = col * ATLAS_STRIDE + ATLAS_PADDING;
-        const destY = row * ATLAS_STRIDE + ATLAS_PADDING;
-        
-        // Center 16x16
-        pCtx.drawImage(rawCanvas, srcX, srcY, 16, 16, destX, destY, 16, 16);
-        // Top edge padding
-        pCtx.drawImage(rawCanvas, srcX, srcY, 16, 1, destX, destY - ATLAS_PADDING, 16, ATLAS_PADDING);
-        // Bottom edge padding
-        pCtx.drawImage(rawCanvas, srcX, srcY + 15, 16, 1, destX, destY + 16, 16, ATLAS_PADDING);
-        // Left edge padding
-        pCtx.drawImage(rawCanvas, srcX, srcY, 1, 16, destX - ATLAS_PADDING, destY, ATLAS_PADDING, 16);
-        // Right edge padding
-        pCtx.drawImage(rawCanvas, srcX + 15, srcY, 1, 16, destX + 16, destY, ATLAS_PADDING, 16);
-        // Corners
-        pCtx.drawImage(rawCanvas, srcX, srcY, 1, 1, destX - ATLAS_PADDING, destY - ATLAS_PADDING, ATLAS_PADDING, ATLAS_PADDING);
-        pCtx.drawImage(rawCanvas, srcX + 15, srcY, 1, 1, destX + 16, destY - ATLAS_PADDING, ATLAS_PADDING, ATLAS_PADDING);
-        pCtx.drawImage(rawCanvas, srcX, srcY + 15, 1, 1, destX - ATLAS_PADDING, destY + 16, ATLAS_PADDING, ATLAS_PADDING);
-        pCtx.drawImage(rawCanvas, srcX + 15, srcY + 15, 1, 1, destX + 16, destY + 16, ATLAS_PADDING, ATLAS_PADDING);
-    }
-
-    cachedAtlasDimensions = { width: finalWidth, height: finalHeight };
-    cachedAtlasURL = paddedCanvas.toDataURL();
-    return paddedCanvas;
+    cachedAtlasDimensions = { width: paddedAtlas.width, height: paddedAtlas.height };
+    cachedAtlasURL = paddedAtlas.canvas.toDataURL();
+    return paddedAtlas.canvas;
 };
 
 /**
@@ -1092,57 +776,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
  * Call from browser console.
  */
 export const exportAtlasDebugPNG = () => {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
     const { width, height } = getAtlasDimensions();
     const url = getAtlasURL();
-    if (!url) return console.error("Atlas not generated yet.");
-
-    const img = new Image();
-    img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, 0, 0);
-
-        const rows = height / ATLAS_STRIDE;
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < ATLAS_COLS; c++) {
-                const idx = r * ATLAS_COLS + c;
-                const ox = c * ATLAS_STRIDE;
-                const oy = r * ATLAS_STRIDE;
-                
-                // Outer padding border
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(ox + 0.5, oy + 0.5, ATLAS_STRIDE - 1, ATLAS_STRIDE - 1);
-                
-                // Inner 16x16 border
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-                ctx.strokeRect(ox + ATLAS_PADDING + 0.5, oy + ATLAS_PADDING + 0.5, 15, 15);
-                
-                // Index text
-                ctx.fillStyle = 'white';
-                ctx.font = '8px monospace';
-                ctx.textBaseline = 'top';
-                ctx.fillText(idx.toString(), ox + 2, oy + 2);
-            }
-        }
-
-        const debugUrl = canvas.toDataURL();
-        const win = window.open();
-        if (win) {
-            win.document.write(`<img src="${debugUrl}" style="image-rendering:pixelated; background:#222;"/>`);
-        } else {
-            console.log("Atlas Debug URL:", debugUrl);
-        }
-    };
-    img.src = url;
+    if (!url) return console.error('Atlas not generated yet.');
+    openAtlasDebugWindow(url, width, height, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);
 };
-
-// Expose to console (browser only)
-if (typeof window !== "undefined") {
-  (window as any).exportAtlasDebug = exportAtlasDebugPNG;
-}

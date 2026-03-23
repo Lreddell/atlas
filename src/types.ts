@@ -202,3 +202,84 @@ export interface Drop {
     createdAt: number;
     pickupDelay: number; // Timestamp when it can be picked up
 }
+
+export type GameMode = 'survival' | 'creative' | 'spectator';
+
+export interface BreakingVisual {
+    pos: [number, number, number];
+    progress: number;
+    noDrop: boolean;
+}
+
+export interface ContainerLocation {
+    x: number;
+    y: number;
+    z: number;
+}
+
+export type OpenContainer =
+    | { type: 'inventory' }
+    | { type: 'creative' }
+    | ({ type: 'crafting' } & ContainerLocation)
+    | ({ type: 'furnace' } & ContainerLocation)
+    | ({ type: 'chest' } & ContainerLocation);
+
+export type OpenContainerState = OpenContainer | null;
+
+export type InventoryCollection =
+    | 'inventory'
+    | 'crafting'
+    | 'output'
+    | 'creative'
+    | 'chest'
+    | 'furnace_input'
+    | 'furnace_fuel'
+    | 'furnace_output'
+    | 'none';
+
+export type InventoryAction =
+    | 'click'
+    | 'right_click'
+    | 'middle_click'
+    | 'shift_click'
+    | 'swap_hotbar'
+    | 'drop_key'
+    | 'drop_cursor'
+    | 'drag_end'
+    | 'double_click';
+
+export interface CreativeInventoryActionData {
+    creativeItem: ItemStack;
+}
+
+export interface HotbarSwapActionData {
+    hotbarIdx: number;
+}
+
+export interface DropKeyActionData {
+    dropAll: boolean;
+}
+
+export interface DragTargetSlot {
+    collection: Exclude<InventoryCollection, 'none'>;
+    index: number;
+}
+
+export interface DragEndActionData {
+    mode: 'split' | 'one';
+    slots: DragTargetSlot[];
+    startStack: ItemStack;
+}
+
+export type InventoryActionData =
+    | CreativeInventoryActionData
+    | HotbarSwapActionData
+    | DropKeyActionData
+    | DragEndActionData;
+
+export type InventoryActionHandler = (
+    action: InventoryAction,
+    collection: InventoryCollection,
+    index: number,
+    data?: InventoryActionData,
+) => void;

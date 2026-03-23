@@ -7,7 +7,7 @@ import { BLOCKS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
-import { globalSunlightValue } from './ChunkMesh';
+import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
 interface Particle {
@@ -378,7 +378,7 @@ const ParticleGroup: React.FC<{ type: BlockType, particles: Particle[], isPaused
 
 export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }> = ({ isPaused, brightness }) => {
     const particlesRef = useRef<Particle[]>([]);
-    const [renderTrigger, setRenderTrigger] = useState(0);
+    const [, setRenderTrigger] = useState(0);
 
     useEffect(() => {
         const unsub = worldManager.subscribeToParticles((type, x, y, z) => {
@@ -475,14 +475,11 @@ export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }
         }
     });
 
-    const particlesByType = useMemo(() => {
-        const groups: Record<number, Particle[]> = {};
-        particlesRef.current.forEach(p => {
-            if (!groups[p.type]) groups[p.type] = [];
-            groups[p.type].push(p);
-        });
-        return groups;
-    }, [renderTrigger]); 
+    const particlesByType: Record<number, Particle[]> = {};
+    particlesRef.current.forEach((particle) => {
+        if (!particlesByType[particle.type]) particlesByType[particle.type] = [];
+        particlesByType[particle.type].push(particle);
+    });
 
     return (
         <group>

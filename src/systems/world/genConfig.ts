@@ -69,6 +69,29 @@ export const DEFAULTS = {
     }
 };
 
+type GenConfigState = typeof DEFAULTS;
+type NoiseKey = keyof GenConfigState['noise'];
+type BiomeKey = keyof GenConfigState['biomes'];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+const normalizeNoiseType = (value: unknown): NoiseType | null => {
+    switch (value) {
+        case 'perlin':
+        case 'opensimplex2':
+        case 'cellular':
+        case 'value':
+        case 'sine':
+        case 'white':
+            return value;
+        case 'simplex':
+            return 'opensimplex2';
+        default:
+            return null;
+    }
+};
+
 // Deep copy helper
 function clone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
@@ -89,10 +112,9 @@ function applyState(source: typeof DEFAULTS) {
     GenConfig.terrainShape = clone(source.terrainShape);
 
     // Biomes
-    const keys = Object.keys(source.biomes) as (keyof typeof source.biomes)[];
+    const keys = Object.keys(source.biomes) as BiomeKey[];
     keys.forEach(k => {
-        // @ts-ignore
-        if (GenConfig.biomes[k]) GenConfig.biomes[k] = clone(source.biomes[k]);
+        Object.assign(GenConfig.biomes[k], clone(source.biomes[k]));
     });
 
     // Height
@@ -153,22 +175,22 @@ export const randomizeGenConfig = () => {
     GenConfig.terrainShape.oceanScale = rf(5, 30);
 
     // Randomize Biomes
-    const biomeKeys = Object.keys(GenConfig.biomes) as (keyof typeof GenConfig.biomes)[];
+    const biomeKeys = Object.keys(GenConfig.biomes) as BiomeKey[];
     biomeKeys.forEach(k => {
-        const b = (GenConfig.biomes as any)[k];
+        const b = GenConfig.biomes[k];
         
         // Randomize thresholds
-        if (b.minTemp !== undefined) b.minTemp = parseFloat(rf(-1, 1).toFixed(2));
-        if (b.maxTemp !== undefined) b.maxTemp = parseFloat(rf(-1, 1).toFixed(2));
-        if (b.minWeird !== undefined) b.minWeird = parseFloat(rf(-1, 1).toFixed(2));
+        if ('minTemp' in b && b.minTemp !== undefined) b.minTemp = parseFloat(rf(-1, 1).toFixed(2));
+        if ('maxTemp' in b && b.maxTemp !== undefined) b.maxTemp = parseFloat(rf(-1, 1).toFixed(2));
+        if ('minWeird' in b && b.minWeird !== undefined) b.minWeird = parseFloat(rf(-1, 1).toFixed(2));
         
         // Randomize height settings
-        if (b.base !== undefined) b.base = rf(30, 110);
-        if (b.scale !== undefined) b.scale = rf(5, 70);
+        if ('base' in b && b.base !== undefined) b.base = rf(30, 110);
+        if ('scale' in b && b.scale !== undefined) b.scale = rf(5, 70);
         
         // Specific params
-        if (b.continentalnessMax !== undefined) b.continentalnessMax = parseFloat(rf(-0.8, -0.1).toFixed(2));
-        if (b.width !== undefined) b.width = rf(0.005, 0.08);
+        if ('continentalnessMax' in b && b.continentalnessMax !== undefined) b.continentalnessMax = parseFloat(rf(-0.8, -0.1).toFixed(2));
+        if ('width' in b && b.width !== undefined) b.width = rf(0.005, 0.08);
     });
 
     // Height Scale
@@ -176,27 +198,42 @@ export const randomizeGenConfig = () => {
 };
 
 // Load config from JSON object
-export const loadGenConfig = (data: any) => {
-    if (!data) return false;
+export const loadGenConfig = (data: unknown) => {
+    if (!isRecord(data)) return false;
     try {
         const temp = clone(GenConfig);
         
-        if (data.noise) {
-            Object.keys(data.noise).forEach(k => {
-                // @ts-ignore
-                if (temp.noise[k]) Object.assign(temp.noise[k], data.noise[k]);
+        if (isRecord(data.noise)) {
+            const noiseData = data.noise;
+            Object.keys(noiseData).forEach((k) => {
+                if (!(k in temp.noise)) return;
+                const key = k as NoiseKey;
+                const incomingNoise = noiseData[k];
+                if (!isRecord(incomingNoise)) return;
+                const nextNoise = { ...incomingNoise };
+                const normalizedType = normalizeNoiseType(nextNoise.type);
+                if (normalizedType) {
+                    nextNoise.type = normalizedType;
+                } else {
+                    delete nextNoise.type;
+                }
+                Object.assign(temp.noise[key], nextNoise);
             });
         }
-        if (data.terrainShape) Object.assign(temp.terrainShape, data.terrainShape);
-        if (data.biomes) {
-            Object.keys(data.biomes).forEach(k => {
-                // @ts-ignore
-                if (temp.biomes[k]) Object.assign(temp.biomes[k], data.biomes[k]);
+        if (isRecord(data.terrainShape)) Object.assign(temp.terrainShape, data.terrainShape);
+        if (isRecord(data.biomes)) {
+            const biomeData = data.biomes;
+            Object.keys(biomeData).forEach((k) => {
+                if (!(k in temp.biomes)) return;
+                const key = k as BiomeKey;
+                const incomingBiome = biomeData[k];
+                if (!isRecord(incomingBiome)) return;
+                Object.assign(temp.biomes[key], incomingBiome);
             });
         }
-        if (data.height) Object.assign(temp.height, data.height);
-        if (data.climateWarp) Object.assign(temp.climateWarp, data.climateWarp);
-        if (data.spawn) Object.assign(temp.spawn, data.spawn);
+        if (isRecord(data.height)) Object.assign(temp.height, data.height);
+        if (isRecord(data.climateWarp)) Object.assign(temp.climateWarp, data.climateWarp);
+        if (isRecord(data.spawn)) Object.assign(temp.spawn, data.spawn);
         
         applyState(temp);
         return true;

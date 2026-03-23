@@ -1,7 +1,6 @@
-
-These are placeholder files. 
-To enable audio, replace these empty .ogg files with real Ogg Vorbis audio files.
-Ensure the filenames match exactly.
+This folder contains Atlas sound assets.
+Some effects may still be placeholder files, but the repo also includes real bundled music and gameplay audio.
+Keep filenames and relative paths stable unless you also update `public/assets/rvx/sounds.json`.
 
 UI:
 - ui/click.ogg, ui/hover.ogg, ui/slider.ogg
@@ -16,16 +15,20 @@ Blocks & Interaction:
 - liquid/swim1-2.ogg, liquid/lavapop.ogg
 
 Music:
-- Files now live in subfolders and are auto-discovered:
-	- music/menu/*.ogg
-	- music/creative/*.ogg
-	- music/plains/*.ogg
-	- music/forest/*.ogg
-	- music/desert/*.ogg
-	- music/ocean/*.ogg
-	- music/cold/*.ogg
-	- music/cherry/*.ogg
-	- music/mesa/*.ogg
-	- music/volcanic/*.ogg
+- Files live in subfolders:
+  - music/menu/*.ogg
+  - music/creative/*.ogg
+  - music/plains/*.ogg
+  - music/forest/*.ogg
+  - music/desert/*.ogg
+  - music/ocean/*.ogg
+  - music/cold/*.ogg
+  - music/caves/*.ogg
+  - music/bloodmoon/*.ogg
+  - music/cherry/*.ogg
+  - music/mesa/*.ogg
+  - music/volcanic/*.ogg
 - File names do not matter. Any .ogg files in a folder are eligible for random selection.
-- Add/remove songs by dropping files into these folders (no manifest edits required for music).
+- Electron discovers tracks from these folders automatically.
+- The web build uses `public/assets/rvx/sounds/music-index.json`, so add new tracks there if you want them available outside Electron.
+- If you add a new music event or folder, update `public/assets/rvx/sounds.json` too.

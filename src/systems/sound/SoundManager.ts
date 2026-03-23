@@ -67,7 +67,7 @@ class SoundManager {
         }
 
         try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (AudioContextClass) {
                 this.ctx = new AudioContextClass();
                 this.masterGain = this.ctx.createGain();
@@ -202,14 +202,13 @@ class SoundManager {
         const newIndex = new Map<string, string[]>();
 
         // In Electron: dynamically scan the music folder (any filename, any audio extension)
-        if (typeof window !== 'undefined' && (window as any).atlasDesktop?.scanMusicFolders) {
+        if (typeof window !== 'undefined' && window.atlasDesktop?.scanMusicFolders) {
             try {
-                const result = await (window as any).atlasDesktop.scanMusicFolders() as { ok: boolean; index?: Record<string, unknown> };
+                const result = await window.atlasDesktop.scanMusicFolders();
                 if (result?.ok && result.index) {
                     Object.entries(result.index).forEach(([folderName, tracks]) => {
                         if (!Array.isArray(tracks)) return;
-                        const normalizedTracks = (tracks as unknown[])
-                            .filter((t): t is string => typeof t === 'string')
+                        const normalizedTracks = tracks
                             .map(t => t.replace(/\\/g, '/').replace(/^\/+/, '').trim())
                             .filter(t => t.length > 0);
                         if (normalizedTracks.length > 0) {
@@ -295,7 +294,8 @@ class SoundManager {
 
         try {
             await this.ctx.resume();
-            return this.ctx.state === 'running';
+            const currentState = this.ctx.state as AudioContextState;
+            return currentState === 'running';
         } catch (e) {
             console.warn('Audio resume failed', e);
             return false;

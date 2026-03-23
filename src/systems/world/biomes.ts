@@ -9,7 +9,7 @@ export interface Biome {
     surfaceBlock: BlockType;
     subBlock: BlockType;
     waterBlock: BlockType;
-    // These defaults are just placeholders now, actual height comes from getBiomeHeightInfo
+    // Legacy biome metadata. Runtime terrain height comes from getBiomeHeightInfo.
     terrainScale: number; 
     terrainBase: number;
     treeChance: number;
@@ -98,7 +98,7 @@ export function sample(
                 value = (n - Math.floor(n)) * 2 - 1;
                 break;
             case 'opensimplex2':
-                value = noise.simplex2D(x * frequency, z * frequency);
+                value = noise.openSimplex2D(x * frequency, z * frequency);
                 break;
             case 'cellular':
                 value = noise.cellular2D(x * frequency, z * frequency);
@@ -194,7 +194,7 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
 
     // 1. Temperature Blending
     
-    // Tundra (using explicit tundra config now)
+    // Tundra
     const tundraFactor = 1.0 - THREE.MathUtils.smoothstep(temp, b.tundra.maxTemp - 0.1, b.tundra.maxTemp + 0.1);
     if (tundraFactor > 0) {
         targetBase = THREE.MathUtils.lerp(targetBase, b.tundra.base, tundraFactor);
@@ -278,13 +278,13 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
     const b = GenConfig.biomes;
     
     if (continentalness < b.ocean.continentalnessMax) {
-        // Use tundra maxTemp for ocean freezing logic now
+        // Use tundra maxTemp for ocean freezing logic.
         if (temp < b.tundra.maxTemp) return BIOMES.FROZEN_OCEAN;
         return BIOMES.OCEAN;
     }
 
     if (Math.abs(riverVal) < b.river.width) {
-        // Use tundra maxTemp for river freezing logic now
+        // Use tundra maxTemp for river freezing logic.
         if (temp < b.tundra.maxTemp) return BIOMES.FROZEN_RIVER;
         return BIOMES.RIVER;
     }

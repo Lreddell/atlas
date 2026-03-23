@@ -42,7 +42,7 @@ function hashToUnitFloat(value: number) {
 }
 
 export function getMoonCycleIndex(ticks: number, tickCycle: number = DEFAULT_TICK_CYCLE) {
-    const noonOffset = tickCycle / 4;
+    const noonOffset = tickCycle === DEFAULT_TICK_CYCLE ? LUNAR_NOON_OFFSET : tickCycle / 4;
     return Math.floor((ticks - noonOffset) / tickCycle);
 }
 
