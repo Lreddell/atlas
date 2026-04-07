@@ -14,6 +14,7 @@ interface ChatProps {
     showInput: boolean;
     inputValue: string;
     setInputValue: (val: string) => void;
+    onSubmitInput?: () => void;
     acCandidates?: string[];
     acIndex?: number;
     onMessageClick?: (action: string) => void;
@@ -21,7 +22,7 @@ interface ChatProps {
 }
 
 export const Chat: React.FC<ChatProps> = ({ 
-    messages, showInput, inputValue, setInputValue, 
+    messages, showInput, inputValue, setInputValue, onSubmitInput,
     acCandidates = [], acIndex = 0, onMessageClick, showSuggestions = false
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
@@ -106,6 +107,12 @@ export const Chat: React.FC<ChatProps> = ({
                          type="text" 
                          value={inputValue}
                          onChange={(e) => setInputValue(e.target.value)}
+                         onKeyDown={(e) => {
+                             if (e.key !== 'Enter') return;
+                             e.preventDefault();
+                             e.stopPropagation();
+                             onSubmitInput?.();
+                         }}
                          className="w-full bg-transparent border-none outline-none text-white font-mono text-lg"
                          placeholder="Type a command..."
                      />

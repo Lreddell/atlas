@@ -1399,6 +1399,15 @@ const App: React.FC = () => {
       setShowSuggestions(newCandidates.length > 0);
   }, []);
 
+  const submitCommandInput = useCallback(() => {
+      if (commandValue.trim()) {
+          executeCommand(commandValue);
+          return;
+      }
+
+      resumeGame();
+  }, [commandValue, executeCommand, resumeGame]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
 
@@ -1512,14 +1521,14 @@ const App: React.FC = () => {
         setIsPaused(true); enterUIMode(); return;
     }
     if (showCommandInput) { 
-        if (e.key === 'Enter') { e.preventDefault(); if (commandValue.trim()) executeCommand(commandValue); else resumeGame(); } 
+        if (e.key === 'Enter') { e.preventDefault(); submitCommandInput(); } 
         return; 
     }
     if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, executeCommand, updateAutocomplete, logMsg]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2220,6 +2229,7 @@ const App: React.FC = () => {
                             setCommandValue(val);
                             updateAutocomplete(val);
                         }} 
+                        onSubmitInput={submitCommandInput}
                         acCandidates={acCandidates} 
                         acIndex={acIndex} 
                         onMessageClick={(action) => executeCommand(action)} 
