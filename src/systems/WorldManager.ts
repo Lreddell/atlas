@@ -840,6 +840,10 @@ export class WorldManager {
       const meshTotal = meshTargets.length;
       let meshDone = 0;
       onProgress('Meshing', 0, meshTotal, 0);
+      if (meshTotal === 0) {
+          onProgress('Meshing', 0, 0, 100);
+          return;
+      }
       await new Promise<void>(resolve => {
           const check = () => {
               meshDone = 0;
@@ -1040,7 +1044,7 @@ export class WorldManager {
   private sortQueuesIfDirty() {
       if (!this.queuesDirty) return;
       this.genQueue.sort((a, b) => a.priority - b.priority);
-      this.markQueuesDirty();
+      this.meshQueue.sort((a, b) => a.priority - b.priority);
       this.queuesDirty = false;
   }
 

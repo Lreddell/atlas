@@ -136,7 +136,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
-    const isBrowserMode = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') === -1;
     const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Audio State
@@ -206,8 +205,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
                 <div className="flex gap-3">
-                    <MenuButton label="Controls..." disabled width={isBrowserMode ? 'w-80' : 'w-[9.5rem]'} />
-                    {!isBrowserMode && <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />}
+                    <MenuButton label="Controls..." disabled width="w-[9.5rem]" />
+                    <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
                 </div>
                 {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
                 {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-80" />}

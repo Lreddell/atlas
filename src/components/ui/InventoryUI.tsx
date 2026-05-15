@@ -405,6 +405,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
         return (
             <div 
+                key={key}
                 className={`relative z-20 p-[2px]`}
                 data-slot-collection={collection} 
                 data-slot-index={index}
@@ -417,7 +418,6 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }} 
             >
                 <Slot 
-                    key={key}
                     item={displayItem} 
                     size={size}
                     onClick={() => {}} 

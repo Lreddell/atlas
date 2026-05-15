@@ -248,7 +248,6 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
             tex.generateMipmaps = false;
             tex.center.set(0.5, 0.5);
             tex.rotation = THREE.MathUtils.degToRad(rotDeg);
-            tex.needsUpdate = true;
             return tex;
         };
 

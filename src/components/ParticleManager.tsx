@@ -178,7 +178,7 @@ const getPixelRegion = (type: BlockType): [number, number, number, number] => {
         const image = tex.image;
         
         if (image && (image instanceof HTMLCanvasElement || (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas))) {
-             const ctx = (image as any).getContext('2d');
+             const ctx = (image as any).getContext('2d', { willReadFrequently: true });
              if (ctx) {
                  const { width, height } = getAtlasDimensions();
                  

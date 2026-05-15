@@ -14,21 +14,7 @@
     <script>
       const USE_MONOCRAFT_FONT = false;
       document.documentElement.dataset.atlasFont = USE_MONOCRAFT_FONT ? 'monocraft' : 'default';
-
-      window.tailwind = window.tailwind || {};
-      window.tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              minecraft: ['var(--atlas-minecraft-font-family)'],
-              sans: ['var(--atlas-ui-font-family)'],
-              mono: ['var(--atlas-mono-font-family)'],
-            },
-          },
-        },
-      };
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
       @font-face {
         font-family: 'Monocraft';

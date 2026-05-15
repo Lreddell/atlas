@@ -145,7 +145,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     const rows = getTextureRows(); 
     rawCanvas.width = size * cols;
     rawCanvas.height = size * rows;
-    const ctx = rawCanvas.getContext('2d');
+    const ctx = rawCanvas.getContext('2d', { willReadFrequently: true });
     
     if (!ctx) return document.createElement('canvas');
 

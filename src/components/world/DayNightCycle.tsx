@@ -529,13 +529,15 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const phaseBrightnessFactor = factor * 0.72;
         const phaseIntensity = (0.63 + (0.2 * phaseBrightnessFactor)) * lunarEvent.nightBrightnessMultiplier;
 
-        if (moonCoreRef.current && (!moonCoreRef.current.userData.lastPhase || moonCoreRef.current.userData.lastPhase !== phaseIndex)) {
+        if (moonCoreRef.current && moonCoreRef.current.userData.lastPhase !== phaseIndex) {
              moonCoreRef.current.userData.lastPhase = phaseIndex;
              const tex = createMoonPhaseTexture(phaseIndex);
              if (tex) {
                  if (!Array.isArray(moonCoreRef.current.material)) {
-                    (moonCoreRef.current.material as THREE.MeshBasicMaterial).map = tex;
-                    (moonCoreRef.current.material as THREE.MeshBasicMaterial).needsUpdate = true;
+                    const material = moonCoreRef.current.material as THREE.MeshBasicMaterial;
+                    material.map?.dispose();
+                    material.map = tex;
+                    material.needsUpdate = true;
                  }
              }
         }
