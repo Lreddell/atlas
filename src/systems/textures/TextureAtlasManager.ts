@@ -59,6 +59,13 @@ class TextureAtlasManager {
                     return;
                 }
 
+                const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+                if (contentType && !contentType.startsWith('image/')) {
+                    // Vite returns index.html for unknown asset paths in SPA fallback mode.
+                    // Treat those as missing optional overrides instead of reporting image decode failures.
+                    return;
+                }
+
                 // 2. File found (200 OK), attempt to process as image
                 const blob = await response.blob();
                 

@@ -127,7 +127,7 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
     onExportWorld,
     onImportWorld,
 }) => (
-    <div className="relative z-10 flex h-full w-[600px] flex-col items-center py-10">
+    <div className="relative z-10 flex h-full w-full max-w-[600px] flex-col items-center px-3 py-6 sm:py-10">
         <h1 className={submenuHeadingClass}>Select World</h1>
         <div className="mb-6 flex-1 w-full overflow-y-auto border-2 border-white/20 bg-black/50 p-2 scrollbar-thin">
             {worlds.length === 0 && (
@@ -164,17 +164,17 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
         </div>
 
         <div className="flex w-full flex-col gap-3">
-            <div className="flex justify-center gap-4">
-                <MenuButton label="Play Selected World" onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-[280px]" />
-                <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[280px]" />
+            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton label="Play Selected World" onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-[calc(100vw-2rem)] sm:w-[280px]" />
+                <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[calc(100vw-2rem)] sm:w-[280px]" />
             </div>
-            <div className="flex justify-center gap-4">
-                <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[185px]" />
-                <MenuButton label="Cancel" onClick={onCancel} width="w-[185px]" />
+            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[calc(100vw-2rem)] sm:w-[185px]" />
+                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
-            <div className="flex justify-center gap-4">
-                <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-[185px]" />
-                <MenuButton label="Import World" onClick={onImportWorld} width="w-[185px]" />
+            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
+                <MenuButton label="Import World" onClick={onImportWorld} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
         </div>
     </div>
