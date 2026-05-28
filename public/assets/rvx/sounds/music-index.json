@@ -14,11 +14,13 @@
     "assets/rvx/sounds/music/forest/forest1.ogg"
   ],
   "menu": [
+    "assets/rvx/sounds/music/menu/atlas.ogg",
     "assets/rvx/sounds/music/menu/menu1.ogg",
     "assets/rvx/sounds/music/menu/menu2.ogg",
     "assets/rvx/sounds/music/menu/menu3.ogg"
   ],
   "plains": [
+    "assets/rvx/sounds/music/plains/atlas.ogg",
     "assets/rvx/sounds/music/plains/plains1.ogg",
     "assets/rvx/sounds/music/plains/plains2.ogg",
     "assets/rvx/sounds/music/plains/plains3.ogg"
