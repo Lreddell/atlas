@@ -4,14 +4,43 @@ import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
 import { NEIGHBORS } from './worldConstants';
 import { getOpacity } from './blockProps';
-import { getBiome, getBiomeHeightInfo, getGenerationParams, sample } from './biomes';
+import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
 import { index3D } from './worldCoords';
 import { generateTreeBlocks, isValidSoil } from './trees';
 import type { TreeKind } from './trees';
 
+// Companion cache to beginGenParamsCache — getTerrainInfo is itself called several
+// times per column during generateChunk (terrain pass, beach probes, tree pass).
+let terrainInfoCache: Map<number, { height: number, baseHeight: number }> | null = null;
+let terrainInfoCacheNoiseSet: NoiseSet | null = null;
+
+function beginGenerationCaches(noiseSet: NoiseSet) {
+    beginGenParamsCache(noiseSet);
+    terrainInfoCache = new Map();
+    terrainInfoCacheNoiseSet = noiseSet;
+}
+
+function endGenerationCaches() {
+    endGenParamsCache();
+    terrainInfoCache = null;
+    terrainInfoCacheNoiseSet = null;
+}
+
 export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): { height: number, baseHeight: number } {
+    if (terrainInfoCache && noiseSet === terrainInfoCacheNoiseSet) {
+        const key = (x + 1048576) * 4194304 + (z + 1048576);
+        const cached = terrainInfoCache.get(key);
+        if (cached) return cached;
+        const computed = computeTerrainInfo(x, z, noiseSet);
+        terrainInfoCache.set(key, computed);
+        return computed;
+    }
+    return computeTerrainInfo(x, z, noiseSet);
+}
+
+function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
     const { terrainBase, terrainScale } = getBiomeHeightInfo(x, z, noiseSet);
     
     const nc = GenConfig.noise.terrain;
@@ -162,14 +191,28 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
 }
 
 export function generateChunk(cx: number, cz: number) {
+    beginGenerationCaches(GlobalNoise);
+    try {
+        return generateChunkInner(cx, cz);
+    } finally {
+        endGenerationCaches();
+    }
+}
+
+// Scratch reused across generateChunk calls (sync per context — main thread
+// fallback or one worker). Allocating the 786KB queue per chunk was GC churn.
+const genLightQueueScratch = new Int32Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT * 2);
+const genHeightmapScratch = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
+
+function generateChunkInner(cx: number, cz: number) {
     const blocks = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
     const light = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
     const meta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
-    
-    // Column heightmap to speed up lighting pass
-    const colHeightmap = new Int16Array(CHUNK_SIZE * CHUNK_SIZE).fill(MIN_Y);
 
-    const lightQueue = new Int32Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT * 2);
+    // Column heightmap to speed up lighting pass
+    const colHeightmap = genHeightmapScratch.fill(MIN_Y);
+
+    const lightQueue = genLightQueueScratch;
     let qHead = 0;
     let qTail = 0;
 
@@ -370,12 +413,11 @@ export function generateChunk(cx: number, cz: number) {
             for (let y = MIN_Y + 1; y <= stoneTop; y++) {
                 const index = index3D(x, y, z);
                 if (blocks[index] !== BlockType.STONE) continue;
-                const checkExposed = () => isExposed(index, y, x, z);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
                     if (noise > 0.45) { 
-                        if (!checkExposed() || seededRand01(wx, y, wz, 101) > 0.5) {
+                        if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 101) > 0.5) {
                             blocks[index] = BlockType.COAL_ORE;
                             continue;
                         }
@@ -388,7 +430,7 @@ export function generateChunk(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.12 + 999, y * 0.12 + 999, cwz * 0.12 + 999);
                     const threshold = favorCopper ? 0.45 : 0.6; 
                     if (noise > threshold) {
-                        if (!checkExposed() || seededRand01(wx, y, wz, 102) > 0.5) {
+                        if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 102) > 0.5) {
                             blocks[index] = BlockType.COPPER_ORE;
                             continue;
                         }
@@ -401,7 +443,7 @@ export function generateChunk(cx: number, cz: number) {
                 if (ironChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.2 + 123, y * 0.2 + 123, cwz * 0.2 + 123);
                     if (noise > 0.52) {
-                        if (!checkExposed() || seededRand01(wx, y, wz, 103) > 0.5) {
+                        if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 103) > 0.5) {
                             blocks[index] = BlockType.IRON_ORE;
                             continue;
                         }
@@ -419,7 +461,7 @@ export function generateChunk(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.25 + 777, y * 0.25 + 777, cwz * 0.25 + 777);
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
-                        if (isMesaGold || !checkExposed() || seededRand01(wx, y, wz, 104) > 0.5) {
+                        if (isMesaGold || !isExposed(index, y, x, z) || seededRand01(wx, y, wz, 104) > 0.5) {
                             blocks[index] = BlockType.GOLD_ORE;
                             continue;
                         }
@@ -429,7 +471,7 @@ export function generateChunk(cx: number, cz: number) {
                 if (lapisChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.3 + 444, y * 0.3 + 444, cwz * 0.3 + 444);
                     if (noise > 0.65) {
-                        if (!checkExposed()) {
+                        if (!isExposed(index, y, x, z)) {
                             blocks[index] = BlockType.LAPIS_ORE;
                             continue;
                         }
@@ -440,7 +482,7 @@ export function generateChunk(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.35 + 333, y * 0.35 + 333, cwz * 0.35 + 333);
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
-                        if (!checkExposed() || seededRand01(wx, y, wz, 105) > 0.5) {
+                        if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 105) > 0.5) {
                             blocks[index] = BlockType.DIAMOND_ORE;
                             continue;
                         }
@@ -493,13 +535,12 @@ export function generateChunk(cx: number, cz: number) {
                 const resolvedSurface = getResolvedSurface(rootWx, rootWz, noiseSet);
                 if (!isValidSoil(resolvedSurface)) continue;
 
-                // When the root falls inside this chunk, also validate against the actual placed block.
-                const rootLx = rootWx - worldX;
-                const rootLz = rootWz - worldZ;
-                if (rootLx >= 0 && rootLx < CHUNK_SIZE && rootLz >= 0 && rootLz < CHUNK_SIZE) {
-                    const t = blocks[index3D(rootLx, groundY, rootLz)];
-                    if (!isValidSoil(t)) continue;
-                }
+                // NOTE: deliberately no check against the actual placed block here.
+                // The resolved-surface check above is pure noise, so it evaluates
+                // identically when this root is processed by neighboring chunks. An
+                // actual-block check only worked for in-chunk roots, so a tree could
+                // be skipped by its home chunk while neighbors still placed its
+                // canopy — orphan leaves floating across borders.
 
                 let treeKind: TreeKind;
                 if (biome.treeType === 'mixed_forest') {
@@ -513,10 +554,13 @@ export function generateChunk(cx: number, cz: number) {
                     placeIfInChunk(tb.wx, tb.wy, tb.wz, tb.type, !tb.isTrunk);
                 }
             } else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
-                // Vegetation plants remain chunk-local — only process roots inside the current chunk.
+                // Vegetation plants remain chunk-local — only process roots inside the
+                // current chunk. Placement is a single block (or vertical cactus), so the
+                // full 0..15 range is safe; the old 3-block margin left visible barren
+                // strips along every 16-block grid line.
                 const rootLx = rootWx - worldX;
                 const rootLz = rootWz - worldZ;
-                if (rootLx < 3 || rootLx >= CHUNK_SIZE - 3 || rootLz < 3 || rootLz >= CHUNK_SIZE - 3) continue;
+                if (rootLx < 0 || rootLx >= CHUNK_SIZE || rootLz < 0 || rootLz >= CHUNK_SIZE) continue;
 
                 const terrainY = getTerrainHeight(rootWx, rootWz, noiseSet);
                 if (terrainY <= 63) continue;
@@ -596,6 +640,26 @@ export function generateChunk(cx: number, cz: number) {
                 if (val > 0) {
                     lightQueue[qTail++] = index;
                 }
+            }
+        }
+    }
+
+    // 3b. Seed horizontal skylight spreading. Sunlit air above each column was
+    // filled with sky=15 but never enqueued, so light never spread sideways into
+    // cave mouths, breach shafts, or carved notches — they rendered pitch black
+    // except near chunk borders (where reconcileChunkBorders happened to fix it).
+    // For every column, enqueue the sunlit cells in the band between its own
+    // heightmap and the tallest in-chunk horizontal neighbor column.
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+        for (let z = 0; z < CHUNK_SIZE; z++) {
+            const ownH = colHeightmap[z * CHUNK_SIZE + x];
+            let tallest = ownH;
+            if (x > 0) tallest = Math.max(tallest, colHeightmap[z * CHUNK_SIZE + x - 1]);
+            if (x < CHUNK_SIZE - 1) tallest = Math.max(tallest, colHeightmap[z * CHUNK_SIZE + x + 1]);
+            if (z > 0) tallest = Math.max(tallest, colHeightmap[(z - 1) * CHUNK_SIZE + x]);
+            if (z < CHUNK_SIZE - 1) tallest = Math.max(tallest, colHeightmap[(z + 1) * CHUNK_SIZE + x]);
+            for (let y = ownH + 1; y <= tallest && qTail < lightQueue.length; y++) {
+                lightQueue[qTail++] = index3D(x, y, z);
             }
         }
     }

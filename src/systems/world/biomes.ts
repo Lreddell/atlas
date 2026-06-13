@@ -123,7 +123,45 @@ export function sample(
     return total / maxAmplitude; // Normalize to -1..1 range
 }
 
-export function getGenerationParams(x: number, z: number, noiseSet: NoiseSet = GlobalNoise) {
+export interface GenerationParams {
+    temp: number;
+    continentalness: number;
+    riverVal: number;
+    weirdness: number;
+    jitter: number;
+}
+
+// Short-lived memoization used by generateChunk: climate params were being
+// recomputed 10-20x per column (terrain pass, biome pass, beach probes, tree
+// pass). The function is pure for fixed (x, z, noiseSet, GenConfig), and the
+// cache only lives for the duration of one synchronous generateChunk call, so
+// GenConfig/seed cannot change while it is active.
+let genParamsCache: Map<number, GenerationParams> | null = null;
+let genParamsCacheNoiseSet: NoiseSet | null = null;
+
+export function beginGenParamsCache(noiseSet: NoiseSet) {
+    genParamsCache = new Map();
+    genParamsCacheNoiseSet = noiseSet;
+}
+
+export function endGenParamsCache() {
+    genParamsCache = null;
+    genParamsCacheNoiseSet = null;
+}
+
+export function getGenerationParams(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): GenerationParams {
+    if (genParamsCache && noiseSet === genParamsCacheNoiseSet) {
+        const key = (x + 1048576) * 4194304 + (z + 1048576);
+        const cached = genParamsCache.get(key);
+        if (cached) return cached;
+        const computed = computeGenerationParams(x, z, noiseSet);
+        genParamsCache.set(key, computed);
+        return computed;
+    }
+    return computeGenerationParams(x, z, noiseSet);
+}
+
+function computeGenerationParams(x: number, z: number, noiseSet: NoiseSet): GenerationParams {
     const nc = GenConfig.noise;
     const offsets = noiseSet.offsets;
 

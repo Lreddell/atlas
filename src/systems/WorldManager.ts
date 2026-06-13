@@ -129,7 +129,8 @@ export class WorldManager {
     private desiredUpdateCounter = 0;
     private desiredChunkKeys = new Set<string>();
 
-  private worker: Worker | null = null;
+  private workers: Worker[] = [];
+  private nextWorkerIndex = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -153,6 +154,14 @@ export class WorldManager {
 
   private queuesDirty = false;
   private knownMissingStorageChunks = new Set<string>();
+
+  // Dark-face culling: chunks beyond this chebyshev distance are meshed without
+  // fully-unlit (cave) faces — enclosed geometry is only visible from inside the
+  // cave, i.e. when the chunk is near. Tracks which READY meshes were built
+  // culled so they can be remeshed in full when the player approaches.
+  private static readonly DARK_CULL_DISTANCE = 4;
+  private darkCulledMeshes = new Set<string>();
+  private pendingMeshDark = new Map<string, boolean>();
   
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
@@ -167,7 +176,7 @@ export class WorldManager {
         this.MAX_MESH_IN_FLIGHT = Math.min(4, Math.max(2, Math.floor(cpuCores / 2)));
     
     if (this.workersEnabled) {
-        this.initWorker();
+        this.initWorkers();
     } else {
         this.workerStatusMessage = "Workers Disabled";
     }
@@ -224,62 +233,79 @@ export class WorldManager {
     this.activeMeshTickets.clear();
     this.genStartedAt.clear();
     this.meshStartedAt.clear();
-      
-      if (this.worker) {
-          this.worker.terminate();
-          this.initWorker();
-          this.syncWorkerWorldGenState();
+    this.darkCulledMeshes.clear();
+    this.pendingMeshDark.clear();
+
+      if (this.workers.length > 0) {
+          this.terminateWorkers();
+          this.initWorkers();
       }
-      
+
       this.log("World State Reset", 'success');
   }
 
-  private initWorker() {
+  private initWorkers() {
       try {
-            this.worker = new Worker(
-                new URL("./world/workers/world.worker.ts", import.meta.url),
-                { type: "module" }
-            );
-            
-            this.worker.onerror = (e) => {
-                console.error("WorldWorker Error (Disabling Workers):", e);
-                this.log("WorldWorker Failed - Switching to Main Thread", 'error');
-                
-                this.workersEnabled = false;
-                if (this.worker) {
-                    this.terminateWorker();
-                }
-                this.workerStatusMessage = "Workers Disabled (Error)";
-                this.resetPipeline(); 
-            };
-            
-            this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+            const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+                ? navigator.hardwareConcurrency
+                : 4;
+            const poolSize = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+
+            for (let i = 0; i < poolSize; i++) {
+                const worker = new Worker(
+                    new URL("./world/workers/world.worker.ts", import.meta.url),
+                    { type: "module" }
+                );
+
+                worker.onerror = (e) => {
+                    console.error("WorldWorker Error (Disabling Workers):", e);
+                    this.log("WorldWorker Failed - Switching to Main Thread", 'error');
+
+                    this.workersEnabled = false;
+                    this.terminateWorkers();
+                    this.workerStatusMessage = "Workers Disabled (Error)";
+                    this.resetPipeline();
+                };
+
+                worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+                this.workers.push(worker);
+            }
+
             this.syncWorkerWorldGenState();
-            this.workerStatusMessage = "Workers Active";
-            console.log("Unified World Worker Initialized");
+            this.workerStatusMessage = `Workers Active (${this.workers.length})`;
+            console.log(`World Worker Pool Initialized (${this.workers.length} workers)`);
       } catch (e) {
-            console.error("Failed to init worker", e);
+            console.error("Failed to init worker pool", e);
             this.workersEnabled = false;
-            this.worker = null;
+            this.terminateWorkers();
             this.workerStatusMessage = "Worker Init Failed";
       }
   }
 
-  private terminateWorker() {
-    if (this.worker) {
-        this.worker.terminate();
-        this.worker = null;
+  private terminateWorkers() {
+    for (const worker of this.workers) {
+        worker.terminate();
     }
+    this.workers = [];
+    this.nextWorkerIndex = 0;
+  }
+
+  /** Round-robin dispatch for chunk jobs. Control messages should use broadcast instead. */
+  private postToPool(msg: unknown) {
+      if (this.workers.length === 0) return;
+      const worker = this.workers[this.nextWorkerIndex];
+      this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
+      worker.postMessage(msg);
   }
 
     private syncWorkerWorldGenState() {
-            if (!this.worker) return;
+            if (this.workers.length === 0) return;
 
-            this.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
-            this.worker.postMessage({
-                    type: 'SET_GEN_CONFIG',
-                    config: JSON.parse(JSON.stringify(GenConfig))
-            });
+            const config = JSON.parse(JSON.stringify(GenConfig));
+            for (const worker of this.workers) {
+                worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+                worker.postMessage({ type: 'SET_GEN_CONFIG', config });
+            }
     }
 
     private scheduleStreamingPump() {
@@ -364,7 +390,12 @@ export class WorldManager {
               this.scheduleStreamingPump();
               return;
           }
-          
+
+          const wasDarkCulled = this.pendingMeshDark.get(key);
+          this.pendingMeshDark.delete(key);
+          if (wasDarkCulled) this.darkCulledMeshes.add(key);
+          else this.darkCulledMeshes.delete(key);
+
           this.meshCache.set(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
           
@@ -482,6 +513,13 @@ export class WorldManager {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
               this.queueMesh(cx, cz, priority);
+          } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
+              // Player approached a chunk meshed with dark-face culling — rebuild the
+              // full mesh (with cave interiors) before they can see inside.
+              const distCheb = Math.max(Math.abs(cx - center.cx), Math.abs(cz - center.cz));
+              if (distCheb <= WorldManager.DARK_CULL_DISTANCE - 1) {
+                  this.queueMesh(cx, cz, priority);
+              }
           }
       }
 
@@ -616,6 +654,12 @@ export class WorldManager {
           const ticket = ++this.meshTicketCounter;
           this.activeMeshTickets.set(key, ticket);
 
+          const cullDark = Math.max(
+              Math.abs(job.cx - this.desiredCenter.cx),
+              Math.abs(job.cz - this.desiredCenter.cz)
+          ) > WorldManager.DARK_CULL_DISTANCE;
+          this.pendingMeshDark.set(key, cullDark);
+
               const neighbors = {
                   left: WorldStore.getChunkData(this.state, job.cx-1, job.cz),
                   right: WorldStore.getChunkData(this.state, job.cx+1, job.cz),
@@ -630,22 +674,23 @@ export class WorldManager {
                   back: WorldStore.getLightData(this.state, job.cx, job.cz-1)
               };
 
-              if (this.workersEnabled && this.worker) {
-                  this.worker.postMessage({ 
-                      type: 'MESH', 
-                      id: `mesh-${job.cx}-${job.cz}`, 
-                      cx: job.cx, 
+              if (this.workersEnabled && this.workers.length > 0) {
+                  this.postToPool({
+                      type: 'MESH',
+                      id: `mesh-${job.cx}-${job.cz}`,
+                      cx: job.cx,
                       cz: job.cz,
                       ticket,
                       chunk: c,
                       metaData: m,
                       neighbors,
-                      lights: neighborLights
+                      lights: neighborLights,
+                      cullDarkFaces: cullDark
                   });
               } else {
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights);
+                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
                       this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, result: res });
                   }, 0);
               }
@@ -731,8 +776,8 @@ export class WorldManager {
 
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
-      if (this.workersEnabled && this.worker) {
-          this.worker.postMessage({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+      if (this.workersEnabled && this.workers.length > 0) {
+          this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
       } else {
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
@@ -791,10 +836,9 @@ export class WorldManager {
       this.activeGenTickets.delete(key);
       this.activeMeshTickets.delete(key);
       this.knownMissingStorageChunks.delete(key);
-      
-      if (this.worker) {
-          this.worker.postMessage({ type: 'EVICT', cx, cz });
-      }
+      this.darkCulledMeshes.delete(key);
+      this.pendingMeshDark.delete(key);
+      // Workers are stateless — no per-chunk eviction message needed.
   }
 
   public async preloadSpawnArea(centerCx: number, centerCz: number, radius: number, onProgress: LoadingProgressCallback) {
@@ -1095,6 +1139,8 @@ export class WorldManager {
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
           getLoadedChunkKeys: () => this.getLoadedChunkKeys(),
+          getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+          getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
       });
   }
@@ -1211,15 +1257,14 @@ export class WorldManager {
 
     return droppedItems;
   }
-  setWorkersEnabled(val: boolean) { 
+  setWorkersEnabled(val: boolean) {
       if(val !== this.workersEnabled) {
-          this.workersEnabled = val; 
-          this.resetPipeline(); 
+          this.workersEnabled = val;
+          this.resetPipeline();
           if(val) {
-              this.initWorker();
-              this.syncWorkerWorldGenState();
-          } 
-          else { this.terminateWorker(); this.workerStatusMessage = "Workers Disabled"; }
+              this.initWorkers();
+          }
+          else { this.terminateWorkers(); this.workerStatusMessage = "Workers Disabled"; }
           this.scheduleStreamingPump();
       }
   }

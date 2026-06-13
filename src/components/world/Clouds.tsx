@@ -63,10 +63,12 @@ let newCloudFadeMultiplier = 1.0;
 // Animated 1→0 for tiles leaving the view; stays at 0 when nothing is leaving
 let leavingCloudMultiplier = 0.0;
 
+// Hoisted — updateCloudColor runs every frame from DayNightCycle's useFrame.
+const CLOUD_NIGHT_COLOR = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
+const CLOUD_DAY_COLOR = new THREE.Color(0xFFFFFF);
+
 const updateCloudColor = (dayFactor: number) => {
-    const nightColor = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
-    const dayColor = new THREE.Color(0xFFFFFF);
-    cloudBackMaterial.color.lerpColors(nightColor, dayColor, dayFactor);
+    cloudBackMaterial.color.lerpColors(CLOUD_NIGHT_COLOR, CLOUD_DAY_COLOR, dayFactor);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
     newCloudBackMaterial.color.copy(cloudBackMaterial.color);
     newCloudFrontMaterial.color.copy(cloudBackMaterial.color);
@@ -381,8 +383,10 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
 
         const { width, height, data } = cloudData;
 
-        // Scale coverage based on 2x Render Distance
-        const viewDist = (renderDistance * 2) * CHUNK_SIZE;
+        // Scale coverage based on 2x Render Distance, but cap the extra reach at high
+        // render distances — fog is fully opaque well before 2x at RD 32+, and the
+        // rebuild scan cost grows with the square of this radius.
+        const viewDist = Math.min(renderDistance * 2, renderDistance + 16) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
 
         const minU = centerU - radius;

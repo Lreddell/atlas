@@ -22,6 +22,18 @@ import { soundManager } from '../../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
+import { isWashable } from '../../systems/world/blockProps';
+import { voxelRaycast } from '../../systems/world/voxelRaycast';
+
+// Scratch vectors for camera origin/direction (used every frame)
+const _camPos = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+
+function castFromCamera(camera: THREE.Camera, maxDist: number) {
+    camera.getWorldPosition(_camPos);
+    camera.getWorldDirection(_camDir);
+    return voxelRaycast(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, maxDist);
+}
 
 interface InteractionControllerProps {
     isLocked: boolean;
@@ -44,8 +56,7 @@ export const InteractionController = ({
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
 }: InteractionControllerProps) => {
-    const { camera, scene } = useThree();
-    const raycaster = useRef(new THREE.Raycaster());
+    const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
     
     // Interaction State
@@ -108,18 +119,14 @@ export const InteractionController = ({
 
     const handlePickBlock = useCallback(() => {
         if (isDead) return;
-        raycaster.current.setFromCamera(new THREE.Vector2(0, 0), camera);
         const reach = gameMode === 'creative' ? 5.2 : 4.5;
-        raycaster.current.far = reach + 1; 
-        
-        const intersects = raycaster.current.intersectObjects(scene.children, true);
-        const hit = intersects.find(i => i.object.name === 'chunk' && i.face);
-        
-        if (hit && hit.face) {
-            const bx = Math.floor(hit.point.x - hit.face.normal.x * 0.01);
-            const by = Math.floor(hit.point.y - hit.face.normal.y * 0.01);
-            const bz = Math.floor(hit.point.z - hit.face.normal.z * 0.01);
-            
+        const hit = castFromCamera(camera, reach + 1);
+
+        if (hit) {
+            const bx = hit.bx;
+            const by = hit.by;
+            const bz = hit.bz;
+
             const targetType = worldManager.tryGetBlock(bx, by, bz);
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
                 const pickedType = (targetType === BlockType.BED_HEAD || targetType === BlockType.BED_FOOT) ? BlockType.BED_ITEM : targetType;
@@ -150,7 +157,7 @@ export const InteractionController = ({
                 soundManager.play("ui.click");
             }
         }
-    }, [camera, scene, gameMode, setInventory, isDead]);
+    }, [camera, gameMode, setInventory, isDead]);
 
     const performInteraction = useCallback((isContinuous: boolean, isShiftHeld: boolean = false) => {
         if (gameMode === 'spectator' || isDead) return; 
@@ -161,20 +168,16 @@ export const InteractionController = ({
             }
         };
 
-        raycaster.current.setFromCamera(new THREE.Vector2(0, 0), camera);
         const reach = gameMode === 'creative' ? 5.2 : 4.5;
-        raycaster.current.far = reach; 
-        
-        const intersects = raycaster.current.intersectObjects(scene.children, true);
-        const hit = intersects.find(i => i.object.name === 'chunk' && i.face);
-        
-        if (hit && hit.face) {
-            const bx = Math.floor(hit.point.x - hit.face.normal.x * 0.01);
-            const by = Math.floor(hit.point.y - hit.face.normal.y * 0.01);
-            const bz = Math.floor(hit.point.z - hit.face.normal.z * 0.01);
-            
+        const hit = castFromCamera(camera, reach);
+
+        if (hit) {
+            const bx = hit.bx;
+            const by = hit.by;
+            const bz = hit.bz;
+
             const targetType = worldManager.tryGetBlock(bx, by, bz);
-            if (targetType === null) return; 
+            if (targetType === null) return;
 
             if (!isContinuous && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
                 const isInteractive = targetType === BlockType.CRAFTING_TABLE || 
@@ -223,19 +226,28 @@ export const InteractionController = ({
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
 
                 if (heldItem.type === BlockType.TORCH) {
-                    if (hit.face.normal.y < 0.9) return;
+                    if (hit.ny < 0.9) return;
                 }
 
                 // Sapling placement: must be air target on top of valid soil
                 if (isSaplingType(heldItem.type)) {
-                    if (hit.face.normal.y < 0.9) return; // can only place on top face
+                    if (hit.ny < 0.9) return; // can only place on top face
                 }
 
-                const px = Math.floor(hit.point.x + hit.face.normal.x * 0.5);
-                const py = Math.floor(hit.point.y + hit.face.normal.y * 0.5);
-                const pz = Math.floor(hit.point.z + hit.face.normal.z * 0.5);
+                // Placement cell: the neighbor of the hit block through the hit face
+                const px = bx + hit.nx;
+                const py = by + hit.ny;
+                const pz = bz + hit.nz;
                 
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
+
+                // Don't silently overwrite occupied cells: solid blocks cancel placement,
+                // washable decorations (torches, plants, saplings) pop off as drops below.
+                const placementTarget = worldManager.getBlock(px, py, pz, false);
+                const placementTargetWashable = isWashable(placementTarget);
+                if (placementTarget !== BlockType.AIR && placementTarget !== BlockType.WATER && placementTarget !== BlockType.LAVA && !placementTargetWashable) {
+                    return;
+                }
 
                 // Sapling soil check: block below must be valid soil, target must be air
                 if (isSaplingType(heldItem.type)) {
@@ -271,9 +283,9 @@ export const InteractionController = ({
                     
                     let rotation = 0;
                     if (heldItem.type === BlockType.LOG || heldItem.type === BlockType.SPRUCE_LOG || heldItem.type === BlockType.CHERRY_LOG || heldItem.type === BlockType.BIRCH_LOG) {
-                        if (Math.abs(hit.face.normal.y) > 0.5) rotation = 0; 
-                        else if (Math.abs(hit.face.normal.x) > 0.5) rotation = 1; 
-                        else if (Math.abs(hit.face.normal.z) > 0.5) rotation = 2; 
+                        if (Math.abs(hit.ny) > 0.5) rotation = 0;
+                        else if (Math.abs(hit.nx) > 0.5) rotation = 1;
+                        else if (Math.abs(hit.nz) > 0.5) rotation = 2;
                     } else if (heldItem.type === BlockType.FURNACE || heldItem.type === BlockType.CHEST) {
                         const dir = new THREE.Vector3();
                         camera.getWorldDirection(dir);
@@ -302,6 +314,7 @@ export const InteractionController = ({
                             headAABB.expandByScalar(-0.001);
                             
                             if (!playerAABB.intersectsBox(headAABB) && !playerAABB.intersectsBox(blockAABB)) {
+                                if (placementTargetWashable) worldManager.spawnDrop(placementTarget, px, py, pz);
                                 worldManager.setBlock(px, py, pz, BlockType.BED_FOOT, rotation);
                                 worldManager.setBlock(hx, py, hz, BlockType.BED_HEAD, rotation);
                                 consumeItem(selectedSlotRef.current);
@@ -316,6 +329,7 @@ export const InteractionController = ({
                         return;
                     }
 
+                    if (placementTargetWashable) worldManager.spawnDrop(placementTarget, px, py, pz);
                     worldManager.setBlock(px, py, pz, heldItem.type, rotation);
                     consumeItem(selectedSlotRef.current);
                     lastPlacementTime.current = now;
@@ -327,7 +341,7 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, scene, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => { 
@@ -376,15 +390,13 @@ export const InteractionController = ({
             return;
         }
 
-        raycaster.current.setFromCamera(new THREE.Vector2(0, 0), camera);
         const reach = gameMode === 'creative' ? 5.2 : 4.5;
-        raycaster.current.far = reach;
-        const hit = raycaster.current.intersectObjects(scene.children, true).find(i => i.object.name === 'chunk' && i.face);
+        const hit = castFromCamera(camera, reach);
 
         if (hit && highlightMeshRef.current) {
-            const bx = Math.floor(hit.point.x - hit.face!.normal.x * 0.01);
-            const by = Math.floor(hit.point.y - hit.face!.normal.y * 0.01);
-            const bz = Math.floor(hit.point.z - hit.face!.normal.z * 0.01);
+            const bx = hit.bx;
+            const by = hit.by;
+            const bz = hit.bz;
             const targetType = worldManager.tryGetBlock(bx, by, bz);
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
@@ -404,9 +416,9 @@ export const InteractionController = ({
         }
 
         if (isLeftMouseDown.current && hit) {
-            const bx = Math.floor(hit.point.x - hit.face!.normal.x * 0.01);
-            const by = Math.floor(hit.point.y - hit.face!.normal.y * 0.01);
-            const bz = Math.floor(hit.point.z - hit.face!.normal.z * 0.01);
+            const bx = hit.bx;
+            const by = hit.by;
+            const bz = hit.bz;
             const targetType = worldManager.tryGetBlock(bx, by, bz);
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {

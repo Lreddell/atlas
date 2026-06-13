@@ -37,25 +37,53 @@ export interface GeometryResult {
     transparent: GeometryAttributes;
 }
 
-// Pre-allocate buffers to avoid garbage collection during meshing
-// 100k faces per buffer type is ~4.5MB per attribute, sufficient for very complex chunks
-const MAX_FACES = 100000;
-const MAX_VERTICES = MAX_FACES * 4;
-const MAX_INDICES = MAX_FACES * 6;
+// Reusable scratch buffers that grow on demand. Starting small matters: these are
+// module-level in every context that imports this file (main thread + each pooled
+// worker), and the previous fixed 100k-face buffers cost ~60MB per context.
+const INITIAL_FACES = 8192;
+// Absolute ceiling as a runaway guard (~3x the old fixed size).
+const HARD_MAX_FACES = 300000;
 
 class GeometryBuffer {
-    positions = new Float32Array(MAX_VERTICES * 3);
-    normals = new Float32Array(MAX_VERTICES * 3);
-    uvs = new Float32Array(MAX_VERTICES * 2);
-    colors = new Float32Array(MAX_VERTICES * 3);
-    indices = new Uint32Array(MAX_INDICES);
-    
+    capacityVerts = INITIAL_FACES * 4;
+    positions = new Float32Array(this.capacityVerts * 3);
+    normals = new Float32Array(this.capacityVerts * 3);
+    uvs = new Float32Array(this.capacityVerts * 2);
+    colors = new Float32Array(this.capacityVerts * 3);
+    indices = new Uint32Array((this.capacityVerts / 4) * 6);
+
     vCount = 0;
     iCount = 0;
 
     reset() {
         this.vCount = 0;
         this.iCount = 0;
+    }
+
+    /** Grows backing arrays so at least extraFaces more quads fit. Returns false only at the hard cap. */
+    ensureCapacity(extraFaces: number): boolean {
+        const needed = this.vCount + extraFaces * 4;
+        if (needed <= this.capacityVerts) return true;
+        if (needed > HARD_MAX_FACES * 4) return false;
+
+        let newCapacity = this.capacityVerts;
+        while (newCapacity < needed) newCapacity *= 2;
+        newCapacity = Math.min(newCapacity, HARD_MAX_FACES * 4);
+
+        const growF32 = (old: Float32Array, perVert: number) => {
+            const next = new Float32Array(newCapacity * perVert);
+            next.set(old);
+            return next;
+        };
+        this.positions = growF32(this.positions, 3);
+        this.normals = growF32(this.normals, 3);
+        this.uvs = growF32(this.uvs, 2);
+        this.colors = growF32(this.colors, 3);
+        const nextIndices = new Uint32Array((newCapacity / 4) * 6);
+        nextIndices.set(this.indices);
+        this.indices = nextIndices;
+        this.capacityVerts = newCapacity;
+        return true;
     }
 
     pushQuad(
@@ -67,7 +95,7 @@ class GeometryBuffer {
         uMin: number, uMax: number, vMin: number, vMax: number,
         r: number, g: number, b: number
     ) {
-        if (this.vCount + 4 > MAX_VERTICES) return;
+        if (!this.ensureCapacity(1)) return;
 
         let vp = this.vCount * 3;
         let up = this.vCount * 2;
@@ -129,6 +157,7 @@ class GeometryBuffer {
 const opaqueBuffer = new GeometryBuffer();
 const cutoutBuffer = new GeometryBuffer();
 const transparentBuffer = new GeometryBuffer();
+const greedyVisitedScratch = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
 
 const MAX_BLOCK_ID = Math.max(
     ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
@@ -187,12 +216,17 @@ function isOpaqueGreedyCandidate(type: BlockType): boolean {
 }
 
 export function generateGeometryData(
-    _cx: number, 
-    _cz: number, 
-    chunk: Uint8Array, 
+    _cx: number,
+    _cz: number,
+    chunk: Uint8Array,
     metaData: Uint8Array | undefined,
     neighbors: NeighborData,
-    lights: NeighborLight
+    lights: NeighborLight,
+    // When true (far chunks), faces whose facing cell has zero sky AND zero block
+    // light are skipped entirely. Enclosed cave geometry is only ever visible from
+    // inside the cave — i.e. when the chunk is near — so distant chunks don't need
+    // it. This typically halves or better the triangle count of a full-depth chunk.
+    cullDarkFaces: boolean = false
 ): GeometryResult {
     // Reset pointers
     opaqueBuffer.reset();
@@ -254,7 +288,8 @@ export function generateGeometryData(
     const isAOOccluder = (type: BlockType) => type !== BlockType.AIR && getOpacity(type) >= 2;
 
     const emitGreedySurface = (y: number, topFace: boolean) => {
-        const visited = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+        const visited = greedyVisitedScratch;
+        visited.fill(0);
         const nY = topFace ? y + 1 : y - 1;
         const dirName = topFace ? 'top' : 'bottom';
         const face = FACE_DATA[dirName];
@@ -351,6 +386,8 @@ export function generateGeometryData(
                         const tx = x + dx;
                         const tz = z + dz;
 
+                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0) continue;
+
                         const p0x = tx + c0[0];
                         const p0y = y + c0[1];
                         const p0z = tz + c0[2];
@@ -372,7 +409,7 @@ export function generateGeometryData(
                         writeAOColor(2, 6, tx, tz);
                         writeAOColor(3, 9, tx, tz);
 
-                        if (opaqueBuffer.vCount + 4 <= MAX_VERTICES) {
+                        if (opaqueBuffer.ensureCapacity(1)) {
                             let vp = opaqueBuffer.vCount * 3;
                             let up = opaqueBuffer.vCount * 2;
                             let ip = opaqueBuffer.iCount;
@@ -417,12 +454,44 @@ export function generateGeometryData(
         }
     };
 
-    for (let y = MIN_Y; y < MIN_Y + WORLD_HEIGHT; y++) {
+    // Bound meshing to the occupied Y range — skips the empty sky above terrain,
+    // which is most of the 384-block column for typical chunks.
+    const LAYER_SIZE = CHUNK_SIZE * CHUNK_SIZE;
+    let minOccY = -1;
+    let maxOccY = -1;
+    for (let y = 0; y < WORLD_HEIGHT; y++) {
+        const base = y * LAYER_SIZE;
+        let occupied = false;
+        for (let i = base; i < base + LAYER_SIZE; i++) {
+            if (chunk[i] !== 0) { occupied = true; break; }
+        }
+        if (occupied) { minOccY = y; break; }
+    }
+    if (minOccY === -1) {
+        // Entirely air — nothing to mesh.
+        return {
+            opaque: opaqueBuffer.slice(),
+            cutout: cutoutBuffer.slice(),
+            transparent: transparentBuffer.slice()
+        };
+    }
+    for (let y = WORLD_HEIGHT - 1; y >= minOccY; y--) {
+        const base = y * LAYER_SIZE;
+        let occupied = false;
+        for (let i = base; i < base + LAYER_SIZE; i++) {
+            if (chunk[i] !== 0) { occupied = true; break; }
+        }
+        if (occupied) { maxOccY = y; break; }
+    }
+    const meshMinY = MIN_Y + minOccY;
+    const meshMaxY = MIN_Y + maxOccY;
+
+    for (let y = meshMinY; y <= meshMaxY; y++) {
         emitGreedySurface(y, true);
         emitGreedySurface(y, false);
     }
 
-    for (let y = MIN_Y; y < MIN_Y + WORLD_HEIGHT; y++) {
+    for (let y = meshMinY; y <= meshMaxY; y++) {
       for (let z = 0; z < CHUNK_SIZE; z++) {
         for (let x = 0; x < CHUNK_SIZE; x++) {
           const index = index3D(x, y, z);
@@ -444,6 +513,7 @@ export function generateGeometryData(
 
           if (isCross) {
               const raw = getLightFast(x, y, z);
+              if (cullDarkFaces && raw === 0) continue;
               const r = ((raw >> 4) & 0xF) / 15.0;
               const g = (raw & 0xF) / 15.0;
               
@@ -560,6 +630,8 @@ export function generateGeometryData(
              }
              
              if (visible) {
+                 if (cullDarkFaces && getLightFast(nx, ny, nz) === 0) continue;
+
                  const { uvs } = resolveTexture(type, dir, dx, dy, dz, rotation);
 
                  const c0 = face.corners[0];
@@ -636,7 +708,7 @@ export function generateGeometryData(
                  // Let's modify pushQuad to take 4 colors or just write directly here for speed.
                  
                  // Manually push to support AO variations
-                 if (targetBuffer.vCount + 4 <= MAX_VERTICES) {
+                 if (targetBuffer.ensureCapacity(1)) {
                      let vp = targetBuffer.vCount * 3;
                      let up = targetBuffer.vCount * 2;
                      let ip = targetBuffer.iCount;

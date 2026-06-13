@@ -1,11 +1,19 @@
 import { BlockType } from '../../types';
-import { CHUNK_SIZE } from '../../constants';
+import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import { isSaplingType, getTreeKindForSapling, generateTreeBlocks, isReplaceable, isValidSoil, getMinClearance } from './trees';
 
 // Interval between growth ticks in world ticks (1 tick = 1 call to WorldManager.tick)
 const GROWTH_TICK_INTERVAL = 60; // ~3 seconds at 20 tps
-const RANDOM_POSITIONS_PER_TICK = 3;
+// Columns probed PER LOADED CHUNK per growth tick. The previous version probed 3
+// columns across the ENTIRE world, which made a specific sapling's expected growth
+// time ~100+ hours with a normal render distance. Per-chunk probing puts it at
+// roughly half an hour regardless of how many chunks are loaded.
+const PROBES_PER_CHUNK = 3;
 const GROWTH_THRESHOLD = 7; // metadata stage threshold to trigger tree growth attempt
+// Only tick chunks near the player (Minecraft-style random-tick range). At render
+// distance 48 there are ~7,200 loaded chunks; scanning them all every growth tick
+// is wasted work — saplings more than this far away can grow when you come back.
+const GROWTH_TICK_RADIUS = 8;
 
 interface WorldAccess {
     getBlock(x: number, y: number, z: number): BlockType;
@@ -14,6 +22,8 @@ interface WorldAccess {
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
     getLoadedChunkKeys(): string[];
+    getChunkData(cx: number, cz: number): Uint8Array | null;
+    getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
 }
 
@@ -27,44 +37,60 @@ export function tickPlantGrowth(world: WorldAccess) {
     const chunkKeys = world.getLoadedChunkKeys();
     if (chunkKeys.length === 0) return;
 
-    // Pick a random loaded chunk and probe random positions
     const seed = world.getSeed();
-    const time = Date.now();
-    for (let i = 0; i < RANDOM_POSITIONS_PER_TICK; i++) {
-        // Simple deterministic-ish selection using time + index
-        const chunkIdx = ((time * 7 + i * 13 + seed) >>> 0) % chunkKeys.length;
-        const key = chunkKeys[chunkIdx];
-        const parts = key.split(',');
-        const cx = parseInt(parts[0], 10);
-        const cz = parseInt(parts[1], 10);
+    // Cheap LCG. Growth timing was always wall-clock random (Date.now-based), so this
+    // weakens no determinism guarantee — tree SHAPE stays seed-deterministic via
+    // generateTreeBlocks(kind, wx, groundY, wz, seed).
+    let rng = ((Date.now() ^ seed) >>> 0) || 1;
+    const nextRand = () => {
+        rng = (rng * 1664525 + 1013904223) >>> 0;
+        return rng;
+    };
 
-        // Pick a random column in the chunk
-        const lx = ((time * 31 + i * 17 + seed) >>> 0) % CHUNK_SIZE;
-        const lz = ((time * 53 + i * 23 + seed) >>> 0) % CHUNK_SIZE;
-        const wx = cx * CHUNK_SIZE + lx;
-        const wz = cz * CHUNK_SIZE + lz;
+    const LAYER = CHUNK_SIZE * CHUNK_SIZE;
+    const center = world.getTickCenter();
 
-        // Scan a limited vertical range for saplings (above sea level, ground range)
-        for (let y = 64; y < 200; y++) {
-            const block = world.tryGetBlock(wx, y, wz);
-            if (block === null) break;
-            if (!isSaplingType(block)) continue;
+    for (const key of chunkKeys) {
+        const comma = key.indexOf(',');
+        const cx = parseInt(key.slice(0, comma), 10);
+        const cz = parseInt(key.slice(comma + 1), 10);
+        if (Math.max(Math.abs(cx - center.cx), Math.abs(cz - center.cz)) > GROWTH_TICK_RADIUS) continue;
+        const chunk = world.getChunkData(cx, cz);
+        if (!chunk) continue;
+        const layers = chunk.length / LAYER;
 
-            // Found a sapling — process growth
-            const stage = world.getMetadata(wx, y, wz);
-            
-            // Check valid soil below
-            const below = world.tryGetBlock(wx, y - 1, wz);
-            if (below === null || !isValidSoil(below)) continue;
+        for (let i = 0; i < PROBES_PER_CHUNK; i++) {
+            const r = nextRand();
+            const lx = r & 0xF;
+            const lz = (r >> 4) & 0xF;
+            const colBase = lz * CHUNK_SIZE + lx;
+            const wx = cx * CHUNK_SIZE + lx;
+            const wz = cz * CHUNK_SIZE + lz;
 
-            if (stage < GROWTH_THRESHOLD) {
-                // Increment growth stage
-                world.setMetadataAt(wx, y, wz, stage + 1);
-            } else {
-                // Attempt to grow tree
-                attemptTreeGrowth(world, block, wx, y, wz);
+            // Direct typed-array scan over the full world column — saplings can sit on
+            // soil at any height (the old 64..199 window silently excluded everything else).
+            for (let yi = 0; yi < layers; yi++) {
+                const block = chunk[yi * LAYER + colBase] as BlockType;
+                if (!isSaplingType(block)) continue;
+
+                const y = yi + MIN_Y;
+
+                // Found a sapling — process growth
+                const stage = world.getMetadata(wx, y, wz);
+
+                // Check valid soil below
+                const below = world.tryGetBlock(wx, y - 1, wz);
+                if (below === null || !isValidSoil(below)) continue;
+
+                if (stage < GROWTH_THRESHOLD) {
+                    // Increment growth stage
+                    world.setMetadataAt(wx, y, wz, stage + 1);
+                } else {
+                    // Attempt to grow tree
+                    attemptTreeGrowth(world, block, wx, y, wz);
+                }
+                break; // Only one sapling per column per tick
             }
-            break; // Only one sapling per column per tick
         }
     }
 }

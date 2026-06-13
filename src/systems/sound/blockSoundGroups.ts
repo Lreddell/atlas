@@ -16,8 +16,8 @@ export function getBlockSoundGroup(type: BlockType): SoundGroup {
     if (name.includes('grass') || name.includes('leaves') || name.includes('sapling') || name.includes('plant') || name.includes('flower') || name.includes('rose') || name.includes('dandelion')) return 'grass';
     if (name.includes('stone') || name.includes('rock') || name.includes('cobble') || name.includes('ore') || name.includes('brick') || name.includes('furnace') || name.includes('basalt')) return 'stone';
     if (name.includes('wood') || name.includes('log') || name.includes('plank') || name.includes('chest') || name.includes('crafting') || name.includes('torch')) return 'wood';
-    if (name.includes('sand') || name.includes('dirt') || name.includes('terracotta')) return 'sand'; // Dirt sounds like gravel/sand in some games, typically 'gravel' or 'grass' in MC. Let's map Dirt to 'grass' or 'sand'. MC Dirt is 'gravel'-ish. Let's use 'grass' for soft earth.
-    if (type === BlockType.DIRT) return 'grass'; 
+    if (type === BlockType.DIRT) return 'grass'; // soft earth — must be checked before the name-based 'sand' branch below
+    if (name.includes('sand') || name.includes('dirt') || name.includes('terracotta')) return 'sand';
     if (name.includes('glass') || name.includes('ice')) return 'glass';
     if (name.includes('iron') || name.includes('gold') || name.includes('copper')) return 'metal';
     if (name.includes('wool') || name.includes('bed')) return 'cloth';

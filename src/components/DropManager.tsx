@@ -273,6 +273,12 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
     );
 };
 
+// Scratch vectors reused across all drops and steps — this loop runs per drop per
+// 60 Hz fixed step, and allocating Vector3s here was a steady GC churn source.
+const _dropOldPos = new THREE.Vector3();
+const _dropNewPos = new THREE.Vector3();
+const _dropPullDir = new THREE.Vector3();
+
 export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, isPaused, brightness }) => {
     // Map of ID -> Timestamp when burning started
     const burningDrops = useRef<Map<string, number>>(new Map());
@@ -311,9 +317,12 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                 drop.velocity[1] -= 20.0 * dt; 
                 drop.velocity[1] = Math.max(drop.velocity[1], -20);
 
-                const oldPos = new THREE.Vector3(...drop.position);
-                const moveVec = new THREE.Vector3(...drop.velocity).multiplyScalar(dt);
-                const newPos = oldPos.clone().add(moveVec);
+                const oldPos = _dropOldPos.set(drop.position[0], drop.position[1], drop.position[2]);
+                const newPos = _dropNewPos.set(
+                    drop.position[0] + drop.velocity[0] * dt,
+                    drop.position[1] + drop.velocity[1] * dt,
+                    drop.position[2] + drop.velocity[2] * dt
+                );
                 
                 const bx = Math.floor(newPos.x);
                 const by = Math.floor(newPos.y - 0.15); 
@@ -361,14 +370,16 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                         onCollect(drop.id, drop.type, drop.count);
                         newPos.set(0, -5000, 0); 
                     } else if (dist < 5.0) {
-                        const dir = playerPos.clone().sub(newPos).normalize();
+                        const dir = _dropPullDir.copy(playerPos).sub(newPos).normalize();
                         const pullStrength = (5.0 - dist) * 25.0 * dt;
                         drop.velocity[0] += dir.x * pullStrength;
-                        drop.velocity[1] += dir.y * pullStrength + (2.0 * dt); 
+                        drop.velocity[1] += dir.y * pullStrength + (2.0 * dt);
                         drop.velocity[2] += dir.z * pullStrength;
                     }
                 }
-                drop.position = [newPos.x, newPos.y, newPos.z];
+                drop.position[0] = newPos.x;
+                drop.position[1] = newPos.y;
+                drop.position[2] = newPos.z;
             });
 
             accumulator.current -= FIXED_STEP;
