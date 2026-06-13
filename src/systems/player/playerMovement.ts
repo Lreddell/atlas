@@ -8,6 +8,7 @@ import {
     WALK_SPEED, SPRINT_MULTIPLIER, SNEAK_MULTIPLIER,
     GRAVITY, JUMP_VELOCITY, TERMINAL_VELOCITY, SPRINT_JUMP_BOOST,
     ACCEL_GROUND, ACCEL_AIR, FRICTION_GROUND, FRICTION_AIR,
+    FLY_DAMPING_PER_TICK, FLY_ACCEL_FACTOR, SPRINT_STOP_GRACE_TICKS,
     SAFE_WALK_STEP, CONTACT_EPS, GROUND_EPS,
     SWIM_SPEED, SWIM_SUBMERGED_SPEED, LAVA_HORIZONTAL_REDUCTION,
     FLUID_GRAVITY, FLUID_TERMINAL_VEL, FLUID_JUMP_ACCEL, FLUID_JUMP_MAX
@@ -18,6 +19,9 @@ const SAFE_WALK_WIDTH = PLAYER_WIDTH;
 // Reusable vectors to reduce GC
 const _inputVec = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
+
+// Consecutive slow-sprint ticks (single player — module state is fine)
+let sprintSlowTicks = 0;
 
 export interface SimulationResult {
     position: THREE.Vector3;
@@ -76,14 +80,17 @@ export function simulateStep(
     if (isFlying) {
         // --- FLYING PHYSICS ---
         // Increased speeds for better creative mode traversal
-        const flySpeed = intent.sprint ? 50.0 : 24.0; 
-        
-        newVel.x *= 0.8;
-        newVel.z *= 0.8;
-        newVel.y *= 0.8;
+        const flySpeed = intent.sprint ? 50.0 : 24.0;
 
-        newVel.addScaledVector(_inputVec, flySpeed * 0.2); 
-        
+        // Gentle per-tick damping + matching input injection gives gliding,
+        // momentum-y flight. Equilibrium speed stays at flySpeed because
+        // FLY_ACCEL_FACTOR === (1 - FLY_DAMPING_PER_TICK).
+        newVel.x *= FLY_DAMPING_PER_TICK;
+        newVel.z *= FLY_DAMPING_PER_TICK;
+        newVel.y *= FLY_DAMPING_PER_TICK;
+
+        newVel.addScaledVector(_inputVec, flySpeed * FLY_ACCEL_FACTOR);
+
         const hVel = new THREE.Vector2(newVel.x, newVel.z);
         if (hVel.length() > flySpeed) {
             hVel.normalize().multiplyScalar(flySpeed);
@@ -91,9 +98,8 @@ export function simulateStep(
             newVel.z = hVel.y;
         }
 
-        // Increased vertical acceleration multiplier to 0.2 (was 0.1)
-        if (intent.jump) newVel.y += flySpeed * 0.2;
-        if (intent.sneak) newVel.y -= flySpeed * 0.2;
+        if (intent.jump) newVel.y += flySpeed * FLY_ACCEL_FACTOR;
+        if (intent.sneak) newVel.y -= flySpeed * FLY_ACCEL_FACTOR;
         
         // Integrate
         const dx = newVel.x * dt;
@@ -122,12 +128,11 @@ export function simulateStep(
         
         let accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
         if (inFluid && !wasGrounded) accel = ACCEL_GROUND * 0.5;
-        
-        const dot = newVel.x * targetVelX + newVel.z * targetVelZ;
-        if (wasGrounded && dot < 0) {
-            accel *= 2.0; 
-        }
-        
+
+        // No reversal boost: a direction flip covers 2x the velocity delta at
+        // normal acceleration, which IS the momentum feel. The old 2x boost made
+        // flips complete inside a single 50ms tick — instant and weightless.
+
         const maxDelta = accel * dt;
         
         const dx = targetVelX - newVel.x;
@@ -259,14 +264,23 @@ export function simulateStep(
     if (intent.sprint) {
         // Calculate speed after collision resolution
         const hSpeed = Math.hypot(newVel.x, newVel.z);
-        
+
         // Threshold: If we are moving slower than 60% of normal walk speed, stop sprinting.
-        // This is less lenient than 30% (requires preserving more speed), but still tolerates glances.
+        // Momentum-based direction flips pass through low speed for a tick or two,
+        // so only cancel after several CONSECUTIVE slow ticks (a real wall bump
+        // stays slow; a flip recovers immediately).
         const stopThreshold = WALK_SPEED * 0.6;
-        
+
         if (hSpeed < stopThreshold) {
-            intent.cancelDoubleTap();
+            sprintSlowTicks++;
+            if (sprintSlowTicks >= SPRINT_STOP_GRACE_TICKS) {
+                intent.cancelDoubleTap();
+            }
+        } else {
+            sprintSlowTicks = 0;
         }
+    } else {
+        sprintSlowTicks = 0;
     }
 
     return { position: newPos, velocity: newVel, grounded: isGrounded };

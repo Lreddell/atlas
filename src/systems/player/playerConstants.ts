@@ -31,10 +31,27 @@ export const FLUID_JUMP_ACCEL = 16.0;
 export const FLUID_JUMP_MAX = 3;       
 
 // Acceleration & Friction
-export const ACCEL_GROUND = 90.0;  
-export const ACCEL_AIR = 55.0;     
-export const FRICTION_GROUND = 85.0; 
-export const FRICTION_AIR = 12.0;   
+// Tuned for perceptible momentum at the fixed 20Hz step: a walk-speed direction
+// flip takes ~3 ticks (150ms) and stopping glides ~100ms. The old values (90 +
+// a 2x reversal boost) completed a flip inside a single tick — that felt fine
+// only while heavy frame stutter dilated simulation time; at high FPS it reads
+// as instant, weightless direction changes.
+export const ACCEL_GROUND = 60.0;
+export const ACCEL_AIR = 55.0;
+export const FRICTION_GROUND = 45.0;
+export const FRICTION_AIR = 12.0;
+
+// Flying: per-tick velocity retention and input injection. Equilibrium speed is
+// flySpeed * (FLY_ACCEL_FACTOR / (1 - FLY_DAMPING_PER_TICK)) — keep the two in
+// sync so top speed stays at flySpeed. 0.90 retention gives a ~0.35s half-life
+// glide (the old 0.80 reached equilibrium in ~2 ticks — no momentum).
+export const FLY_DAMPING_PER_TICK = 0.90;
+export const FLY_ACCEL_FACTOR = 0.10;
+
+// Sprint auto-cancel needs this many consecutive slow ticks — a momentum-based
+// direction flip passes through low speed for 1-2 ticks and must not cancel
+// sprint; a genuine wall bump stays slow and cancels after ~150ms.
+export const SPRINT_STOP_GRACE_TICKS = 3;
 
 // Simulation settings
 export const TICK_RATE = 20; // 20 Ticks per second
