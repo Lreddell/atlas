@@ -173,14 +173,6 @@ type Geometries = {
 
 const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: null };
 
-// Release the CPU copy of attribute data once it has been uploaded to the GPU.
-// Halves geometry memory (multi-GB at high render distances). Safe because chunk
-// geometry is never mutated after build and block targeting uses voxel raycasting,
-// not mesh raycasting.
-function releaseArray(this: THREE.BufferAttribute) {
-  (this as { array: unknown }).array = null;
-}
-
 const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
   const [geometries, setGeometries] = useState<Geometries>(EMPTY_GEOMETRIES);
   const [fadeMats, setFadeMats] = useState<FadeMaterials | null>(null);
@@ -208,6 +200,23 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     value.cutout?.dispose();
     value.transparent?.dispose();
   };
+
+  // Replaced geometries are disposed only AFTER the new state commits. Disposing
+  // before commit let Three render the disposed geometry for one frame, silently
+  // re-uploading its GPU buffers — a leak (and a crash if arrays were released).
+  const pendingDisposeRef = useRef<Geometries[]>([]);
+  const queueDispose = useCallback((value: Geometries) => {
+    if (value.opaque || value.cutout || value.transparent) {
+      pendingDisposeRef.current.push(value);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pendingDisposeRef.current.length > 0) {
+      for (const g of pendingDisposeRef.current) disposeGeometries(g);
+      pendingDisposeRef.current = [];
+    }
+  }, [geometries]);
 
   const stopFade = useCallback(() => {
     if (fadeAnimRef.current) {
@@ -251,7 +260,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             const wasOut = fadeModeRef.current === 'out';
             stopFade();
             if (wasOut) {
-              disposeGeometries(geometriesRef.current);
+              queueDispose(geometriesRef.current);
               geometriesRef.current = EMPTY_GEOMETRIES;
               setGeometries(EMPTY_GEOMETRIES);
               onFadeOutCompleteRef.current?.();
@@ -262,7 +271,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       fadeAnimRef.current = anim;
       activeFadeAnimations.add(anim);
     }
-  }, [stopFade]);
+  }, [stopFade, queueDispose]);
 
   // Prop-driven fade-out (chunk left the render set)
   useEffect(() => {
@@ -306,7 +315,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           // Instant clear (no geometry or fade disabled)
           lastClearedMsRef.current = performance.now();
           stopFade();
-          disposeGeometries(geometriesRef.current);
+          queueDispose(geometriesRef.current);
           geometriesRef.current = EMPTY_GEOMETRIES;
           setGeometries(EMPTY_GEOMETRIES);
           return;
@@ -320,13 +329,15 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             if (!buff || buff.positions.length === 0) return null;
             const geo = new THREE.BufferGeometry();
             // Buffers arrive transferred from the worker and are never mutated again —
-            // wrap directly (no copy) and free the CPU side after GPU upload.
-            geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3).onUpload(releaseArray));
-            geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3).onUpload(releaseArray));
-            geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2).onUpload(releaseArray));
-            geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 3).onUpload(releaseArray));
+            // wrap them directly (Float32BufferAttribute would copy every array).
+            // NOTE: do NOT release the CPU arrays after GPU upload — WorldManager's
+            // meshCache hands these same buffers to chunks that remount later.
+            geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
+            geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
+            geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
+            geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 3));
             if (buff.indices && buff.indices.length > 0) {
-                geo.setIndex(new THREE.BufferAttribute(buff.indices, 1).onUpload(releaseArray));
+                geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }
             geo.computeBoundingSphere();
             return geo;
@@ -342,7 +353,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           // New data while a data-driven fade-out runs: cancel it, treat as clean start
           if (fadeModeRef.current === 'out') {
             stopFade();
-            disposeGeometries(geometriesRef.current);
+            queueDispose(geometriesRef.current);
             geometriesRef.current = EMPTY_GEOMETRIES;
           }
 
@@ -359,7 +370,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           }
         }
 
-        disposeGeometries(geometriesRef.current);
+        queueDispose(geometriesRef.current);
         geometriesRef.current = next;
         setGeometries(next);
         if (next.opaque || next.cutout || next.transparent) {
@@ -370,11 +381,14 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     return () => {
         unsubscribe();
         stopFade();
+        // Unmounting: dispose immediately, including anything still pending.
+        for (const g of pendingDisposeRef.current) disposeGeometries(g);
+        pendingDisposeRef.current = [];
         disposeGeometries(geometriesRef.current);
         geometriesRef.current = EMPTY_GEOMETRIES;
         hasRenderedMeshRef.current = false;
     };
-  }, [cx, cz, fadeInEnabled, startFade, stopFade]);
+  }, [cx, cz, fadeInEnabled, startFade, stopFade, queueDispose]);
 
   const matOpaque = fadeMats ? fadeMats.opaque : chunkMaterialSolid;
   const matCutout = fadeMats ? fadeMats.cutout : chunkMaterialCutout;
