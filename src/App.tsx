@@ -4,7 +4,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Analytics } from '@vercel/analytics/react';
 
-import { ChunkMesh } from './components/ChunkMesh';
+import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -112,6 +112,45 @@ const ChunkStreamer: React.FC<{ active: boolean }> = React.memo(({ active }) => 
     return null;
 });
 
+// --- Block-breaking overlay ---
+// InteractionController updates this every frame while mining. Routing it through
+// React state re-rendered the entire App (and re-reconciled the chunk list) per frame,
+// so it lives in a mutable store consumed imperatively by a single mesh instead.
+const breakingVisualStore: { value: BreakingVisual | null } = { value: null };
+const setBreakingVisualDirect: React.Dispatch<React.SetStateAction<BreakingVisual | null>> = (next) => {
+    breakingVisualStore.value = typeof next === 'function' ? next(breakingVisualStore.value) : next;
+};
+
+const BREAKING_COLOR_NORMAL = new THREE.Color('#000000');
+const BREAKING_COLOR_NO_DROP = new THREE.Color('#4b0000');
+
+const BreakingVisualMesh: React.FC<{ suspended: boolean }> = ({ suspended }) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+    useFrame(() => {
+        const mesh = meshRef.current;
+        const mat = matRef.current;
+        if (!mesh || !mat) return;
+        const v = suspended ? null : breakingVisualStore.value;
+        if (!v) {
+            mesh.visible = false;
+            return;
+        }
+        mesh.visible = true;
+        mesh.position.set(v.pos[0] + 0.5, v.pos[1] + 0.5, v.pos[2] + 0.5);
+        mat.color.copy(v.noDrop ? BREAKING_COLOR_NO_DROP : BREAKING_COLOR_NORMAL);
+        mat.opacity = v.progress * 0.7;
+    });
+
+    return (
+        <mesh ref={meshRef} visible={false}>
+            <boxGeometry args={[1.01, 1.01, 1.01]} />
+            <meshBasicMaterial ref={matRef} transparent opacity={0} depthTest={true} depthWrite={false} />
+        </mesh>
+    );
+};
+
 function buildChunkOffsets(r: number) {
     const items: Array<{ dx: number; dz: number; d: number; a: number }> = [];
 
@@ -124,21 +163,6 @@ function buildChunkOffsets(r: number) {
     }
 
     items.sort((p, q) => (p.d - q.d) || (p.a - q.a));
-    return items.map(({ dx, dz }) => ({ dx, dz }));
-}
-
-function buildRenderOffsets(r: number) {
-    const items: Array<{ dx: number; dz: number; d: number; a: number }> = [];
-
-    for (let dx = -r; dx <= r; dx++) {
-        for (let dz = -r; dz <= r; dz++) {
-            const d = dx * dx + dz * dz;
-            if (d > r * r) continue;
-            items.push({ dx, dz, d, a: Math.atan2(dz, dx) });
-        }
-    }
-
-    items.sort((a, b) => (a.d - b.d) || (a.a - b.a));
     return items.map(({ dx, dz }) => ({ dx, dz }));
 }
 
@@ -207,7 +231,6 @@ const App: React.FC = () => {
   const [loadingState, setLoadingState] = useState({ phase: '', percent: 0, details: '' });
   
   const [chunks, setChunks] = useState<{ cx: number; cz: number }[]>([]);
-        const [, setPlayerChunkCenter] = useState({ cx: 0, cz: 0 });
   const [drops, setDrops] = useState<Drop[]>([]);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
@@ -229,9 +252,6 @@ const App: React.FC = () => {
   const [fatalError, setFatalError] = useState<string | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
-    const [, setAmbientIntensity] = useState(0.6);
-    const [, setDirectionalIntensity] = useState(0.8);
-  const [breakingVisual, setBreakingVisual] = useState<BreakingVisual | null>(null);
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
@@ -317,14 +337,11 @@ const App: React.FC = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
 
     const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
-    const renderChunkOffsets = useMemo(() => buildRenderOffsets(renderDistance), [renderDistance]);
+    const renderChunkOffsets = desiredChunkOffsets;
 
   const isDead = health <= 0;
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
-  const renderedChunks = useMemo<RenderedChunk[]>(() => {
-      if (chunks.length === 0) return [];
-      return chunks.map((chunk) => ({ ...chunk }));
-  }, [chunks]);
+  const renderedChunks: RenderedChunk[] = chunks;
 
   // ── Chunk fade-out tracking ──
   // We keep departing chunks in the render list so their ChunkMesh can animate out.
@@ -449,7 +466,6 @@ const App: React.FC = () => {
                 worldManager.setDesiredChunks(nextDesired);
 
                 startTransition(() => {
-                    setPlayerChunkCenter({ cx, cz });
                     setChunks(nextRender);
                 });
             }, [desiredChunkOffsets, renderChunkOffsets]);
@@ -517,15 +533,32 @@ const App: React.FC = () => {
       }
   }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot]);
 
-  // Auto-save timer
+  // Auto-save timer. saveGame's identity changes on every inventory/health/breath
+  // update, so depending on it directly restarted the interval constantly and starved
+  // auto-save during active play — go through a latest-value ref instead.
+  const saveGameRef = useRef(saveGame);
+  useEffect(() => { saveGameRef.current = saveGame; }, [saveGame]);
+
   useEffect(() => {
       if (appState === 'game') {
           const interval = setInterval(() => {
-              saveGame();
+              saveGameRef.current();
           }, 10000); // 10 seconds
           return () => clearInterval(interval);
       }
-  }, [appState, saveGame]);
+  }, [appState]);
+
+  // Best-effort save when the window/tab is closed or killed mid-session.
+  useEffect(() => {
+      if (appState !== 'game') return;
+      const onPageHide = () => { void saveGameRef.current(); };
+      window.addEventListener('pagehide', onPageHide);
+      window.addEventListener('beforeunload', onPageHide);
+      return () => {
+          window.removeEventListener('pagehide', onPageHide);
+          window.removeEventListener('beforeunload', onPageHide);
+      };
+  }, [appState]);
 
   useEffect(() => {
       const handleError = (event: ErrorEvent) => {
@@ -2066,6 +2099,12 @@ const App: React.FC = () => {
       worldManager.spawnDrop(type, x, y, z);
   }, []);
 
+  // Stable identity — an inline arrow here re-bound InteractionController's
+  // window mouse listeners on every App render.
+  const handleSleepInBed = useCallback((x: number, y: number, z: number) => {
+      pendingBedSpawnRef.current = { x, y, z };
+  }, []);
+
   let overlayColor = 'transparent';
   if (headBlockType === BlockType.WATER) overlayColor = 'rgba(0, 0, 100, 0.4)';
   else if (headBlockType === BlockType.LAVA) overlayColor = 'rgba(255, 50, 0, 0.8)';
@@ -2249,9 +2288,11 @@ const App: React.FC = () => {
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
                 {/* Streamer runs logic loop for loading */}
                 <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
+                {/* Single ticker driving all chunk fade animations */}
+                <ChunkFadeTicker />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
-                <DayNightCycle ref={dayNightRef} setAmbientIntensity={setAmbientIntensity} setDirectionalIntensity={setDirectionalIntensity} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
+                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
                 
                 <Suspense fallback={null}>
@@ -2261,14 +2302,14 @@ const App: React.FC = () => {
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                 </Suspense>
 
-                <InteractionController 
-                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} 
-                    spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisual} 
-                    setOpenContainer={handleInteractionContainerOpen} 
-                    openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={(x:number, y:number, z:number) => { pendingBedSpawnRef.current = { x, y, z }; }}
+                <InteractionController
+                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem}
+                    spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
+                    setOpenContainer={handleInteractionContainerOpen}
+                    openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
                 />
-                
-                {!isCapturingPanorama && breakingVisual && <group position={[breakingVisual.pos[0]+0.5, breakingVisual.pos[1]+0.5, breakingVisual.pos[2]+0.5]}><mesh><boxGeometry args={[1.01, 1.01, 1.01]} /><meshBasicMaterial color={breakingVisual.noDrop ? '#4b0000' : 'black'} transparent opacity={breakingVisual.progress * 0.7} depthTest={true} depthWrite={false} /></mesh></group>}
+
+                <BreakingVisualMesh suspended={isCapturingPanorama} />
 
                 {/* Only mount Player when game is Active to ensure physics starts with correct spawn position */}
                 {appState === 'game' && (

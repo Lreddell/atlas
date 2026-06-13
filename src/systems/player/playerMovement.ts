@@ -1,7 +1,7 @@
 
 import * as THREE from 'three';
 import { WorldManager } from '../WorldManager';
-import { checkCollision, hasGroundSupport } from './playerCollision';
+import { checkCollision, hasGroundSupport, getSupportTop } from './playerCollision';
 import { BlockType } from '../../types';
 import { 
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, 
@@ -231,7 +231,9 @@ export function simulateStep(
         
         if (newVel.y < 0) {
             isGrounded = true;
-            newPos.y = Math.floor(newPos.y) + CONTACT_EPS;
+            // Snap to the top of the actual supporting block (beds are 0.5 high).
+            const supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+            newPos.y = (supportTop !== null ? supportTop : Math.floor(newPos.y)) + CONTACT_EPS;
         } else {
             newPos.y = Math.floor(newPos.y + height + 1.0) - height - CONTACT_EPS;
         }

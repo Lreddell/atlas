@@ -711,8 +711,16 @@ class SoundManager {
         if (this.ctx.state !== 'running') return;
 
         try {
-            const def = this.getDefinition(eventId);
-            if (!def || !def.sounds || def.sounds.length === 0) return;
+            let def = this.getDefinition(eventId);
+            if (!def || !def.sounds || def.sounds.length === 0) {
+                // Block sound groups with no manifest entries (glass, cloth, snow, metal…)
+                // fall back to the generic group instead of going silent.
+                const blockEvent = /^block\.([^.]+)\.([^.]+)$/.exec(eventId);
+                if (blockEvent && blockEvent[1] !== 'generic') {
+                    def = this.getDefinition(`block.generic.${blockEvent[2]}`);
+                }
+                if (!def || !def.sounds || def.sounds.length === 0) return;
+            }
 
             if (this.activeSources.size >= this.MAX_GLOBAL_SOURCES) return; 
             const activeForEvent = this.activeByEvent.get(eventId);

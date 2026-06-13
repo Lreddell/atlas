@@ -132,15 +132,59 @@ export function processFluids(state: WorldState) {
 
         const isSource = currentMeta === 0;
         const decay = isSource ? 0 : currentMeta;
-        
+
+        // --- Drain check: flowing fluid whose supply disappeared must recede. ---
+        if (!isSource) {
+            const above = getBlockAndMeta(state, x, y + 1, z);
+            const fedFromAbove = above.type === type;
+
+            if (currentMeta === 8) {
+                // Falling fluid is supported only by same-type fluid directly above.
+                if (!fedFromAbove) {
+                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    continue;
+                }
+            } else if (!fedFromAbove) {
+                // Horizontal flow needs a same-type neighbor with strictly lower meta
+                // (falling neighbors with meta 8 are not suppliers — 8+1 exceeds maxSpread).
+                let minSupplier = Infinity;
+                for (const [dx, dz] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+                    const n = getBlockAndMeta(state, x + dx, y, z + dz);
+                    if (n.type === type && n.meta !== 8 && n.meta < currentMeta) {
+                        if (n.meta < minSupplier) minSupplier = n.meta;
+                    }
+                }
+                const maxSpreadDrain = type === BlockType.LAVA ? MAX_LAVA_SPREAD : MAX_WATER_SPREAD;
+                if (minSupplier === Infinity) {
+                    // Orphaned — remove; setBlock reschedules fluid neighbors so the
+                    // drain cascades outward naturally.
+                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    continue;
+                }
+                const supportedMeta = minSupplier + 1;
+                if (supportedMeta > maxSpreadDrain) {
+                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    continue;
+                }
+                if (supportedMeta > currentMeta) {
+                    // Supply weakened — downgrade and re-check next update.
+                    worldManager.setBlock(x, y, z, type, supportedMeta);
+                    scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
+                    continue;
+                }
+            }
+        }
+
         const down = getBlockAndMeta(state, x, y - 1, z);
         const canFlowDown = isReplaceable(down.type) || (down.type === type && down.meta !== 8);
-        
+
         if (canFlowDown) {
-             if (down.type !== type || down.meta !== 8) {
-                 trySpreadTo(state, x, y - 1, z, type, 8); 
+             // Never overwrite a same-type SOURCE below (meta 0) — pouring fluid onto a
+             // source pool used to rewrite it to falling fluid, destroying the source.
+             if (down.type !== type || (down.meta !== 8 && down.meta !== 0)) {
+                 trySpreadTo(state, x, y - 1, z, type, 8);
              }
-             if (!isSource) continue; 
+             if (!isSource) continue;
         }
 
         const maxSpread = type === BlockType.LAVA ? MAX_LAVA_SPREAD : MAX_WATER_SPREAD;

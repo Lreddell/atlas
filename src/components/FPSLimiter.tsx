@@ -11,15 +11,22 @@ export const FPSLimiter = ({ limit }: { limit: number }) => {
     const clampedLimit = Math.max(10, Math.min(260, limit));
     const intervalMs = 1000 / clampedLimit;
 
+    // Schedule against an absolute timeline so setTimeout overshoot doesn't
+    // accumulate — the previous frame-cost-only compensation consistently
+    // undershot the target FPS.
+    let nextFrameAt = performance.now();
+
     const runLoop = () => {
       if (!running) return;
 
-      const frameStart = performance.now();
-      advance(frameStart / 1000);
+      advance(performance.now() / 1000);
 
-      const frameCost = performance.now() - frameStart;
-      const delay = Math.max(0, intervalMs - frameCost);
-      timeoutId = setTimeout(runLoop, delay);
+      nextFrameAt += intervalMs;
+      const now = performance.now();
+      // If we fell more than one frame behind (tab hidden, long frame), resync
+      // instead of bursting to catch up.
+      if (now > nextFrameAt + intervalMs) nextFrameAt = now;
+      timeoutId = setTimeout(runLoop, Math.max(0, nextFrameAt - now));
     };
 
     timeoutId = setTimeout(runLoop, 0);

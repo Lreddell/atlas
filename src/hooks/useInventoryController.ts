@@ -294,7 +294,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     for (let i=rangeStart; i<rangeEnd && rem>0; i++) {
                         if (newInv[i] && newInv[i]!.type === slotItem.type && newInv[i]!.count < 64) {
                             const add = Math.min(64 - newInv[i]!.count, rem);
-                            newInv[i]!.count += add; rem -= add;
+                            // Clone before changing count — the stack object is shared
+                            // with the previous React state array.
+                            newInv[i] = { ...newInv[i]!, count: newInv[i]!.count + add };
+                            rem -= add;
                         }
                     }
                     for (let i=rangeStart; i<rangeEnd && rem>0; i++) {

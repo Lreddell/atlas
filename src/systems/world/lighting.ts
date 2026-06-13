@@ -7,14 +7,6 @@ import { worldToChunk, index3D, getChunkKey } from './worldCoords';
 import { NEIGHBORS, QUEUE_SIZE, SHARED_SKY_Q, SHARED_BLOCK_Q } from './worldConstants';
 import { getOpacity } from './blockProps';
 
-function getBlock(state: WorldState, x: number, y: number, z: number): BlockType {
-    if (y < MIN_Y || y > MAX_Y) return BlockType.AIR;
-    const { cx, cz, lx, lz } = worldToChunk(x, z);
-    const chunk = getChunkData(state, cx, cz);
-    if (!chunk) return BlockType.AIR;
-    return chunk[index3D(lx, y, lz)];
-}
-
 export function getLight(state: WorldState, x: number, y: number, z: number): { sky: number, block: number } {
     if (y < MIN_Y || y > MAX_Y) return { sky: 15, block: 0 };
     const { cx, cz, lx, lz } = worldToChunk(x, z);
@@ -48,62 +40,96 @@ export function updateLightingAround(state: WorldState, x: number, y: number, z:
 }
 
 export function floodLightLocal(state: WorldState, bx: number, by: number, bz: number, radius: number = 15) {
+    // Hot path: runs on the main thread for EVERY block edit (and fluid level change).
+    // Uses direct chunk/light array access — the previous getBlock/getLight/setLight
+    // version allocated ~800k temporary objects+strings per flood.
     const R = radius;
-    const bounds = {
-        minX: bx - R, maxX: bx + R,
-        minY: Math.max(MIN_Y, by - R), maxY: Math.min(MAX_Y, by + R), 
-        minZ: bz - R, maxZ: bz + R
-    };
-    
+    const minX = bx - R, maxX = bx + R;
+    const minZ = bz - R, maxZ = bz + R;
+    const minY = Math.max(MIN_Y, by - R), maxY = Math.min(MAX_Y, by + R);
+    const LAYER = CHUNK_SIZE * CHUNK_SIZE;
+
     let qSkyTail = 0;
     let qBlockTail = 0;
-    const qSky = SHARED_SKY_Q; 
+    const qSky = SHARED_SKY_Q;
     const qBlock = SHARED_BLOCK_Q;
 
-    for(let x=bounds.minX; x<=bounds.maxX; x++) {
-        for(let z=bounds.minZ; z<=bounds.maxZ; z++) {
-             // Optimized find first non-air block
-             let maxHeight = MIN_Y;
-             for (let h = MAX_Y; h >= MIN_Y; h--) {
-                 if (getBlock(state, x, h, z) !== BlockType.AIR) {
-                     maxHeight = h;
-                     break;
-                 }
-             }
+    let cxCache = -999999999;
+    let czCache = -999999999;
+    let chunkCache: Uint8Array | undefined;
+    let lightCache: Uint8Array | undefined;
+    const refreshCache = (cx: number, cz: number) => {
+        if (cx !== cxCache || cz !== czCache) {
+            cxCache = cx; czCache = cz;
+            chunkCache = getChunkData(state, cx, cz);
+            lightCache = getLightData(state, cx, cz);
+        }
+    };
 
-             // Everything above is sunlit
-             for (let y = MAX_Y; y > maxHeight; y--) {
-                 if (y >= bounds.minY && y <= bounds.maxY) {
-                    setLight(state, x, y, z, 15, 0);
-                 }
-             }
+    // Pass 1: recompute vertical skylight + emission for each column in the area.
+    for (let x = minX; x <= maxX; x++) {
+        const cx = Math.floor(x / CHUNK_SIZE);
+        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        for (let z = minZ; z <= maxZ; z++) {
+            const cz = Math.floor(z / CHUNK_SIZE);
+            refreshCache(cx, cz);
+            if (!chunkCache || !lightCache) continue;
+            const chunk = chunkCache;
+            const light = lightCache;
+            const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const colBase = lz * CHUNK_SIZE + lx;
 
-             let sky = 15;
-             // Scan from highest non-air downward
-             for(let y=maxHeight; y>=MIN_Y; y--) {
-                 const b = getBlock(state, x,y,z);
-                 const opacity = getOpacity(b);
-                 if (opacity >= 15) sky = 0;
-                 else if (opacity > 0) sky = Math.max(0, sky - opacity);
-                 
-                 if (y >= bounds.minY && y <= bounds.maxY) {
-                      const def = BLOCKS[b];
-                      const emission = def ? (def.lightLevel || 0) : 0;
-                      setLight(state, x,y,z, sky, emission);
-                 }
-             }
+            // Highest non-air block in the column
+            let maxHeight = MIN_Y - 1;
+            for (let y = MAX_Y; y >= MIN_Y; y--) {
+                if (chunk[(y - MIN_Y) * LAYER + colBase] !== 0) { maxHeight = y; break; }
+            }
+
+            // Everything above is sunlit (only write inside the edit bounds)
+            for (let y = maxY; y > Math.max(maxHeight, minY - 1); y--) {
+                light[(y - MIN_Y) * LAYER + colBase] = 15 << 4;
+            }
+
+            let sky = 15;
+            // Scan from highest non-air downward; stop once below the writable bounds
+            for (let y = maxHeight; y >= minY; y--) {
+                const idx = (y - MIN_Y) * LAYER + colBase;
+                const b = chunk[idx];
+                const opacity = getOpacity(b);
+                if (opacity >= 15) sky = 0;
+                else if (opacity > 0) sky = Math.max(0, sky - opacity);
+
+                if (y <= maxY) {
+                    const def = BLOCKS[b as BlockType];
+                    const emission = def ? (def.lightLevel || 0) : 0;
+                    light[idx] = (sky << 4) | (emission & 0xF);
+                }
+            }
         }
     }
 
-    for(let x=bounds.minX-1; x<=bounds.maxX+1; x++) {
-        for(let z=bounds.minZ-1; z<=bounds.maxZ+1; z++) {
-            for(let y=bounds.minY-1; y<=bounds.maxY+1; y++) {
-                if (y < MIN_Y || y > MAX_Y) continue;
-                const l = getLight(state, x,y,z);
-                if (l.sky > 0 && qSkyTail < QUEUE_SIZE * 3) {
+    // Pass 2: seed BFS from every lit cell in (and one beyond) the recomputed region.
+    cxCache = -999999999; czCache = -999999999;
+    chunkCache = undefined; lightCache = undefined;
+    const seedMinY = Math.max(MIN_Y, minY - 1);
+    const seedMaxY = Math.min(MAX_Y, maxY + 1);
+    for (let x = minX - 1; x <= maxX + 1; x++) {
+        const cx = Math.floor(x / CHUNK_SIZE);
+        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        for (let z = minZ - 1; z <= maxZ + 1; z++) {
+            const cz = Math.floor(z / CHUNK_SIZE);
+            refreshCache(cx, cz);
+            if (!lightCache) continue; // unloaded chunk: propagation would skip it anyway
+            const light = lightCache;
+            const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const colBase = lz * CHUNK_SIZE + lx;
+            for (let y = seedMinY; y <= seedMaxY; y++) {
+                const val = light[(y - MIN_Y) * LAYER + colBase];
+                if (val === 0) continue;
+                if ((val >> 4) > 0 && qSkyTail < QUEUE_SIZE * 3) {
                     qSky[qSkyTail++] = x; qSky[qSkyTail++] = y; qSky[qSkyTail++] = z;
                 }
-                if (l.block > 0 && qBlockTail < QUEUE_SIZE * 3) {
+                if ((val & 0xF) > 0 && qBlockTail < QUEUE_SIZE * 3) {
                     qBlock[qBlockTail++] = x; qBlock[qBlockTail++] = y; qBlock[qBlockTail++] = z;
                 }
             }
@@ -270,22 +296,32 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
                 for (let lz = currZStart; lz <= currZEnd; lz++) {
                      const cIndex = index3D(lx, y, lz);
                      const val = currentLight[cIndex];
-                     if ((val >> 4) > 0 && sCount < QUEUE_SIZE * 3) {
-                         qSky[sCount++] = worldX + lx; qSky[sCount++] = y; qSky[sCount++] = worldZ + lz;
-                     }
-                     if ((val & 0xF) > 0 && bCount < QUEUE_SIZE * 3) {
-                         qBlock[bCount++] = worldX + lx; qBlock[bCount++] = y; qBlock[bCount++] = worldZ + lz;
-                     }
-                     
+
                      let nlx = lx; let nlz = lz;
                      if (dx === -1) nlx = CHUNK_SIZE - 1;
                      else if (dx === 1) nlx = 0;
                      else if (dz === -1) nlz = CHUNK_SIZE - 1;
                      else if (dz === 1) nlz = 0;
-                     
+
                      const nIndex = index3D(nlx, y, nlz);
                      const nVal = nLight[nIndex];
-                     if ((nVal >> 4) > 0 && sCount < QUEUE_SIZE * 3) {
+
+                     // When both sides of the border are fully sunlit (sky=15), neither can
+                     // improve the other — this is the overwhelmingly common open-air case
+                     // and skipping it removes tens of thousands of no-op BFS seeds per
+                     // chunk load on the main thread.
+                     const curSky = val >> 4;
+                     const nSky = nVal >> 4;
+                     const bothSaturated = curSky === 15 && nSky === 15;
+
+                     if (curSky > 0 && !bothSaturated && sCount < QUEUE_SIZE * 3) {
+                         qSky[sCount++] = worldX + lx; qSky[sCount++] = y; qSky[sCount++] = worldZ + lz;
+                     }
+                     if ((val & 0xF) > 0 && bCount < QUEUE_SIZE * 3) {
+                         qBlock[bCount++] = worldX + lx; qBlock[bCount++] = y; qBlock[bCount++] = worldZ + lz;
+                     }
+
+                     if (nSky > 0 && !bothSaturated && sCount < QUEUE_SIZE * 3) {
                          qSky[sCount++] = nWorldX + nlx; qSky[sCount++] = y; qSky[sCount++] = nWorldZ + nlz;
                      }
                      if ((nVal & 0xF) > 0 && bCount < QUEUE_SIZE * 3) {

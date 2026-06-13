@@ -58,6 +58,30 @@ export function checkCollision(wm: WorldManager, pos: {x:number, y:number, z:num
     return false;
 }
 
+// Highest block top at or below the player's feet within the footprint.
+// Used to snap correctly after a downward collision — flooring to an integer
+// assumed full-height blocks and embedded the player into beds (height 0.5).
+export function getSupportTop(wm: WorldManager, pos: {x:number, y:number, z:number}, width: number): number | null {
+    const minX = Math.floor(pos.x - width / 2 + CONTACT_EPS);
+    const maxX = Math.floor(pos.x + width / 2 - CONTACT_EPS);
+    const minZ = Math.floor(pos.z - width / 2 + CONTACT_EPS);
+    const maxZ = Math.floor(pos.z + width / 2 - CONTACT_EPS);
+    const feetY = Math.floor(pos.y + CONTACT_EPS);
+
+    let best = -Infinity;
+    for (let blockY = feetY; blockY >= feetY - 1; blockY--) {
+        for (let x = minX; x <= maxX; x++) {
+            for (let z = minZ; z <= maxZ; z++) {
+                const h = getBlockHeight(wm.getBlock(x, blockY, z, false));
+                if (h <= 0) continue;
+                const top = blockY + h;
+                if (top <= pos.y + CONTACT_EPS && top > best) best = top;
+            }
+        }
+    }
+    return best === -Infinity ? null : best;
+}
+
 // Check if there is ground support directly beneath the player
 export function hasGroundSupport(wm: WorldManager, pos: {x:number, y:number, z:number}, width: number): boolean {
     const yCheck = pos.y - GROUND_EPS;

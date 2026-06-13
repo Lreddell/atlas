@@ -47,22 +47,9 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
     const [isDocumentVisible, setIsDocumentVisible] = useState(() => (
         typeof document === 'undefined' ? true : document.visibilityState === 'visible'
     ));
-    const [viewportSize, setViewportSize] = useState(() => ({
-        width: typeof window !== 'undefined' ? window.innerWidth : 1280,
-        height: typeof window !== 'undefined' ? window.innerHeight : 720,
-    }));
 
     useEffect(() => {
         setBgPattern(getDirtBackground());
-    }, []);
-
-    useEffect(() => {
-        const onResize = () => {
-            setViewportSize({ width: window.innerWidth, height: window.innerHeight });
-        };
-
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
     }, []);
 
     useEffect(() => {
@@ -267,7 +254,10 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
             new THREE.MeshBasicMaterial({ map: texBack, side: THREE.BackSide }),
         ];
 
-        const boxSize = Math.max(viewportSize.width, viewportSize.height) * 4;
+        // Size only needs to be "large"; the camera sits at the center. Reading the
+        // window directly (instead of viewport state) keeps resizes from re-running
+        // this effect — recreating the WebGLRenderer per resize event was expensive.
+        const boxSize = Math.max(window.innerWidth, window.innerHeight) * 4;
         const skybox = new THREE.Mesh(new THREE.BoxGeometry(boxSize, boxSize, boxSize), materials);
         scene.add(skybox);
 
@@ -373,7 +363,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
                 debugHostEl.removeChild(renderer.domElement);
             }
         };
-    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap, viewportSize.width, viewportSize.height]);
+    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap]);
 
     return (
         <>

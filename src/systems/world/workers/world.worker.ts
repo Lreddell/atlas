@@ -7,7 +7,7 @@ import { loadGenConfig, resetGenConfig } from '../genConfig';
 const ctx = self as unknown as Worker;
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces } = e.data;
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
@@ -43,7 +43,7 @@ ctx.onmessage = (e) => {
         }
 
         // Generate geometry using data provided in the message.
-        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights);
+        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
 
         const buffers: Transferable[] = [];
         [result.opaque, result.cutout, result.transparent].forEach(geo => {
