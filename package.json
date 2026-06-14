@@ -1,7 +1,7 @@
 {
   "name": "atlas-desktop",
-  "version": "v1.0.1-alpha",
-  "displayVersion": "Alpha 1.0.1",
+  "version": "v1.0.2-alpha",
+  "displayVersion": "Alpha 1.0.2",
   "description": "Voxel-based world editor built with Electron, React, and Three.js",
   "main": "electron/main.js",
   "scripts": {
