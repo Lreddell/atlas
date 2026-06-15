@@ -44,7 +44,13 @@ function getBlockAndMeta(state: WorldState, x: number, y: number, z: number) {
 }
 
 function isReplaceable(type: BlockType) {
-    return type === BlockType.AIR || isWashable(type) || (type !== BlockType.WATER && type !== BlockType.LAVA && !BLOCKS[type].noCollision === false);
+    if (type === BlockType.AIR) return true;
+    if (type === BlockType.WATER || type === BlockType.LAVA) return false;
+    if (isWashable(type)) return true;
+    // Non-solid decoration blocks (flowers, etc.) can be flooded; guard against
+    // unknown ids so a bad block type can't crash the fluid tick.
+    const def = BLOCKS[type];
+    return !!def && !!def.noCollision;
 }
 
 function calculateFlowCost(state: WorldState, sx: number, sy: number, sz: number): number {
