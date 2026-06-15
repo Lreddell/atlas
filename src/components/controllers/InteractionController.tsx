@@ -226,6 +226,23 @@ export const InteractionController = ({
                 const now = Date.now();
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
 
+                // Double-slab: placing a matching slab onto the open face of an existing
+                // slab fuses them into the full parent block (in place), like Minecraft.
+                if (heldItemDef.shape === 'slab' && targetType === heldItem.type) {
+                    const tMeta = worldManager.getMetadata(bx, by, bz);
+                    const targetIsTop = (tMeta & 1) === 1;
+                    if ((!targetIsTop && hit.ny === 1) || (targetIsTop && hit.ny === -1)) {
+                        const full = (heldItemDef.textureParent ?? heldItem.type) as BlockType;
+                        worldManager.setBlock(bx, by, bz, full, 0);
+                        consumeItem(selectedSlotRef.current);
+                        lastPlacementTime.current = now;
+                        emitPlacementAnimation();
+                        const group = getBlockSoundGroup(heldItem.type);
+                        soundManager.playAt(`block.${group}.place`, { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 });
+                        return;
+                    }
+                }
+
                 if (heldItem.type === BlockType.TORCH) {
                     if (hit.ny < 0.9) return;
                 }
