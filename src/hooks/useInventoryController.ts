@@ -333,6 +333,8 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                 
                 slots.forEach(slot => {
                     if (remainder <= 0) return;
+                    // Output slots are result-only — never deposit into them (matches 'split' mode).
+                    if (slot.collection === 'output' || slot.collection === 'furnace_output') return;
                     const sItem = getSlot(slot.collection, slot.index);
                     if (!sItem) {
                         updateSlot(slot.collection, slot.index, { type: startStack.type, count: 1 });

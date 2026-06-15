@@ -654,13 +654,27 @@ class SoundManager {
         if (this.bufferLoadPromises.has(fullUrl)) return this.bufferLoadPromises.get(fullUrl)!;
 
         const loadPromise = (async () => {
+            // Transient failure (network down, 5xx): don't cache anything and clear
+            // the in-flight promise so a later play retries the real file instead of
+            // being stuck with a synthesized fallback forever.
+            const bailTransient = () => {
+                this.bufferLoadPromises.delete(fullUrl);
+                return null;
+            };
+            let res: Response;
             try {
-                const res = await fetch(fullUrl);
+                res = await fetch(fullUrl);
+            } catch (e) {
+                return bailTransient();
+            }
+            if (res.status >= 500) return bailTransient();
+
+            try {
                 if (!res.ok) throw new Error(`Status ${res.status}`);
                 const arrayBuffer = await res.arrayBuffer();
-                
-                if (!this.ctx) throw new Error("No AudioContext");
-                
+
+                if (!this.ctx) return bailTransient();
+
                 if (arrayBuffer.byteLength === 0) {
                     throw new Error("Empty file");
                 }
@@ -669,17 +683,12 @@ class SoundManager {
                 this.buffers.set(fullUrl, audioBuffer);
                 return audioBuffer;
             } catch (e) {
-                if (this.ctx) {
-                    const fallback = this.createFallbackBuffer(url);
-                    if (fallback) {
-                        this.buffers.set(fullUrl, fallback);
-                        return fallback;
-                    }
-                }
-                this.bufferLoadPromises.delete(fullUrl);
-                
-                // Return null if empty or missing, preventing throws
-                return null;
+                // Permanent failure (404, empty, or undecodable): substitute a
+                // synthesized cue and cache it so we don't refetch a file that
+                // won't change. Keep the promise cached to avoid refetch storms.
+                const fallback = this.ctx ? this.createFallbackBuffer(url) : null;
+                if (fallback) this.buffers.set(fullUrl, fallback);
+                return fallback;
             }
         })();
 

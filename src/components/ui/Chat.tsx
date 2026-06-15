@@ -34,10 +34,14 @@ export const Chat: React.FC<ChatProps> = ({
 
     useEffect(() => {
         if (showInput) {
-            inputRef.current?.focus();
-            inputRef.current?.setSelectionRange(inputValue.length, inputValue.length);
+            const el = inputRef.current;
+            el?.focus();
+            // Move the caret to the end only when the box first opens. Re-running
+            // this on every inputValue change forced the caret to the end on each
+            // keystroke, making mid-command edits impossible.
+            if (el) el.setSelectionRange(el.value.length, el.value.length);
         }
-    }, [showInput, inputValue]);
+    }, [showInput]);
 
     const stopPropagation = (e: React.SyntheticEvent) => {
         e.stopPropagation();
