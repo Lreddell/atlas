@@ -216,7 +216,13 @@ for (const t of HEAVY) {
 push(2, [BlockType.SAND, BlockType.SAND, BlockType.SAND, BlockType.SAND], BlockType.SANDSTONE, 1);
 push(2, [BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND], BlockType.RED_SANDSTONE, 1);
 
-function trimGrid(grid: (BlockType | null)[], width: number): (BlockType | null)[] {
+interface TrimmedGrid {
+    cells: (BlockType | null)[];
+    w: number;
+    h: number;
+}
+
+function trimGrid(grid: (BlockType | null)[], width: number): TrimmedGrid | null {
     const height = grid.length / width;
     let minX = width, maxX = -1, minY = height, maxY = -1;
     for (let y = 0; y < height; y++) {
@@ -227,31 +233,33 @@ function trimGrid(grid: (BlockType | null)[], width: number): (BlockType | null)
             }
         }
     }
-    if (maxX === -1) return [];
+    if (maxX === -1) return null;
     const newWidth = maxX - minX + 1;
     const newHeight = maxY - minY + 1;
-    const trimmed: (BlockType | null)[] = new Array(newWidth * newHeight).fill(null);
+    const cells: (BlockType | null)[] = new Array(newWidth * newHeight).fill(null);
     for (let y = 0; y < newHeight; y++) {
         for (let x = 0; x < newWidth; x++) {
-            trimmed[y * newWidth + x] = grid[(minY + y) * width + (minX + x)];
+            cells[y * newWidth + x] = grid[(minY + y) * width + (minX + x)];
         }
     }
-    return trimmed;
+    return { cells, w: newWidth, h: newHeight };
 }
 
 export const checkRecipe = (grid: (BlockType | null)[], gridWidth: number): { type: BlockType, count: number } | null => {
-    const trimmedInput = trimGrid(grid, gridWidth);
-    if (trimmedInput.length === 0) return null;
-    
+    const input = trimGrid(grid, gridWidth);
+    if (!input) return null;
+
     for (const recipe of RECIPES) {
-        const recipeWidth = recipe.gridSize;
-        const trimmedRecipe = trimGrid(recipe.pattern, recipeWidth);
-        
-        if (trimmedInput.length !== trimmedRecipe.length) continue;
-        
+        const r = trimGrid(recipe.pattern, recipe.gridSize);
+        if (!r) continue;
+
+        // Exact shape match (width AND height), not just cell count — otherwise a
+        // 1x3 column and a 3x1 row both "match" (e.g. stacked planks -> slabs).
+        if (input.w !== r.w || input.h !== r.h) continue;
+
         let match = true;
-        for (let i = 0; i < trimmedInput.length; i++) {
-            if (trimmedInput[i] !== trimmedRecipe[i]) { match = false; break; }
+        for (let i = 0; i < input.cells.length; i++) {
+            if (input.cells[i] !== r.cells[i]) { match = false; break; }
         }
         if (match) return recipe.output;
     }
