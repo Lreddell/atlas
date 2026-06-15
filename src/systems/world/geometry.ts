@@ -6,6 +6,7 @@ import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { index3D } from './worldCoords';
 import { resolveTexture } from './textureResolver';
 import { getOpacity } from './blockProps';
+import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
 
 export interface NeighborData {
@@ -208,12 +209,28 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.PINK_FLOWER
 ].forEach(t => { IS_CROSS[t] = 1; });
 
+// Slabs / stairs: rendered as partial boxes, never as full cubes or greedy quads.
+const IS_SHAPED = new Uint8Array(MAX_BLOCK_ID + 1);
+for (let id = 0; id <= MAX_BLOCK_ID; id++) {
+    if (isShaped(id as BlockType)) IS_SHAPED[id] = 1;
+}
+
 function isOpaqueGreedyCandidate(type: BlockType): boolean {
     if (type === BlockType.AIR) return false;
-    if (IS_CUTOUT[type] || IS_TRANSPARENT[type] || IS_CROSS[type]) return false;
+    if (IS_CUTOUT[type] || IS_TRANSPARENT[type] || IS_CROSS[type] || IS_SHAPED[type]) return false;
     const def = BLOCKS[type];
     return !!def && !def.transparent;
 }
+
+// Face descriptors for the partial-box (slab/stair) emitter.
+const SHAPED_FACES: { name: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back', dx: number, dy: number, dz: number }[] = [
+    { name: 'right', dx: 1, dy: 0, dz: 0 },
+    { name: 'left', dx: -1, dy: 0, dz: 0 },
+    { name: 'top', dx: 0, dy: 1, dz: 0 },
+    { name: 'bottom', dx: 0, dy: -1, dz: 0 },
+    { name: 'front', dx: 0, dy: 0, dz: 1 },
+    { name: 'back', dx: 0, dy: 0, dz: -1 },
+];
 
 export function generateGeometryData(
     _cx: number,
@@ -286,6 +303,104 @@ export function generateGeometryData(
     };
 
     const isAOOccluder = (type: BlockType) => type !== BlockType.AIR && getOpacity(type) >= 2;
+
+    // Emits a slab/stairs block as a set of partial boxes. Each box face is drawn
+    // unless it lies flush on the cell boundary against a full opaque cube. UVs are
+    // sub-sampled from the parent block's texture so a half-height side shows the
+    // matching half of the texture (not a squished full tile).
+    const emitShapedBlock = (x: number, y: number, z: number, type: BlockType, meta: number) => {
+        const def = BLOCKS[type];
+        const parentType = (def.textureParent ?? type) as BlockType;
+        const boxes = getShapeBoxes(type, meta);
+
+        for (let bi = 0; bi < boxes.length; bi++) {
+            const box = boxes[bi];
+            const bx0 = box[0], by0 = box[1], bz0 = box[2];
+            const bx1 = box[3], by1 = box[4], bz1 = box[5];
+
+            for (let fi = 0; fi < 6; fi++) {
+                const f = SHAPED_FACES[fi];
+                const face = FACE_DATA[f.name];
+
+                // Only a face flush with the cell edge can be hidden, and only by a
+                // full opaque neighbour cube.
+                let onBoundary: boolean;
+                if (f.dx === 1) onBoundary = bx1 === 1;
+                else if (f.dx === -1) onBoundary = bx0 === 0;
+                else if (f.dy === 1) onBoundary = by1 === 1;
+                else if (f.dy === -1) onBoundary = by0 === 0;
+                else if (f.dz === 1) onBoundary = bz1 === 1;
+                else onBoundary = bz0 === 0;
+
+                if (onBoundary && isOpaqueGreedyCandidate(getTypeFast(x + f.dx, y + f.dy, z + f.dz))) {
+                    continue;
+                }
+
+                const raw = getLightFast(x + f.dx, y + f.dy, z + f.dz);
+                if (cullDarkFaces && raw === 0) continue;
+                const skyC = ((raw >> 4) & 0xF) / 15.0;
+                const blockC = (raw & 0xF) / 15.0;
+
+                const { uvs } = resolveTexture(parentType, f.name, f.dx, f.dy, f.dz, 0);
+                const uBL = uvs[0], vBL = uvs[1];
+                const uBR = uvs[2], vBR = uvs[3];
+                const uTR = uvs[4], vTR = uvs[5];
+                const uTL = uvs[6], vTL = uvs[7];
+
+                // Texture parameter axes for this face (from the full-cube corners).
+                const c = face.corners;
+                const aAxis = [c[1][0] - c[0][0], c[1][1] - c[0][1], c[1][2] - c[0][2]];
+                const bAxis = [c[3][0] - c[0][0], c[3][1] - c[0][1], c[3][2] - c[0][2]];
+                const aIdx = aAxis[0] !== 0 ? 0 : (aAxis[1] !== 0 ? 1 : 2);
+                const bIdx = bAxis[0] !== 0 ? 0 : (bAxis[1] !== 0 ? 1 : 2);
+                const aPos = aAxis[aIdx] > 0;
+                const bPos = bAxis[bIdx] > 0;
+
+                if (!opaqueBuffer.ensureCapacity(1)) continue;
+                let vp = opaqueBuffer.vCount * 3;
+                let up = opaqueBuffer.vCount * 2;
+                const ip = opaqueBuffer.iCount;
+                const vBase = opaqueBuffer.vCount;
+
+                for (let k = 0; k < 4; k++) {
+                    const corner = c[k];
+                    // Box-clamped local position: full-corner 1 -> box max, 0 -> box min.
+                    const lx = corner[0] ? bx1 : bx0;
+                    const ly = corner[1] ? by1 : by0;
+                    const lz = corner[2] ? bz1 : bz0;
+                    const localA = aIdx === 0 ? lx : (aIdx === 1 ? ly : lz);
+                    const localB = bIdx === 0 ? lx : (bIdx === 1 ? ly : lz);
+                    const a = aPos ? localA : 1 - localA;
+                    const b = bPos ? localB : 1 - localB;
+                    const ia = 1 - a, ib = 1 - b;
+                    const u = uBL * ia * ib + uBR * a * ib + uTR * a * b + uTL * ia * b;
+                    const v = vBL * ia * ib + vBR * a * ib + vTR * a * b + vTL * ia * b;
+
+                    opaqueBuffer.positions[vp] = x + lx;
+                    opaqueBuffer.positions[vp + 1] = y + ly;
+                    opaqueBuffer.positions[vp + 2] = z + lz;
+                    opaqueBuffer.normals[vp] = f.dx;
+                    opaqueBuffer.normals[vp + 1] = f.dy;
+                    opaqueBuffer.normals[vp + 2] = f.dz;
+                    opaqueBuffer.colors[vp] = skyC;
+                    opaqueBuffer.colors[vp + 1] = blockC;
+                    opaqueBuffer.colors[vp + 2] = 1.0;
+                    opaqueBuffer.uvs[up] = u;
+                    opaqueBuffer.uvs[up + 1] = v;
+                    vp += 3; up += 2;
+                }
+
+                opaqueBuffer.indices[ip] = vBase;
+                opaqueBuffer.indices[ip + 1] = vBase + 1;
+                opaqueBuffer.indices[ip + 2] = vBase + 2;
+                opaqueBuffer.indices[ip + 3] = vBase;
+                opaqueBuffer.indices[ip + 4] = vBase + 2;
+                opaqueBuffer.indices[ip + 5] = vBase + 3;
+                opaqueBuffer.vCount += 4;
+                opaqueBuffer.iCount += 6;
+            }
+        }
+    };
 
     const emitGreedySurface = (y: number, topFace: boolean) => {
         const visited = greedyVisitedScratch;
@@ -500,9 +615,14 @@ export function generateGeometryData(
 
           let targetBuffer = opaqueBuffer;
           const def = BLOCKS[type];
-          
+
           if (!def) continue;
-          
+
+          if (IS_SHAPED[type] === 1) {
+              emitShapedBlock(x, y, z, type, metaData ? metaData[index] : 0);
+              continue;
+          }
+
           if (IS_CUTOUT[type] === 1) {
               targetBuffer = cutoutBuffer;
           } else if (IS_TRANSPARENT[type] === 1) {

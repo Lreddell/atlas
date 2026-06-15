@@ -3,6 +3,7 @@ import { WorldManager } from '../WorldManager';
 import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { CONTACT_EPS, GROUND_EPS } from './playerConstants';
+import { isShaped, getShapeBoxes } from '../world/blockShapes';
 
 // Helper to check solidity without generating chunks
 // Now supports partial height blocks like Beds
@@ -41,11 +42,31 @@ export function checkCollision(wm: WorldManager, pos: {x:number, y:number, z:num
                 if (!wm.hasChunk(cx, cz)) return true; // Treat unloaded as solid wall
 
                 const type = wm.getBlock(x, y, z, false);
+
+                // Shaped blocks (slabs/stairs): test the player AABB against each
+                // partial box. Full blocks keep the original fast path untouched.
+                if (isShaped(type)) {
+                    const boxes = getShapeBoxes(type, wm.getMetadata(x, y, z));
+                    const pMinX = pos.x - width / 2 + CONTACT_EPS;
+                    const pMaxX = pos.x + width / 2 - CONTACT_EPS;
+                    const pMinZ = pos.z - width / 2 + CONTACT_EPS;
+                    const pMaxZ = pos.z + width / 2 - CONTACT_EPS;
+                    for (let bi = 0; bi < boxes.length; bi++) {
+                        const b = boxes[bi];
+                        if (pMinX < x + b[3] && pMaxX > x + b[0] &&
+                            playerMinY < y + b[4] && playerMaxY > y + b[1] &&
+                            pMinZ < z + b[5] && pMaxZ > z + b[2]) {
+                            return true;
+                        }
+                    }
+                    continue;
+                }
+
                 const blockH = getBlockHeight(type);
-                
+
                 if (blockH > 0) {
                     const blockTop = y + blockH;
-                    // AABB Intersect: 
+                    // AABB Intersect:
                     // (PlayerMinY < BlockTop) AND (PlayerMaxY > BlockBottom)
                     // BlockBottom is y.
                     if (playerMinY < blockTop && playerMaxY > y) {
@@ -72,7 +93,21 @@ export function getSupportTop(wm: WorldManager, pos: {x:number, y:number, z:numb
     for (let blockY = feetY; blockY >= feetY - 1; blockY--) {
         for (let x = minX; x <= maxX; x++) {
             for (let z = minZ; z <= maxZ; z++) {
-                const h = getBlockHeight(wm.getBlock(x, blockY, z, false));
+                const type = wm.getBlock(x, blockY, z, false);
+                if (isShaped(type)) {
+                    const boxes = getShapeBoxes(type, wm.getMetadata(x, blockY, z));
+                    for (let bi = 0; bi < boxes.length; bi++) {
+                        const b = boxes[bi];
+                        // Only count a box whose footprint overlaps the player.
+                        if (pos.x - width / 2 < x + b[3] && pos.x + width / 2 > x + b[0] &&
+                            pos.z - width / 2 < z + b[5] && pos.z + width / 2 > z + b[2]) {
+                            const top = blockY + b[4];
+                            if (top <= pos.y + CONTACT_EPS && top > best) best = top;
+                        }
+                    }
+                    continue;
+                }
+                const h = getBlockHeight(type);
                 if (h <= 0) continue;
                 const top = blockY + h;
                 if (top <= pos.y + CONTACT_EPS && top > best) best = top;
@@ -101,8 +136,20 @@ export function hasGroundSupport(wm: WorldManager, pos: {x:number, y:number, z:n
         const x = Math.floor(px);
         const z = Math.floor(pz);
         const type = wm.getBlock(x, blockY, z, false);
+
+        if (isShaped(type)) {
+            const boxes = getShapeBoxes(type, wm.getMetadata(x, blockY, z));
+            for (let bi = 0; bi < boxes.length; bi++) {
+                const b = boxes[bi];
+                if (px >= x + b[0] && px <= x + b[3] && pz >= z + b[2] && pz <= z + b[5]) {
+                    const top = blockY + b[4];
+                    if (Math.abs(yCheck - top) < 0.1) return true;
+                }
+            }
+            continue;
+        }
+
         const h = getBlockHeight(type);
-        
         // Check if we are standing on the top of this block
         const blockTop = blockY + h;
         // If our feet (yCheck) are effectively at or slightly above the block top

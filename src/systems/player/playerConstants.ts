@@ -11,13 +11,17 @@ export const GRAVITY = 32;
 export const JUMP_VELOCITY = 8.4; 
 export const TERMINAL_VELOCITY = 78.4;
 
-// Speeds
-export const WALK_SPEED = 4.5;
-export const SPRINT_MULTIPLIER = 1.3;
-export const SNEAK_MULTIPLIER = 0.3;
+// Speeds (Minecraft-accurate terminal velocities in blocks/sec)
+export const WALK_SPEED = 4.317;
+export const SPRINT_MULTIPLIER = 1.3;   // -> 5.612 b/s
+export const SNEAK_MULTIPLIER = 0.3;    // -> 1.295 b/s
 
-// Boost added to horizontal velocity when sprint jumping
-export const SPRINT_JUMP_BOOST = 1.65091498726;
+// One-time forward impulse (blocks/sec) added on the tick you jump while sprinting.
+// In Minecraft this impulse, preserved by the high air friction, is what makes
+// sprint-jumping the fastest way to travel (~27% faster than flat sprinting).
+// Tuned so the sprint-jump cycle averages ~7.1 b/s vs 5.612 sprinting — matching
+// that 27% gap — rather than copying MC's raw internal value.
+export const SPRINT_JUMP_BOOST = 2.0;
 
 // Fluid speeds
 export const SWIM_SPEED = 2.55;           
@@ -30,23 +34,28 @@ export const FLUID_TERMINAL_VEL = 5.0;
 export const FLUID_JUMP_ACCEL = 16.0;    
 export const FLUID_JUMP_MAX = 3;       
 
-// Acceleration & Friction
-// Tuned for perceptible momentum at the fixed 20Hz step: a walk-speed direction
-// flip takes ~3 ticks (150ms) and stopping glides ~100ms. The old values (90 +
-// a 2x reversal boost) completed a flip inside a single tick — that felt fine
-// only while heavy frame stutter dilated simulation time; at high FPS it reads
-// as instant, weightless direction changes.
-export const ACCEL_GROUND = 60.0;
-export const ACCEL_AIR = 55.0;
-export const FRICTION_GROUND = 45.0;
-export const FRICTION_AIR = 12.0;
+// --- Movement model: Minecraft per-tick friction + input acceleration ---
+// Minecraft has no "target velocity" that you lerp toward. Instead, every tick:
+//   1. horizontal velocity is multiplied by a friction factor (exponential decay)
+//   2. movement input adds a small fixed acceleration
+// The equilibrium of those two IS the top speed, which is what gives the genuine
+// momentum feel: gradual ramp-up, a short glide to a stop, and direction changes
+// that carry your old momentum for a few ticks. The simulation runs a fixed 20 Hz
+// substep (FIXED_DT) == one Minecraft tick, so these per-tick values apply directly.
+//
+// Friction factors are per-tick velocity RETENTION (Minecraft: slipperiness * 0.91).
+export const GROUND_FRICTION = 0.546;   // 0.6 (normal block) * 0.91
+export const AIR_FRICTION = 0.91;       // little decay -> momentum carries in air
+export const FLUID_FRICTION = 0.80;     // water/lava drag
 
-// Flying: per-tick velocity retention and input injection. Equilibrium speed is
-// flySpeed * (FLY_ACCEL_FACTOR / (1 - FLY_DAMPING_PER_TICK)) — keep the two in
-// sync so top speed stays at flySpeed. 0.90 retention gives a ~0.35s half-life
-// glide (the old 0.80 reached equilibrium in ~2 ticks — no momentum).
-export const FLY_DAMPING_PER_TICK = 0.90;
-export const FLY_ACCEL_FACTOR = 0.10;
+// Air acceleration as a fraction of the GROUND acceleration amplitude (Minecraft
+// uses ~20%). Crucially this is measured against the ground amplitude, NOT against
+// (1 - AIR_FRICTION): pairing 20% of ground accel with the high 0.91 air retention
+// makes the air terminal speed land right at your ground speed, so sprint speed
+// carries cleanly through a jump and you can still steer onto a block. (The prior
+// 0.15-of-air-amplitude reading made air accel ~7x too weak — speed bled to a crawl,
+// which both killed sprint-jumps and made blocks hard to mount.)
+export const AIR_CONTROL = 0.20;
 
 // Sprint auto-cancel needs this many consecutive slow ticks — a momentum-based
 // direction flip passes through low speed for 1-2 ticks and must not cancel
