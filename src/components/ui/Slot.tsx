@@ -4,6 +4,7 @@ import { ItemStack, BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasURL, ATLAS_STRIDE, ATLAS_PADDING, getAtlasDimensions } from '../../utils/textures';
 import { resolveTexture } from '../../systems/world/textureResolver';
+import { getShapeBoxes, STAIR_FACE_POS_Z } from '../../systems/world/blockShapes';
 
 interface SlotProps {
   item: ItemStack | null;
@@ -58,6 +59,50 @@ export const Slot: React.FC<SlotProps> = ({
 
   const renderContent = () => {
       if (!item || !blockDef) return null;
+
+      // Slabs / stairs: render the actual partial-box silhouette (isometric) so the
+      // icon reads as a half-block / stair shape instead of a full cube.
+      if (blockDef.shape) {
+          const parentType = blockDef.textureParent ?? item.type;
+          const topTex = resolveTexture(parentType, 'top', 0, 1, 0, 0).texIdx;
+          const frontTex = resolveTexture(parentType, 'front', 0, 0, 1, 0).texIdx;
+          const leftTex = resolveTexture(parentType, 'left', -1, 0, 0, 0).texIdx;
+          const baseScale = size === 'large' ? 1.4 : 1.0;
+          const U = 16;
+          // A fixed, readable orientation for the icon (step facing front-right).
+          const boxes = getShapeBoxes(item.type, blockDef.shape === 'stairs' ? STAIR_FACE_POS_Z : 0);
+
+          const faceEls: React.ReactNode[] = [];
+          boxes.forEach((b, bi) => {
+              const w = (b[3] - b[0]) * U, h = (b[4] - b[1]) * U, d = (b[5] - b[2]) * U;
+              const cX = ((b[0] + b[3]) / 2 - 0.5) * U;
+              const cY = (0.5 - (b[1] + b[4]) / 2) * U; // CSS Y is inverted (down positive)
+              const cZ = ((b[2] + b[5]) / 2 - 0.5) * U;
+              const faceBase: React.CSSProperties = { position: 'absolute', left: '50%', top: '50%' };
+              // Top (+Y)
+              faceEls.push(<div key={`t${bi}`} className="pointer-events-none" style={{ ...faceBase, width: `${w}px`, height: `${d}px`,
+                  transform: `translate(-50%, -50%) translate3d(${cX}px, ${cY}px, ${cZ}px) rotateX(90deg) translateZ(${h / 2}px)`,
+                  ...getFaceStyle(topTex, 1.2, U) }} />);
+              // Front (+Z)
+              faceEls.push(<div key={`f${bi}`} className="pointer-events-none" style={{ ...faceBase, width: `${w}px`, height: `${h}px`,
+                  transform: `translate(-50%, -50%) translate3d(${cX}px, ${cY}px, ${cZ}px) translateZ(${d / 2}px)`,
+                  ...getFaceStyle(frontTex, 0.9, U) }} />);
+              // Left (-X)
+              faceEls.push(<div key={`l${bi}`} className="pointer-events-none" style={{ ...faceBase, width: `${d}px`, height: `${h}px`,
+                  transform: `translate(-50%, -50%) translate3d(${cX}px, ${cY}px, ${cZ}px) rotateY(-90deg) translateZ(${w / 2}px)`,
+                  ...getFaceStyle(leftTex, 0.6, U) }} />);
+          });
+
+          return (
+              <div className="pointer-events-none" style={{
+                  width: `${U}px`, height: `${U}px`, position: 'relative',
+                  transformStyle: 'preserve-3d',
+                  transform: `scale(${baseScale}) rotateX(-30deg) rotateY(45deg)`
+              }}>
+                  {faceEls}
+              </div>
+          );
+      }
 
       // Determine if we should render as 3D Block or 2D Item
       const is3D = !blockDef.isItem && 
