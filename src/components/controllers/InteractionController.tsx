@@ -24,6 +24,7 @@ import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 import { isWashable } from '../../systems/world/blockProps';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
+import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X } from '../../systems/world/blockShapes';
 
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
@@ -290,10 +291,27 @@ export const InteractionController = ({
                         const dir = new THREE.Vector3();
                         camera.getWorldDirection(dir);
                         if (Math.abs(dir.x) > Math.abs(dir.z)) {
-                            if (dir.x > 0) rotation = 3; else rotation = 2; 
+                            if (dir.x > 0) rotation = 3; else rotation = 2;
                         } else {
-                            if (dir.z > 0) rotation = 1; else rotation = 0; 
+                            if (dir.z > 0) rotation = 1; else rotation = 0;
                         }
+                    } else if (heldItemDef.shape === 'slab') {
+                        // Bottom or top half from where the player clicked.
+                        const hitY = _camPos.y + _camDir.y * hit.distance;
+                        if (hit.ny === 1) rotation = 0;        // placed on a top face -> bottom slab
+                        else if (hit.ny === -1) rotation = 1;  // placed on an underside -> top slab
+                        else rotation = (hitY - py) > 0.5 ? 1 : 0; // side face: upper half -> top slab
+                    } else if (heldItemDef.shape === 'stairs') {
+                        // Low/open side faces the player; tall back ascends away.
+                        const adx = Math.abs(_camDir.x), adz = Math.abs(_camDir.z);
+                        let facing: number;
+                        if (adx >= adz) facing = _camDir.x > 0 ? STAIR_FACE_NEG_X : STAIR_FACE_POS_X;
+                        else facing = _camDir.z > 0 ? STAIR_FACE_NEG_Z : STAIR_FACE_POS_Z;
+                        const hitY = _camPos.y + _camDir.y * hit.distance;
+                        let upside = false;
+                        if (hit.ny === -1) upside = true;
+                        else if (hit.ny !== 1) upside = (hitY - py) > 0.5;
+                        rotation = facing | (upside ? 4 : 0);
                     } else if (heldItem.type === BlockType.BED_ITEM) {
                         const dir = new THREE.Vector3();
                         camera.getWorldDirection(dir);

@@ -7,8 +7,7 @@ import {
     PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, 
     WALK_SPEED, SPRINT_MULTIPLIER, SNEAK_MULTIPLIER,
     GRAVITY, JUMP_VELOCITY, TERMINAL_VELOCITY, SPRINT_JUMP_BOOST,
-    ACCEL_GROUND, ACCEL_AIR, FRICTION_GROUND, FRICTION_AIR,
-    FLY_DAMPING_PER_TICK, FLY_ACCEL_FACTOR, SPRINT_STOP_GRACE_TICKS,
+    GROUND_FRICTION, AIR_FRICTION, FLUID_FRICTION, AIR_CONTROL, SPRINT_STOP_GRACE_TICKS,
     SAFE_WALK_STEP, CONTACT_EPS, GROUND_EPS,
     SWIM_SPEED, SWIM_SUBMERGED_SPEED, LAVA_HORIZONTAL_REDUCTION,
     FLUID_GRAVITY, FLUID_TERMINAL_VEL, FLUID_JUMP_ACCEL, FLUID_JUMP_MAX
@@ -82,14 +81,15 @@ export function simulateStep(
         // Increased speeds for better creative mode traversal
         const flySpeed = intent.sprint ? 50.0 : 24.0;
 
-        // Gentle per-tick damping + matching input injection gives gliding,
-        // momentum-y flight. Equilibrium speed stays at flySpeed because
-        // FLY_ACCEL_FACTOR === (1 - FLY_DAMPING_PER_TICK).
-        newVel.x *= FLY_DAMPING_PER_TICK;
-        newVel.z *= FLY_DAMPING_PER_TICK;
-        newVel.y *= FLY_DAMPING_PER_TICK;
+        // Minecraft creative flight: per-tick drag (0.91, same as air) + input
+        // injection sized so the equilibrium equals flySpeed. This gives the
+        // gliding, momentum-carrying flight where you coast after releasing keys.
+        const flyAccel = 1 - AIR_FRICTION; // injection factor -> terminal == flySpeed
+        newVel.x *= AIR_FRICTION;
+        newVel.z *= AIR_FRICTION;
+        newVel.y *= AIR_FRICTION;
 
-        newVel.addScaledVector(_inputVec, flySpeed * FLY_ACCEL_FACTOR);
+        newVel.addScaledVector(_inputVec, flySpeed * flyAccel);
 
         const hVel = new THREE.Vector2(newVel.x, newVel.z);
         if (hVel.length() > flySpeed) {
@@ -98,8 +98,8 @@ export function simulateStep(
             newVel.z = hVel.y;
         }
 
-        if (intent.jump) newVel.y += flySpeed * FLY_ACCEL_FACTOR;
-        if (intent.sneak) newVel.y -= flySpeed * FLY_ACCEL_FACTOR;
+        if (intent.jump) newVel.y += flySpeed * flyAccel;
+        if (intent.sneak) newVel.y -= flySpeed * flyAccel;
         
         // Integrate
         const dx = newVel.x * dt;
@@ -121,51 +121,35 @@ export function simulateStep(
     // --- Ground Detection ---
     const wasGrounded = checkCollision(wm, {x: pos.x, y: pos.y - GROUND_EPS, z: pos.z}, PLAYER_WIDTH, height);
     
-    // --- Horizontal Movement (Vector Targeting) ---
+    // --- Horizontal Movement (Minecraft friction model) ---
+    // Per tick: decay velocity by a friction factor, then add a fixed input
+    // acceleration. The equilibrium of the two equals targetSpeed, so momentum
+    // (gradual ramp-up, glide-to-stop, and direction reversals that carry your
+    // old velocity) emerges naturally instead of being lerped toward a target.
+    // FIXED_DT == one Minecraft tick, so these per-tick factors apply directly.
+    const horizFriction = inFluid
+        ? FLUID_FRICTION
+        : (wasGrounded ? GROUND_FRICTION : AIR_FRICTION);
+
+    newVel.x *= horizFriction;
+    newVel.z *= horizFriction;
+
     if (_inputVec.lengthSq() > 0) {
-        const targetVelX = _inputVec.x * targetSpeed;
-        const targetVelZ = _inputVec.z * targetSpeed;
-        
-        let accel = wasGrounded ? ACCEL_GROUND : ACCEL_AIR;
-        if (inFluid && !wasGrounded) accel = ACCEL_GROUND * 0.5;
-
-        // No reversal boost: a direction flip covers 2x the velocity delta at
-        // normal acceleration, which IS the momentum feel. The old 2x boost made
-        // flips complete inside a single 50ms tick — instant and weightless.
-
-        const maxDelta = accel * dt;
-        
-        const dx = targetVelX - newVel.x;
-        const dz = targetVelZ - newVel.z;
-        const len = Math.hypot(dx, dz);
-        
-        if (len <= maxDelta) {
-            newVel.x = targetVelX;
-            newVel.z = targetVelZ;
+        let accel;
+        if (!wasGrounded && !inFluid) {
+            // Airborne: acceleration is a fixed fraction of the GROUND amplitude
+            // (target·(1−GROUND_FRICTION)), NOT of (1−AIR_FRICTION). Paired with the
+            // high 0.91 air retention this puts the air terminal speed at ~your ground
+            // speed, so sprint speed survives a jump and you keep enough forward drive
+            // to land on a block. Reduced authority still limits mid-air turning.
+            accel = targetSpeed * (1 - GROUND_FRICTION) * AIR_CONTROL;
         } else {
-            const scale = maxDelta / len;
-            newVel.x += dx * scale;
-            newVel.z += dz * scale;
+            // Ground / fluid: sustained input converges to targetSpeed because
+            //   v* = v*·friction + accel  =>  accel = targetSpeed · (1 − friction).
+            accel = targetSpeed * (1 - horizFriction);
         }
-    } else {
-        const currentSpeed = Math.hypot(newVel.x, newVel.z);
-        if (currentSpeed > 0) {
-            let nextSpeed = currentSpeed;
-            if (wasGrounded) {
-                 const drop = FRICTION_GROUND * dt;
-                 nextSpeed = Math.max(0, currentSpeed - drop);
-            } else {
-                 const friction = inFluid ? FRICTION_GROUND * 0.5 : FRICTION_AIR;
-                 const drop = currentSpeed * friction * dt;
-                 nextSpeed = Math.max(0, currentSpeed - drop);
-            }
-            
-            if (nextSpeed !== currentSpeed) {
-                const scale = nextSpeed / currentSpeed;
-                newVel.x *= scale;
-                newVel.z *= scale;
-            }
-        }
+        newVel.x += _inputVec.x * accel;
+        newVel.z += _inputVec.z * accel;
     }
 
     // --- Vertical Movement (Gravity & Jumping) ---
@@ -197,19 +181,37 @@ export function simulateStep(
     }
 
     // --- Integration & Collision Resolution ---
-    
+
+    // Auto-step: when a horizontal move is blocked while grounded (and not jumping),
+    // lift over a low obstacle — slabs, stair steps, a single half-block. Flat-ground
+    // walking never collides horizontally, so normal movement feel is unaffected.
+    const STEP_HEIGHT = 0.55;
+    const tryStepUp = (): boolean => {
+        if (!wasGrounded || newVel.y > 0.01) return false;
+        const probeY = newPos.y + STEP_HEIGHT;
+        if (checkCollision(wm, { x: newPos.x, y: probeY, z: newPos.z }, PLAYER_WIDTH, height)) return false;
+        const support = getSupportTop(wm, { x: newPos.x, y: probeY, z: newPos.z }, PLAYER_WIDTH);
+        if (support === null) return false;
+        const rise = support - newPos.y;
+        if (rise <= CONTACT_EPS || rise > STEP_HEIGHT) return false;
+        newPos.y = support + CONTACT_EPS;
+        return true;
+    };
+
     // X Axis
     let dx = newVel.x * dt;
     if (intent.sneak && wasGrounded) {
         const safeDx = applySafeWalk(wm, newPos, dx, 0, SAFE_WALK_WIDTH);
-        if (Math.abs(safeDx) < Math.abs(dx)) newVel.x = 0; 
+        if (Math.abs(safeDx) < Math.abs(dx)) newVel.x = 0;
         dx = safeDx;
     }
-    
+
     newPos.x += dx;
     if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
-        newPos.x -= dx;
-        newVel.x = 0;
+        if (!tryStepUp()) {
+            newPos.x -= dx;
+            newVel.x = 0;
+        }
     }
 
     // Z Axis
@@ -222,8 +224,10 @@ export function simulateStep(
 
     newPos.z += dz;
     if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
-        newPos.z -= dz;
-        newVel.z = 0;
+        if (!tryStepUp()) {
+            newPos.z -= dz;
+            newVel.z = 0;
+        }
     }
 
     // Y Axis
@@ -261,16 +265,14 @@ export function simulateStep(
     }
 
     // --- Lenient Sprint Stop Check ---
-    if (intent.sprint) {
-        // Calculate speed after collision resolution
+    // Only evaluated while grounded. In Minecraft a jump never cancels your sprint —
+    // sprint-jumping is a core movement tech — so airborne ticks neither cancel nor
+    // accumulate toward a cancel. On the ground, a genuine wall bump (sustained low
+    // speed) still ends the sprint after the grace window; a momentum direction flip
+    // recovers before then.
+    if (intent.sprint && wasGrounded) {
         const hSpeed = Math.hypot(newVel.x, newVel.z);
-
-        // Threshold: If we are moving slower than 60% of normal walk speed, stop sprinting.
-        // Momentum-based direction flips pass through low speed for a tick or two,
-        // so only cancel after several CONSECUTIVE slow ticks (a real wall bump
-        // stays slow; a flip recovers immediately).
         const stopThreshold = WALK_SPEED * 0.6;
-
         if (hSpeed < stopThreshold) {
             sprintSlowTicks++;
             if (sprintSlowTicks >= SPRINT_STOP_GRACE_TICKS) {
@@ -279,7 +281,7 @@ export function simulateStep(
         } else {
             sprintSlowTicks = 0;
         }
-    } else {
+    } else if (wasGrounded) {
         sprintSlowTicks = 0;
     }
 

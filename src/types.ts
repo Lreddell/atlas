@@ -147,7 +147,29 @@ export enum BlockType {
   // Saplings (species-specific)
   SPRUCE_SAPLING = 146,
   BIRCH_SAPLING = 147,
-  CHERRY_SAPLING = 148
+  CHERRY_SAPLING = 148,
+
+  // --- Slabs (half blocks) ---
+  OAK_SLAB = 149,
+  SPRUCE_SLAB = 150,
+  BIRCH_SLAB = 151,
+  CHERRY_SLAB = 152,
+  COBBLESTONE_SLAB = 153,
+  STONE_SLAB = 154,
+  SANDSTONE_SLAB = 155,
+  RED_SANDSTONE_SLAB = 156,
+  BRICK_SLAB = 157,
+
+  // --- Stairs ---
+  OAK_STAIRS = 158,
+  SPRUCE_STAIRS = 159,
+  BIRCH_STAIRS = 160,
+  CHERRY_STAIRS = 161,
+  COBBLESTONE_STAIRS = 162,
+  STONE_STAIRS = 163,
+  SANDSTONE_STAIRS = 164,
+  RED_SANDSTONE_STAIRS = 165,
+  BRICK_STAIRS = 166
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';
@@ -182,6 +204,13 @@ export interface BlockDef {
   noCollision?: boolean;
   category?: CreativeTab;
   soundGroup?: string; // Optional sound group override
+
+  // Non-cube shapes (slabs, stairs). The block is rendered/collided as a set of
+  // partial AABBs (see systems/world/blockShapes.ts) instead of a full cube.
+  shape?: 'slab' | 'stairs';
+  // For shaped blocks, resolve textures as if this parent block (so e.g. a
+  // sandstone slab gets sandstone's top/side faces). Defaults to the block itself.
+  textureParent?: BlockType;
   
   // Food Properties
   nutrition?: number; // Hunger restored

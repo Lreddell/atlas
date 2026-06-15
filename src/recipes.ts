@@ -157,6 +157,65 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [null, BlockType.COPPER_INGOT, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_SHOVEL, count: 1 } },
 ];
 
+// --- Generated recipes: stairs, slabs, swords, hoes, gold/diamond tools, sandstone ---
+const S = BlockType.STICK;
+const push = (gridSize: 2 | 3, pattern: (BlockType | null)[], type: BlockType, count: number) =>
+    RECIPES.push({ gridSize, pattern, output: { type, count } });
+
+// Stairs (6 blocks -> 4, both handedness) + slabs (3 in a row -> 6)
+const SHAPE_FAMILIES: { mat: BlockType, slab: BlockType, stairs: BlockType }[] = [
+    { mat: BlockType.OAK_PLANKS, slab: BlockType.OAK_SLAB, stairs: BlockType.OAK_STAIRS },
+    { mat: BlockType.SPRUCE_PLANKS, slab: BlockType.SPRUCE_SLAB, stairs: BlockType.SPRUCE_STAIRS },
+    { mat: BlockType.BIRCH_PLANKS, slab: BlockType.BIRCH_SLAB, stairs: BlockType.BIRCH_STAIRS },
+    { mat: BlockType.CHERRY_PLANKS, slab: BlockType.CHERRY_SLAB, stairs: BlockType.CHERRY_STAIRS },
+    { mat: BlockType.COBBLESTONE, slab: BlockType.COBBLESTONE_SLAB, stairs: BlockType.COBBLESTONE_STAIRS },
+    { mat: BlockType.STONE, slab: BlockType.STONE_SLAB, stairs: BlockType.STONE_STAIRS },
+    { mat: BlockType.SANDSTONE, slab: BlockType.SANDSTONE_SLAB, stairs: BlockType.SANDSTONE_STAIRS },
+    { mat: BlockType.RED_SANDSTONE, slab: BlockType.RED_SANDSTONE_SLAB, stairs: BlockType.RED_SANDSTONE_STAIRS },
+    { mat: BlockType.BRICK, slab: BlockType.BRICK_SLAB, stairs: BlockType.BRICK_STAIRS },
+];
+for (const f of SHAPE_FAMILIES) {
+    push(3, [null, null, null, f.mat, f.mat, f.mat, null, null, null], f.slab, 6);
+    push(3, [f.mat, null, null, f.mat, f.mat, null, f.mat, f.mat, f.mat], f.stairs, 4);
+    push(3, [null, null, f.mat, null, f.mat, f.mat, f.mat, f.mat, f.mat], f.stairs, 4);
+}
+
+// Swords (2 material + stick) and hoes (2 material + 2 sticks, both handedness)
+const SWORD_HOE: { mat: BlockType, sword: BlockType, hoe: BlockType }[] = [
+    { mat: BlockType.COBBLESTONE, sword: BlockType.STONE_SWORD, hoe: BlockType.STONE_HOE },
+    { mat: BlockType.IRON_INGOT, sword: BlockType.IRON_SWORD, hoe: BlockType.IRON_HOE },
+    { mat: BlockType.COPPER_INGOT, sword: BlockType.COPPER_SWORD, hoe: BlockType.COPPER_HOE },
+    { mat: BlockType.GOLD_INGOT, sword: BlockType.GOLD_SWORD, hoe: BlockType.GOLD_HOE },
+    { mat: BlockType.DIAMOND, sword: BlockType.DIAMOND_SWORD, hoe: BlockType.DIAMOND_HOE },
+];
+for (const t of SWORD_HOE) {
+    push(3, [null, t.mat, null, null, t.mat, null, null, S, null], t.sword, 1);
+    push(3, [t.mat, t.mat, null, null, S, null, null, S, null], t.hoe, 1);
+    push(3, [null, t.mat, t.mat, null, S, null, null, S, null], t.hoe, 1);
+}
+// Wooden swords/hoes (one per plank type)
+for (const p of [BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS]) {
+    push(3, [null, p, null, null, p, null, null, S, null], BlockType.WOOD_SWORD, 1);
+    push(3, [p, p, null, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+    push(3, [null, p, p, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+}
+
+// Gold & Diamond pickaxe / axe / shovel (the other tiers already existed)
+const HEAVY: { mat: BlockType, pick: BlockType, axe: BlockType, shovel: BlockType }[] = [
+    { mat: BlockType.GOLD_INGOT, pick: BlockType.GOLD_PICKAXE, axe: BlockType.GOLD_AXE, shovel: BlockType.GOLD_SHOVEL },
+    { mat: BlockType.DIAMOND, pick: BlockType.DIAMOND_PICKAXE, axe: BlockType.DIAMOND_AXE, shovel: BlockType.DIAMOND_SHOVEL },
+];
+for (const t of HEAVY) {
+    push(3, [t.mat, t.mat, t.mat, null, S, null, null, S, null], t.pick, 1);
+    push(3, [t.mat, t.mat, null, t.mat, S, null, null, S, null], t.axe, 1);
+    push(3, [t.mat, t.mat, null, null, t.mat, S, null, S, null], t.axe, 1);
+    push(3, [null, t.mat, null, null, S, null, null, S, null], t.shovel, 1);
+}
+
+// Sandstone from sand (2x2)
+push(2, [BlockType.SAND, BlockType.SAND, BlockType.SAND, BlockType.SAND], BlockType.SANDSTONE, 1);
+push(2, [BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND], BlockType.RED_SANDSTONE, 1);
+
 function trimGrid(grid: (BlockType | null)[], width: number): (BlockType | null)[] {
     const height = grid.length / width;
     let minX = width, maxX = -1, minY = height, maxY = -1;
