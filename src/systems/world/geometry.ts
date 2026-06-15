@@ -336,8 +336,10 @@ export function generateGeometryData(
                     continue;
                 }
 
+                // Note: shaped blocks intentionally ignore cullDarkFaces — they are
+                // rare, player-placed, and small, so far-chunk dark-face culling would
+                // risk punching visible holes in them for negligible triangle savings.
                 const raw = getLightFast(x + f.dx, y + f.dy, z + f.dz);
-                if (cullDarkFaces && raw === 0) continue;
                 const skyC = ((raw >> 4) & 0xF) / 15.0;
                 const blockC = (raw & 0xF) / 15.0;
 
