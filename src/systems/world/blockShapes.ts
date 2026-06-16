@@ -67,11 +67,12 @@ const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
 const FULL_CUBE_BOXES: ShapeBox[] = [[0, 0, 0, 1, 1, 1]];
 const BED_BOXES: ShapeBox[] = [[0, 0, 0, 1, 0.5, 1]];
 const TORCH_BOXES: ShapeBox[] = [[0.4, 0, 0.4, 0.6, 0.6, 0.6]];
-const PLANT_BOXES: ShapeBox[] = [[0.1, 0, 0.1, 0.9, 0.8, 0.9]];
+const PLANT_BOXES: ShapeBox[] = [[0.3, 0, 0.3, 0.7, 0.8, 0.7]];
 
 /**
  * The boxes the targeting outline should trace for a block, so the highlight
- * follows the real shape instead of always being a full cube.
+ * follows the real shape instead of always being a full cube. The voxel raycast
+ * uses the same boxes, so what you can select matches what the outline shows.
  */
 export function getSelectionBoxes(type: BlockType, meta: number): ShapeBox[] {
     if (isShaped(type)) return getShapeBoxes(type, meta);
@@ -79,4 +80,16 @@ export function getSelectionBoxes(type: BlockType, meta: number): ShapeBox[] {
     if (CROSS_PLANT_TYPES.has(type)) return PLANT_BOXES;
     if (type === BlockType.BED_FOOT || type === BlockType.BED_HEAD) return BED_BOXES;
     return FULL_CUBE_BOXES;
+}
+
+/**
+ * True when a block fills its whole cell for targeting (the common case). Lets the
+ * raycast keep its fast full-cell hit and only do ray/box tests for partial shapes.
+ */
+export function isFullCubeSelection(type: BlockType): boolean {
+    return !isShaped(type)
+        && type !== BlockType.TORCH
+        && !CROSS_PLANT_TYPES.has(type)
+        && type !== BlockType.BED_FOOT
+        && type !== BlockType.BED_HEAD;
 }
