@@ -24,7 +24,7 @@ import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../systems/world/blockProps';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
-import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, isShaped, getSelectionBoxes } from '../../systems/world/blockShapes';
+import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, SLAB_DOUBLE, isShaped, isSlab, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 
 // Scratch vectors for camera origin/direction (used every frame)
@@ -233,19 +233,22 @@ export const InteractionController = ({
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
 
                 // Double-slab: placing a matching slab onto the open face of an existing
-                // slab fuses them into the full parent block (in place), like Minecraft.
+                // (single) slab fuses them into a double slab in place, like Minecraft.
+                // The double slab stays the same block type with the SLAB_DOUBLE meta bit,
+                // so it drops two slabs and keeps its identity (vs. becoming the parent).
                 if (heldItemDef.shape === 'slab' && targetType === heldItem.type) {
                     const tMeta = worldManager.getMetadata(bx, by, bz);
-                    const targetIsTop = (tMeta & 1) === 1;
-                    if ((!targetIsTop && hit.ny === 1) || (targetIsTop && hit.ny === -1)) {
-                        const full = (heldItemDef.textureParent ?? heldItem.type) as BlockType;
-                        worldManager.setBlock(bx, by, bz, full, 0);
-                        consumeItem(selectedSlotRef.current);
-                        lastPlacementTime.current = now;
-                        emitPlacementAnimation();
-                        const group = getBlockSoundGroup(heldItem.type);
-                        soundManager.playAt(`block.${group}.place`, { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 });
-                        return;
+                    if ((tMeta & SLAB_DOUBLE) === 0) {
+                        const targetIsTop = (tMeta & 1) === 1;
+                        if ((!targetIsTop && hit.ny === 1) || (targetIsTop && hit.ny === -1)) {
+                            worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
+                            consumeItem(selectedSlotRef.current);
+                            lastPlacementTime.current = now;
+                            emitPlacementAnimation();
+                            const group = getBlockSoundGroup(heldItem.type);
+                            soundManager.playAt(`block.${group}.place`, { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 });
+                            return;
+                        }
                     }
                 }
 
@@ -578,6 +581,9 @@ export const InteractionController = ({
                         }
                     }
 
+                    // A double slab is one block but yields two slabs — capture its meta
+                    // before the cell is cleared.
+                    const isDoubleSlab = isSlab(targetType) && (worldManager.getMetadata(bx, by, bz) & SLAB_DOUBLE) !== 0;
                     const droppedItems = worldManager.setBlock(bx, by, bz, BlockType.AIR);
                     if (gameMode === 'survival') {
                         const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
@@ -601,6 +607,7 @@ export const InteractionController = ({
                             } else {
                                 spawnDrop(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType, bx, by, bz);
                             }
+                            if (isDoubleSlab) spawnDrop(targetType, bx, by, bz); // second half
                         }
                     }
                     breakingRef.current = null; 

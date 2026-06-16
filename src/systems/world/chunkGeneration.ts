@@ -3,7 +3,7 @@ import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
 import { NEIGHBORS } from './worldConstants';
-import { getDirectionalOpacity, getEdgeDirectionalOpacity } from './blockProps';
+import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
 import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
@@ -686,9 +686,10 @@ function generateChunkInner(cx: number, cz: number) {
             const nIndex = index3D(nx, ny, nz);
             if (nIndex < 0 || nIndex >= blocks.length) continue;
             const nType = blocks[nIndex];
-            // Two-sided: also block if the source's exit face (normal = move dir) is
-            // sealed, so a shaped cell can't leak light out through a solid side.
-            const opacity = getEdgeDirectionalOpacity(srcType, srcMeta, nType, meta[nIndex], dx, dy, dz);
+            // Paired occlusion: blocks if the source exit face, the target entry face,
+            // or their combined partial coverage seals the crossing, so a shaped cell
+            // can't leak light out through a solid (or jointly-solid) side.
+            const opacity = getPairedFaceOcclusion(srcType, srcMeta, nType, meta[nIndex], dx, dy, dz);
             const atten = Math.max(1, opacity);
             const nVal = light[nIndex];
             let nSky = (nVal >> 4) & 0xF;
