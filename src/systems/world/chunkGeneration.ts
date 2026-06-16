@@ -3,7 +3,7 @@ import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
 import { NEIGHBORS } from './worldConstants';
-import { getOpacity } from './blockProps';
+import { getDirectionalOpacity } from './blockProps';
 import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
@@ -627,8 +627,10 @@ function generateChunkInner(cx: number, cz: number) {
             for (let y = maxHeight; y >= MIN_Y; y--) {
                 const index = index3D(x, y, z);
                 const type = blocks[index];
-                const opacity = getOpacity(type);
-                
+                // Skylight falls straight down — probe the top (downward-entry) face so
+                // shaped blocks occlude by shape, identical to the edit-time scan.
+                const opacity = getDirectionalOpacity(type, meta[index], 0, -1, 0);
+
                 if (opacity >= 15) sky = 0;
                 else if (opacity > 0) sky = Math.max(0, sky - opacity);
                 
@@ -682,7 +684,7 @@ function generateChunkInner(cx: number, cz: number) {
             const nIndex = index3D(nx, ny, nz);
             if (nIndex < 0 || nIndex >= blocks.length) continue;
             const nType = blocks[nIndex];
-            const opacity = getOpacity(nType);
+            const opacity = getDirectionalOpacity(nType, meta[nIndex], dx, dy, dz);
             const atten = Math.max(1, opacity);
             const nVal = light[nIndex];
             let nSky = (nVal >> 4) & 0xF;
