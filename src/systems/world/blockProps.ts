@@ -100,10 +100,11 @@ function rectsCoverUnitSquare(rects: [number, number, number, number][]): boolea
     return true;
 }
 
-// Whether the shape's geometry fully seals one of the 6 cell faces.
-function faceCovered(boxes: ShapeBox[], face: number): boolean {
-    // touchIdx/touchVal: a box touches this face when box[touchIdx] === touchVal.
-    // aMin/aMax/bMin/bMax: the box components projected onto the 2D face plane.
+// Push the projected rects of every box touching `face` (outward-normal index
+// 0:+X 1:-X 2:+Y 3:-Y 4:+Z 5:-Z) onto `out`, in the face plane's 2D coords. Opposite
+// faces (e.g. +X and -X) share the same projection, so source-exit and target-entry
+// rects land in one comparable coordinate space for paired coverage.
+function collectFaceRects(boxes: ShapeBox[], face: number, out: [number, number, number, number][]): void {
     let touchIdx: number, touchVal: number, aMin: number, aMax: number, bMin: number, bMax: number;
     switch (face) {
         case 0: touchIdx = 3; touchVal = 1; aMin = 1; aMax = 4; bMin = 2; bMax = 5; break; // +X -> (y,z)
@@ -113,11 +114,16 @@ function faceCovered(boxes: ShapeBox[], face: number): boolean {
         case 4: touchIdx = 5; touchVal = 1; aMin = 0; aMax = 3; bMin = 1; bMax = 4; break; // +Z -> (x,y)
         default: touchIdx = 2; touchVal = 0; aMin = 0; aMax = 3; bMin = 1; bMax = 4; break; // -Z -> (x,y)
     }
-    const rects: [number, number, number, number][] = [];
     for (const box of boxes) {
         if (box[touchIdx] !== touchVal) continue;
-        rects.push([box[aMin], box[bMin], box[aMax], box[bMax]]);
+        out.push([box[aMin], box[bMin], box[aMax], box[bMax]]);
     }
+}
+
+// Whether the shape's geometry fully seals one of the 6 cell faces.
+function faceCovered(boxes: ShapeBox[], face: number): boolean {
+    const rects: [number, number, number, number][] = [];
+    collectFaceRects(boxes, face, rects);
     if (rects.length === 0) return false;
     return rectsCoverUnitSquare(rects);
 }
@@ -162,25 +168,59 @@ function shapedFaceSealed(type: BlockType, meta: number, nx: number, ny: number,
     return (mask & (1 << faceBitFromNormal(nx, ny, nz))) !== 0;
 }
 
+// Cached "do the source-exit and target-entry faces together seal the crossing?"
+// test. Only consulted when both blocks are shaped. Keyed by a packed integer so the
+// BFS hot path never allocates; getShapeBoxes (which may allocate) runs on miss only.
+const pairedSealCache = new Map<number, number>();
+function pairedFaceSealed(
+    srcType: BlockType, srcMeta: number,
+    tgtType: BlockType, tgtMeta: number,
+    dx: number, dy: number, dz: number
+): boolean {
+    const srcFace = faceBitFromNormal(dx, dy, dz);
+    const key = ((((srcType * 256 + srcMeta) * 256 + tgtType) * 256 + tgtMeta) * 6 + srcFace);
+    let v = pairedSealCache.get(key);
+    if (v === undefined) {
+        const rects: [number, number, number, number][] = [];
+        collectFaceRects(getShapeBoxes(srcType, srcMeta), srcFace, rects);
+        collectFaceRects(getShapeBoxes(tgtType, tgtMeta), faceBitFromNormal(-dx, -dy, -dz), rects);
+        v = rects.length > 0 && rectsCoverUnitSquare(rects) ? 1 : 0;
+        pairedSealCache.set(key, v);
+    }
+    return v === 1;
+}
+
 /**
- * Edge attenuation for light crossing from a source cell into a target cell as it
- * moves in direction (dx,dy,dz). Unlike getDirectionalOpacity (target entry face
- * only), this also checks the SOURCE's exit face — the face it would leave through,
- * whose outward normal is the movement direction. A shaped cell can hold light that
- * entered from an open side; without this check it would leak straight back out
- * through a sealed side (e.g. a torch under a top slab lighting the air above it).
+ * Attenuation for light crossing from a source cell into a target cell moving in
+ * direction (dx,dy,dz) — the BFS propagation rule. Extends getDirectionalOpacity
+ * (target entry face) with the SOURCE's exit face and, when both blocks are shaped,
+ * with PAIRED coverage: two partial faces whose projections together tile the shared
+ * boundary seal it even though neither does alone (e.g. a bottom slab beside a top
+ * slab across their vertical edge). A shaped cell therefore can't leak light it
+ * holds from an open side back out through a sealed/jointly-sealed side.
  *
- * If either the source exit face or the target entry face is fully sealed, the light
- * is blocked (attenuation 15); otherwise it falls back to the target's normal
- * directional attenuation.
+ * Rule: fully sealed source exit OR target entry OR jointly-sealed crossing -> blocked
+ * (15); otherwise the target's normal one-step falloff.
  */
-export function getEdgeDirectionalOpacity(
-    sourceType: BlockType, sourceMeta: number,
-    targetType: BlockType, targetMeta: number,
+export function getPairedFaceOcclusion(
+    srcType: BlockType, srcMeta: number,
+    tgtType: BlockType, tgtMeta: number,
     dx: number, dy: number, dz: number
 ): number {
-    if (shapedFaceSealed(sourceType, sourceMeta, dx, dy, dz)) return FACE_SOLID_ATTEN;
-    return getDirectionalOpacity(targetType, targetMeta, dx, dy, dz);
+    const base = getDirectionalOpacity(tgtType, tgtMeta, dx, dy, dz);
+    if (base >= FACE_SOLID_ATTEN) return FACE_SOLID_ATTEN; // target already fully blocks
+
+    const srcShaped = srcType <= MAX_OPACITY_ID && SHAPED_TABLE[srcType] === 1;
+    if (!srcShaped) return base; // a non-shaped source contributes no extra occlusion
+
+    const tgtShaped = tgtType <= MAX_OPACITY_ID && SHAPED_TABLE[tgtType] === 1;
+    if (!tgtShaped) {
+        // Shaped source into a transparent/non-shaped target: only a fully sealed
+        // source exit face blocks (no partner geometry to combine with).
+        return shapedFaceSealed(srcType, srcMeta, dx, dy, dz) ? FACE_SOLID_ATTEN : base;
+    }
+    // Both shaped: combine partial source-exit and target-entry coverage.
+    return pairedFaceSealed(srcType, srcMeta, tgtType, tgtMeta, dx, dy, dz) ? FACE_SOLID_ATTEN : base;
 }
 
 export function isWashable(type: BlockType): boolean {
