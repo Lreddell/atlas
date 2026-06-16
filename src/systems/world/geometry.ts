@@ -387,15 +387,27 @@ export function generateGeometryData(
 
                     // Per-vertex AO + smooth light, same model as full-block faces, so
                     // slabs/stairs are shaded (not flat). Sampled around the outward cell.
+                    //
+                    // A perpendicular neighbour only borders this vertex if the box actually
+                    // reaches the cell edge in that direction. A sub-box edge that stops
+                    // mid-cell (e.g. a stair step's underside at y=0.5) has no neighbour
+                    // there, so it must not pick up AO/dark light from the cell beyond —
+                    // that over-reach was darkening the tops of stairs.
                     const av = face.aoVectors[k];
                     const a1 = av[0], a2 = av[1];
+                    const reaches = (a: number[]): boolean =>
+                        a[0] !== 0 ? (a[0] > 0 ? lx === 1 : lx === 0)
+                      : a[1] !== 0 ? (a[1] > 0 ? ly === 1 : ly === 0)
+                      :              (a[2] > 0 ? lz === 1 : lz === 0);
+                    const a1Valid = reaches(a1);
+                    const a2Valid = reaches(a2);
                     const rc = getLightFast(nx, ny, nz);
-                    const rs1 = getLightFast(nx + a1[0], ny + a1[1], nz + a1[2]);
-                    const rs2 = getLightFast(nx + a2[0], ny + a2[1], nz + a2[2]);
-                    const rco = getLightFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]);
-                    const s1Occ = isAOOccluder(getTypeFast(nx + a1[0], ny + a1[1], nz + a1[2])) ? 1 : 0;
-                    const s2Occ = isAOOccluder(getTypeFast(nx + a2[0], ny + a2[1], nz + a2[2])) ? 1 : 0;
-                    const cOcc = isAOOccluder(getTypeFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2])) ? 1 : 0;
+                    const rs1 = a1Valid ? getLightFast(nx + a1[0], ny + a1[1], nz + a1[2]) : rc;
+                    const rs2 = a2Valid ? getLightFast(nx + a2[0], ny + a2[1], nz + a2[2]) : rc;
+                    const rco = (a1Valid && a2Valid) ? getLightFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]) : rc;
+                    const s1Occ = a1Valid && isAOOccluder(getTypeFast(nx + a1[0], ny + a1[1], nz + a1[2])) ? 1 : 0;
+                    const s2Occ = a2Valid && isAOOccluder(getTypeFast(nx + a2[0], ny + a2[1], nz + a2[2])) ? 1 : 0;
+                    const cOcc = (a1Valid && a2Valid && isAOOccluder(getTypeFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]))) ? 1 : 0;
                     const aoOcc = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cOcc);
                     const aoMul = 1.0 - aoOcc * 0.14;
                     const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;

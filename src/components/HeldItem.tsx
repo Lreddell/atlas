@@ -105,13 +105,17 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
     const itemMaterial = useMemo(() => {
         if (!texture) return null;
-        const mat = new THREE.MeshLambertMaterial({ 
-            map: texture, 
-            transparent: true, 
-            alphaTest: 0.5, 
+        const mat = new THREE.MeshLambertMaterial({
+            map: texture,
+            transparent: true,
+            alphaTest: 0.5,
             side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false
+            // Depth-test/write enabled so multi-box shapes (slabs/stairs) self-occlude
+            // instead of drawing back/interior faces over front ones. The held model
+            // sits ~0.8u from the camera — closer than world geometry — so it still
+            // renders on top (only clips when the player is face-planted into a block).
+            depthTest: true,
+            depthWrite: true
         });
         setupEntityMaterial(mat);
         return mat;
