@@ -2,10 +2,10 @@ import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE, MIN_Y, MAX_Y } from '../../constants';
 import { WorldState } from './worldTypes';
-import { getChunkData, getLightData } from './worldStore';
+import { getChunkData, getLightData, getMetadataData } from './worldStore';
 import { worldToChunk, index3D, getChunkKey } from './worldCoords';
 import { NEIGHBORS, QUEUE_SIZE, SHARED_SKY_Q, SHARED_BLOCK_Q } from './worldConstants';
-import { getOpacity } from './blockProps';
+import { getDirectionalOpacity } from './blockProps';
 
 export function getLight(state: WorldState, x: number, y: number, z: number): { sky: number, block: number } {
     if (y < MIN_Y || y > MAX_Y) return { sky: 15, block: 0 };
@@ -58,11 +58,13 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
     let czCache = -999999999;
     let chunkCache: Uint8Array | undefined;
     let lightCache: Uint8Array | undefined;
+    let metaCache: Uint8Array | undefined;
     const refreshCache = (cx: number, cz: number) => {
         if (cx !== cxCache || cz !== czCache) {
             cxCache = cx; czCache = cz;
             chunkCache = getChunkData(state, cx, cz);
             lightCache = getLightData(state, cx, cz);
+            metaCache = getMetadataData(state, cx, cz);
         }
     };
 
@@ -76,6 +78,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
             if (!chunkCache || !lightCache) continue;
             const chunk = chunkCache;
             const light = lightCache;
+            const meta = metaCache;
             const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const colBase = lz * CHUNK_SIZE + lx;
 
@@ -95,7 +98,10 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
             for (let y = maxHeight; y >= minY; y--) {
                 const idx = (y - MIN_Y) * LAYER + colBase;
                 const b = chunk[idx];
-                const opacity = getOpacity(b);
+                // Skylight scans straight down, so probe the cell's downward-entry
+                // (top) face: a top slab seals it (sky=0 below), a bottom slab leaves
+                // it open (sky dims by 1 and keeps falling).
+                const opacity = getDirectionalOpacity(b, meta ? meta[idx] : 0, 0, -1, 0);
                 if (opacity >= 15) sky = 0;
                 else if (opacity > 0) sky = Math.max(0, sky - opacity);
 
@@ -144,12 +150,14 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
     let czCache = -999999999;
     let chunkCache: Uint8Array | undefined;
     let lightCache: Uint8Array | undefined;
+    let metaCache: Uint8Array | undefined;
 
     const refreshCache = (cx: number, cz: number) => {
         if (cx !== cxCache || cz !== czCache) {
             cxCache = cx; czCache = cz;
             chunkCache = getChunkData(state, cx, cz);
             lightCache = getLightData(state, cx, cz);
+            metaCache = getMetadataData(state, cx, cz);
         }
     };
 
@@ -188,7 +196,8 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
             const nIndex = index3D(nlx, ny, nlz);
 
             const nType = chunkCache[nIndex];
-            const atten = Math.max(1, getOpacity(nType));
+            const nMeta = metaCache ? metaCache[nIndex] : 0;
+            const atten = Math.max(1, getDirectionalOpacity(nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]));
             const nextLvl = lvl - atten;
             
             const currentNLvl = neighborLight[nIndex] & 0xF;
@@ -239,9 +248,10 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
             const nIndex = index3D(nlx, ny, nlz);
 
             const nType = chunkCache[nIndex];
-            const opacity = getOpacity(nType);
+            const nMeta = metaCache ? metaCache[nIndex] : 0;
+            const opacity = getDirectionalOpacity(nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]);
             let nextLvl = lvl - Math.max(1, opacity);
-            
+
             if (NEIGHBORS[i][1] === -1 && lvl === 15 && opacity === 0) nextLvl = 15;
 
             const currentNSky = (neighborLight[nIndex] >> 4) & 0xF;
