@@ -155,6 +155,34 @@ export function getDirectionalOpacity(type: BlockType, meta: number, dx: number,
     return (mask & (1 << face)) !== 0 ? FACE_SOLID_ATTEN : FACE_OPEN_ATTEN;
 }
 
+// True if the shaped block seals the face whose outward normal is (nx,ny,nz).
+function shapedFaceSealed(type: BlockType, meta: number, nx: number, ny: number, nz: number): boolean {
+    if (type > MAX_OPACITY_ID || SHAPED_TABLE[type] === 0) return false;
+    const mask = getFaceCoverMask(type, meta);
+    return (mask & (1 << faceBitFromNormal(nx, ny, nz))) !== 0;
+}
+
+/**
+ * Edge attenuation for light crossing from a source cell into a target cell as it
+ * moves in direction (dx,dy,dz). Unlike getDirectionalOpacity (target entry face
+ * only), this also checks the SOURCE's exit face — the face it would leave through,
+ * whose outward normal is the movement direction. A shaped cell can hold light that
+ * entered from an open side; without this check it would leak straight back out
+ * through a sealed side (e.g. a torch under a top slab lighting the air above it).
+ *
+ * If either the source exit face or the target entry face is fully sealed, the light
+ * is blocked (attenuation 15); otherwise it falls back to the target's normal
+ * directional attenuation.
+ */
+export function getEdgeDirectionalOpacity(
+    sourceType: BlockType, sourceMeta: number,
+    targetType: BlockType, targetMeta: number,
+    dx: number, dy: number, dz: number
+): number {
+    if (shapedFaceSealed(sourceType, sourceMeta, dx, dy, dz)) return FACE_SOLID_ATTEN;
+    return getDirectionalOpacity(targetType, targetMeta, dx, dy, dz);
+}
+
 export function isWashable(type: BlockType): boolean {
     if (type === BlockType.AIR) return false;
     // Wash away Torches, Saplings, Grass (if added), etc.
