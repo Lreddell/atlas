@@ -29,10 +29,13 @@ function computeOpacity(type: BlockType): number {
     if (type === BlockType.AIR || type === BlockType.TORCH || type === BlockType.GLASS) return 0;
     if (type === BlockType.WATER || LEAF_TYPES.has(type)) return 2;
     if (type === BlockType.LAVA) return 15; // Lava is opaque light-wise
-    // Slabs/stairs carry `transparent: true` so the mesher draws their partial shape,
-    // but they are solid stone/wood and must block light — otherwise light passes
-    // straight through them.
-    if (isShaped(type)) return 15;
+    // Slabs/stairs only fill part of their cell, so light must still reach the empty
+    // cut-out side — they shouldn't block like a full cube. The per-cell lighting model
+    // can't shade by sub-shape, so use an attenuation of 1: light propagates through
+    // (no longer a free sky-light column like opacity 0, so it dims gently going down)
+    // while still passing to the open side. The block's solid look comes from its AO
+    // shading, not from blocking light.
+    if (isShaped(type)) return 1;
 
     const def = BLOCKS[type];
     if (!def) return 15; // Fallback: Treat unknown blocks as opaque
