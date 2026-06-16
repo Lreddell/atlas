@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
+import { isMobileDevice } from '../../utils/device';
 import { setCloudTexture } from '../world/cloudState';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
@@ -345,9 +346,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         );
     };
 
+    // Mobile: allow the panel to scroll when it's taller than a short landscape
+    // viewport (desktop keeps its centered, non-scrolling layout).
+    const mobile = isMobileDevice();
     return (
-        <div 
-            className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px]' : ''}`}
+        <div
+            className={`absolute inset-0 z-50 flex justify-center pointer-events-auto ${mobile ? 'items-start overflow-y-auto py-6' : 'items-center'} ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px]' : ''}`}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}

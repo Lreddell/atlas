@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
+import { isMobileDevice } from '../../utils/device';
 import {
     CreateWorldPanel,
     EditorsPanel,
@@ -216,8 +217,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         );
     }
 
+    // Mobile menus can be taller than a short landscape viewport, so make the menu
+    // area scroll (desktop layout is untouched: the wrapper is display:contents).
+    const mobile = isMobileDevice();
     return (
-        <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center">
+        <div className={`absolute inset-0 z-[200] flex flex-col items-center justify-center ${mobile ? 'overflow-y-auto' : ''}`}>
             {showBackground && (
                 <MenuPanoramaBackground
                     backgroundMode={backgroundMode}
@@ -230,6 +234,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             )}
             {showSubmenuOverlay && <div className={`pointer-events-none absolute inset-0 ${submenuOverlayClass}`} />}
 
+            <div className={mobile ? 'relative z-10 flex min-h-full w-full flex-col items-center justify-center py-6' : 'contents'}>
             {view === 'create' && (
                 <CreateWorldPanel
                     worldName={worldName}
@@ -317,6 +322,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onDecline={handleTutorialPromptDecline}
                 />
             )}
+            </div>
         </div>
     );
 };
