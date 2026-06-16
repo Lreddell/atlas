@@ -64,10 +64,17 @@ const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.DEBUG_CROSS, BlockType.PINK_FLOWER,
 ]);
 
+// Flowers get a slim box; leafy plants (grass, ferns, saplings, dead bush) get a
+// wider one that better matches their spread.
+const FLOWER_TYPES: ReadonlySet<BlockType> = new Set([
+    BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER,
+]);
+
 const FULL_CUBE_BOXES: ShapeBox[] = [[0, 0, 0, 1, 1, 1]];
 const BED_BOXES: ShapeBox[] = [[0, 0, 0, 1, 0.5, 1]];
 const TORCH_BOXES: ShapeBox[] = [[0.4, 0, 0.4, 0.6, 0.6, 0.6]];
-const PLANT_BOXES: ShapeBox[] = [[0.3, 0, 0.3, 0.7, 0.8, 0.7]];
+const FLOWER_BOXES: ShapeBox[] = [[0.3, 0, 0.3, 0.7, 0.8, 0.7]];
+const PLANT_BOXES: ShapeBox[] = [[0.1, 0, 0.1, 0.9, 0.8, 0.9]];
 
 /**
  * The boxes the targeting outline should trace for a block, so the highlight
@@ -77,6 +84,7 @@ const PLANT_BOXES: ShapeBox[] = [[0.3, 0, 0.3, 0.7, 0.8, 0.7]];
 export function getSelectionBoxes(type: BlockType, meta: number): ShapeBox[] {
     if (isShaped(type)) return getShapeBoxes(type, meta);
     if (type === BlockType.TORCH) return TORCH_BOXES;
+    if (FLOWER_TYPES.has(type)) return FLOWER_BOXES;
     if (CROSS_PLANT_TYPES.has(type)) return PLANT_BOXES;
     if (type === BlockType.BED_FOOT || type === BlockType.BED_HEAD) return BED_BOXES;
     return FULL_CUBE_BOXES;
