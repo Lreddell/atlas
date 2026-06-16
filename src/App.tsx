@@ -35,7 +35,7 @@ import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
 import { isEditableElement } from './utils/dom';
-import { isMobileDevice } from './utils/device';
+import { isMobileDevice, requestFullscreen, exitFullscreen, isFullscreen } from './utils/device';
 
 import { worldManager } from './systems/WorldManager';
 import { WorldStorage } from './systems/world/WorldStorage';
@@ -2096,6 +2096,30 @@ const App: React.FC = () => {
           && !isDead && !isSleeping && !showDeathScreen && !showAtlasViewer && !isCapturingPanorama;
       setIsLocked(playing);
   }, [isMobile, appState, isPaused, openContainer, showCommandInput, isDead, isSleeping, showDeathScreen, showAtlasViewer, isCapturingPanorama]);
+
+  // Mobile: enter fullscreen on the first user gesture so Chrome/Safari hide the URL
+  // bar and the canvas/UI use the whole screen (gesture-gated by the Fullscreen API).
+  useEffect(() => {
+      if (!isMobile) return;
+      const onFirstTap = () => requestFullscreen();
+      window.addEventListener('pointerdown', onFirstTap, { once: true });
+      return () => window.removeEventListener('pointerdown', onFirstTap);
+  }, [isMobile]);
+
+  // Mobile: make the hardware back button pause + leave fullscreen instead of
+  // unloading the page. A history entry is pushed while in-game and re-armed on each
+  // back press, so the page stays put and "back" reads as "exit to the pause menu".
+  useEffect(() => {
+      if (!isMobile || appState !== 'game') return;
+      history.pushState({ atlasGame: true }, '');
+      const onPop = () => {
+          if (isFullscreen()) exitFullscreen();
+          setIsPaused(true);
+          history.pushState({ atlasGame: true }, ''); // re-arm for the next back press
+      };
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+  }, [isMobile, appState]);
 
   const quitApp = useCallback(() => {
     if (isElectron) {

@@ -31,3 +31,37 @@ export function isMobileDevice(): boolean {
     }
     return IS_MOBILE;
 }
+
+// --- Fullscreen helpers (used on mobile to hide the browser URL bar) ----------
+// Must be called from a user gesture. No-ops if already fullscreen or unsupported
+// (e.g. iPhone Safari, which has no Fullscreen API). Errors are swallowed — failing
+// to go fullscreen should never break gameplay.
+type FsElement = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+type FsDocument = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+
+export function isFullscreen(): boolean {
+    const d = document as FsDocument;
+    return !!(d.fullscreenElement || d.webkitFullscreenElement);
+}
+
+export function requestFullscreen(): void {
+    if (typeof document === 'undefined' || isFullscreen()) return;
+    const el = document.documentElement as FsElement;
+    try {
+        const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (!fn) return;
+        const p = el.requestFullscreen
+            ? el.requestFullscreen({ navigationUI: 'hide' })
+            : el.webkitRequestFullscreen?.();
+        if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => {});
+    } catch { /* ignore */ }
+}
+
+export function exitFullscreen(): void {
+    if (typeof document === 'undefined' || !isFullscreen()) return;
+    const d = document as FsDocument;
+    try {
+        const p = d.exitFullscreen ? d.exitFullscreen() : d.webkitExitFullscreen?.();
+        if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => {});
+    } catch { /* ignore */ }
+}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { inputState, resetInputState } from '../../systems/player/playerInput';
 import { mobileInput, resetMobileInput } from '../../systems/player/mobileInput';
 import { soundManager } from '../../systems/sound/SoundManager';
+import { requestFullscreen } from '../../utils/device';
 
 interface MobileControlsProps {
     gameMode: 'survival' | 'creative' | 'spectator';
@@ -39,7 +40,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ gameMode, onPaus
     const onFirstGesture = () => {
         if (firstGesture.current) return;
         firstGesture.current = true;
-        soundManager.resume(); // browsers require a gesture before audio can play
+        soundManager.resume();   // browsers require a gesture before audio can play
+        requestFullscreen();     // hide the browser URL bar; gesture-gated, so do it here
     };
 
     const clearMovement = () => {
