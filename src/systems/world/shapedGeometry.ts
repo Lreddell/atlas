@@ -63,31 +63,69 @@ export function buildShapedBlockGeometry(itemType: BlockType, parentType: BlockT
     return geo;
 }
 
-// The 12 edges of a unit box, as pairs of corner indices (0=lo,1=hi per axis):
-// corner index = (xHi?1:0) | (yHi?2:0) | (zHi?4:0)
-const BOX_EDGES: [number, number][] = [
-    [0, 1], [1, 3], [3, 2], [2, 0], // z0 face loop
-    [4, 5], [5, 7], [7, 6], [6, 4], // z1 face loop
-    [0, 4], [1, 5], [2, 6], [3, 7], // z connectors
-];
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+const pointOnAxis = (axis: number, av: number, p1: number, p2: number): [number, number, number] =>
+    axis === 0 ? [av, p1, p2] : axis === 1 ? [p1, av, p2] : [p1, p2, av];
 
 /**
- * Line-segment edge geometry tracing the given boxes, in [0,1] block-local space
- * (so the mesh sits at the block's min corner). Each box is inflated by `eps` so
- * the outline floats just outside the surface and doesn't z-fight.
+ * Line-segment edge geometry tracing the OUTER silhouette of the given boxes, in
+ * [0,1] block-local space (so the mesh sits at the block's min corner).
+ *
+ * Drawing every box's 12 edges leaves internal seams where boxes meet (e.g. the
+ * step of a stair sitting on its base). Instead we group edges by the line they
+ * lie on and XOR their intervals: a span survives only if an odd number of boxes
+ * cover it, so shared/internal edges cancel and only the true outline remains.
+ * Each surviving edge is then nudged `eps` outward (into the empty side) so it
+ * floats just off the surface and doesn't z-fight.
  */
 export function buildSelectionEdges(boxes: ShapeBox[], eps = 0.002): THREE.BufferGeometry {
-    const pts: number[] = [];
+    // 1. Group every box edge by the infinite line it lies on (axis + the two
+    //    perpendicular coordinates). Edges on one line are 1-D intervals.
+    const lines = new Map<string, { axis: number; p1: number; p2: number; intervals: [number, number][] }>();
+    const addEdge = (axis: number, p1: number, p2: number, lo: number, hi: number) => {
+        const key = `${axis}|${r3(p1)}|${r3(p2)}`;
+        let L = lines.get(key);
+        if (!L) { L = { axis, p1, p2, intervals: [] }; lines.set(key, L); }
+        L.intervals.push(lo < hi ? [lo, hi] : [hi, lo]);
+    };
     for (const b of boxes) {
-        const x0 = b[0] - eps, y0 = b[1] - eps, z0 = b[2] - eps;
-        const x1 = b[3] + eps, y1 = b[4] + eps, z1 = b[5] + eps;
-        const cx = [x0, x1], cy = [y0, y1], cz = [z0, z1];
-        const cornerPos = (i: number): [number, number, number] => [cx[i & 1], cy[(i >> 1) & 1], cz[(i >> 2) & 1]];
-        for (const [a, c] of BOX_EDGES) {
-            const pa = cornerPos(a), pc = cornerPos(c);
-            pts.push(pa[0], pa[1], pa[2], pc[0], pc[1], pc[2]);
+        const [x0, y0, z0, x1, y1, z1] = b;
+        addEdge(0, y0, z0, x0, x1); addEdge(0, y1, z0, x0, x1); addEdge(0, y0, z1, x0, x1); addEdge(0, y1, z1, x0, x1);
+        addEdge(1, x0, z0, y0, y1); addEdge(1, x1, z0, y0, y1); addEdge(1, x0, z1, y0, y1); addEdge(1, x1, z1, y0, y1);
+        addEdge(2, x0, y0, z0, z1); addEdge(2, x1, y0, z0, z1); addEdge(2, x0, y1, z0, z1); addEdge(2, x1, y1, z0, z1);
+    }
+
+    // 2. XOR the intervals on each line into surviving (odd-coverage) sub-segments.
+    const segs: { axis: number; p1: number; p2: number; lo: number; hi: number }[] = [];
+    for (const L of lines.values()) {
+        const bounds = [...new Set(L.intervals.flat())].sort((m, n) => m - n);
+        for (let i = 0; i < bounds.length - 1; i++) {
+            const lo = bounds[i], hi = bounds[i + 1], mid = (lo + hi) / 2;
+            let cover = 0;
+            for (const iv of L.intervals) if (iv[0] < mid && mid < iv[1]) cover++;
+            if (cover % 2 === 1) segs.push({ axis: L.axis, p1: L.p1, p2: L.p2, lo, hi });
         }
     }
+
+    // 3. Emit, nudging each segment toward whichever side the box union leaves empty.
+    const covers = (x: number, y: number, z: number) =>
+        boxes.some(b => x > b[0] && x < b[3] && y > b[1] && y < b[4] && z > b[2] && z < b[5]);
+    const pts: number[] = [];
+    const d = 1e-3;
+    for (const s of segs) {
+        const mid = (s.lo + s.hi) / 2;
+        let ob = 0, oc = 0;
+        for (const sb of [-1, 1]) for (const sc of [-1, 1]) {
+            const p = pointOnAxis(s.axis, mid, s.p1 + sb * d, s.p2 + sc * d);
+            if (covers(p[0], p[1], p[2])) { ob -= sb; oc -= sc; }
+        }
+        const op1 = s.p1 + Math.sign(ob) * eps;
+        const op2 = s.p2 + Math.sign(oc) * eps;
+        const a = pointOnAxis(s.axis, s.lo - eps, op1, op2);
+        const b = pointOnAxis(s.axis, s.hi + eps, op1, op2);
+        pts.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    }
+
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     return geo;

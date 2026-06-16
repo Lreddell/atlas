@@ -4,7 +4,7 @@ import { ItemStack, BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasURL, ATLAS_STRIDE, ATLAS_PADDING, getAtlasDimensions } from '../../utils/textures';
 import { resolveTexture } from '../../systems/world/textureResolver';
-import { getShapeBoxes, STAIR_FACE_POS_Z } from '../../systems/world/blockShapes';
+import { getShapeBoxes } from '../../systems/world/blockShapes';
 
 interface SlotProps {
   item: ItemStack | null;
@@ -70,7 +70,12 @@ export const Slot: React.FC<SlotProps> = ({
           const baseScale = size === 'large' ? 1.4 : 1.0;
           const U = 16;
           // A fixed, readable orientation for the icon (step facing front-right).
-          const boxes = getShapeBoxes(item.type, blockDef.shape === 'stairs' ? STAIR_FACE_POS_Z : 0);
+          // Use a non-overlapping decomposition so faces don't seam: a slab is one
+          // box; a stair is a tall back half plus a low front tread (instead of a
+          // full bottom slab + step, whose slab-top would show through under the step).
+          const boxes: number[][] = blockDef.shape === 'stairs'
+              ? [[0, 0, 0, 1, 1, 0.5], [0, 0, 0.5, 1, 0.5, 1]]
+              : getShapeBoxes(item.type, 0);
 
           const faceEls: React.ReactNode[] = [];
           boxes.forEach((b, bi) => {
