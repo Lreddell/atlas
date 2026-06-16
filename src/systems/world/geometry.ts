@@ -340,11 +340,10 @@ export function generateGeometryData(
                 // rare, player-placed, and small, so far-chunk dark-face culling would
                 // risk punching visible holes in them for negligible triangle savings.
                 //
-                // Slabs/stairs are opaque for lighting (their own cell is dark), so every
-                // face samples the lit neighbour cell, exactly like a full block.
-                const raw = getLightFast(x + f.dx, y + f.dy, z + f.dz);
-                const skyC = ((raw >> 4) & 0xF) / 15.0;
-                const blockC = (raw & 0xF) / 15.0;
+                // Slabs/stairs are opaque for lighting (their own cell is dark), so each
+                // face reads light/AO from the lit neighbour cell, exactly like a full
+                // block. The outward cell:
+                const nx = x + f.dx, ny = y + f.dy, nz = z + f.dz;
 
                 const { uvs } = resolveTexture(parentType, f.name, f.dx, f.dy, f.dz, 0);
                 const uBL = uvs[0], vBL = uvs[1];
@@ -381,14 +380,30 @@ export function generateGeometryData(
                     const u = uBL * ia * ib + uBR * a * ib + uTR * a * b + uTL * ia * b;
                     const v = vBL * ia * ib + vBR * a * ib + vTR * a * b + vTL * ia * b;
 
+                    // Per-vertex AO + smooth light, same model as full-block faces, so
+                    // slabs/stairs are shaded (not flat). Sampled around the outward cell.
+                    const av = face.aoVectors[k];
+                    const a1 = av[0], a2 = av[1];
+                    const rc = getLightFast(nx, ny, nz);
+                    const rs1 = getLightFast(nx + a1[0], ny + a1[1], nz + a1[2]);
+                    const rs2 = getLightFast(nx + a2[0], ny + a2[1], nz + a2[2]);
+                    const rco = getLightFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]);
+                    const s1Occ = isAOOccluder(getTypeFast(nx + a1[0], ny + a1[1], nz + a1[2])) ? 1 : 0;
+                    const s2Occ = isAOOccluder(getTypeFast(nx + a2[0], ny + a2[1], nz + a2[2])) ? 1 : 0;
+                    const cOcc = isAOOccluder(getTypeFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2])) ? 1 : 0;
+                    const aoOcc = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cOcc);
+                    const aoMul = 1.0 - aoOcc * 0.14;
+                    const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;
+                    const blk = ((rc & 0xF) + (rs1 & 0xF) + (rs2 & 0xF) + (rco & 0xF)) / 4.0;
+
                     opaqueBuffer.positions[vp] = x + lx;
                     opaqueBuffer.positions[vp + 1] = y + ly;
                     opaqueBuffer.positions[vp + 2] = z + lz;
                     opaqueBuffer.normals[vp] = f.dx;
                     opaqueBuffer.normals[vp + 1] = f.dy;
                     opaqueBuffer.normals[vp + 2] = f.dz;
-                    opaqueBuffer.colors[vp] = skyC;
-                    opaqueBuffer.colors[vp + 1] = blockC;
+                    opaqueBuffer.colors[vp] = (sky / 15.0) * aoMul;
+                    opaqueBuffer.colors[vp + 1] = (blk / 15.0) * aoMul;
                     opaqueBuffer.colors[vp + 2] = 1.0;
                     opaqueBuffer.uvs[up] = u;
                     opaqueBuffer.uvs[up + 1] = v;
