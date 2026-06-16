@@ -54,3 +54,29 @@ export function getShapeBoxes(type: BlockType, meta: number): ShapeBox[] {
     else step = [0.5, yLo, 0, 1, yHi, 1];                                   // low -X -> tall at +X half
     return [base, step];
 }
+
+// Cross-rendered plants (kept in sync with IS_CROSS in geometry.ts). Their billboards
+// span the whole cell, so a full-cube selection box reads as a solid block — give them
+// a smaller, plant-sized box instead.
+const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
+    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION,
+    BlockType.DEBUG_CROSS, BlockType.PINK_FLOWER,
+]);
+
+const FULL_CUBE_BOXES: ShapeBox[] = [[0, 0, 0, 1, 1, 1]];
+const BED_BOXES: ShapeBox[] = [[0, 0, 0, 1, 0.5, 1]];
+const TORCH_BOXES: ShapeBox[] = [[0.4, 0, 0.4, 0.6, 0.6, 0.6]];
+const PLANT_BOXES: ShapeBox[] = [[0.1, 0, 0.1, 0.9, 0.8, 0.9]];
+
+/**
+ * The boxes the targeting outline should trace for a block, so the highlight
+ * follows the real shape instead of always being a full cube.
+ */
+export function getSelectionBoxes(type: BlockType, meta: number): ShapeBox[] {
+    if (isShaped(type)) return getShapeBoxes(type, meta);
+    if (type === BlockType.TORCH) return TORCH_BOXES;
+    if (CROSS_PLANT_TYPES.has(type)) return PLANT_BOXES;
+    if (type === BlockType.BED_FOOT || type === BlockType.BED_HEAD) return BED_BOXES;
+    return FULL_CUBE_BOXES;
+}

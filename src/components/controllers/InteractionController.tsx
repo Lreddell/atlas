@@ -1,5 +1,5 @@
 
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -24,7 +24,8 @@ import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 import { isWashable } from '../../systems/world/blockProps';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
-import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X } from '../../systems/world/blockShapes';
+import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, isShaped, getSelectionBoxes } from '../../systems/world/blockShapes';
+import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
@@ -59,7 +60,11 @@ export const InteractionController = ({
 }: InteractionControllerProps) => {
     const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
-    
+    // The outline geometry is rebuilt to match the targeted block's real shape;
+    // we cache it by (type:meta) signature and only rebuild when the target changes.
+    const highlightGeoRef = useRef<THREE.BufferGeometry | null>(null);
+    const highlightSigRef = useRef<string>('');
+
     // Interaction State
     const breakingRef = useRef<{ x: number, y: number, z: number, progress: number } | null>(null);
     const isLeftMouseDown = useRef(false);
@@ -77,7 +82,8 @@ export const InteractionController = ({
     const prevLocked = useRef(isLocked);
     const prevOpen = useRef(openContainer);
 
-    const boxGeo = useMemo(() => new THREE.BoxGeometry(1.002, 1.002, 1.002), []);
+    // Dispose the dynamically-built outline geometry on unmount.
+    useEffect(() => () => { highlightGeoRef.current?.dispose(); }, []);
 
     useEffect(() => {
         inventoryRef.current = inventory;
@@ -435,13 +441,20 @@ export const InteractionController = ({
             const targetType = worldManager.tryGetBlock(bx, by, bz);
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                 if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
-                     highlightMeshRef.current.scale.set(1.002, 0.502, 1.002);
-                     highlightMeshRef.current.position.set(bx + 0.5, by + 0.25, bz + 0.5);
-                 } else {
-                     highlightMeshRef.current.scale.set(1.002, 1.002, 1.002);
-                     highlightMeshRef.current.position.set(bx + 0.5, by + 0.5, bz + 0.5);
+                 // Trace the outline around the block's real shape. Only shaped blocks
+                 // (slabs/stairs) need their metadata to pick the right boxes.
+                 const meta = isShaped(targetType) ? worldManager.getMetadata(bx, by, bz) : 0;
+                 const sig = `${targetType}:${meta}`;
+                 if (sig !== highlightSigRef.current) {
+                     const geo = buildSelectionEdges(getSelectionBoxes(targetType, meta));
+                     highlightGeoRef.current?.dispose();
+                     highlightGeoRef.current = geo;
+                     highlightMeshRef.current.geometry = geo;
+                     highlightSigRef.current = sig;
                  }
+                 // Geometry is in [0,1] block-local space, so sit at the block's min corner.
+                 highlightMeshRef.current.scale.set(1, 1, 1);
+                 highlightMeshRef.current.position.set(bx, by, bz);
                  highlightMeshRef.current.visible = true;
             } else {
                  highlightMeshRef.current.visible = false;
@@ -626,8 +639,8 @@ export const InteractionController = ({
     });
 
     return (
+        // Geometry is assigned imperatively each time the targeted block's shape changes.
         <lineSegments ref={highlightMeshRef} visible={false}>
-            <edgesGeometry args={[boxGeo]} />
             <lineBasicMaterial color="black" />
         </lineSegments>
     );

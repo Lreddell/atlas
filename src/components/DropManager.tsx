@@ -7,6 +7,7 @@ import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
+import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
@@ -92,8 +93,14 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
 
     const geometry = useMemo(() => {
         const def = BLOCKS[type];
-        
-        const is2D = def.isItem || 
+
+        // Slabs / stairs: render the real partial-box shape instead of a full mini-cube.
+        if (def.shape) {
+            const parentType = (def.textureParent ?? type) as BlockType;
+            return buildShapedBlockGeometry(type, parentType, 0.25);
+        }
+
+        const is2D = def.isItem ||
                      type === BlockType.TORCH || 
                      type === BlockType.BED_ITEM ||
                      type === BlockType.DEAD_BUSH ||

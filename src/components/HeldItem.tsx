@@ -6,8 +6,7 @@ import { ItemStack, BlockType } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
-import { FACE_DATA } from '../systems/world/worldConstants';
-import { getShapeBoxes, STAIR_FACE_POS_Z } from '../systems/world/blockShapes';
+import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
 import { worldManager } from '../systems/WorldManager';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
@@ -172,50 +171,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         // Slabs / stairs: build the real partial-box shape in hand instead of a cube.
         if (def.shape) {
             const parentType = (def.textureParent ?? itemType) as BlockType;
-            const boxes = getShapeBoxes(itemType, def.shape === 'stairs' ? STAIR_FACE_POS_Z : 0);
-            const faces: { name: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back', d: [number, number, number] }[] = [
-                { name: 'right', d: [1, 0, 0] }, { name: 'left', d: [-1, 0, 0] },
-                { name: 'top', d: [0, 1, 0] }, { name: 'bottom', d: [0, -1, 0] },
-                { name: 'front', d: [0, 0, 1] }, { name: 'back', d: [0, 0, -1] },
-            ];
-            const SIZE = 0.4;
-            const positions: number[] = [], normals: number[] = [], uvList: number[] = [], indices: number[] = [];
-            let vBase = 0;
-            for (const box of boxes) {
-                for (const f of faces) {
-                    const fc = FACE_DATA[f.name];
-                    const { uvs } = resolveTexture(parentType, f.name, f.d[0], f.d[1], f.d[2], 0);
-                    const aAxis = [fc.corners[1][0] - fc.corners[0][0], fc.corners[1][1] - fc.corners[0][1], fc.corners[1][2] - fc.corners[0][2]];
-                    const bAxis = [fc.corners[3][0] - fc.corners[0][0], fc.corners[3][1] - fc.corners[0][1], fc.corners[3][2] - fc.corners[0][2]];
-                    const aIdx = aAxis[0] !== 0 ? 0 : (aAxis[1] !== 0 ? 1 : 2);
-                    const bIdx = bAxis[0] !== 0 ? 0 : (bAxis[1] !== 0 ? 1 : 2);
-                    const aPos = aAxis[aIdx] > 0, bPos = bAxis[bIdx] > 0;
-                    for (let k = 0; k < 4; k++) {
-                        const corner = fc.corners[k];
-                        const lx = corner[0] ? box[3] : box[0];
-                        const ly = corner[1] ? box[4] : box[1];
-                        const lz = corner[2] ? box[5] : box[2];
-                        const localA = aIdx === 0 ? lx : (aIdx === 1 ? ly : lz);
-                        const localB = bIdx === 0 ? lx : (bIdx === 1 ? ly : lz);
-                        const a = aPos ? localA : 1 - localA;
-                        const b = bPos ? localB : 1 - localB;
-                        const ia = 1 - a, ib = 1 - b;
-                        const u = uvs[0] * ia * ib + uvs[2] * a * ib + uvs[4] * a * b + uvs[6] * ia * b;
-                        const v = uvs[1] * ia * ib + uvs[3] * a * ib + uvs[5] * a * b + uvs[7] * ia * b;
-                        positions.push((lx - 0.5) * SIZE, (ly - 0.5) * SIZE, (lz - 0.5) * SIZE);
-                        normals.push(f.d[0], f.d[1], f.d[2]);
-                        uvList.push(u, v);
-                    }
-                    indices.push(vBase, vBase + 1, vBase + 2, vBase, vBase + 2, vBase + 3);
-                    vBase += 4;
-                }
-            }
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-            geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvList, 2));
-            geo.setIndex(indices);
-            return geo;
+            return buildShapedBlockGeometry(itemType, parentType, 0.4);
         }
 
         const is2D = def.isItem ||
