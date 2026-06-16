@@ -10,6 +10,7 @@ import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
+import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
@@ -1235,6 +1236,11 @@ export class WorldManager {
          if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5); }
     });
     if (oldType !== type || oldRotation !== rotation) {
+        // Re-resolve stair corner shapes for this cell and its horizontal neighbors
+        // BEFORE relighting, so the lighting flood (radius 15) sees the updated
+        // occlusion. A placed/removed stair can turn neighbors into inner/outer corners.
+        this.refreshStairShapes(x, y, z);
+
         this.updateLightingAround(x, y, z);
         this.queueMesh(cx, cz, -1000);
 
@@ -1260,6 +1266,35 @@ export class WorldManager {
     this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
+  }
+
+  // Re-derive the corner shape (bits 3-5 of meta) of any stair at (x,y,z) and its
+  // four horizontal neighbors from the current world, and store it back. Mirrors how
+  // Java recomputes stair shapes on neighbor changes. Only meta bits change (never the
+  // block type), so this can't recurse into setBlock; it just nudges meshing.
+  private refreshStairShapes(x: number, y: number, z: number) {
+    const cells = [[x, y, z], [x + 1, y, z], [x - 1, y, z], [x, y, z + 1], [x, y, z - 1]];
+    for (const [cxw, cyw, czw] of cells) {
+      const t = this.getBlock(cxw, cyw, czw, false);
+      if (!isStairs(t)) continue;
+      const m = this.getMetadata(cxw, cyw, czw);
+      const facing = m & 3;
+      const upside = (m & 4) === 4;
+      const getNeighbor = (dx: number, dz: number): StairNeighbor | null => {
+        const nt = this.getBlock(cxw + dx, cyw, czw + dz, false);
+        if (!isStairs(nt)) return null;
+        const nm = this.getMetadata(cxw + dx, cyw, czw + dz);
+        return { back: stairBackDir(nm), upside: (nm & 4) === 4 };
+      };
+      const shape = resolveStairShape(facing, upside, getNeighbor);
+      const newMeta = (m & 0x07) | (shape << 3); // keep facing + upside, replace shape
+      if (newMeta !== m) {
+        this.setMetadataAt(cxw, cyw, czw, newMeta);
+        const ncx = Math.floor(cxw / CHUNK_SIZE);
+        const ncz = Math.floor(czw / CHUNK_SIZE);
+        if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) this.queueMesh(ncx, ncz, -800);
+      }
+    }
   }
 
   // If the block at (x,y,z) is a decoration that has lost its support, remove it

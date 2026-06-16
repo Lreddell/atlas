@@ -302,7 +302,11 @@ export function generateGeometryData(
         return BlockType.AIR;
     };
 
-    const isAOOccluder = (type: BlockType) => type !== BlockType.AIR && getOpacity(type) >= 2;
+    // Slabs/stairs attenuate light by shape (getDirectionalOpacity), so getOpacity no
+    // longer flags them as occluders — but they're still solid partial geometry, so
+    // they must darken neighbouring AO corners. Treat any shaped block as an occluder.
+    const isAOOccluder = (type: BlockType) =>
+        type !== BlockType.AIR && (IS_SHAPED[type] === 1 || getOpacity(type) >= 2);
 
     // Emits a slab/stairs block as a set of partial boxes. Each box face is drawn
     // unless it lies flush on the cell boundary against a full opaque cube. UVs are
@@ -340,9 +344,10 @@ export function generateGeometryData(
                 // rare, player-placed, and small, so far-chunk dark-face culling would
                 // risk punching visible holes in them for negligible triangle savings.
                 //
-                // Slabs/stairs are opaque for lighting (their own cell is dark), so each
-                // face reads light/AO from the lit neighbour cell, exactly like a full
-                // block. The outward cell:
+                // Each face samples light/AO from the adjacent (outward) cell, like a
+                // full block face. The shaped cell's own light is shape-attenuated by
+                // getDirectionalOpacity, so the open side stays lit while the sealed
+                // side reads dark. The outward cell:
                 const nx = x + f.dx, ny = y + f.dy, nz = z + f.dz;
 
                 const { uvs } = resolveTexture(parentType, f.name, f.dx, f.dy, f.dz, 0);
