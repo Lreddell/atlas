@@ -5,7 +5,7 @@ import { WorldState } from './worldTypes';
 import { getChunkData, getLightData, getMetadataData } from './worldStore';
 import { worldToChunk, index3D, getChunkKey } from './worldCoords';
 import { NEIGHBORS, QUEUE_SIZE, SHARED_SKY_Q, SHARED_BLOCK_Q } from './worldConstants';
-import { getDirectionalOpacity } from './blockProps';
+import { getDirectionalOpacity, getEdgeDirectionalOpacity } from './blockProps';
 
 export function getLight(state: WorldState, x: number, y: number, z: number): { sky: number, block: number } {
     if (y < MIN_Y || y > MAX_Y) return { sky: 15, block: 0 };
@@ -180,14 +180,19 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
         if (lvl <= 0) continue;
 
+        // Source block/meta (cache currently holds the source chunk) — used so a
+        // shaped source can't emit light back out through one of its sealed faces.
+        const srcType = chunkCache ? chunkCache[index] : 0;
+        const srcMeta = metaCache ? metaCache[index] : 0;
+
         for(let i=0; i<6; i++) {
             const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
             if (ny < MIN_Y || ny > MAX_Y) continue;
-            
+
             const ncx = Math.floor(nx / CHUNK_SIZE);
             const ncz = Math.floor(nz / CHUNK_SIZE);
             refreshCache(ncx, ncz);
-            
+
             if (!chunkCache || !lightCache) continue;
             const neighborLight = lightCache as Uint8Array;
 
@@ -197,7 +202,7 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
             const nType = chunkCache[nIndex];
             const nMeta = metaCache ? metaCache[nIndex] : 0;
-            const atten = Math.max(1, getDirectionalOpacity(nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]));
+            const atten = Math.max(1, getEdgeDirectionalOpacity(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]));
             const nextLvl = lvl - atten;
             
             const currentNLvl = neighborLight[nIndex] & 0xF;
@@ -232,24 +237,27 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
         if (lvl <= 0) continue;
 
+        const srcType = chunkCache ? chunkCache[index] : 0;
+        const srcMeta = metaCache ? metaCache[index] : 0;
+
         for(let i=0; i<6; i++) {
             const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
             if (ny < MIN_Y || ny > MAX_Y) continue;
-            
+
             const ncx = Math.floor(nx / CHUNK_SIZE);
             const ncz = Math.floor(nz / CHUNK_SIZE);
             refreshCache(ncx, ncz);
 
             if (!chunkCache || !lightCache) continue;
             const neighborLight = lightCache as Uint8Array;
-            
+
             const nlx = ((nx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nlz = ((nz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nIndex = index3D(nlx, ny, nlz);
 
             const nType = chunkCache[nIndex];
             const nMeta = metaCache ? metaCache[nIndex] : 0;
-            const opacity = getDirectionalOpacity(nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]);
+            const opacity = getEdgeDirectionalOpacity(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]);
             let nextLvl = lvl - Math.max(1, opacity);
 
             if (NEIGHBORS[i][1] === -1 && lvl === 15 && opacity === 0) nextLvl = 15;
