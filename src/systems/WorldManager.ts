@@ -9,6 +9,7 @@ import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
+import { needsSupport, hasSupportBelow } from './world/blockProps';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
@@ -1251,11 +1252,25 @@ export class WorldManager {
         this.markQueuesDirty();
         this.processStreamingJobs();
     }
-    
+
+    // A type change here may have pulled the support out from a decoration above it.
+    if (oldType !== type) this.breakUnsupported(x, y + 1, z);
+
     // Mark dirty for persistence
     this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
+  }
+
+  // If the block at (x,y,z) is a decoration that has lost its support, remove it
+  // (dropping the item) and let the removal cascade to whatever rests on it.
+  private breakUnsupported(x: number, y: number, z: number) {
+    const t = this.getBlock(x, y, z, false);
+    if (t === BlockType.AIR || !needsSupport(t)) return;
+    const below = this.getBlock(x, y - 1, z, false);
+    if (hasSupportBelow(t, below)) return;
+    this.spawnDrop(t, x, y, z);
+    this.setBlock(x, y, z, BlockType.AIR);
   }
   setWorkersEnabled(val: boolean) {
       if(val !== this.workersEnabled) {

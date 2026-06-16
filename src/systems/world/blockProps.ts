@@ -1,7 +1,8 @@
 
 import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
-import { isSaplingType } from './trees';
+import { isSaplingType, isValidSoil } from './trees';
+import { isShaped } from './blockShapes';
 
 const LEAF_TYPES = new Set<BlockType>([
     BlockType.LEAVES,
@@ -28,12 +29,16 @@ function computeOpacity(type: BlockType): number {
     if (type === BlockType.AIR || type === BlockType.TORCH || type === BlockType.GLASS) return 0;
     if (type === BlockType.WATER || LEAF_TYPES.has(type)) return 2;
     if (type === BlockType.LAVA) return 15; // Lava is opaque light-wise
-    
+    // Slabs/stairs carry `transparent: true` so the mesher draws their partial shape,
+    // but they are solid stone/wood and must block light — otherwise light passes
+    // straight through them.
+    if (isShaped(type)) return 15;
+
     const def = BLOCKS[type];
     if (!def) return 15; // Fallback: Treat unknown blocks as opaque
 
     if (def.transparent) return 0;
-    return 15; 
+    return 15;
 }
 
 export function isWashable(type: BlockType): boolean {
@@ -46,6 +51,40 @@ export function isWashable(type: BlockType): boolean {
 
     // General rule: noCollision items that are not fluids are likely washable
     if (def.noCollision && type !== BlockType.WATER && type !== BlockType.LAVA) return true;
-    
+
     return false;
+}
+
+// Decorations that fall/break if the block they sit on is removed.
+const SUPPORT_DEPENDENT = new Set<BlockType>([
+    BlockType.TORCH,
+    BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER,
+    BlockType.DEAD_BUSH, BlockType.DEBUG_CROSS,
+    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+]);
+
+export function needsSupport(type: BlockType): boolean {
+    return SUPPORT_DEPENDENT.has(type);
+}
+
+// Whether a support-dependent block can rest on the given block beneath it.
+export function hasSupportBelow(type: BlockType, belowType: BlockType): boolean {
+    if (type === BlockType.TORCH) {
+        // Any solid, collidable, non-fluid block can hold a torch.
+        const def = BLOCKS[belowType];
+        return !!def && !def.noCollision && belowType !== BlockType.WATER && belowType !== BlockType.LAVA;
+    }
+    // Plants and saplings need soil.
+    return isValidSoil(belowType);
+}
+
+// Blocks a placed block may overwrite. Grass and dead bushes pop off like in
+// Minecraft; flowers, torches and saplings are NOT replaceable (place beside them).
+const PLACEMENT_REPLACEABLE = new Set<BlockType>([
+    BlockType.GRASS_PLANT, BlockType.DEAD_BUSH,
+]);
+
+export function isPlacementReplaceable(type: BlockType): boolean {
+    return type === BlockType.AIR || type === BlockType.WATER || type === BlockType.LAVA
+        || PLACEMENT_REPLACEABLE.has(type);
 }

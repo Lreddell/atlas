@@ -340,16 +340,9 @@ export function generateGeometryData(
                 // rare, player-placed, and small, so far-chunk dark-face culling would
                 // risk punching visible holes in them for negligible triangle savings.
                 //
-                // Light sampling: a boundary face borders the neighbour cell, so sample
-                // there (like a full block). An interior cut face (e.g. the top of a
-                // bottom slab, or a stair riser) is exposed to the air inside this cell —
-                // sampling the neighbour cell instead grabs a wrong value next to a light
-                // source, where the gradient is steep. Shaped blocks are transparent for
-                // lighting (opacity 0), so the current cell is properly lit.
-                const lcx = onBoundary ? x + f.dx : x;
-                const lcy = onBoundary ? y + f.dy : y;
-                const lcz = onBoundary ? z + f.dz : z;
-                const raw = getLightFast(lcx, lcy, lcz);
+                // Slabs/stairs are opaque for lighting (their own cell is dark), so every
+                // face samples the lit neighbour cell, exactly like a full block.
+                const raw = getLightFast(x + f.dx, y + f.dy, z + f.dz);
                 const skyC = ((raw >> 4) & 0xF) / 15.0;
                 const blockC = (raw & 0xF) / 15.0;
 

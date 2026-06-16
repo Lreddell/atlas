@@ -22,7 +22,7 @@ import { soundManager } from '../../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
-import { isWashable } from '../../systems/world/blockProps';
+import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../systems/world/blockProps';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
 import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, isShaped, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
@@ -258,19 +258,27 @@ export const InteractionController = ({
                     if (hit.ny < 0.9) return; // can only place on top face
                 }
 
-                // Placement cell: the neighbor of the hit block through the hit face
-                const px = bx + hit.nx;
-                const py = by + hit.ny;
-                const pz = bz + hit.nz;
-                
+                // Placement cell: replace the targeted block when it's replaceable (grass /
+                // dead bush), otherwise the neighbor of the hit block through the hit face.
+                let px = bx + hit.nx;
+                let py = by + hit.ny;
+                let pz = bz + hit.nz;
+                if (targetType === BlockType.GRASS_PLANT || targetType === BlockType.DEAD_BUSH) {
+                    px = bx; py = by; pz = bz;
+                }
+
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
 
-                // Don't silently overwrite occupied cells: solid blocks cancel placement,
-                // washable decorations (torches, plants, saplings) pop off as drops below.
+                // Only air, fluids, and replaceable plants may be overwritten. Flowers,
+                // torches and saplings are not replaceable, so placement is cancelled.
                 const placementTarget = worldManager.getBlock(px, py, pz, false);
-                const placementTargetWashable = isWashable(placementTarget);
-                if (placementTarget !== BlockType.AIR && placementTarget !== BlockType.WATER && placementTarget !== BlockType.LAVA && !placementTargetWashable) {
-                    return;
+                if (!isPlacementReplaceable(placementTarget)) return;
+                const replacingPlant = placementTarget === BlockType.GRASS_PLANT || placementTarget === BlockType.DEAD_BUSH;
+
+                // Support requirements: torches need a solid block beneath, plants need soil.
+                if (needsSupport(heldItem.type)) {
+                    const below = worldManager.getBlock(px, py - 1, pz, false);
+                    if (!hasSupportBelow(heldItem.type, below)) return;
                 }
 
                 // Sapling soil check: block below must be valid soil, target must be air
@@ -355,7 +363,7 @@ export const InteractionController = ({
                             headAABB.expandByScalar(-0.001);
                             
                             if (!playerAABB.intersectsBox(headAABB) && !playerAABB.intersectsBox(blockAABB)) {
-                                if (placementTargetWashable) worldManager.spawnDrop(placementTarget, px, py, pz);
+                                if (replacingPlant) worldManager.spawnDrop(placementTarget, px, py, pz);
                                 worldManager.setBlock(px, py, pz, BlockType.BED_FOOT, rotation);
                                 worldManager.setBlock(hx, py, hz, BlockType.BED_HEAD, rotation);
                                 consumeItem(selectedSlotRef.current);
@@ -370,7 +378,7 @@ export const InteractionController = ({
                         return;
                     }
 
-                    if (placementTargetWashable) worldManager.spawnDrop(placementTarget, px, py, pz);
+                    if (replacingPlant) worldManager.spawnDrop(placementTarget, px, py, pz);
                     worldManager.setBlock(px, py, pz, heldItem.type, rotation);
                     consumeItem(selectedSlotRef.current);
                     lastPlacementTime.current = now;
