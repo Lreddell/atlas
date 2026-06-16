@@ -15,9 +15,11 @@ interface HUDProps {
     gameMode: 'survival' | 'creative' | 'spectator';
     headBlockType?: BlockType;
     lastDamageTime?: number;
+    /** When provided (mobile), tapping a hotbar slot selects it. Desktop omits this. */
+    onSelectSlot?: (index: number) => void;
 }
 
-export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0 }) => {
+export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, onSelectSlot }) => {
     
     const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
     const [isFlashing, setIsFlashing] = useState(false);
@@ -150,8 +152,12 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             {BLOCKS[inventory[selectedSlot]!.type].name}
                         </div>
                     )}
-                    <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
-                        {inventory.slice(0, 9).map((it, i) => <Slot key={i} item={it} selected={selectedSlot === i} />)}
+                    <div className={`flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20 ${onSelectSlot ? 'pointer-events-auto' : ''}`}>
+                        {inventory.slice(0, 9).map((it, i) => (
+                            onSelectSlot
+                                ? <div key={i} style={{ touchAction: 'none' }} onPointerDown={(e) => { e.preventDefault(); onSelectSlot(i); }}><Slot item={it} selected={selectedSlot === i} /></div>
+                                : <Slot key={i} item={it} selected={selectedSlot === i} />
+                        ))}
                     </div>
                 </div>
             )}
