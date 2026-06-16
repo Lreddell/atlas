@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="./build/icon.ico?v=__FAVICON_VERSION__" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Atlas</title>
     <meta property="og:title" content="Atlas" />
     <meta property="og:description" content="Voxel-based world editor built with React and Three.js" />
@@ -118,11 +121,15 @@
         padding: 0;
         width: 100%;
         height: 100%;
+        height: 100dvh; /* stable full-screen on mobile when the URL bar shows/hides */
         overflow: hidden;
         background-color: #87CEEB; /* Sky blue */
         font-family: var(--atlas-ui-font-family);
         font-synthesis: none;
         user-select: none;
+        overscroll-behavior: none; /* no pull-to-refresh / rubber-banding while playing */
+        touch-action: manipulation; /* kill double-tap zoom; overlays set touch-action:none */
+        -webkit-tap-highlight-color: transparent;
       }
       button,
       input,
