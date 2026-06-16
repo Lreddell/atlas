@@ -241,6 +241,26 @@ export const InteractionController = ({
                     if ((tMeta & SLAB_DOUBLE) === 0) {
                         const targetIsTop = (tMeta & 1) === 1;
                         if ((!targetIsTop && hit.ny === 1) || (targetIsTop && hit.ny === -1)) {
+                            // The fused double slab fills the whole cell, so run the same
+                            // player-collision safety check normal full-block placement uses:
+                            // cancel the fusion if the resulting full cube would overlap the player.
+                            const isSneaking = inputState.sneak;
+                            const eyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
+                            const bodyHeight = isSneaking ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
+                            const feet = camera.position.clone();
+                            feet.y -= eyeHeight;
+                            const halfWidth = PLAYER_WIDTH / 2;
+                            const playerAABB = new THREE.Box3(
+                                new THREE.Vector3(feet.x - halfWidth, feet.y, feet.z - halfWidth),
+                                new THREE.Vector3(feet.x + halfWidth, feet.y + bodyHeight, feet.z + halfWidth)
+                            );
+                            const doubleSlabAABB = new THREE.Box3(
+                                new THREE.Vector3(bx, by, bz),
+                                new THREE.Vector3(bx + 1, by + 1, bz + 1)
+                            );
+                            doubleSlabAABB.expandByScalar(-0.001);
+                            if (playerAABB.intersectsBox(doubleSlabAABB)) return;
+
                             worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
                             consumeItem(selectedSlotRef.current);
                             lastPlacementTime.current = now;
