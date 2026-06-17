@@ -97,14 +97,16 @@ class MusicController {
     private deathStartTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Night slowdown effect (player setting + latest day/night state from update()).
-    private nightSlowdownEnabled: boolean = false;
+    private nightSlowdownEnabled: boolean = true;
     private isNight: boolean = false;
 
     constructor() {
         if (typeof window === 'undefined') return;
 
         // Load before the delay parsing below (which may early-return on bad data).
-        this.nightSlowdownEnabled = window.localStorage.getItem(MUSIC_NIGHT_SLOWDOWN_KEY) === 'true';
+        // Default ON for new players; preserve an explicit saved OFF/ON choice.
+        const nightSlowdownRaw = window.localStorage.getItem(MUSIC_NIGHT_SLOWDOWN_KEY);
+        this.nightSlowdownEnabled = nightSlowdownRaw == null ? true : nightSlowdownRaw === 'true';
 
         const minRaw = window.localStorage.getItem(MUSIC_DELAY_MIN_KEY);
         const maxRaw = window.localStorage.getItem(MUSIC_DELAY_MAX_KEY);
