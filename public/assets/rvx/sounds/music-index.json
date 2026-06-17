@@ -10,6 +10,9 @@
     "assets/rvx/sounds/music/cold/cold1.ogg",
     "assets/rvx/sounds/music/cold/cold2.ogg"
   ],
+  "death": [
+    "assets/rvx/sounds/music/death/atlas_death.ogg"
+  ],
   "forest": [
     "assets/rvx/sounds/music/forest/forest1.ogg"
   ],

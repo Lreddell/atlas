@@ -3,11 +3,20 @@ import { soundManager } from './SoundManager';
 
 const MUSIC_DELAY_MIN_KEY = 'atlas.music.delay.min';
 const MUSIC_DELAY_MAX_KEY = 'atlas.music.delay.max';
+const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
+
+// Subtle "night" effect: a track started at night plays a little slower, and with
+// pitch-preservation disabled (in SoundManager) that also drops its pitch slightly.
+// -1 semitone
+const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935
 
 // Mapping of Game States/Biomes to Music Packs
 const MUSIC_PACKS: Record<string, string[]> = {
     // Menu
     "MENU": ["music.menu"],
+
+    // Death
+    "DEATH": ["music.death"],
 
     // Game States
     "BLOODMOON": ["music.bloodmoon"],
@@ -53,8 +62,14 @@ const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
 const TRANSITION_SILENCE = 0; // 0 seconds of absolute silence between tracks
 
 // Fast Transition Config (Menu Switching)
-const FAST_FADE_OUT = 2.0; 
+const FAST_FADE_OUT = 2.0;
 const FAST_SILENCE = 500;
+
+// Death Config: the current track fades out quickly and the death music plays;
+// on respawn / leaving to the menu the death music fades out quickly too, then
+// the normal (world or menu) music resumes.
+const DEATH_FADE_OUT = 1.0;
+const DEATH_FADE_IN = 1.5;
 
 class MusicController {
     private currentContext: string = "";
@@ -78,9 +93,18 @@ class MusicController {
     // Transition State
     private isTransitioning: boolean = false;
     private bloodMoonLoopCrossfadePending: boolean = false;
+    private isDeathSuspended: boolean = false;
+    private deathStartTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Night slowdown effect (player setting + latest day/night state from update()).
+    private nightSlowdownEnabled: boolean = false;
+    private isNight: boolean = false;
 
     constructor() {
         if (typeof window === 'undefined') return;
+
+        // Load before the delay parsing below (which may early-return on bad data).
+        this.nightSlowdownEnabled = window.localStorage.getItem(MUSIC_NIGHT_SLOWDOWN_KEY) === 'true';
 
         const minRaw = window.localStorage.getItem(MUSIC_DELAY_MIN_KEY);
         const maxRaw = window.localStorage.getItem(MUSIC_DELAY_MAX_KEY);
@@ -129,7 +153,21 @@ class MusicController {
         return { min: this.minDelay / 1000, max: this.maxDelay / 1000 };
     }
 
+    public getNightSlowdownEnabled() {
+        return this.nightSlowdownEnabled;
+    }
+
+    public setNightSlowdownEnabled(enabled: boolean) {
+        this.nightSlowdownEnabled = enabled;
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(MUSIC_NIGHT_SLOWDOWN_KEY, enabled ? 'true' : 'false');
+        }
+        // Applied to the next track that starts; a track already playing is left as-is.
+    }
+
     public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
+        this.isDeathSuspended = false;
+
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;
 
@@ -159,6 +197,8 @@ class MusicController {
     }
 
     public skipTrack() {
+        if (this.isDeathSuspended) return false;
+
         const context = this.currentContext || this.pendingContext || 'generic';
         const pack = MUSIC_PACKS[context] || MUSIC_PACKS.generic;
         if (!pack || pack.length === 0) return false;
@@ -180,7 +220,14 @@ class MusicController {
         return true;
     }
 
-    public update(inMenu: boolean, gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false, bloodMoonTicksRemaining: number | null = null) {
+    public update(inMenu: boolean, gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false, bloodMoonTicksRemaining: number | null = null, isNight: boolean = false) {
+        this.isNight = isNight;
+
+        if (this.isDeathSuspended) {
+            if (!inMenu) return;
+            this.resumeAfterDeath();
+        }
+
         // 1. Determine Target Context
         let targetContext = "generic";
         
@@ -211,9 +258,10 @@ class MusicController {
 
         // Only switch if context has been stable for the threshold (6 seconds) OR if switching to/from MENU (instant)
         const isMenuSwitch = targetContext === "MENU" || this.currentContext === "MENU";
+        const isDeathSwitch = this.currentContext === "DEATH"; // leaving death resumes instantly
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
         const isCaveSwitch = targetContext === "CAVES" || this.currentContext === "CAVES";
-        const threshold = isMenuSwitch
+        const threshold = (isMenuSwitch || isDeathSwitch)
             ? 0
             : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
@@ -263,6 +311,7 @@ class MusicController {
         this.bloodMoonLoopCrossfadePending = false;
         this.lastPlayedTrack = null; // Reset track history when switching contexts
 
+        const leavingDeath = previousContext === 'DEATH';
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
         const leavingBloodMoon = previousContext === 'BLOODMOON' && newContext !== 'BLOODMOON';
@@ -270,7 +319,11 @@ class MusicController {
         let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
         let silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
 
-        if (enteringMenu) {
+        if (leavingDeath) {
+            // Death music fades out quickly before the world/menu music resumes.
+            fadeOut = DEATH_FADE_OUT;
+            silence = 0;
+        } else if (enteringMenu) {
             fadeOut = 0;
             silence = 0;
         } else if (leavingMenuForWorld) {
@@ -289,6 +342,41 @@ class MusicController {
 
         // 3. Schedule next track: Now + FadeOutDuration + SilenceGap
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
+    }
+
+    public stopForDeath(fadeOut = DEATH_FADE_OUT) {
+        if (this.isDeathSuspended) return; // already in death music — don't restart it
+
+        this.isDeathSuspended = true;
+        this.isTransitioning = false;
+        this.bloodMoonLoopCrossfadePending = false;
+        this.currentContext = 'DEATH';
+        this.pendingContext = 'DEATH';
+        this.contextStableTime = Date.now();
+        this.lastPlayedTrack = null;
+        this.lastFinishTime = Date.now();
+        this.nextPlayTime = Number.POSITIVE_INFINITY;
+
+        // Quickly fade out whatever is playing, then start the death music. The
+        // update() loop is not driven while dead, so the start is scheduled here; it
+        // plays once (see onTrackFinished) and then stays silent until respawn / menu.
+        soundManager.stopMusic(fadeOut);
+        this.isPlaying = false;
+
+        if (this.deathStartTimer) clearTimeout(this.deathStartTimer);
+        this.deathStartTimer = setTimeout(() => {
+            this.deathStartTimer = null;
+            if (this.isDeathSuspended) this.playNextTrack(DEATH_FADE_IN);
+        }, fadeOut * 1000);
+    }
+
+    public resumeAfterDeath() {
+        if (!this.isDeathSuspended) return;
+
+        if (this.deathStartTimer) { clearTimeout(this.deathStartTimer); this.deathStartTimer = null; }
+        this.isDeathSuspended = false;
+        // currentContext is still 'DEATH'; the resumed update() loop fast-switches out
+        // of it (instant, with a quick fade) into the world or menu music.
     }
 
     private shouldCrossfadeBloodMoonLoop(targetContext: string, bloodMoonTicksRemaining: number | null) {
@@ -327,15 +415,25 @@ class MusicController {
 
         const trackId = availableTracks[Math.floor(Math.random() * availableTracks.length)];
         this.lastPlayedTrack = trackId; // Store the track we're about to play
-        
+
         // Optimistically lock to prevent double triggers
         this.isPlaying = true;
+
+        // Night slowdown: only regular wandering music (biomes/caves/creative). Menu,
+        // death and blood-moon tracks are meant to sound as-authored. Decided here, at
+        // track start, so a song already playing when night falls keeps its rate and
+        // only the next song picks up the effect.
+        const useNightRate = this.nightSlowdownEnabled && this.isNight
+            && this.currentContext !== 'MENU'
+            && this.currentContext !== 'DEATH'
+            && this.currentContext !== 'BLOODMOON';
+        const playbackRate = useNightRate ? NIGHT_PLAYBACK_RATE : 1.0;
 
         // Try to play
         // We pass a callback for when it finishes
         return soundManager.playMusic(trackId, fadeTime, () => {
             this.onTrackFinished();
-        }, fadeOutTime).then(started => {
+        }, fadeOutTime, playbackRate).then(started => {
             if (!started) {
                 // If it failed to start (e.g. file is empty or missing), release lock and retry after a long delay
                 this.isPlaying = false;
@@ -348,6 +446,11 @@ class MusicController {
         this.isPlaying = false;
         this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = Date.now();
+        if (this.isDeathSuspended) {
+            // Death music plays once — after it ends, stay silent until respawn / menu.
+            this.nextPlayTime = Number.POSITIVE_INFINITY;
+            return;
+        }
         this.scheduleNextTrack();
     }
 

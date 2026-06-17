@@ -9,7 +9,17 @@ import { getBiome } from '../systems/world/biomes';
 import { getBloodMoonMusicTicksRemaining, isBloodMoonMusicActive } from '../systems/world/celestialEvents';
 
 // Update audio listener pos each frame AND Drive Music Controller
-export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext = false }: { isPaused: boolean, gameMode: string, keepMenuMusicContext?: boolean }) => {
+export const AudioListenerUpdater = ({
+    isPaused,
+    gameMode,
+    keepMenuMusicContext = false,
+    suspendMusic = false,
+}: {
+    isPaused: boolean;
+    gameMode: string;
+    keepMenuMusicContext?: boolean;
+    suspendMusic?: boolean;
+}) => {
     const { camera } = useThree();
     const frameCount = useRef(0);
 
@@ -18,8 +28,18 @@ export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext 
         soundManager.setGamePaused(isPaused);
     }, [isPaused]);
 
+    useEffect(() => {
+        if (suspendMusic) {
+            musicController.stopForDeath();
+        } else {
+            musicController.resumeAfterDeath();
+        }
+    }, [suspendMusic]);
+
     useFrame(() => {
         soundManager.updateListener(camera);
+
+        if (suspendMusic) return;
         
         // Update music controller less frequently (every 10 frames approx) to save checks
         frameCount.current++;
@@ -41,7 +61,10 @@ export const AudioListenerUpdater = ({ isPaused, gameMode, keepMenuMusicContext 
                 const ticks = worldManager.getTime();
                 const inBloodMoon = isBloodMoonMusicActive(ticks, 24000, worldManager.getSeed());
                 const bloodMoonTicksRemaining = getBloodMoonMusicTicksRemaining(ticks, 24000);
-                musicController.update(false, gameMode, biome.id, inCaves, inBloodMoon, bloodMoonTicksRemaining);
+                // Night = sun below the horizon (second half of the 24000-tick day),
+                // matching the day/night visuals.
+                const isNight = (ticks % 24000) >= 12000;
+                musicController.update(false, gameMode, biome.id, inCaves, inBloodMoon, bloodMoonTicksRemaining, isNight);
             }
         }
     });
