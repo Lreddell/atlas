@@ -2,7 +2,9 @@
 
 This repository may include third-party materials that are licensed separately from Atlas.
 
-Third-party materials are **not** covered by Atlas's MIT source code license unless their own license allows it, and they are **not** covered by Atlas's All Rights Reserved asset notice.
+Third-party materials are **not** covered by Atlas's source-code license unless their own license allows it, and they are **not** covered by Atlas's All Rights Reserved asset notice.
+
+The repository currently does not include a root source-code `LICENSE` file. Do not infer source-code redistribution terms from this notice.
 
 ## Monocraft Font
 
@@ -17,6 +19,10 @@ Monocraft is licensed under the **SIL Open Font License 1.1**.
 Copyright in Monocraft remains with its original author and contributors. Atlas does not claim ownership of Monocraft.
 
 If you redistribute Atlas with Monocraft included, you should retain Monocraft's original license and attribution materials with the distributed font files.
+
+The bundled font directory currently does not include the original OFL license
+text. Add the license text from the exact Monocraft source/version used before
+redistributing builds with these font files.
 
 ## Adding more notices
 

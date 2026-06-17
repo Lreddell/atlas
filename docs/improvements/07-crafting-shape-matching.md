@@ -1,17 +1,18 @@
 # Crafting Shape Matching
 
-Status: Proposed  
+Status: In progress
 Priority: High
 
 ## Problem
 
-`trimGrid()` returns only a flat array. It discards the trimmed width and height,
-and `checkRecipe()` compares only array length and item order.
+Core shape identity is already fixed in `src/recipes.ts`: `trimGrid()` returns
+trimmed cells plus width and height, and `checkRecipe()` compares width, height,
+and cells before accepting a shaped recipe.
 
-Different two-dimensional shapes can therefore become indistinguishable after
-trimming. A vertical pattern and a horizontal pattern with the same flattened
-contents may match incorrectly. Recipe behavior also depends on manually listing
-mirrored variants.
+Remaining work is recipe schema cleanup: explicit shaped and shapeless recipe
+kinds, declared mirror behavior, ingredient tags, ambiguity validation, and
+automated tests. Recipe behavior still depends on manually listing mirrored
+variants.
 
 ## Goals
 
@@ -21,7 +22,7 @@ mirrored variants.
 - Keep current valid recipes working unless they relied on the bug.
 - Reduce duplicated recipes where a declared ingredient group can express intent.
 
-## Proposed Normalized Shape
+## Current Normalized Shape
 
 ```ts
 interface CraftingShape {
@@ -31,7 +32,8 @@ interface CraftingShape {
 }
 ```
 
-`trimGrid()` should return `CraftingShape | null`. Two shapes match only when:
+The current implementation names the width and height fields `w` and `h`, but the
+behavior is equivalent. Two shapes match only when:
 
 - width is equal
 - height is equal
@@ -82,7 +84,7 @@ it.
 
 ## Data Cleanup
 
-After the matcher is correct:
+After the schema is explicit:
 
 - remove manually duplicated mirrored axe recipes and use `allowMirror`
 - consider plank ingredient tags for recipes that accept all wood types

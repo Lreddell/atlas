@@ -46,6 +46,18 @@ npm run dev
 npm run electron:dev
 ```
 
+## Controls And Input Notes
+
+- Use the mouse wheel or number keys `1` through `9` to change the selected
+  hotbar slot.
+- In the browser runtime, `Ctrl`/`Cmd` + wheel still changes hotbar slots while
+  Atlas prevents browser zoom during active gameplay.
+- Press `/` or `T` in-game to open the command/chat input.
+- Focused text inputs keep normal typing behavior, including movement-key
+  letters such as `W`, `A`, `S`, and `D`.
+- `Escape` closes active UI, pauses/resumes, or exits pointer lock depending on
+  the current game state.
+
 ## Scripts
 
 - `npm run dev` starts the Vite dev server at `http://localhost:5173`
@@ -81,17 +93,19 @@ Project version information is sourced from `package.json` and used across:
 - installer naming and metadata through `electron-builder`
 - in-game version display in the main menu and debug screen
 
-Recommended bump commands:
+Atlas currently stores both a package `version` and a user-facing
+`displayVersion` in `package.json`. Until a dedicated release script exists,
+update both fields intentionally and rebuild.
+
+Example workflow:
 
 ```bash
-npm version patch
-# or
-npm version minor
-# or
-npm version major
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-Then rebuild with:
+For installer output, rebuild with:
 
 ```bash
 npm run electron:build
@@ -133,11 +147,15 @@ atlas/
 
 ## Repository Hygiene
 
-Ignored by default:
+Common ignored paths include:
 
 - `node_modules/`
 - `dist/`
 - `release/`
+- `out/`
+- `.vite/`
+- `*.tsbuildinfo`
+- `data/`
 - `.env*` except `.env.example`
 - common OS and editor artifacts
 
@@ -147,9 +165,13 @@ Keep `package-lock.json` committed for reproducible installs.
 
 ### Source code
 
-Unless otherwise noted, the source code in this repository is licensed under the MIT License. See `LICENSE` for details.
+The repository currently does not include a root `LICENSE` file for source code.
+Do not rely on a source-code redistribution license until that file and package
+metadata are added intentionally.
 
-For Atlas, "source code" includes application and build logic such as files in `src/`, `electron/`, configuration files, and other code used to run, build, or package the project.
+For Atlas, "source code" means application and build logic such as files in
+`src/`, `electron/`, configuration files, and other code used to run, build, or
+package the project.
 
 ### Non-code content
 

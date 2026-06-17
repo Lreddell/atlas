@@ -783,10 +783,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
         if (openContainer || isPaused || !isLocked || showCommandInput || isDead || isSleeping || appState !== 'game') return;
-                if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        return;
-                }
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+        }
         if (e.deltaY > 0) setSelectedSlot(s => (s + 1) % 9);
         if (e.deltaY < 0) setSelectedSlot(s => (s - 1 + 9) % 9);
     };

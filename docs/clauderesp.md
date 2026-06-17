@@ -1,3 +1,11 @@
+Historical audit report
+
+Audit date: 2026-06-12
+Source commit at capture: 089dcdf
+Status note: This file is historical context. Implementation status may have
+changed after the audit. Use `docs/improvements/README.md` for the active
+roadmap and the source tree as the final authority.
+
 I read the full repo (myself plus a 44-agent parallel review workflow whose critical findings were each adversarially verified against the code), then patched 24 files. Everything passes npm run typecheck, npm run lint, and npm run build, and I smoke-tested the real game in a browser: created a new world, watched terrain generate and mesh through the new worker pool, confirmed zero console errors, and confirmed auto-save now fires on schedule. The docs in docs/claude-upgrades/ turned out to be substantially aspirational — the worker pool, buffer pooling, and real greedy meshing they describe were not implemented, so I treated code as the only source of truth.
 
 Performance (the big wins)

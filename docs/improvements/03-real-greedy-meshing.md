@@ -91,10 +91,13 @@ Implement in stages:
 1. opaque cubes
 2. cutout cube faces
 3. transparent cube faces
-4. special geometry such as plants, fluids, beds, or torches
+4. special geometry such as plants, fluids, beds, torches, slabs, stairs, and
+   any `blockShapes` partial-box block
 
 Do not merge special geometry until its overlap, sorting, and texture semantics are
 explicitly defined. Transparent faces may require stricter merge rules.
+The first true-greedy pass should continue excluding shaped blocks until
+partial-box merge semantics are designed.
 
 ## Instrumentation
 
