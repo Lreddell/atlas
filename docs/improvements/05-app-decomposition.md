@@ -3,9 +3,22 @@
 Status: Proposed  
 Priority: Medium
 
+## Current Input Guard Status
+
+Two focused input fixes currently protect the existing centralized architecture:
+
+- `src/components/Player.tsx` skips movement `keydown` handling when the event
+  target is an editable element, so command and UI text fields can receive normal
+  typing.
+- `src/App.tsx` still prevents browser zoom for `Ctrl`/`Cmd` + wheel during
+  active gameplay, but no longer returns before hotbar slot scrolling.
+
+These are guard fixes, not a replacement for the controller extraction proposed
+below. Preserve them or cover the same behavior when input ownership moves.
+
 ## Problem
 
-`src/App.tsx` is roughly 2,100 lines and owns unrelated concerns:
+`src/App.tsx` is over 2,300 lines and owns unrelated concerns:
 
 - application and menu state
 - world-session lifecycle

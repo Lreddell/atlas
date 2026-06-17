@@ -17,6 +17,11 @@ The following work from the original audit is already present:
 - voxel DDA block targeting instead of whole-scene raycasting
 - direct wrapping of transferred geometry buffers
 - plant growth restricted to chunks near the player
+- crafting shape matching now preserves trimmed width and height in
+  `src/recipes.ts`
+- focused input guards so command text entry is not intercepted by movement-key
+  handling and `Ctrl`/`Cmd` + wheel still scrolls the hotbar while browser zoom is
+  blocked during active gameplay
 
 These completed items should be preserved and covered by regression tests rather
 than reimplemented.
@@ -27,7 +32,7 @@ than reimplemented.
 | ----- | -------------------------------------------------------------- | -------- | ------------------------------------------------------------ |
 | 1     | [Save Integrity](01-save-integrity.md)                         | Critical | Failed persistence cannot silently lose dirty chunk state    |
 | 2     | [Tests and CI](02-tests-and-ci.md)                             | High     | Core systems receive repeatable regression coverage          |
-| 3     | [Crafting Shape Matching](07-crafting-shape-matching.md)       | High     | Recipe matching preserves two-dimensional shape              |
+| 3     | [Crafting Shape Matching](07-crafting-shape-matching.md)       | High     | Remaining recipe schema cleanup declares mirror/tag behavior |
 | 4     | [Real Greedy Meshing](03-real-greedy-meshing.md)               | High     | Compatible faces collapse into substantially fewer quads     |
 | 5     | [Worker Payload Caching](04-worker-payload-caching.md)         | High     | Meshing no longer repeatedly clones full chunk neighborhoods |
 | 6     | [App Decomposition](05-app-decomposition.md)                   | Medium   | Root React orchestration becomes smaller and more isolated   |

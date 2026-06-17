@@ -16,6 +16,7 @@ import {
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
+import { isEditableElement } from '../utils/dom';
 
 export interface PlayerHandle {
     teleport: (pos: Vector3) => void;
@@ -111,7 +112,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (!isLocked || isPaused) return;
+        if (!isLocked || isPaused || isEditableElement(e.target)) return;
         onKeyDown(e.code, e);
     };
     const handleKeyUp = (e: KeyboardEvent) => onKeyUp(e.code);

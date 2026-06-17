@@ -44,7 +44,10 @@ If a non-music sound file is missing or empty, the engine can synthesize a small
 ## Adding Sound Effects
 
 1. Add your audio file under `public/assets/rvx/sounds/`.
-2. Reference it from `public/assets/rvx/sounds.json` by relative path without the extension.
+2. Reference `.ogg` sound effects from `public/assets/rvx/sounds.json` by
+   relative path without the extension. For `.mp3` or `.wav` sound effects,
+   include the extension in `sounds.json`. Music tracks are discovered with
+   their actual filenames.
 3. Use an existing category if you want it exposed through the current options menu sliders: `master`, `music`, `ambient`, `blocks`, `player`, `ui`, `hostile`, or `neutral`.
 
 If you add a brand-new category name, the audio runtime can create a bus for it, but the options menu slider list is still hard-coded. Add UI support in `src/components/ui/PauseMenu.tsx` if you want the category to have a visible slider.
@@ -52,8 +55,17 @@ If you add a brand-new category name, the audio runtime can create a bus for it,
 ## Music Discovery
 
 - Music events use `music.<folder>` keys in `public/assets/rvx/sounds.json`.
-- Electron scans subfolders under `public/assets/rvx/sounds/music/` at runtime.
-- The web build falls back to `public/assets/rvx/sounds/music-index.json`.
-- Adding tracks to an existing folder is enough for Electron.
-- For browser playback, keep `music-index.json` in sync with any tracks you want discoverable.
-- If you add a new music folder or event, update both `sounds.json` and `music-index.json`.
+- Electron development scans subfolders under
+  `public/assets/rvx/sounds/music/` at runtime. Packaged Electron builds scan
+  `dist/assets/rvx/sounds/music/` after the Vite build copies public assets.
+- Browser and non-Electron playback fall back to
+  `public/assets/rvx/sounds/music-index.json`.
+- Vite regenerates `music-index.json` when the dev server starts, when builds
+  start, and when files under `public/assets/rvx/sounds/music/` hot-update.
+- Adding tracks to an existing folder is enough for Electron development.
+  Packaged Electron builds need a rebuild so `dist/` contains the new assets.
+- For browser playback, commit the regenerated `music-index.json` if source
+  builds need those tracks discoverable before Vite runs.
+- If you add a new music folder or context, update `sounds.json` with the
+  matching `music.<folder>` event. The generated index covers track discovery;
+  the manifest still controls which event names exist.

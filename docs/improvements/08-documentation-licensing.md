@@ -1,24 +1,42 @@
 # Documentation and Licensing Cleanup
 
-Status: Proposed  
+Status: In progress
 Priority: Medium
+
+Progress note, 2026-06-16:
+
+- `README.md` now documents current control/input behavior and no longer points
+  to a missing root `LICENSE` file.
+- `LICENSE-ASSETS.md` no longer claims the missing source-code `LICENSE` exists.
+- `CLAUDE.md` now points to the actual
+  `docs/atlas-performance-upgrades-md-updated/` directory.
+- `docs/clauderesp.md` now identifies itself as a historical audit and points to
+  the active roadmap.
+- `THIRD_PARTY_NOTICES.md` no longer infers a missing MIT source-code license.
+- `public/assets/rvx/README_SOUNDS.md` now reflects automatic
+  `music-index.json` generation and the remaining `sounds.json` requirement.
+- `public/assets/rvx/sounds/README.txt` now matches the main sound guide's
+  automatic music-index wording.
+- `THIRD_PARTY_NOTICES.md` now calls out that the bundled Monocraft directory is
+  still missing the original OFL license text.
+
+The remaining licensing and release-process work below is still open.
 
 ## Problem
 
 Several repository instructions do not match the current code or files:
 
-- `README.md` recommends `npm version patch`, but Atlas also uses a custom
-  `displayVersion` field that npm does not update.
+- `README.md` now warns maintainers to update both `version` and
+  `displayVersion`, but no release script enforces synchronized
+  package/package-lock/display-version updates.
 - The package version includes a leading `v` and `-alpha`, so generic npm version
   commands may not produce the intended release label.
-- `README.md` says the source is MIT licensed and links to `LICENSE`, but no
-  repository-root `LICENSE` file exists.
+- A repository-root source-code `LICENSE` file still does not exist, and package
+  metadata still needs to be aligned once the source license is chosen.
 - `THIRD_PARTY_NOTICES.md` says Monocraft's original license materials should be
   retained, but the font directory does not contain an OFL license file.
-- The sound guide says browser music indexes must be updated manually, while the
-  Vite plugin already regenerates `music-index.json` during development and builds.
-- `docs/clauderesp.md` mixes historical completed work with open work and contains
-  stale statements about render-distance behavior.
+- Current status still lives across several documents, so completed work and open
+  follow-ups should continue to be reconciled into the roadmap.
 
 ## Goals
 
@@ -53,7 +71,8 @@ The script should:
 - run checks
 - not create a Git tag unless explicitly requested
 
-Replace the generic `npm version patch` instructions with the actual workflow.
+Keep the README warning about updating both version fields until the actual
+scripted workflow exists, then replace it with the command for that workflow.
 
 ## Source License
 
@@ -88,7 +107,7 @@ licenses.
 
 ## Sound Guide
 
-Update `public/assets/rvx/README_SOUNDS.md` to explain:
+`public/assets/rvx/README_SOUNDS.md` now explains:
 
 - Vite regenerates `music-index.json` at dev-server start, build start, and music
   hot updates
@@ -101,12 +120,9 @@ can run without starting Vite.
 
 ## Audit and Roadmap Documentation
 
-Keep `docs/clauderesp.md` as a dated historical report. Add at its top:
-
-- audit date
-- source commit
-- a warning that implementation status may have changed
-- a link to `docs/improvements/README.md`
+`docs/clauderesp.md` is now marked as a dated historical report with an audit
+date, source commit, implementation-status warning, and link to the active
+roadmap.
 
 Do not continuously rewrite the historical findings. Mark current status in the
 roadmap documents instead.

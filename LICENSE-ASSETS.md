@@ -13,7 +13,9 @@ This notice applies to original non-code materials associated with Atlas, includ
 
 ## What this means
 
-You may view this repository and, where permitted by the MIT License, use the source code covered by `LICENSE`.
+You may view this repository. Source-code redistribution terms are separate from
+this asset notice and should be confirmed from the repository-root source-code
+license when one is added.
 
 You may **not**, without prior written permission from the copyright holder:
 
@@ -27,7 +29,8 @@ You may **not**, without prior written permission from the copyright holder:
 
 This asset notice does **not** apply to:
 
-- source code covered by the MIT License in `LICENSE`
+- source code covered by the repository's source-code license, once that license
+  is added
 - third-party materials that are included under their own licenses
 
 Third-party materials remain under their original terms. See `THIRD_PARTY_NOTICES.md` for details.
