@@ -57,6 +57,7 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
 
     // --- MUSIC ---
     "music.menu": { category: "music", sounds: ["music/menu"], volume: 0.5 },
+    "music.death": { category: "music", sounds: ["music/death"], volume: 0.5 },
     "music.creative": { category: "music", sounds: ["music/creative"], volume: 0.5 },
 
     // Exclusive Biome Tracks

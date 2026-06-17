@@ -151,6 +151,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     });
     
     const [musicDelay, setMusicDelay] = useState(() => musicController.getDelayRange().min);
+    const [nightSlowdown, setNightSlowdown] = useState(() => musicController.getNightSlowdownEnabled());
 
     useEffect(() => {
         // Load initial volumes
@@ -177,6 +178,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         setMusicDelay(val);
         // Keep configured and displayed delay values aligned.
         musicController.setDelayRange(val, val);
+    };
+
+    const updateNightSlowdown = (val: boolean) => {
+        setNightSlowdown(val);
+        musicController.setNightSlowdownEnabled(val);
     };
 
     const handleCloudUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,12 +282,16 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     value={volumes.master} min={0} max={1} 
                     onChange={(v) => updateVolume('master', v)} width="w-64"
                 />
-                <MenuSlider 
-                    label="Music Delay" 
+                <MenuSlider
+                    label="Music Delay"
                     value={musicDelay} min={0} max={300} step={5}
                     onChange={updateMusicDelay} width="w-64"
                     formatValue={(v) => `${v}s`}
                 />
+            </div>
+
+            <div className="mb-4 flex gap-4 justify-center">
+                <MCToggle label="Slow Music at Night" value={nightSlowdown} onChange={updateNightSlowdown} width="w-64" />
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">

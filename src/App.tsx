@@ -900,6 +900,28 @@ const App: React.FC = () => {
       requestPointerLockBurst('resumeGame', { force: true });
   }, [requestPointerLockBurst, setOpenContainer]);
 
+  useEffect(() => {
+      if (appState !== 'game' || !isDead) {
+          if (!isDead) {
+              deathScreenActiveRef.current = false;
+          }
+          return;
+      }
+      if (deathScreenActiveRef.current) return;
+
+      musicController.stopForDeath();
+      soundManager.play("entity.player.death");
+      setShowDeathScreen(true);
+      deathScreenActiveRef.current = true;
+      setOpenContainer(null);
+      setShowCommandInput(false);
+      isInventoryOpenRef.current = false;
+      isCommandOpenRef.current = false;
+      relockWantedRef.current = false;
+      wantsGameplayRef.current = false;
+      enterUIMode();
+  }, [appState, isDead, enterUIMode, setOpenContainer]);
+
   const onLock = useCallback(() => { 
       soundManager.resume();
       void lockBrowserShortcuts();
@@ -2289,7 +2311,7 @@ const App: React.FC = () => {
                 <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
-                <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} />
+                <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
@@ -2325,9 +2347,7 @@ const App: React.FC = () => {
                                 if(gameMode === 'survival') {
                                     setHealth(h => {
                                         const newHealth = Math.max(0, h-d);
-                                        if (newHealth <= 0 && h > 0) {
-                                            soundManager.play("entity.player.death"); setShowDeathScreen(true); deathScreenActiveRef.current = true; setOpenContainer(null); setShowCommandInput(false); isInventoryOpenRef.current = false; isCommandOpenRef.current = false; relockWantedRef.current = false; wantsGameplayRef.current = false; enterUIMode();
-                                        } else if (newHealth > 0) {
+                                        if (newHealth > 0) {
                                             soundManager.play("entity.player.hurt"); setLastDamageTime(Date.now());
                                         }
                                         return newHealth;

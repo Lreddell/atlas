@@ -408,7 +408,7 @@ class SoundManager {
      * Plays streaming music. Use for long audio files.
      * Guaranteed not to crash on missing files or fetch errors.
      */
-    public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void, fadeOutTime: number = fadeTime) {
+    public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void, fadeOutTime: number = fadeTime, playbackRate: number = 1.0) {
         if (!this.enabled || !this.ctx) return false;
         if (this.ctx.state !== 'running') return false;
 
@@ -437,6 +437,14 @@ class SoundManager {
         try {
             nextDeck.src = fullUrl;
             nextDeck.load();
+            // Playback rate < 1 slows the track and (with pitch-preservation off) lowers
+            // its pitch too — used for the subtle "night" effect. Disable preservesPitch
+            // across vendor prefixes so the pitch actually drops with the speed.
+            const rateDeck = nextDeck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
+            rateDeck.preservesPitch = false;
+            rateDeck.mozPreservesPitch = false;
+            rateDeck.webkitPreservesPitch = false;
+            nextDeck.playbackRate = playbackRate;
         } catch (e) {
             console.warn("[SoundManager] Music load failed:", e);
             return false;
