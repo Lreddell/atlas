@@ -55,6 +55,13 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.IRON_HOE]: tool(1, 'iron'),
     [BlockType.GOLD_HOE]: tool(1, 'gold'),
     [BlockType.DIAMOND_HOE]: tool(1, 'diamond'),
+
+    // Armor (Minecraft iron-set defense points) + the polarity boots.
+    [BlockType.IRON_HELMET]: { defense: 2, slot: 'helmet' },
+    [BlockType.IRON_CHESTPLATE]: { defense: 6, slot: 'chestplate' },
+    [BlockType.IRON_LEGGINGS]: { defense: 5, slot: 'leggings' },
+    [BlockType.IRON_BOOTS]: { defense: 2, slot: 'boots' },
+    [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
 };
 
 /** True for swords (durability-cost rules differ from other tools). */

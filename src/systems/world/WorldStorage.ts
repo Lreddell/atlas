@@ -17,6 +17,8 @@ export interface PlayerData {
     breath: number;
     gameMode: 'survival' | 'creative' | 'spectator';
     selectedSlot: number;
+    /** Equipped armor/accessory by slot (Phase 4). Absent on older saves. */
+    equipment?: Partial<Record<string, ItemStack | null>>;
 }
 
 export interface WorldMetadata {
