@@ -5,7 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { entityManager } from '../../systems/entities/EntityManager';
-import { getAttackDamage } from '../../systems/registry/itemStats';
+import { getAttackDamage, isSword } from '../../systems/registry/itemStats';
 import { BLOCKS } from '../../data/blocks';
 import {
     type BreakingVisual,
@@ -45,6 +45,7 @@ interface InteractionControllerProps {
     selectedSlot: number;
     inventory: (ItemStack | null)[];
     consumeItem: (slot: number) => void;
+    damageHeldItem: (slot: number, amount: number) => void;
     spawnDrop: (type: BlockType, x: number, y: number, z: number) => void;
     setBreakingVisual: Dispatch<SetStateAction<BreakingVisual | null>>;
     setOpenContainer: (value: OpenContainerState) => void;
@@ -58,7 +59,7 @@ interface InteractionControllerProps {
 }
 
 export const InteractionController = ({ 
-    isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
+    isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
 }: InteractionControllerProps) => {
     const { camera } = useThree();
@@ -426,13 +427,16 @@ export const InteractionController = ({
         camera.getWorldDirection(_camDir);
         const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
         if (!hit) return false;
-        const dmg = getAttackDamage(inventory[selectedSlot]);
+        const held = inventory[selectedSlot];
+        const dmg = getAttackDamage(held);
         entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
         soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+        // Attacking costs the weapon 1 use (sword) or 2 (other tools); fists/non-tools none.
+        if (held) damageHeldItem(selectedSlot, isSword(held.type) ? 1 : 2);
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
         interactionCooldown.current = 6;
         return true;
-    }, [camera, inventory, selectedSlot, foodStateRef]);
+    }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
@@ -641,6 +645,12 @@ export const InteractionController = ({
                         }
                         const requiresTool = (targetDef.minHarvestTier || 0) > 0;
                         const canHarvest = !requiresTool || (isBestTool && heldTier >= (targetDef.minHarvestTier || 0));
+
+                        // Tool durability: breaking a real (hardness > 0) block costs the
+                        // held tool 1 use, or 2 for a sword (Minecraft rules).
+                        if (heldItem && (targetDef.hardness || 0) > 0) {
+                            damageHeldItem(selectedSlotRef.current, isSword(heldItem.type) ? 2 : 1);
+                        }
 
                         if (canHarvest) {
                             droppedItems.forEach(item => { for(let i=0; i<item.count; i++) spawnDrop(item.type, bx, by, bz); });

@@ -16,6 +16,7 @@ import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
+import { getMaxDurability } from './systems/registry/itemStats';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -860,13 +861,36 @@ const App: React.FC = () => {
   }, []);
 
   const consumeItem = useCallback((slot: number) => {
-    if (gameMode === 'creative' || gameMode === 'spectator') return; 
+    if (gameMode === 'creative' || gameMode === 'spectator') return;
     setInventory(prev => {
         const next = [...prev];
         const it = next[slot];
         if (it) {
             if (it.count > 1) next[slot] = { ...it, count: it.count - 1 };
             else next[slot] = null;
+        }
+        return next;
+    });
+  }, [gameMode, setInventory]);
+
+  // Apply durability damage to a tool/weapon in a slot. Durability is lazy-init
+  // from the registry on first use; the item breaks (disappears) at 0. Only in
+  // survival — creative/spectator never wear tools down.
+  const damageHeldItem = useCallback((slot: number, amount: number) => {
+    if (gameMode !== 'survival') return;
+    setInventory(prev => {
+        const it = prev[slot];
+        if (!it) return prev;
+        const max = getMaxDurability(it.type);
+        if (max === undefined) return prev; // not a breakable tool
+        const current = it.instance?.durability ?? max;
+        const left = current - amount;
+        const next = [...prev];
+        if (left <= 0) {
+            next[slot] = null;
+            soundManager.play('random.break', { volume: 0.6 });
+        } else {
+            next[slot] = { ...it, instance: { ...(it.instance ?? {}), durability: left, maxDurability: max } };
         }
         return next;
     });
@@ -2433,7 +2457,7 @@ const App: React.FC = () => {
                 </Suspense>
 
                 <InteractionController
-                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem}
+                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
