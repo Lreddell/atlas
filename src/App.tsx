@@ -514,16 +514,21 @@ const App: React.FC = () => {
   // --- AUTO SAVE LOGIC ---
   // Unified player damage entry point (fall/fire/drown via Player, plus entity
   // contact damage routed through the EntityManager hooks below).
-  const damagePlayer = useCallback((d: number) => {
-      if (gameMode !== 'survival') return;
-      const reduced = Math.max(0, Math.ceil(applyArmor(d, equipment)));
-      if (reduced <= 0) return;
+  // Raw damage that bypasses armor — for environmental sources (fall, fire,
+  // drowning), matching Minecraft where armor does not reduce those.
+  const applyRawDamage = useCallback((d: number) => {
+      if (gameMode !== 'survival' || d <= 0) return;
       setHealth(h => {
-          const newHealth = Math.max(0, h - reduced);
+          const newHealth = Math.max(0, h - d);
           if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
           return newHealth;
       });
-  }, [gameMode, equipment]);
+  }, [gameMode]);
+
+  // Combat damage (entity contact/attacks) — reduced by equipped armor.
+  const damagePlayer = useCallback((d: number) => {
+      applyRawDamage(Math.max(0, Math.ceil(applyArmor(d, equipment))));
+  }, [applyRawDamage, equipment]);
 
   useEffect(() => {
       entityManager.setPlayerHooks(
@@ -2526,7 +2531,7 @@ const App: React.FC = () => {
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
                             }} 
-                            onTakeDamage={damagePlayer}
+                            onTakeDamage={applyRawDamage}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                             magneticMode={magneticMode}
                         />
