@@ -18,7 +18,6 @@ import { GenConfig } from './world/genConfig';
 import { tickPlantGrowth } from './world/plantGrowth';
 import { getRegionAt } from './world/regions';
 import { progression } from './progression/ProgressionStore';
-import { gameEvents } from './events/GameEvents';
 
 // --- Types ---
 enum ChunkStage {
@@ -1231,11 +1230,10 @@ export class WorldManager {
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
-    if (!this.canEditBlock(x, y, z)) {
-      const region = getRegionAt(x, y, z);
-      gameEvents.emit('edit:denied', { x, y, z, regionId: region?.id ?? '' });
-      return [];
-    }
+    // NOTE: the sealed-region edit check is enforced at the player-interaction
+    // layer (InteractionController), NOT here — setBlock is also the chokepoint
+    // for internal world simulation (fluids, plant growth, support cascades),
+    // which must keep running inside sealed regions.
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
     const chunk = this.getChunkData(cx, cz, true);
     if (!chunk) return [];
