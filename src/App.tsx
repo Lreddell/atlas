@@ -17,6 +17,8 @@ import { BossBar } from './components/ui/BossBar';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
 import { getMaxDurability } from './systems/registry/itemStats';
+import { createEmptyEquipment, applyArmor, slotForItem, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -244,6 +246,7 @@ const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false); 
   const [health, setHealth] = useState(20);
   const [hunger, setHunger] = useState(20);
+  const [equipment, setEquipment] = useState<Equipment>(() => createEmptyEquipment());
   const [saturation, setSaturation] = useState(5);
   const [breath, setBreath] = useState(MAX_BREATH);
   const [gameMode, setGameMode] = useState<GameMode>('survival');
@@ -511,12 +514,14 @@ const App: React.FC = () => {
   // contact damage routed through the EntityManager hooks below).
   const damagePlayer = useCallback((d: number) => {
       if (gameMode !== 'survival') return;
+      const reduced = Math.max(0, Math.ceil(applyArmor(d, equipment)));
+      if (reduced <= 0) return;
       setHealth(h => {
-          const newHealth = Math.max(0, h - d);
+          const newHealth = Math.max(0, h - reduced);
           if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
           return newHealth;
       });
-  }, [gameMode]);
+  }, [gameMode, equipment]);
 
   useEffect(() => {
       entityManager.setPlayerHooks(
@@ -551,7 +556,8 @@ const App: React.FC = () => {
               saturation: saturation,
               breath: breath,
               gameMode: gameMode,
-              selectedSlot: selectedSlot
+              selectedSlot: selectedSlot,
+              equipment: equipment
           };
           meta.spawnPoint = worldManager.getSpawnPoint();
           meta.worldSpawn = worldManager.getWorldSpawn();
@@ -560,7 +566,7 @@ const App: React.FC = () => {
           await worldManager.forceSave(); // Save chunks
           console.log(`[AutoSave] World ${meta.name} saved.`);
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -1510,6 +1516,40 @@ const App: React.FC = () => {
           const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
           if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
+      } else if (parts[0] === '/giveitem' && parts[1]) {
+          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
+          let found: BlockType | null = null;
+          for (const key in BLOCKS) {
+              const t = Number(key) as BlockType;
+              const def = BLOCKS[t];
+              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
+          }
+          if (found === null) { logMsg(`Unknown item: ${parts[1]}`, 'error'); }
+          else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
+      } else if (parts[0] === '/equip' && parts[1]) {
+          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
+          let found: BlockType | null = null;
+          for (const key in BLOCKS) {
+              const t = Number(key) as BlockType;
+              const def = BLOCKS[t];
+              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
+          }
+          const slot = found !== null ? slotForItem(found) : undefined;
+          if (found === null) logMsg(`Unknown item: ${parts[1]}`, 'error');
+          else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
+          else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
+      } else if (parts[0] === '/unequip' && parts[1]) {
+          const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
+          if (!slot) { logMsg('Usage: /unequip <helmet|chestplate|leggings|boots|accessory>', 'error'); }
+          else {
+              setEquipment(prev => {
+                  const it = prev[slot];
+                  if (!it) { logMsg(`Nothing equipped in ${slot}`, 'error'); return prev; }
+                  addToInventory(it.type, 1);
+                  logMsg(`Unequipped ${BLOCKS[it.type].name}`, 'success');
+                  return { ...prev, [slot]: null };
+              });
+          }
       } else if (parts[0] === '/spawn' && parts[1]) {
           const p = playerPosRef.current;
           const e = entityManager.spawn(parts[1], p.x + 2, p.y + 1, p.z, {});
@@ -1547,7 +1587,7 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  }, [commandValue, logMsg, resumeGame]);
+  }, [commandValue, logMsg, resumeGame, addToInventory]);
 
   const updateAutocomplete = useCallback((input: string) => {
       const parts = input.trim().split(' ');
@@ -2156,6 +2196,7 @@ const App: React.FC = () => {
           setBreath(meta.player.breath);
           setInventory(meta.player.inventory);
           setSelectedSlot(meta.player.selectedSlot);
+          setEquipment({ ...createEmptyEquipment(), ...(meta.player.equipment as Partial<Equipment> | undefined) });
           
           const pos = meta.player.position;
           const spawnVec = new THREE.Vector3(pos.x, pos.y, pos.z);

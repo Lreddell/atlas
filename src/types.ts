@@ -169,7 +169,16 @@ export enum BlockType {
   STONE_STAIRS = 163,
   SANDSTONE_STAIRS = 164,
   RED_SANDSTONE_STAIRS = 165,
-  BRICK_STAIRS = 166
+  BRICK_STAIRS = 166,
+
+  // Magnetism (Phase 4): magnetic field blocks + iron armor + polarity boots.
+  POSITIVE_MAGNET = 190,
+  NEGATIVE_MAGNET = 191,
+  IRON_HELMET = 192,
+  IRON_CHESTPLATE = 193,
+  IRON_LEGGINGS = 194,
+  IRON_BOOTS = 195,
+  POLARITY_BOOTS = 196
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

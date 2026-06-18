@@ -241,7 +241,16 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.STONE_STAIRS]: { id: BlockType.STONE_STAIRS, color: '#757575', name: 'Stone Stairs', textureSlot: 2, textureParent: BlockType.STONE, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.STONE_STAIRS, chance: 1, min: 1, max: 1 }] },
   [BlockType.SANDSTONE_STAIRS]: { id: BlockType.SANDSTONE_STAIRS, color: '#e6c27e', name: 'Sandstone Stairs', textureSlot: 18, textureParent: BlockType.SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
   [BlockType.RED_SANDSTONE_STAIRS]: { id: BlockType.RED_SANDSTONE_STAIRS, color: '#bf360c', name: 'Red Sandstone Stairs', textureSlot: 79, textureParent: BlockType.RED_SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.RED_SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.BRICK_STAIRS]: { id: BlockType.BRICK_STAIRS, color: '#b71c1c', name: 'Brick Stairs', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.BRICK_STAIRS, chance: 1, min: 1, max: 1 }] }
+  [BlockType.BRICK_STAIRS]: { id: BlockType.BRICK_STAIRS, color: '#b71c1c', name: 'Brick Stairs', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetism (Phase 4). Placeholder textures (reuse existing atlas slots); real art TODO.
+  [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnet', textureSlot: 16, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnet', textureSlot: 98, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.IRON_HELMET]: { id: BlockType.IRON_HELMET, color: '#d7ccc8', name: 'Iron Helmet', textureSlot: 49, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.IRON_CHESTPLATE]: { id: BlockType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 49, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.IRON_LEGGINGS]: { id: BlockType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 49, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.IRON_BOOTS]: { id: BlockType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 49, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 55, hardness: 0, isItem: true, category: 'tools' }
 };
 
 export const ATLAS_COLS = 8;
