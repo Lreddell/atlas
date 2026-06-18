@@ -4,6 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
+import { entityManager } from '../../systems/entities/EntityManager';
 import { BLOCKS } from '../../data/blocks';
 import {
     type BreakingVisual,
@@ -30,6 +31,7 @@ import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+const MELEE_REACH = 3.2;
 
 function castFromCamera(camera: THREE.Camera, maxDist: number) {
     camera.getWorldPosition(_camPos);
@@ -415,13 +417,37 @@ export const InteractionController = ({
         }
     }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
 
+    // Melee: if the player is looking at an entity within reach, a left click is
+    // an attack (and does not start mining). Damage is a simple weapon lookup for
+    // now; Phase 3 will source it from item-instance stats.
+    const tryMeleeAttack = useCallback((): boolean => {
+        camera.getWorldPosition(_camPos);
+        camera.getWorldDirection(_camDir);
+        const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
+        if (!hit) return false;
+        const held = inventory[selectedSlot];
+        const def = held ? BLOCKS[held.type] : null;
+        let dmg = 1; // fist
+        if (def?.name?.includes('Sword')) dmg = 6;
+        else if (def?.name?.includes('Axe')) dmg = 5;
+        else if (def) dmg = 2;
+        entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
+        soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+        if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
+        interactionCooldown.current = 6;
+        return true;
+    }, [camera, inventory, selectedSlot, foodStateRef]);
+
     useEffect(() => {
-        const onDown = (e: MouseEvent) => { 
-            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return; 
+        const onDown = (e: MouseEvent) => {
+            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
-            if (e.button === 0) isLeftMouseDown.current = true;
+            if (e.button === 0) {
+                // Attacking an entity takes priority over mining a block.
+                if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+            }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
                 performInteraction(false, e.shiftKey);
@@ -445,7 +471,7 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual]); 
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack]);
 
     useFrame((_, delta) => {
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {

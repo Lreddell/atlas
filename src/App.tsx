@@ -14,6 +14,8 @@ import { InteractionController } from './components/controllers/InteractionContr
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
+import { EntityRenderer } from './components/EntityRenderer';
+import { entityManager } from './systems/entities/EntityManager';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -504,6 +506,27 @@ const App: React.FC = () => {
   }, [appState, respawnKey]);
 
   // --- AUTO SAVE LOGIC ---
+  // Unified player damage entry point (fall/fire/drown via Player, plus entity
+  // contact damage routed through the EntityManager hooks below).
+  const damagePlayer = useCallback((d: number) => {
+      if (gameMode !== 'survival') return;
+      setHealth(h => {
+          const newHealth = Math.max(0, h - d);
+          if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
+          return newHealth;
+      });
+  }, [gameMode]);
+
+  useEffect(() => {
+      entityManager.setPlayerHooks(
+          () => {
+              const p = playerPosRef.current;
+              return p ? { x: p.x, y: p.y, z: p.z } : null;
+          },
+          (amount) => damagePlayer(amount),
+      );
+  }, [damagePlayer]);
+
   const saveGame = useCallback(async () => {
       if (!activeWorldIdRef.current) return;
       
@@ -1463,20 +1486,31 @@ const App: React.FC = () => {
           const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
           if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
+      } else if (parts[0] === '/spawn' && parts[1]) {
+          const p = playerPosRef.current;
+          const e = entityManager.spawn(parts[1], p.x + 2, p.y + 1, p.z, {});
+          if (e) logMsg(`Spawned ${parts[1]} (#${e.id}).`, 'success');
+          else logMsg(`Unknown entity kind: ${parts[1]}`, 'error');
       } else if (parts[0] === '/boss') {
           const p = playerPosRef.current;
           const region = getRegionAt(p.x, p.y, p.z);
           if (parts[1] === 'spawn') {
               if (!region) { logMsg('Stand in a sealed region to spawn its guardian.', 'error'); }
               else {
-                  gameEvents.emit('boss:spawned', { bossId: region.bossId, entityId: -1, name: `${region.displayName} Guardian`, maxHp: 100 });
-                  logMsg(`Spawned ${region.displayName} Guardian (placeholder).`, 'success');
+                  const e = entityManager.spawn(region.bossId, p.x + 3, p.y + 1, p.z, { bossId: region.bossId, regionId: region.id });
+                  if (e) logMsg(`Spawned ${region.displayName} Guardian (#${e.id}).`, 'success');
+                  else logMsg(`No entity defined for boss "${region.bossId}".`, 'error');
               }
           } else if (parts[1] === 'kill') {
-              if (!region) { logMsg('No region guardian here.', 'error'); }
-              else {
+              const bosses = entityManager.getEntities().filter(e => e.isBoss);
+              if (bosses.length > 0) {
+                  bosses.forEach(b => entityManager.damageEntity(b.id, b.maxHp + 1));
+                  logMsg('Boss defeated.', 'success');
+              } else if (region) {
                   gameEvents.emit('boss:defeated', { bossId: region.bossId, entityId: -1, regionId: region.id });
                   logMsg(`${region.displayName} Guardian defeated.`, 'success');
+              } else {
+                  logMsg('No boss to defeat here.', 'error');
               }
           } else {
               logMsg('Usage: /boss <spawn|kill>', 'error');
@@ -2075,6 +2109,7 @@ const App: React.FC = () => {
       // 2. Configure World Manager
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
+      entityManager.clear();
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
@@ -2392,6 +2427,7 @@ const App: React.FC = () => {
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
+                    <EntityRenderer />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                 </Suspense>
@@ -2416,17 +2452,7 @@ const App: React.FC = () => {
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
                             }} 
-                            onTakeDamage={d => { 
-                                if(gameMode === 'survival') {
-                                    setHealth(h => {
-                                        const newHealth = Math.max(0, h-d);
-                                        if (newHealth > 0) {
-                                            soundManager.play("entity.player.hurt"); setLastDamageTime(Date.now());
-                                        }
-                                        return newHealth;
-                                    }); 
-                                }
-                            }} 
+                            onTakeDamage={damagePlayer}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} />
