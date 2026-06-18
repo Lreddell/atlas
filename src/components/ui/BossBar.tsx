@@ -1,31 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useReducer } from 'react';
 import { gameEvents } from '../../systems/events/GameEvents';
+import { reduceBossBarState } from './bossBarState';
 
 // Reusable boss / objective health bar. Driven entirely by the game event bus
 // (boss:spawned / boss:damaged / boss:defeated) so it has no direct dependency
 // on the entity or combat systems — any future boss just emits these events.
 
-interface BossState {
-    bossId: string;
-    name: string;
-    hp: number;
-    maxHp: number;
-}
-
 export const BossBar: React.FC = () => {
-    const [boss, setBoss] = useState<BossState | null>(null);
+    const [boss, dispatch] = useReducer(reduceBossBarState, null);
 
     useEffect(() => {
-        const offSpawned = gameEvents.on('boss:spawned', ({ bossId, name, maxHp }) => {
-            setBoss({ bossId, name, hp: maxHp, maxHp });
+        const offSpawned = gameEvents.on('boss:spawned', ({ bossId, entityId, name, maxHp }) => {
+            dispatch({ type: 'spawned', bossId, entityId, name, maxHp });
         });
-        const offDamaged = gameEvents.on('boss:damaged', ({ bossId, hp, maxHp }) => {
-            setBoss((prev) => (prev && prev.bossId === bossId ? { ...prev, hp, maxHp } : prev));
+        const offDamaged = gameEvents.on('boss:damaged', ({ bossId, entityId, hp, maxHp }) => {
+            dispatch({ type: 'damaged', bossId, entityId, hp, maxHp });
         });
-        const offDefeated = gameEvents.on('boss:defeated', ({ bossId }) => {
-            setBoss((prev) => (prev && prev.bossId === bossId ? null : prev));
+        const offDefeated = gameEvents.on('boss:defeated', ({ bossId, entityId }) => {
+            dispatch({ type: 'defeated', bossId, entityId });
         });
-        return () => { offSpawned(); offDamaged(); offDefeated(); };
+        const offCleared = gameEvents.on('boss:cleared', () => {
+            dispatch({ type: 'cleared' });
+        });
+        return () => { offSpawned(); offDamaged(); offDefeated(); offCleared(); };
     }, []);
 
     if (!boss) return null;
@@ -34,7 +31,9 @@ export const BossBar: React.FC = () => {
 
     return (
         <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] -translate-x-1/2 flex-col items-center">
-            <div className="mb-1 font-minecraft text-lg text-white [text-shadow:2px_2px_0px_#000]">{boss.name}</div>
+            <div className="mb-1 font-minecraft text-lg text-white [text-shadow:2px_2px_0px_#000]">
+                {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
+            </div>
             <div className="h-3 w-full border border-black/70 bg-[#2a0030]">
                 <div
                     className="h-full bg-gradient-to-b from-[#ff4d4d] to-[#a80000] transition-[width] duration-200"

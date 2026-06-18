@@ -19,6 +19,8 @@ export interface Entity {
     hurtUntil: number;
     /** seconds remaining before this entity can deal contact damage again. */
     attackCooldown: number;
+    /** seconds remaining before AI may replace horizontal knockback velocity. */
+    knockbackSeconds: number;
     /** facing yaw (radians) for rendering. */
     yaw: number;
     isBoss: boolean;
@@ -69,8 +71,8 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         drops: [{ type: BlockType.DIRT, min: 0, max: 2 }],
         canStep: true,
     },
-    forge_warden: {
-        id: 'forge_warden',
+    cinder_warden: {
+        id: 'cinder_warden',
         maxHp: 200,
         width: 1.6,
         height: 2.6,

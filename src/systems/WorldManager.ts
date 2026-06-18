@@ -103,7 +103,7 @@ class JobQueue {
 export type LoadingProgressCallback = (phase: string, done: number, total: number, percent: number) => void;
 
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
-type DropCallback = (type: BlockType, x: number, y: number, z: number) => void;
+type DropCallback = (stack: ItemStack, x: number, y: number, z: number) => void;
 type ParticleCallback = (type: BlockType, x: number, y: number, z: number) => void;
 
 export class WorldManager {
@@ -1165,7 +1165,10 @@ export class WorldManager {
   
   subscribeToMessages(cb: MessageCallback) { this.messageListeners.add(cb); cb(`System: ${this.workerStatusMessage}`, this.workersEnabled ? 'success' : 'info'); return () => { this.messageListeners.delete(cb); }; }
   log(msg: string, type: 'info'|'error'|'success' = 'info', clickAction?: string) { this.messageListeners.forEach(cb => cb(msg, type, clickAction)); }
-  spawnDrop(type: BlockType, x: number, y: number, z: number) { this.dropListeners.forEach(cb => cb(type, x, y, z)); }
+  spawnDrop(stackOrType: ItemStack | BlockType, x: number, y: number, z: number) {
+      const stack = typeof stackOrType === 'number' ? { type: stackOrType, count: 1 } : stackOrType;
+      this.dropListeners.forEach(cb => cb(stack, x, y, z));
+  }
   subscribeToDrops(cb: DropCallback) { this.dropListeners.add(cb); return () => { this.dropListeners.delete(cb); }; }
   
   spawnParticles(type: BlockType, x: number, y: number, z: number) { this.particleListeners.forEach(cb => cb(type, x, y, z)); }
@@ -1244,7 +1247,7 @@ export class WorldManager {
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
-    droppedItems.forEach(item => { for(let i=0; i<item.count; i++) this.spawnDrop(item.type, x, y, z); });
+    droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
     if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
     [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ].forEach(([dx, dy, dz]) => {
          const nx = x+dx; const ny = y+dy; const nz = z+dz;

@@ -261,6 +261,7 @@ export interface Drop {
     id: string;
     type: BlockType;
     count: number;
+    instance?: ItemInstance;
     position: [number, number, number];
     velocity: [number, number, number];
     createdAt: number;

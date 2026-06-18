@@ -45,5 +45,14 @@ export const TEXTURE_PATHS: Record<number, string> = {
     // ... add more as needed mapping to the IDs in utils/textures.ts
     
     // --- UTILITY ---
-    72: 'blocks/debug.png'
+    72: 'blocks/debug.png',
+
+    // --- MAGNETISM AND EQUIPMENT ---
+    149: 'blocks/positive_magnet.png',
+    150: 'blocks/negative_magnet.png',
+    151: 'items/iron_helmet.png',
+    152: 'items/iron_chestplate.png',
+    153: 'items/iron_leggings.png',
+    154: 'items/iron_boots.png',
+    155: 'items/polarity_boots.png',
 };

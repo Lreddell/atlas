@@ -20,6 +20,7 @@ import { entityManager } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -556,7 +557,11 @@ const App: React.FC = () => {
               const p = playerPosRef.current;
               return p ? { x: p.x, y: p.y, z: p.z } : null;
           },
-          (amount) => damagePlayer(amount),
+          (amount, knockX, knockZ) => {
+              damagePlayer(amount);
+              const length = Math.hypot(knockX, knockZ) || 1;
+              playerRef.current?.applyImpulse((knockX / length) * 5, 2.5, (knockZ / length) * 5);
+          },
       );
   }, [damagePlayer]);
 
@@ -768,11 +773,12 @@ const App: React.FC = () => {
   }, [worldPaused]);
 
   useEffect(() => {
-      const unsub = worldManager.subscribeToDrops((type, x, y, z) => {
+      const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
           setDrops(p => [...p, {
                 id: Math.random().toString(), 
-                type: type, 
-                count: 1,
+                type: stack.type,
+                count: stack.count,
+                instance: stack.instance ? structuredClone(stack.instance) : undefined,
                 position: [x+0.5, y+0.5, z+0.5], 
                 velocity: [(Math.random()-0.5)*2, 4, (Math.random()-0.5)*2], 
                 createdAt: Date.now(), 
@@ -784,8 +790,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (health <= 0) {
-        const hasItems = inventory.some(i => i !== null) || cursorStack !== null || craftingGrid2x2.some(i => i !== null) || craftingGrid3x3.some(i => i !== null);
+        const hasItems = inventory.some(i => i !== null)
+            || cursorStack !== null
+            || craftingGrid2x2.some(i => i !== null)
+            || craftingGrid3x3.some(i => i !== null)
+            || EQUIPMENT_SLOTS.some(slot => equipment[slot] !== null);
         if (hasItems) {
+            const extractedEquipment = extractEquipmentItems(equipment);
             setDrops(prev => {
                 const newDrops = [...prev];
                 const dropItem = (item: ItemStack) => {
@@ -795,6 +806,7 @@ const App: React.FC = () => {
                          id: Math.random().toString(),
                          type: item.type,
                          count: item.count,
+                         instance: item.instance ? structuredClone(item.instance) : undefined,
                          position: [playerPosRef.current.x, playerPosRef.current.y + 1.0, playerPosRef.current.z],
                          velocity: [Math.cos(angle) * speed, 3 + Math.random() * 2, Math.sin(angle) * speed],
                          createdAt: Date.now(),
@@ -806,6 +818,7 @@ const App: React.FC = () => {
                 if (cursorStack) dropItem(cursorStack);
                 craftingGrid2x2.forEach(item => { if(item) dropItem(item); });
                 craftingGrid3x3.forEach(item => { if(item) dropItem(item); });
+                extractedEquipment.items.forEach(dropItem);
                 
                 return newDrops;
             });
@@ -814,13 +827,14 @@ const App: React.FC = () => {
             setCursorStack(null);
             setCraftingGrid2x2(Array(4).fill(null));
             setCraftingGrid3x3(Array(9).fill(null));
+            setEquipment(extractedEquipment.equipment);
             if (openContainer) {
                 setOpenContainer(null);
                 isInventoryOpenRef.current = false;
             }
         }
     }
-  }, [health, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]); 
+  }, [health, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, equipment, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]);
 
   useEffect(() => {
       const unsubscribe = worldManager.subscribeToMessages((msg, type, clickAction) => {
@@ -888,9 +902,9 @@ const App: React.FC = () => {
         return () => window.removeEventListener('wheel', onWheel, { passive: false } as EventListenerOptions);
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
-  const handleCollect = useCallback((id: string, type: BlockType, count: number) => {
+  const handleCollect = useCallback((id: string, stack: ItemStack) => {
     if (health <= 0) return; 
-    addToInventory(type, count);
+    addToInventory(stack);
     soundManager.play("entity.item.pickup"); 
     setDrops(prev => prev.filter(d => d.id !== id));
   }, [addToInventory, health]);
@@ -1099,8 +1113,8 @@ const App: React.FC = () => {
   const closeInventory = useCallback((opts?: { deferPointerLock?: boolean }) => {
     soundManager.play("ui.close"); 
     const grids = [...craftingGrid2x2, ...craftingGrid3x3];
-    grids.forEach(item => { if (item) addToInventory(item.type, item.count); });
-    if (cursorStack && gameMode !== 'creative') addToInventory(cursorStack.type, cursorStack.count);
+    grids.forEach(item => { if (item) addToInventory(item); });
+    if (cursorStack && gameMode !== 'creative') addToInventory(cursorStack);
     setCraftingGrid2x2(Array(4).fill(null)); setCraftingGrid3x3(Array(9).fill(null));
     setCursorStack(null); 
     resumeGame(opts);
@@ -1578,7 +1592,7 @@ const App: React.FC = () => {
               setEquipment(prev => {
                   const it = prev[slot];
                   if (!it) { logMsg(`Nothing equipped in ${slot}`, 'error'); return prev; }
-                  addToInventory(it.type, 1);
+                  addToInventory(it);
                   logMsg(`Unequipped ${BLOCKS[it.type].name}`, 'success');
                   return { ...prev, [slot]: null };
               });
@@ -2224,6 +2238,7 @@ const App: React.FC = () => {
           // New World Logic
           setInventory(Array(36).fill(null)); 
           setCursorStack(null);
+          setEquipment(createEmptyEquipment());
           setHealth(20); setHunger(20); setSaturation(5); setBreath(MAX_BREATH);
           
           // Use seed-aware spawn search
@@ -2298,8 +2313,8 @@ const App: React.FC = () => {
       }
   }, [enterUIMode, setOpenContainer]);
 
-  const handleSpawnDrop = useCallback((type: BlockType, x: number, y: number, z: number) => {
-      worldManager.spawnDrop(type, x, y, z);
+  const handleSpawnDrop = useCallback((stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => {
+      worldManager.spawnDrop(stackOrType, x, y, z);
   }, []);
 
   // Stable identity — an inline arrow here re-bound InteractionController's

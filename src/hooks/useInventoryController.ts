@@ -17,6 +17,7 @@ import { checkRecipe } from '../recipes';
 import * as THREE from 'three';
 import React from 'react';
 import type { ChestState, FurnaceState } from '../systems/world/worldTypes';
+import { canStacksMerge, cloneItemStack, getItemStackLimit } from '../systems/inventory/itemStackPolicy';
 
 const INVENTORY_SIZE = 36;
 
@@ -54,6 +55,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             id: Math.random().toString(), 
             type: item.type, 
             count: item.count, 
+            instance: item.instance ? structuredClone(item.instance) : undefined,
             position: [spawnPos.x, spawnPos.y, spawnPos.z], 
             velocity: [throwVel.x, throwVel.y, throwVel.z], 
             createdAt: Date.now(), 
@@ -112,16 +114,19 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
     // --- ADD TO INVENTORY (Synchronous) ---
     // Moved here to share the shadow state with other inventory actions
-    const addToInventory = useCallback((type: BlockType, count: number = 1) => {
+    const addToInventory = useCallback((stackOrType: ItemStack | BlockType, count: number = 1) => {
+        const item = typeof stackOrType === 'number'
+            ? { type: stackOrType, count }
+            : cloneItemStack(stackOrType);
         const next = [...inventoryRef.current];
-        let rem = count; 
-        const max = 64;
+        let rem = item.count;
+        const max = getItemStackLimit(item.type);
 
         // 1. Fill existing stacks
         for (let i = 0; i < INVENTORY_SIZE && rem > 0; i++) {
-            if (next[i]?.type === type && next[i]!.count < max) {
+            if (next[i] && canStacksMerge(next[i]!, item) && next[i]!.count < max) {
                 const add = Math.min(max - next[i]!.count, rem);
-                next[i] = { type, count: next[i]!.count + add };
+                next[i] = cloneItemStack(next[i]!, next[i]!.count + add);
                 rem -= add;
             }
         }
@@ -129,7 +134,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         for (let i = 0; i < INVENTORY_SIZE && rem > 0; i++) {
             if (!next[i]) {
                 const add = Math.min(max, rem);
-                next[i] = { type, count: add };
+                next[i] = cloneItemStack(item, add);
                 rem -= add;
             }
         }
@@ -141,13 +146,13 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
     const addToInventoryList = (list: (ItemStack | null)[], item: ItemStack, reversed: boolean = false): ItemStack | null => {
         let rem = item.count;
-        const max = 64;
+        const max = getItemStackLimit(item.type);
         const indices = list.map((_, i) => i);
         if (reversed) indices.reverse();
 
         // 1. Fill existing
         for (const i of indices) {
-            if (list[i] && list[i]!.type === item.type && list[i]!.count < max) {
+            if (list[i] && canStacksMerge(list[i]!, item) && list[i]!.count < max) {
                 const add = Math.min(max - list[i]!.count, rem);
                 list[i] = { ...list[i]!, count: list[i]!.count + add };
                 rem -= add;
@@ -157,8 +162,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         // 2. Fill empty
         for (const i of indices) {
             if (!list[i]) {
-                list[i] = { type: item.type, count: rem };
-                return null;
+                const add = Math.min(max, rem);
+                list[i] = cloneItemStack(item, add);
+                rem -= add;
+                if (rem <= 0) return null;
             }
         }
         return { ...item, count: rem };
@@ -171,7 +178,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         if (collection === 'creative') {
             if (action === 'click' && gameMode === 'creative') {
                 if (data && 'creativeItem' in data) {
-                    const newStack = { ...data.creativeItem, count: 64 };
+                    const newStack = cloneItemStack(
+                        data.creativeItem,
+                        getItemStackLimit(data.creativeItem.type),
+                    );
                     cursorRef.current = newStack;
                     setCursorStack(newStack);
                 }
@@ -288,22 +298,27 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     const newInv = [...inventoryRef.current];
                     newInv[index] = null;
                     let rem = slotItem.count;
+                    const max = getItemStackLimit(slotItem.type);
                     const rangeStart = isHotbar ? 9 : 0;
                     const rangeEnd = isHotbar ? 36 : 9;
                     
                     for (let i=rangeStart; i<rangeEnd && rem>0; i++) {
-                        if (newInv[i] && newInv[i]!.type === slotItem.type && newInv[i]!.count < 64) {
-                            const add = Math.min(64 - newInv[i]!.count, rem);
+                        if (newInv[i] && canStacksMerge(newInv[i]!, slotItem) && newInv[i]!.count < max) {
+                            const add = Math.min(max - newInv[i]!.count, rem);
                             // Clone before changing count — the stack object is shared
                             // with the previous React state array.
-                            newInv[i] = { ...newInv[i]!, count: newInv[i]!.count + add };
+                            newInv[i] = cloneItemStack(newInv[i]!, newInv[i]!.count + add);
                             rem -= add;
                         }
                     }
                     for (let i=rangeStart; i<rangeEnd && rem>0; i++) {
-                        if (!newInv[i]) { newInv[i] = { type: slotItem.type, count: rem }; rem = 0; }
+                        if (!newInv[i]) {
+                            const add = Math.min(max, rem);
+                            newInv[i] = cloneItemStack(slotItem, add);
+                            rem -= add;
+                        }
                     }
-                    if (rem > 0) newInv[index] = { ...slotItem, count: rem }; 
+                    if (rem > 0) newInv[index] = cloneItemStack(slotItem, rem);
                     
                     inventoryRef.current = newInv;
                     setInventory(newInv);
@@ -329,7 +344,8 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             
             if (mode === 'one') {
                 let remainder = startStack.count;
-                const newCursor = { ...startStack };
+                const newCursor = cloneItemStack(startStack);
+                const max = getItemStackLimit(startStack.type);
                 
                 slots.forEach(slot => {
                     if (remainder <= 0) return;
@@ -337,10 +353,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     if (slot.collection === 'output' || slot.collection === 'furnace_output') return;
                     const sItem = getSlot(slot.collection, slot.index);
                     if (!sItem) {
-                        updateSlot(slot.collection, slot.index, { type: startStack.type, count: 1 });
+                        updateSlot(slot.collection, slot.index, cloneItemStack(startStack, 1));
                         remainder--;
-                    } else if (sItem.type === startStack.type && sItem.count < 64) {
-                        updateSlot(slot.collection, slot.index, { ...sItem, count: sItem.count + 1 });
+                    } else if (canStacksMerge(sItem, startStack) && sItem.count < max) {
+                        updateSlot(slot.collection, slot.index, cloneItemStack(sItem, sItem.count + 1));
                         remainder--;
                     }
                 });
@@ -350,10 +366,11 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             } 
             else if (mode === 'split') {
                 const count = startStack.count;
+                const max = getItemStackLimit(startStack.type);
                 const targets = slots.filter(slot => {
                     const sItem = getSlot(slot.collection, slot.index);
                     if (slot.collection === 'output' || slot.collection === 'furnace_output') return false;
-                    return !sItem || (sItem.type === startStack.type && sItem.count < 64);
+                    return !sItem || (canStacksMerge(sItem, startStack) && sItem.count < max);
                 });
                 
                 if (targets.length === 0) { 
@@ -374,7 +391,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     const amount = itemsPerSlot + bonus;
                     
                     if (amount > 0) {
-                        updateSlot(slot.collection, slot.index, { type: startStack.type, count: currentCount + amount });
+                        updateSlot(slot.collection, slot.index, cloneItemStack(startStack, Math.min(max, currentCount + amount)));
                     }
                 });
                 
@@ -390,8 +407,8 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             const gatherType = cursorStack ? cursorStack.type : (slotItem ? slotItem.type : null);
             if (!gatherType) return;
 
-            let currentStack = cursorStack ? { ...cursorStack } : { type: gatherType, count: 0 };
-            const max = 64;
+            const currentStack = cursorStack ? cloneItemStack(cursorStack) : cloneItemStack(slotItem!, 0);
+            const max = getItemStackLimit(gatherType);
 
             const scanList = (list: (ItemStack|null)[], coll: string, setList: (l:(ItemStack|null)[])=>void) => {
                 const newList = [...list];
@@ -401,7 +418,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     
                     // Logic to gather
                     const item = newList[i];
-                    if (item && item.type === gatherType) {
+                    if (item && canStacksMerge(item, currentStack)) {
                          // Don't gather from self if we are technically 'holding' items that originated from here?
                          // If cursor is present, we are gathering INTO cursor.
                          // Standard MC: Scans all slots except the one you clicked if it's already on cursor.
@@ -441,8 +458,9 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         // --- STANDARD CLICK ---
         if (collection === 'output' && slotItem) {
             if (cursorStack) {
-                if (cursorStack.type === slotItem.type && cursorStack.count + slotItem.count <= 64) {
-                    const newStack = { ...cursorStack, count: cursorStack.count + slotItem.count };
+                const max = getItemStackLimit(cursorStack.type);
+                if (canStacksMerge(cursorStack, slotItem) && cursorStack.count + slotItem.count <= max) {
+                    const newStack = cloneItemStack(cursorStack, cursorStack.count + slotItem.count);
                     cursorRef.current = newStack;
                     setCursorStack(newStack);
                     (openContainer?.type === 'crafting' ? setCraftingGrid3x3 : setCraftingGrid2x2)(p => p.map(i => i ? (i.count > 1 ? {...i, count:i.count-1}:null) : null));
@@ -459,7 +477,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             if (!slotItem) return;
             if (action === 'right_click') {
                 const take = Math.ceil(slotItem.count / 2);
-                const newStack = { type: slotItem.type, count: take };
+                const newStack = cloneItemStack(slotItem, take);
                 cursorRef.current = newStack;
                 setCursorStack(newStack);
                 updateSlot(collection, index, slotItem.count - take > 0 ? { ...slotItem, count: slotItem.count - take } : null);
@@ -471,7 +489,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         } else {
             if (!slotItem) {
                 if (action === 'right_click') {
-                    updateSlot(collection, index, { type: cursorStack.type, count: 1 });
+                    updateSlot(collection, index, cloneItemStack(cursorStack, 1));
                     if (cursorStack.count > 1) {
                         const newStack = { ...cursorStack, count: cursorStack.count - 1 };
                         cursorRef.current = newStack;
@@ -485,10 +503,11 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     cursorRef.current = null;
                     setCursorStack(null);
                 }
-            } else if (slotItem.type === cursorStack.type) {
+            } else if (canStacksMerge(slotItem, cursorStack)) {
+                const max = getItemStackLimit(slotItem.type);
                 if (action === 'right_click') {
-                    if (slotItem.count < 64) {
-                        updateSlot(collection, index, { ...slotItem, count: slotItem.count + 1 });
+                    if (slotItem.count < max) {
+                        updateSlot(collection, index, cloneItemStack(slotItem, slotItem.count + 1));
                         if (cursorStack.count > 1) {
                             const newStack = { ...cursorStack, count: cursorStack.count - 1 };
                             cursorRef.current = newStack;
@@ -499,10 +518,10 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                         }
                     }
                 } else {
-                    const space = 64 - slotItem.count;
+                    const space = max - slotItem.count;
                     const add = Math.min(space, cursorStack.count);
                     if (add > 0) {
-                        updateSlot(collection, index, { ...slotItem, count: slotItem.count + add });
+                        updateSlot(collection, index, cloneItemStack(slotItem, slotItem.count + add));
                         if (cursorStack.count - add > 0) {
                             const newStack = { ...cursorStack, count: cursorStack.count - add };
                             cursorRef.current = newStack;

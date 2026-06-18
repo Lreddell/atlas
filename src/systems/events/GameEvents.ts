@@ -19,6 +19,7 @@ export interface GameEventMap {
     'boss:spawned': { bossId: string; entityId: number; name: string; maxHp: number };
     'boss:damaged': { bossId: string; entityId: number; hp: number; maxHp: number };
     'boss:defeated': { bossId: string; entityId: number; regionId?: string };
+    'boss:cleared': Record<string, never>;
     'entity:died': { entityId: number; type: string };
     'combat:start': Record<string, never>;
     'combat:stop': Record<string, never>;
