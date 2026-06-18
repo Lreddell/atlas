@@ -17,6 +17,7 @@ import { BossBar } from './components/ui/BossBar';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
+import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import type { MagneticMode } from './systems/player/magnetism';
@@ -45,9 +46,9 @@ import { isEditableElement } from './utils/dom';
 import { worldManager } from './systems/WorldManager';
 import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
-import { getRegionById, getRegionAt } from './systems/world/regions';
+import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
-import { getBiome } from './systems/world/biomes';
+import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH } from './systems/player/playerConstants';
@@ -62,13 +63,13 @@ import {
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
-import { BIOMES } from './systems/world/biomes';
 import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
-import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
+import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
+import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
 import type { WorldGenConfigSnapshot } from './systems/world/worldGenPresets';
 
@@ -86,6 +87,25 @@ const PANORAMA_CAPTURE_KEY = 'F8';
 const WEB_PANORAMA_PREFIX = 'web:';
 const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
 const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
+const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
+const commandItems = Array.from(new Set(
+    Object.values(BLOCKS)
+        .filter(Boolean)
+        .map(block => toCommandArgument(block.name)),
+)).sort();
+const commandEquippableItems = Array.from(new Set(
+    Object.values(BLOCKS)
+        .filter(block => block && slotForItem(block.id))
+        .map(block => toCommandArgument(block.name)),
+)).sort();
+const COMMAND_AUTOCOMPLETE_OPTIONS: CommandAutocompleteOptions = {
+    biomes: Array.from(new Set(Object.values(BIOMES).map(biome => biome.id))).sort(),
+    regions: getAllRegions().map(region => region.id).sort(),
+    items: commandItems,
+    equippableItems: commandEquippableItems,
+    entities: Object.keys(ENTITY_KINDS).sort(),
+    sounds: Object.keys(DEFAULT_SOUND_MANIFEST).sort(),
+};
 const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
@@ -1603,30 +1623,7 @@ const App: React.FC = () => {
   }, [commandValue, logMsg, resumeGame, addToInventory]);
 
   const updateAutocomplete = useCallback((input: string) => {
-      const parts = input.trim().split(' ');
-      let newCandidates: string[] = [];
-      
-      if (input.trim() === '' || (parts.length === 1 && !input.endsWith(' '))) {
-          const prefix = input.trim();
-          newCandidates = COMMANDS.filter(c => c.startsWith(prefix));
-      } 
-      else if ((parts.length === 1 && input.endsWith(' ')) || (parts.length === 2 && !input.endsWith(' '))) {
-          const cmd = parts[0];
-          const prefix = parts[1] || '';
-          if (SUBCOMMANDS[cmd]) {
-              newCandidates = SUBCOMMANDS[cmd].filter(sc => sc.startsWith(prefix));
-          }
-      }
-      else if ((parts.length === 2 && input.endsWith(' ')) || (parts.length === 3 && !input.endsWith(' '))) {
-          const cmdContext = `${parts[0]} ${parts[1]}`;
-          const prefix = parts[2] || '';
-          
-          if (parts[0] === '/locate' && parts[1] === 'biome') {
-              newCandidates = Object.keys(BIOMES).map(k => BIOMES[k].id).filter(id => id.startsWith(prefix));
-          } else if (ARGUMENT_OPTIONS[cmdContext]) {
-              newCandidates = ARGUMENT_OPTIONS[cmdContext].filter(opt => opt.startsWith(prefix));
-          }
-      }
+      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
 
       setAcCandidates(newCandidates);
       setAcIndex(0);
