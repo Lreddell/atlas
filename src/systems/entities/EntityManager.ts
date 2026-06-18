@@ -5,6 +5,12 @@ import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
 import { ENTITY_KINDS, type Entity, type EntityKind } from './Entity';
+import type { GameMode } from '../../types';
+import {
+    canTargetPlayer,
+    shouldForgetTarget,
+    shouldPreserveKnockback,
+} from './entityBehavior';
 
 export interface SpawnOptions {
     bossId?: string;
@@ -74,6 +80,7 @@ class EntityManager {
             aggro: false,
             hurtUntil: 0,
             attackCooldown: 0,
+            knockbackSeconds: 0,
             yaw: 0,
             isBoss: !!kind.isBoss,
             bossId: opts.bossId ?? (kind.isBoss ? kind.id : undefined),
@@ -85,7 +92,7 @@ class EntityManager {
             gameEvents.emit('boss:spawned', {
                 bossId: entity.bossId,
                 entityId: entity.id,
-                name: kind.id === 'forge_warden' ? 'The Cinder Warden' : kind.id,
+                name: kind.id === 'cinder_warden' ? 'Cinder Warden' : kind.id,
                 maxHp: entity.maxHp,
             });
         }
@@ -97,10 +104,11 @@ class EntityManager {
     }
 
     clear(): void {
-        if (this.entities.size === 0) return;
+        const hadEntities = this.entities.size > 0;
         this.entities.clear();
         if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
-        this.notifyStructure();
+        gameEvents.emit('boss:cleared', {});
+        if (hadEntities) this.notifyStructure();
     }
 
     /** Apply damage to an entity (from a melee hit). knock is a horizontal dir. */
@@ -114,6 +122,7 @@ class EntityManager {
         e.vel.x += (knockX / len) * 6;
         e.vel.z += (knockZ / len) * 6;
         e.vel.y += 3;
+        e.knockbackSeconds = 0.2;
 
         if (e.isBoss && e.bossId) {
             gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: Math.max(0, e.hp), maxHp: e.maxHp });
@@ -151,30 +160,41 @@ class EntityManager {
         return best;
     }
 
-    tick(dt: number): void {
+    tick(dt: number, gameMode: GameMode): void {
         if (this.entities.size === 0) {
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             return;
         }
         const pp = this.playerPosProvider?.() ?? null;
+        const targetable = canTargetPlayer(gameMode);
         let anyAggro = false;
 
         for (const e of this.entities.values()) {
             const kind = ENTITY_KINDS[e.kind];
             if (!kind) continue;
 
+            e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
+            const preserveKnockback = shouldPreserveKnockback(e.knockbackSeconds);
+
             // --- AI: notice and chase the player ---
-            if (pp) {
+            if (pp && targetable) {
                 const dx = pp.x - e.pos.x;
                 const dz = pp.z - e.pos.z;
                 const distSq = dx * dx + dz * dz;
                 if (distSq < kind.aggroRange * kind.aggroRange) e.aggro = true;
-                if (e.aggro) {
+                else if (e.aggro && shouldForgetTarget(distSq, kind.aggroRange)) e.aggro = false;
+                if (e.aggro && !preserveKnockback) {
                     const dist = Math.sqrt(distSq) || 1;
                     e.vel.x = (dx / dist) * kind.speed;
                     e.vel.z = (dz / dist) * kind.speed;
                     e.yaw = Math.atan2(dx, dz);
-                } else {
+                } else if (!e.aggro && !preserveKnockback) {
+                    e.vel.x *= 0.6;
+                    e.vel.z *= 0.6;
+                }
+            } else {
+                e.aggro = false;
+                if (!preserveKnockback) {
                     e.vel.x *= 0.6;
                     e.vel.z *= 0.6;
                 }
@@ -188,8 +208,8 @@ class EntityManager {
 
             // --- Contact damage to player ---
             if (e.attackCooldown > 0) e.attackCooldown -= dt;
-            if (pp && e.attackCooldown <= 0 && this.overlapsPlayer(e, pp)) {
-                this.playerDamageHandler?.(kind.contactDamage, e.pos.x - pp.x, e.pos.z - pp.z);
+            if (targetable && pp && e.attackCooldown <= 0 && this.overlapsPlayer(e, pp)) {
+                this.playerDamageHandler?.(kind.contactDamage, pp.x - e.pos.x, pp.z - e.pos.z);
                 e.attackCooldown = kind.attackCooldown;
             }
         }

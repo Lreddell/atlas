@@ -21,6 +21,7 @@ import { isEditableElement } from '../utils/dom';
 
 export interface PlayerHandle {
     teleport: (pos: Vector3) => void;
+    applyImpulse: (x: number, y: number, z: number) => void;
 }
 
 interface PlayerProps {
@@ -92,7 +93,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
           const cx = Math.floor(newPos.x / CHUNK_SIZE);
           const cz = Math.floor(newPos.z / CHUNK_SIZE);
           if (onChunkChange) onChunkChange(cx, cz);
-      }
+      },
+      applyImpulse: (x: number, y: number, z: number) => {
+          vel.current.x += x;
+          vel.current.y += y;
+          vel.current.z += z;
+      },
   }));
 
   // Sync physics state with prop updates (e.g. after world generation determines safe spawn)

@@ -16,6 +16,7 @@ import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
 import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/registry/equipment';
+import { cloneItemStack } from '../../systems/inventory/itemStackPolicy';
 import type { EquipmentSlot } from '../../types';
 
 interface InventoryUIProps {
@@ -92,6 +93,9 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.DIAMOND_SWORD, BlockType.DIAMOND_PICKAXE, BlockType.DIAMOND_AXE, BlockType.DIAMOND_SHOVEL, BlockType.DIAMOND_HOE,
     // Copper (Custom)
     BlockType.COPPER_SWORD, BlockType.COPPER_PICKAXE, BlockType.COPPER_AXE, BlockType.COPPER_SHOVEL, BlockType.COPPER_HOE,
+    // Equipment and magnetic tools
+    BlockType.IRON_HELMET, BlockType.IRON_CHESTPLATE, BlockType.IRON_LEGGINGS, BlockType.IRON_BOOTS,
+    BlockType.POLARITY_BOOTS, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET,
 
     // --- INGREDIENTS ---
     BlockType.COAL, BlockType.CHARCOAL, 
@@ -372,10 +376,10 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         if (cursorStack) {
             if (slotForItem(cursorStack.type) !== slot) return; // wrong gear for this slot
             if (cursorStack.count === 1) {
-                setEquipment({ ...equipment, [slot]: { type: cursorStack.type, count: 1 } });
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
                 setCursorStack(current);
             } else if (!current) {
-                setEquipment({ ...equipment, [slot]: { type: cursorStack.type, count: 1 } });
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
                 setCursorStack({ ...cursorStack, count: cursorStack.count - 1 });
             }
         } else if (current) {
@@ -550,7 +554,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
 
                     <div className="flex gap-6 justify-center">
-                        {openContainer.type === 'inventory' && (
+                        {(openContainer.type === 'inventory' || openContainer.type === 'creative') && (
                             <div className="flex flex-col gap-1 justify-center mr-1">
                                 <div className="text-[#333] text-[10px] font-bold uppercase text-center mb-1">Armor</div>
                                 {EQUIPMENT_SLOTS.map((slot) => {
@@ -567,7 +571,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                             <Slot item={it} size="large" />
                                             {!it && (
                                                 <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
-                                                    {slot.slice(0, 4)}
+                                                    {slot}
                                                 </span>
                                             )}
                                         </div>

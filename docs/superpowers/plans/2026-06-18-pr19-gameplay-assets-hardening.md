@@ -217,7 +217,7 @@ Render `current / max` health text. Clear on world reset.
 
 - [ ] **Step 4: Rename identifiers**
 
-Replace `forge_warden` with `cinder_warden`. Use `Cinder Warden` and `Cinder Reach` consistently. Do not add legacy migration.
+Use `cinder_warden`, `Cinder Warden`, and `Cinder Reach` consistently. Do not add legacy migration.
 
 - [ ] **Step 5: Run targeted tests**
 
@@ -291,4 +291,3 @@ Verify Creative and Survival equipment slots, singleton armor/tools, world reset
 - [ ] **Step 4: Commit and push**
 
 Use the repository's configured Git identity. Do not add assistant attribution or PR comments.
-

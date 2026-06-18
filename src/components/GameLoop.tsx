@@ -33,7 +33,7 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
         let currentHealth = health;
         while (accumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
             worldManager.tick(FIXED_DT);
-            entityManager.tick(FIXED_DT);
+            entityManager.tick(FIXED_DT, gameMode);
 
             if (foodStateRef.current) {
                 const newHealth = tickFood(foodStateRef.current, currentHealth, gameMode, isDead);

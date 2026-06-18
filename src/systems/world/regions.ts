@@ -28,8 +28,8 @@ export interface RegionDef {
 const REGION_DEFS: Record<string, RegionDef> = {
     volcanic: {
         id: 'volcanic',
-        bossId: 'forge_warden',
-        displayName: 'The Cinder Reach',
+        bossId: 'cinder_warden',
+        displayName: 'Cinder Reach',
         tintColor: 0xff5530,
         sealedByDefault: true,
     },

@@ -30,6 +30,8 @@ import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../sys
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
 import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, SLAB_DOUBLE, isShaped, isSlab, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
+import { findFirstBlockedEdit } from '../../systems/world/regionEditPolicy';
+import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
@@ -58,7 +60,7 @@ interface InteractionControllerProps {
     inventory: (ItemStack | null)[];
     consumeItem: (slot: number) => void;
     damageHeldItem: (slot: number, amount: number) => void;
-    spawnDrop: (type: BlockType, x: number, y: number, z: number) => void;
+    spawnDrop: (stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => void;
     setBreakingVisual: Dispatch<SetStateAction<BreakingVisual | null>>;
     setOpenContainer: (value: OpenContainerState) => void;
     openContainer: OpenContainerState;
@@ -396,6 +398,15 @@ export const InteractionController = ({
                         } else {
                             if (dir.z > 0) { rotation = 0; hz += 1; } else { rotation = 1; hz -= 1; }
                         }
+
+                        const blockedPosition = findFirstBlockedEdit(
+                            [{ x: px, y: py, z: pz }, { x: hx, y: py, z: hz }],
+                            ({ x, y, z }) => worldManager.canEditBlock(x, y, z),
+                        );
+                        if (blockedPosition) {
+                            canPlayerEdit(blockedPosition.x, blockedPosition.y, blockedPosition.z);
+                            return;
+                        }
                         
                         if (worldManager.getBlock(hx, py, hz, false) === BlockType.AIR) {
                             const headAABB = new THREE.Box3(
@@ -443,6 +454,8 @@ export const InteractionController = ({
         camera.getWorldDirection(_camDir);
         const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
         if (!hit) return false;
+        const blockHit = castFromCamera(camera, MELEE_REACH);
+        if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
         const held = inventory[selectedSlot];
         const dmg = getAttackDamage(held);
         entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
@@ -611,16 +624,11 @@ export const InteractionController = ({
                 setBreakingVisual({ pos: [bx, by, bz], progress: breakingRef.current.progress, noDrop });
 
                 if (breakingRef.current.progress >= 1.0) {
-                    // Play Break Sound
-                    const group = getBlockSoundGroup(targetType);
-                    soundManager.playAt(`block.${group}.break`, {x: bx+0.5, y: by+0.5, z: bz+0.5});
-
-                    // Trigger Particles!
-                    worldManager.spawnParticles(targetType, bx, by, bz);
-
+                    let bedCounterpart: { x: number; z: number; type: BlockType } | null = null;
                     if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
                         const meta = worldManager.getMetadata(bx, by, bz);
-                        let ox = bx, oz = bz;
+                        let ox = bx;
+                        let oz = bz;
                         if (targetType === BlockType.BED_FOOT) {
                             if (meta === 0) oz += 1;
                             else if (meta === 1) oz -= 1;
@@ -632,8 +640,29 @@ export const InteractionController = ({
                             else if (meta === 2) ox -= 1;
                             else if (meta === 3) ox += 1;
                         }
+                        const counterpartType = worldManager.getBlock(ox, by, oz, false);
+                        bedCounterpart = { x: ox, z: oz, type: counterpartType };
+                        const counterpartIsBed = counterpartType === BlockType.BED_HEAD || counterpartType === BlockType.BED_FOOT;
+                        if (counterpartIsBed && !worldManager.canEditBlock(ox, by, oz)) {
+                            canPlayerEdit(ox, by, oz);
+                            breakingRef.current = null;
+                            setBreakingVisual(null);
+                            return;
+                        }
+                    }
+
+                    // Play Break Sound
+                    const group = getBlockSoundGroup(targetType);
+                    soundManager.playAt(`block.${group}.break`, {x: bx+0.5, y: by+0.5, z: bz+0.5});
+
+                    // Trigger Particles!
+                    worldManager.spawnParticles(targetType, bx, by, bz);
+
+                    if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
+                        const ox = bedCounterpart!.x;
+                        const oz = bedCounterpart!.z;
                         
-                        const otherType = worldManager.getBlock(ox, by, oz, false);
+                        const otherType = bedCounterpart!.type;
                         const spawnPoint = worldManager.getSpawnPoint();
                         const spawnMatchesThisBed = !!spawnPoint && (
                             (spawnPoint.x === bx && spawnPoint.y === by && spawnPoint.z === bz) ||
@@ -673,7 +702,7 @@ export const InteractionController = ({
                         }
 
                         if (canHarvest) {
-                            droppedItems.forEach(item => { for(let i=0; i<item.count; i++) spawnDrop(item.type, bx, by, bz); });
+                            droppedItems.forEach(item => spawnDrop(item, bx, by, bz));
                             if (targetDef.drops) {
                                 targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
                             } else {

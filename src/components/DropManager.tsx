@@ -2,7 +2,7 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Drop, BlockType } from '../types';
+import { Drop, BlockType, type ItemStack } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
@@ -14,7 +14,7 @@ import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 interface DropManagerProps {
     drops: Drop[];
     playerPos: THREE.Vector3;
-    onCollect: (id: string, type: BlockType, count: number) => void;
+    onCollect: (id: string, stack: ItemStack) => void;
     onDestroy: (id: string) => void;
     isPaused: boolean;
     brightness: number;
@@ -374,7 +374,11 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                 
                 if (canPickup && !burningDrops.current.has(drop.id)) {
                     if (dist < 1.4) {
-                        onCollect(drop.id, drop.type, drop.count);
+                        onCollect(drop.id, {
+                            type: drop.type,
+                            count: drop.count,
+                            instance: drop.instance ? structuredClone(drop.instance) : undefined,
+                        });
                         newPos.set(0, -5000, 0); 
                     } else if (dist < 5.0) {
                         const dir = _dropPullDir.copy(playerPos).sub(newPos).normalize();

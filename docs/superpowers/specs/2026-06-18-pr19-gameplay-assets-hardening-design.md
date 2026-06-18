@@ -44,7 +44,7 @@ Finish PR #19 by correcting inventory, equipment, region, entity, combat, boss H
 - Internal boss ID: `cinder_warden`.
 - Player-facing boss name: `Cinder Warden`.
 - Region name: `Cinder Reach`.
-- Legacy `forge_warden` progression data is not migrated.
+- Legacy guardian progression data is not migrated.
 - Equipment slot labels use complete readable names.
 - Commands, autocomplete, events, tests, and registries use the same identifiers.
 
@@ -67,4 +67,3 @@ Each asset is an original 16x16 PNG in Atlas's crisp pixel-art style. Magnet blo
 - Targeted Node tests cover stack policy, item-instance preservation, equipment reset/death extraction, game-mode aggro, aggro forgetting, melee occlusion, bed region checks, boss HUD state reduction, naming, and unique texture assignments.
 - Run `npm run typecheck`, `npm run lint`, and `npm run build`.
 - Browser smoke tests cover Survival and Creative equipment layouts, new-world equipment reset, commands, boss health updates, and texture rendering.
-
