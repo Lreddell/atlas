@@ -390,6 +390,7 @@ interface MainLandingPanelProps {
     onTutorial: () => void;
     onQuit?: () => void;
     onBuildCreditClick: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+    onShowWhatsNew: () => void;
 }
 
 export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
@@ -403,6 +404,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
     onTutorial,
     onQuit,
     onBuildCreditClick,
+    onShowWhatsNew,
 }) => (
     <>
         <style>{`
@@ -454,7 +456,14 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
             </div>
         </div>
 
-        <div className="absolute bottom-2 left-2 text-white text-shadow-md">Atlas {APP_DISPLAY_VERSION}</div>
+        <button
+            type="button"
+            onClick={onShowWhatsNew}
+            className="absolute bottom-2 left-2 text-white text-shadow-md hover:underline"
+            title="See what's new"
+        >
+            Atlas {APP_DISPLAY_VERSION}
+        </button>
         <a
             className="absolute bottom-2 right-2 text-white text-shadow-md hover:underline"
             href="https://github.com/Lreddell/atlas"
