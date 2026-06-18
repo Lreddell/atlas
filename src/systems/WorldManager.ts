@@ -16,6 +16,9 @@ import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
 import { tickPlantGrowth } from './world/plantGrowth';
+import { getRegionAt } from './world/regions';
+import { progression } from './progression/ProgressionStore';
+import { gameEvents } from './events/GameEvents';
 
 // --- Types ---
 enum ChunkStage {
@@ -1208,6 +1211,16 @@ export class WorldManager {
   getLoadedChunkKeys(): string[] {
       return Array.from(this.state.chunks.keys());
   }
+  /**
+   * Whether the player may place/break at this position. A sealed region (one
+   * whose boss has not been defeated / which has not been cleansed) is read-only
+   * for terrain edits; world interaction (chests, doors) is unaffected.
+   */
+  canEditBlock(x: number, y: number, z: number): boolean {
+      const region = getRegionAt(x, y, z);
+      if (!region || !region.sealedByDefault) return true;
+      return progression.isRegionCleansed(region.id);
+  }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }
   updateLightingAround(x: number, y: number, z: number) {
@@ -1218,6 +1231,11 @@ export class WorldManager {
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
+    if (!this.canEditBlock(x, y, z)) {
+      const region = getRegionAt(x, y, z);
+      gameEvents.emit('edit:denied', { x, y, z, regionId: region?.id ?? '' });
+      return [];
+    }
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
     const chunk = this.getChunkData(cx, cz, true);
     if (!chunk) return [];

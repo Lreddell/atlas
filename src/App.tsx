@@ -13,6 +13,7 @@ import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
+import { BossBar } from './components/ui/BossBar';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -35,6 +36,9 @@ import { RenderStats } from './components/RenderStats';
 import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
+import { progression } from './systems/progression/ProgressionStore';
+import { gameEvents } from './systems/events/GameEvents';
+import { getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
 import { getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
@@ -527,6 +531,7 @@ const App: React.FC = () => {
           };
           meta.spawnPoint = worldManager.getSpawnPoint();
           meta.worldSpawn = worldManager.getWorldSpawn();
+          meta.progression = progression.serialize();
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           console.log(`[AutoSave] World ${meta.name} saved.`);
@@ -757,11 +762,38 @@ const App: React.FC = () => {
   useEffect(() => {
       const unsubscribe = worldManager.subscribeToMessages((msg, type, clickAction) => {
           setMessages(prev => [
-              ...prev.slice(-19), 
+              ...prev.slice(-19),
               { id: Date.now() + Math.random(), text: msg, type, timestamp: Date.now(), clickAction }
           ]);
       });
       return () => { unsubscribe(); };
+  }, []);
+
+  // Sealed-region feedback: blocked edits and cleanse notifications. The denied
+  // event can fire rapidly (holding the mouse on a sealed block), so throttle the
+  // toast/sound to avoid spam.
+  useEffect(() => {
+      let lastDeniedAt = 0;
+      const offDenied = gameEvents.on('edit:denied', ({ regionId }) => {
+          const now = Date.now();
+          if (now - lastDeniedAt < 1500) return;
+          lastDeniedAt = now;
+          const region = regionId ? getRegionById(regionId) : undefined;
+          const where = region ? region.displayName : 'this region';
+          worldManager.log(`${where} is sealed — defeat its guardian to reshape it.`, 'error');
+          soundManager.play('ui.click', { volume: 0.3, pitch: 0.6 });
+      });
+      const offCleansed = gameEvents.on('region:cleansed', ({ regionId }) => {
+          const region = getRegionById(regionId);
+          worldManager.log(`${region ? region.displayName : 'The region'} has been cleansed. You may now reshape it.`, 'success');
+      });
+      // Defeating a boss records progression and cleanses its region. The dummy
+      // boss (debug /boss kill, and later real boss entities) route through here.
+      const offDefeated = gameEvents.on('boss:defeated', ({ bossId, regionId }) => {
+          progression.markBossDefeated(bossId);
+          if (regionId) progression.cleanseRegion(regionId);
+      });
+      return () => { offDenied(); offCleansed(); offDefeated(); };
   }, []);
 
   // Update Chunks & Stream
@@ -1412,6 +1444,43 @@ const App: React.FC = () => {
           } else {
               logMsg('Usage: /bloodmoon <force|clear|query> [current|next]', 'error');
           }
+      } else if (parts[0] === '/region') {
+          const p = playerPosRef.current;
+          const region = getRegionAt(p.x, p.y, p.z);
+          if (!region) {
+              logMsg('You are in ordinary, editable terrain (no region).', 'info');
+          } else {
+              const state = progression.isRegionCleansed(region.id) ? 'cleansed (editable)' : 'sealed (read-only)';
+              logMsg(`Region: ${region.displayName} [${region.id}] — ${state}. Guardian: ${region.bossId}.`, 'info');
+          }
+      } else if (parts[0] === '/cleanse') {
+          const p = playerPosRef.current;
+          const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
+          if (!region) { logMsg('No sealable region here. Usage: /cleanse [regionId]', 'error'); }
+          else { progression.cleanseRegion(region.id); progression.markBossDefeated(region.bossId); }
+      } else if (parts[0] === '/seal') {
+          const p = playerPosRef.current;
+          const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
+          if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
+          else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
+      } else if (parts[0] === '/boss') {
+          const p = playerPosRef.current;
+          const region = getRegionAt(p.x, p.y, p.z);
+          if (parts[1] === 'spawn') {
+              if (!region) { logMsg('Stand in a sealed region to spawn its guardian.', 'error'); }
+              else {
+                  gameEvents.emit('boss:spawned', { bossId: region.bossId, entityId: -1, name: `${region.displayName} Guardian`, maxHp: 100 });
+                  logMsg(`Spawned ${region.displayName} Guardian (placeholder).`, 'success');
+              }
+          } else if (parts[1] === 'kill') {
+              if (!region) { logMsg('No region guardian here.', 'error'); }
+              else {
+                  gameEvents.emit('boss:defeated', { bossId: region.bossId, entityId: -1, regionId: region.id });
+                  logMsg(`${region.displayName} Guardian defeated.`, 'success');
+              }
+          } else {
+              logMsg('Usage: /boss <spawn|kill>', 'error');
+          }
       } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
       if (commandValue.trim()) {
           commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
@@ -2007,6 +2076,9 @@ const App: React.FC = () => {
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
 
+      // Hydrate action-adventure progression (defaults to empty for old worlds).
+      progression.load(meta.progression);
+
       if (meta.worldSpawn) {
           worldManager.setWorldSpawn(meta.worldSpawn.x, meta.worldSpawn.y, meta.worldSpawn.z);
       }
@@ -2279,6 +2351,7 @@ const App: React.FC = () => {
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
+                    {!showDeathScreen && <BossBar />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
                     <Chat 

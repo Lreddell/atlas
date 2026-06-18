@@ -1,5 +1,6 @@
 
 import { ItemStack } from '../../types';
+import type { ProgressionData } from '../progression/ProgressionStore';
 
 const DB_NAME = 'AtlasDB';
 const STORE_NAME = 'Chunks'; // Stores chunks: key = "chunk_<worldId>_<cx>_<cz>"
@@ -33,6 +34,10 @@ export interface WorldMetadata {
     worldGenConfig?: unknown;
     worldGenPresetId?: string | null;
     worldGenPresetName?: string | null;
+    // Action-adventure progression (bosses defeated, cleansed regions, unlocked
+    // abilities/recipes). Absent on worlds created before this feature -> treated
+    // as empty progression on load.
+    progression?: ProgressionData;
 }
 
 export interface ChunkStorageData {
@@ -53,7 +58,9 @@ interface ExportedChunkData {
 
 export interface ExportedWorldData {
     format: 'atlas-world-export';
-    version: 1;
+    // v2 adds optional meta.progression. v1 files import fine (progression
+    // defaults to empty), so both versions are accepted on import.
+    version: 1 | 2;
     exportedAt: number;
     meta: Omit<WorldMetadata, 'id' | 'created' | 'lastPlayed'> & {
         name: string;
@@ -287,7 +294,7 @@ class WorldStorageSystem {
 
         return {
             format: 'atlas-world-export',
-            version: 1,
+            version: 2,
             exportedAt: Date.now(),
             meta: {
                 name: meta.name,
@@ -301,13 +308,14 @@ class WorldStorageSystem {
                 worldGenConfig: meta.worldGenConfig,
                 worldGenPresetId: meta.worldGenPresetId ?? null,
                 worldGenPresetName: meta.worldGenPresetName ?? null,
+                progression: meta.progression,
             },
             chunks,
         };
     }
 
     public async importWorld(data: ExportedWorldData): Promise<WorldMetadata> {
-        if (!data || data.format !== 'atlas-world-export' || data.version !== 1) {
+        if (!data || data.format !== 'atlas-world-export' || (data.version !== 1 && data.version !== 2)) {
             throw new Error('Invalid world export format.');
         }
 
@@ -338,6 +346,7 @@ class WorldStorageSystem {
             worldGenConfig: data.meta?.worldGenConfig,
             worldGenPresetId: data.meta?.worldGenPresetId ?? null,
             worldGenPresetName: data.meta?.worldGenPresetName ?? null,
+            progression: data.meta?.progression,
         };
 
         const db = await this.getDB();
