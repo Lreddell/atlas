@@ -15,6 +15,8 @@ import { Slot } from './Slot';
 import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
+import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/registry/equipment';
+import type { EquipmentSlot } from '../../types';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
@@ -27,6 +29,8 @@ interface InventoryUIProps {
     cursorStack: ItemStack | null;
     setCursorStack: (stack: ItemStack | null) => void;
     handleInventoryAction: InventoryActionHandler;
+    equipment: Equipment;
+    setEquipment: (eq: Equipment) => void;
 }
 
 type SlotCollection = DragTargetSlot['collection'];
@@ -104,7 +108,8 @@ const ITEM_SORT_ORDER: BlockType[] = [
 export const InventoryUI: React.FC<InventoryUIProps> = ({ 
     inventory, openContainer, setOpenContainer,
     craftingGrid2x2, craftingGrid3x3, craftingOutput,
-    cursorStack, handleInventoryAction
+    cursorStack, setCursorStack, handleInventoryAction,
+    equipment, setEquipment
 }) => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, x: number, y: number} | null>(null);
@@ -356,6 +361,34 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         setHoverInfo(null);
     };
 
+    // Equipment slots interact only with the cursor + equipment state (both lifted
+    // to App), so they reuse the existing inventory<->cursor pickup without touching
+    // the inventory controller. Click to swap the cursor item with the slot, if the
+    // item belongs in that slot; click an empty cursor on a filled slot to pick it up.
+    const handleEquipMouseDown = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const current = equipment[slot] ?? null;
+        if (cursorStack) {
+            if (slotForItem(cursorStack.type) !== slot) return; // wrong gear for this slot
+            if (cursorStack.count === 1) {
+                setEquipment({ ...equipment, [slot]: { type: cursorStack.type, count: 1 } });
+                setCursorStack(current);
+            } else if (!current) {
+                setEquipment({ ...equipment, [slot]: { type: cursorStack.type, count: 1 } });
+                setCursorStack({ ...cursorStack, count: cursorStack.count - 1 });
+            }
+        } else if (current) {
+            setEquipment({ ...equipment, [slot]: null });
+            setCursorStack(current);
+        }
+    };
+
+    const handleEquipEnter = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        const it = equipment[slot];
+        if (it) setHoverInfo({ name: BLOCKS[it.type]?.name || 'Unknown', x: e.clientX, y: e.clientY });
+    };
+
     const handleMouseMove = (e: React.MouseEvent) => {
         setMousePos({x: e.clientX, y: e.clientY});
         if (hoverInfo) {
@@ -517,6 +550,31 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
 
                     <div className="flex gap-6 justify-center">
+                        {openContainer.type === 'inventory' && (
+                            <div className="flex flex-col gap-1 justify-center mr-1">
+                                <div className="text-[#333] text-[10px] font-bold uppercase text-center mb-1">Armor</div>
+                                {EQUIPMENT_SLOTS.map((slot) => {
+                                    const it = equipment[slot] ?? null;
+                                    return (
+                                        <div
+                                            key={slot}
+                                            className="relative"
+                                            onMouseDown={(e) => handleEquipMouseDown(slot, e)}
+                                            onMouseEnter={(e) => handleEquipEnter(slot, e)}
+                                            onMouseLeave={onSlotLeave}
+                                            title={slot}
+                                        >
+                                            <Slot item={it} size="large" />
+                                            {!it && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
+                                                    {slot.slice(0, 4)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                         <div className="flex flex-col gap-2">
                             <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
                                 {inventory.slice(9).map((it, i) => renderSlot(it, 'inventory', i + 9))}
