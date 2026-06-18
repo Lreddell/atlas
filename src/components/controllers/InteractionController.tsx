@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { entityManager } from '../../systems/entities/EntityManager';
 import { getAttackDamage, isSword } from '../../systems/registry/itemStats';
+import { gameEvents } from '../../systems/events/GameEvents';
+import { getRegionAt } from '../../systems/world/regions';
 import { BLOCKS } from '../../data/blocks';
 import {
     type BreakingVisual,
@@ -33,6 +35,16 @@ import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const MELEE_REACH = 3.2;
+
+// Sealed-region edit guard: true if the player may edit (x,y,z); otherwise emits
+// the denied event (App throttles the toast) and returns false. Enforced here at
+// the player layer so internal world simulation (which also calls setBlock) is
+// unaffected.
+function canPlayerEdit(x: number, y: number, z: number): boolean {
+    if (worldManager.canEditBlock(x, y, z)) return true;
+    gameEvents.emit('edit:denied', { x, y, z, regionId: getRegionAt(x, y, z)?.id ?? '' });
+    return false;
+}
 
 function castFromCamera(camera: THREE.Camera, maxDist: number) {
     camera.getWorldPosition(_camPos);
@@ -264,6 +276,7 @@ export const InteractionController = ({
                             );
                             doubleSlabAABB.expandByScalar(-0.001);
                             if (playerAABB.intersectsBox(doubleSlabAABB)) return;
+                            if (!canPlayerEdit(bx, by, bz)) return;
 
                             worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
                             consumeItem(selectedSlotRef.current);
@@ -295,6 +308,9 @@ export const InteractionController = ({
                 }
 
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
+
+                // Sealed regions are read-only for the player.
+                if (!canPlayerEdit(px, py, pz)) return;
 
                 // Only air, fluids, and replaceable plants may be overwritten. Flowers,
                 // torches and saplings are not replaceable, so placement is cancelled.
@@ -520,7 +536,11 @@ export const InteractionController = ({
             highlightMeshRef.current.visible = false;
         }
 
-        if (isLeftMouseDown.current && hit) {
+        if (isLeftMouseDown.current && hit && !worldManager.canEditBlock(hit.bx, hit.by, hit.bz)) {
+            // Sealed region: can't mine. Clear any in-progress break and notify (throttled by the App handler).
+            if (breakingRef.current) { breakingRef.current = null; setBreakingVisual(null); }
+            canPlayerEdit(hit.bx, hit.by, hit.bz);
+        } else if (isLeftMouseDown.current && hit) {
             const bx = hit.bx;
             const by = hit.by;
             const bz = hit.bz;
