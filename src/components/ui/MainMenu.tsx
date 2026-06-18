@@ -15,10 +15,14 @@ import {
 import { useSplashAnimation } from './mainMenu/useSplashAnimation';
 import { useWorldMenu } from './mainMenu/useWorldMenu';
 import { isEditableElement } from '../../utils/dom';
+import { WhatsNewModal } from './WhatsNewModal';
+import { getChangelogEntry } from '../../data/changelog';
+import { APP_VERSION } from '../../constants';
 
 const PANORAMA_DEBUG_HOTKEY = 'F5';
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 const TUTORIAL_PROMPTED_KEY = 'atlas.tutorial.prompted.v2';
+const CHANGELOG_SEEN_KEY = 'atlas.changelog.seenVersion.v1';
 const BUILD_CREDIT_URL = 'https://github.com/Lreddell/atlas';
 
 interface MainMenuProps {
@@ -82,6 +86,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const [panoramaSubmenu, setPanoramaSubmenu] = useState<PanoramaSubmenu>('manager');
     const [panoramaDebugFly, setPanoramaDebugFly] = useState(false);
     const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
+    const [showWhatsNew, setShowWhatsNew] = useState(false);
 
     const {
         worlds,
@@ -116,8 +121,20 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
         const hasSeenTutorialScreen = window.localStorage.getItem(TUTORIAL_SCREEN_SEEN_KEY) === 'true';
         const hasBeenPrompted = window.localStorage.getItem(TUTORIAL_PROMPTED_KEY) === 'true';
-        if (!hasSeenTutorialScreen && !hasBeenPrompted) {
+        const isFirstRun = !hasSeenTutorialScreen && !hasBeenPrompted;
+        if (isFirstRun) {
             setShowTutorialPrompt(true);
+        }
+
+        // "What's New" on update: only after a real version change. The first time
+        // we ever see this client (no stored version, or a brand-new player), record
+        // the current version silently so existing players aren't shown notes for an
+        // update they didn't actually go through. The tutorial prompt takes priority.
+        const seenVersion = window.localStorage.getItem(CHANGELOG_SEEN_KEY);
+        if (seenVersion === null) {
+            window.localStorage.setItem(CHANGELOG_SEEN_KEY, APP_VERSION);
+        } else if (!isFirstRun && seenVersion !== APP_VERSION && getChangelogEntry(APP_VERSION)) {
+            setShowWhatsNew(true);
         }
     }, []);
 
@@ -185,6 +202,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         markTutorialPrompted();
         setShowTutorialPrompt(false);
     }, [markTutorialPrompted]);
+
+    const handleOpenWhatsNew = useCallback(() => {
+        soundManager.play('ui.click');
+        setShowWhatsNew(true);
+    }, []);
+
+    const handleCloseWhatsNew = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(CHANGELOG_SEEN_KEY, APP_VERSION);
+        }
+        setShowWhatsNew(false);
+    }, []);
 
     const handleSelectWorld = useCallback((worldId: string) => {
         setSelectedWorldId(worldId);
@@ -308,6 +337,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onTutorial={() => onOptions({ openTutorial: true })}
                     onQuit={onQuit}
                     onBuildCreditClick={handleBuildCreditClick}
+                    onShowWhatsNew={handleOpenWhatsNew}
                 />
             )}
 
@@ -316,6 +346,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onAccept={handleTutorialPromptAccept}
                     onDecline={handleTutorialPromptDecline}
                 />
+            )}
+
+            {showWhatsNew && (
+                <WhatsNewModal initialVersion={APP_VERSION} onClose={handleCloseWhatsNew} />
             )}
         </div>
     );

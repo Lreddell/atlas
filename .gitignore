@@ -25,7 +25,8 @@ lerna-debug.log*
 *.local
 
 # Per-player data (panoramas, world presets, etc.)
-data/
+# Anchored to repo root so it does NOT also ignore source dirs like src/data/.
+/data/
 
 # OS junk
 .DS_Store
