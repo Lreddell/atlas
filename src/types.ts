@@ -217,9 +217,33 @@ export interface BlockDef {
   saturationModifier?: number; // Saturation restored = nutrition * modifier * 2
 }
 
+// Optional per-item-instance data. Absent on ordinary stackable commodities
+// (so existing behavior and saves are unchanged); present on items that carry
+// state such as durability or rolled stats. Serializes with the inventory.
+export interface ItemInstance {
+  durability?: number;
+  maxDurability?: number;
+  /** Stat overrides that take precedence over the static ITEM_STATS registry. */
+  stats?: ItemStats;
+  /** Freeform tags, e.g. build-archetype affinity ('mobility', 'relic'). */
+  tags?: string[];
+}
+
+export interface ItemStats {
+  /** Melee damage dealt to entities (half-hearts). */
+  attack?: number;
+  /** Incoming-damage reduction when equipped (future armor). */
+  defense?: number;
+  /** Equipment slot this item occupies, if any. */
+  slot?: EquipmentSlot;
+}
+
+export type EquipmentSlot = 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'accessory';
+
 export interface ItemStack {
   type: BlockType;
   count: number;
+  instance?: ItemInstance;
 }
 
 export interface Drop {

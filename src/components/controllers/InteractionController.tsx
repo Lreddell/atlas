@@ -5,6 +5,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { entityManager } from '../../systems/entities/EntityManager';
+import { getAttackDamage } from '../../systems/registry/itemStats';
 import { BLOCKS } from '../../data/blocks';
 import {
     type BreakingVisual,
@@ -425,12 +426,7 @@ export const InteractionController = ({
         camera.getWorldDirection(_camDir);
         const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
         if (!hit) return false;
-        const held = inventory[selectedSlot];
-        const def = held ? BLOCKS[held.type] : null;
-        let dmg = 1; // fist
-        if (def?.name?.includes('Sword')) dmg = 6;
-        else if (def?.name?.includes('Axe')) dmg = 5;
-        else if (def) dmg = 2;
+        const dmg = getAttackDamage(inventory[selectedSlot]);
         entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
         soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
