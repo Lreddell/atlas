@@ -236,6 +236,8 @@ export interface ItemStats {
   defense?: number;
   /** Equipment slot this item occupies, if any. */
   slot?: EquipmentSlot;
+  /** Max durability (uses) for tools/weapons; absent = unbreakable. */
+  maxDurability?: number;
 }
 
 export type EquipmentSlot = 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'accessory';
