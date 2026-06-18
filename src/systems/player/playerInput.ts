@@ -1,4 +1,6 @@
 
+import { gameEvents } from '../events/GameEvents';
+
 export interface PlayerInputState {
     forward: boolean;
     backward: boolean;
@@ -7,8 +9,10 @@ export interface PlayerInputState {
     jump: boolean;
     sneak: boolean;
     sprint: boolean;
-    sprintLatch: boolean; 
+    sprintLatch: boolean;
     flyToggleTrigger: boolean;
+    /** Player's chosen magnetic polarity (+1 / -1); only effective with polarity boots. */
+    magneticPolarity: number;
 }
 
 // Internal state for double-tap detection
@@ -26,7 +30,8 @@ export const inputState: PlayerInputState = {
     sneak: false,
     sprint: false,
     sprintLatch: false,
-    flyToggleTrigger: false
+    flyToggleTrigger: false,
+    magneticPolarity: 1
 };
 
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
@@ -80,12 +85,18 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             doubleTapSprintActive = false;
             inputState.sprintLatch = false; // Sneak cancels sprint
             break;
-        case 'ControlLeft': 
+        case 'ControlLeft':
         case 'ControlRight':
             if (e && e.repeat) break;
-            inputState.sprint = true; 
+            inputState.sprint = true;
             // If W is already held when CTRL is pressed, latch sprint
             if (inputState.forward) inputState.sprintLatch = true;
+            break;
+        case 'KeyR':
+            // Flip magnetic polarity (only has an effect while wearing polarity boots).
+            if (e && e.repeat) break;
+            inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
             break;
     }
 };
@@ -154,6 +165,7 @@ export const resetInputState = () => {
     inputState.sprint = false;
     inputState.sprintLatch = false;
     inputState.flyToggleTrigger = false;
+    inputState.magneticPolarity = 1;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;

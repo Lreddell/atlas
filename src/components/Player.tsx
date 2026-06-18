@@ -9,6 +9,7 @@ import {
     onKeyDown, onKeyUp, getMovementIntent, inputState
 } from '../systems/player/playerInput';
 import { simulateStep } from '../systems/player/playerMovement';
+import { applyMagneticForce, type MagneticMode } from '../systems/player/magnetism';
 import { 
     EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING, 
     FIXED_DT, MAX_SUBSTEPS, MAX_BREATH 
@@ -36,6 +37,7 @@ interface PlayerProps {
   foodStateRef: React.MutableRefObject<FoodState>;
   isDead: boolean;
     forcedFov?: number | null;
+  magneticMode?: MagneticMode;
 }
 
 export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3> }> = ({ playerPosRef }) => {
@@ -50,7 +52,7 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
 export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
     position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, 
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
-    isDead, forcedFov = null
+    isDead, forcedFov = null, magneticMode = 'none'
 }, ref) => {
   const { camera } = useThree();
   
@@ -323,6 +325,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         pos.current.copy(simRes.position);
         vel.current.copy(simRes.velocity);
         grounded.current = simRes.grounded;
+
+        // Magnetism (Phase 4): nudge velocity from nearby magnet blocks. Applied
+        // after integration (like the sprint-jump boost) so this tick's friction
+        // doesn't immediately cancel it; collision is resolved next substep.
+        if (magneticMode !== 'none' && !isFlying.current) {
+            applyMagneticForce(worldManager, pos.current, vel.current, magneticMode, inputState.magneticPolarity, FIXED_DT);
+        }
 
         const bx = Math.floor(pos.current.x);
         const by = Math.floor(pos.current.y);

@@ -14,10 +14,12 @@ import { InteractionController } from './components/controllers/InteractionContr
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
+import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
 import { getMaxDurability } from './systems/registry/itemStats';
-import { createEmptyEquipment, applyArmor, slotForItem, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { createEmptyEquipment, applyArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
@@ -532,6 +534,12 @@ const App: React.FC = () => {
           (amount) => damagePlayer(amount),
       );
   }, [damagePlayer]);
+
+  // Magnetic susceptibility from equipment: polarity boots grant control,
+  // otherwise iron armor makes the player passively ferromagnetic.
+  const magneticMode: MagneticMode = hasPolarityBoots(equipment)
+      ? 'controlled'
+      : (isWearingIronArmor(equipment) ? 'ferro' : 'none');
 
   const saveGame = useCallback(async () => {
       if (!activeWorldIdRef.current) return;
@@ -2452,6 +2460,7 @@ const App: React.FC = () => {
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
                     {!showDeathScreen && <BossBar />}
+                    {!showDeathScreen && magneticMode === 'controlled' && <PolarityIndicator />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
                     <Chat 
@@ -2519,6 +2528,7 @@ const App: React.FC = () => {
                             }} 
                             onTakeDamage={damagePlayer}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
+                            magneticMode={magneticMode}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} />
                     </>
