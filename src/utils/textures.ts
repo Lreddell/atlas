@@ -10,6 +10,11 @@ import {
     drawWoodFamilyTiles,
 } from './atlasTileFamilies';
 import { openAtlasDebugWindow } from './textureAtlasDebug';
+import {
+    paintPixelTile,
+    PR19_TEXTURE_ASSETS,
+    PR19_TEXTURE_TILES,
+} from '../systems/textures/pr19TexturePixels';
 
 // Constants for UV mapping
 export const ATLAS_RAW_TILE_SIZE = 16;
@@ -760,54 +765,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#3949ab'; [[6,6],[7,7],[8,6]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
     });
 
-    const drawMagnetTile = (core: string, inner: string, glow: string) => {
-        fill('#1f232a');
-        ctx.fillStyle = '#2f363f'; ctx.fillRect(1, 1, 14, 14);
-        ctx.fillStyle = '#5b656f'; ctx.fillRect(2, 2, 12, 12);
-        ctx.fillStyle = '#2a3039'; ctx.fillRect(3, 3, 10, 10);
-        ctx.fillStyle = core; ctx.fillRect(4, 4, 8, 8);
-        ctx.fillStyle = inner; ctx.fillRect(5, 5, 6, 6);
-        ctx.fillStyle = core; ctx.fillRect(6, 6, 4, 4);
-        ctx.fillStyle = glow; ctx.fillRect(4, 4, 1, 1); ctx.fillRect(6, 6, 2, 1);
-        ctx.fillStyle = '#dae1e4';
-        [[2,2],[13,2],[2,13],[13,13]].forEach(([px, py]) => drawPixel(px, py));
-    };
-    withTile(149, () => drawMagnetTile('#cd3033', '#491c1e', '#ff9d80'));
-    withTile(150, () => drawMagnetTile('#266bbe', '#193452', '#75dcff'));
-
-    const drawIron = (pixels: number[][], shadePixels: number[][], highlightPixels: number[][]) => {
-        ctx.fillStyle = '#1f232a';
-        pixels.forEach(([px, py]) => drawPixel(px, py));
-        ctx.fillStyle = '#919ba4';
-        shadePixels.forEach(([px, py]) => drawPixel(px, py));
-        ctx.fillStyle = '#dae1e4';
-        highlightPixels.forEach(([px, py]) => drawPixel(px, py));
-    };
-    withTile(151, () => drawIron(
-        [[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[4,4],[11,4],[3,5],[12,5],[3,6],[12,6],[3,7],[4,7],[5,7],[6,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],[3,8],[6,8],[9,8],[12,8],[3,9],[6,9],[9,9],[12,9],[3,10],[6,10],[9,10],[12,10],[3,11],[4,11],[5,11],[6,11],[9,11],[10,11],[11,11],[12,11]],
-        [[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[11,5],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[11,6],[4,8],[5,8],[10,8],[11,8],[4,9],[5,9],[10,9],[11,9],[4,10],[5,10],[10,10],[11,10]],
-        [[5,4],[6,4],[5,5],[10,5]],
-    ));
-    withTile(152, () => drawIron(
-        [[6,2],[7,2],[8,2],[9,2],[4,3],[5,3],[6,3],[9,3],[10,3],[11,3],[3,4],[12,4],[2,5],[13,5],[2,6],[13,6],[3,7],[4,7],[11,7],[12,7],[4,8],[11,8],[4,9],[11,9],[4,10],[11,10],[4,11],[11,11],[4,12],[5,12],[6,12],[7,12],[8,12],[9,12],[10,12],[11,12]],
-        [[5,4],[6,4],[9,4],[10,4],[4,5],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[11,5],[3,6],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[11,6],[12,6],[5,7],[6,7],[7,7],[8,7],[9,7],[10,7],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[5,9],[6,9],[7,9],[8,9],[9,9],[10,9],[5,10],[6,10],[7,10],[8,10],[9,10],[10,10],[5,11],[6,11],[7,11],[8,11],[9,11],[10,11]],
-        [[5,4],[6,3],[5,5],[5,6],[10,4]],
-    ));
-    withTile(153, () => drawIron(
-        [[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[4,4],[11,4],[4,5],[11,5],[4,6],[11,6],[3,7],[6,7],[7,7],[8,7],[9,7],[12,7],[3,8],[6,8],[9,8],[12,8],[3,9],[6,9],[9,9],[12,9],[3,10],[6,10],[9,10],[12,10],[3,11],[6,11],[9,11],[12,11],[3,12],[4,12],[5,12],[6,12],[9,12],[10,12],[11,12],[12,12]],
-        [[5,4],[6,4],[7,4],[8,4],[9,4],[10,4],[5,5],[6,5],[7,5],[8,5],[9,5],[10,5],[5,6],[6,6],[7,6],[8,6],[9,6],[10,6],[4,7],[5,7],[10,7],[11,7],[4,8],[5,8],[10,8],[11,8],[4,9],[5,9],[10,9],[11,9],[4,10],[5,10],[10,10],[11,10],[4,11],[5,11],[10,11],[11,11]],
-        [[5,4],[6,4],[5,7],[10,7]],
-    ));
-    const drawBoots = (left: string, right: string) => {
-        ctx.fillStyle = '#1f232a';
-        ctx.fillRect(3, 4, 4, 7); ctx.fillRect(2, 9, 5, 4);
-        ctx.fillRect(9, 4, 4, 9); ctx.fillRect(9, 9, 6, 4);
-        ctx.fillStyle = left; ctx.fillRect(4, 5, 2, 5); ctx.fillRect(3, 9, 3, 3);
-        ctx.fillStyle = right; ctx.fillRect(10, 5, 2, 6); ctx.fillRect(10, 10, 4, 2);
-        ctx.fillStyle = '#dae1e4'; ctx.fillRect(4, 5, 1, 1); ctx.fillRect(10, 5, 1, 1);
-    };
-    withTile(154, () => drawBoots('#919ba4', '#79848e'));
-    withTile(155, () => drawBoots('#c22c36', '#236ac2'));
+    PR19_TEXTURE_ASSETS.forEach(({ slot }) => {
+        withTile(slot, () => paintPixelTile(ctx, PR19_TEXTURE_TILES[slot]));
+    });
 
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
