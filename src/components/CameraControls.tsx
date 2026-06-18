@@ -2,6 +2,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { consumeMobileLook } from '../systems/player/mobileInput';
+
+// Camera rotation (radians) per CSS pixel of touch drag — tuned for phones.
+const TOUCH_LOOK_SENSITIVITY = 0.0042;
 
 export interface CameraControlsHandle {
     lock: () => void;
@@ -107,8 +111,22 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
         };
     }, [camera, onLock, onUnlock, disableMouseLook]);
     
-    // Per-frame sanity check for camera
+    // Reused scratch for the per-frame mobile look delta (no allocation in the loop).
+    const lookScratch = useRef({ dx: 0, dy: 0 });
+
+    // Per-frame: apply touch look (mobile) + camera sanity check.
     useFrame(() => {
+        if (!disableMouseLook) {
+            const look = lookScratch.current;
+            consumeMobileLook(look);
+            if (look.dx !== 0 || look.dy !== 0) {
+                camera.rotation.order = 'YXZ';
+                camera.rotation.y -= look.dx * TOUCH_LOOK_SENSITIVITY;
+                camera.rotation.x -= look.dy * TOUCH_LOOK_SENSITIVITY;
+                camera.rotation.x = Math.max(-1.55, Math.min(1.55, camera.rotation.x));
+            }
+        }
+
         if (!Number.isFinite(camera.position.x) || !Number.isFinite(camera.position.y) || !Number.isFinite(camera.position.z)) {
             console.error("Camera position NaN detected, resetting.");
             camera.position.set(0, 100, 0);

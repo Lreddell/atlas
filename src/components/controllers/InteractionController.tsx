@@ -24,6 +24,8 @@ import { getLunarNightEventState } from '../../systems/world/celestialEvents';
 import { isSaplingType, isValidSoil } from '../../systems/world/trees';
 import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../systems/world/blockProps';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
+import { mobileInput } from '../../systems/player/mobileInput';
+import { isMobileDevice } from '../../utils/device';
 import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, SLAB_DOUBLE, isShaped, isSlab, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 
@@ -416,8 +418,13 @@ export const InteractionController = ({
     }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
 
     useEffect(() => {
-        const onDown = (e: MouseEvent) => { 
-            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return; 
+        // On touch devices the on-screen buttons drive break/use via mobileInput; do
+        // not bind mouse listeners, so synthetic compatibility mouse events from taps
+        // can't trigger phantom mining/placing.
+        if (isMobileDevice()) return;
+
+        const onDown = (e: MouseEvent) => {
+            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
@@ -494,7 +501,8 @@ export const InteractionController = ({
             highlightMeshRef.current.visible = false;
         }
 
-        if (isLeftMouseDown.current && hit) {
+        // Mobile break button maps onto the same hold-to-mine path as left mouse.
+        if ((isLeftMouseDown.current || mobileInput.attack) && hit) {
             const bx = hit.bx;
             const by = hit.by;
             const bz = hit.bz;
@@ -643,10 +651,18 @@ export const InteractionController = ({
             setBreakingVisual(null);
         }
 
-        if (isRightMouseDown.current) {
+        // Mobile use button: a tap is one discrete use (place first block / open a
+        // container), exactly like a single right-click; holding is handled below.
+        if (mobileInput.useTriggered) {
+            mobileInput.useTriggered = false;
+            performInteraction(false);
+        }
+
+        // Right mouse (desktop) or held mobile use button: continuous place / eat.
+        if (isRightMouseDown.current || mobileInput.use) {
             const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
             const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
-            
+
             if (heldItem && heldItemDef && heldItemDef.category === 'food') {
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
                 
@@ -658,7 +674,8 @@ export const InteractionController = ({
                             eatFood(foodStateRef.current, def.nutrition, def.saturationModifier || 0.6);
                             consumeItem(selectedSlotRef.current);
                             eatingTimer.current = 0;
-                            isRightMouseDown.current = false; 
+                            isRightMouseDown.current = false;
+                            mobileInput.use = false; // require a re-tap to eat again (mobile)
                             soundManager.play("entity.item.pickup"); // Use generic burp/pickup sound for eating for now
                         }
                     }

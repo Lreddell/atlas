@@ -13,6 +13,7 @@ import {
 } from '../../types';
 import { Slot } from './Slot';
 import { worldManager } from '../../systems/WorldManager';
+import { isMobileDevice } from '../../utils/device';
 import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
 
@@ -448,11 +449,14 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         (dragDist.remainder > 0 ? { ...startDragStack, count: dragDist.remainder } : null) 
         : cursorStack;
 
+    // Mobile: the inventory panel is desktop-sized; let it scroll both axes so the
+    // close button and all slots are reachable (desktop layout is unchanged).
+    const mobile = isMobileDevice();
     return (
-        <div 
-            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm" 
+        <div
+            className={`absolute inset-0 bg-black/70 z-50 flex justify-center backdrop-blur-sm ${mobile ? 'items-start overflow-auto py-6' : 'items-center'}`}
             onMouseMove={handleMouseMove}
-            onClick={handleBackdropClick} 
+            onClick={handleBackdropClick}
             onMouseDown={(e) => { if(e.button !== 0 && !isDragging) e.stopPropagation(); }}
             onMouseUp={handleMouseUp}
             onWheel={stopPropagation}

@@ -13,6 +13,8 @@ import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
+import { MobileControls } from './components/ui/MobileControls';
+import { RotateHint } from './components/ui/RotateHint';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -33,6 +35,7 @@ import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
 import { isEditableElement } from './utils/dom';
+import { isMobileDevice, requestFullscreen, exitFullscreen, isFullscreen } from './utils/device';
 
 import { worldManager } from './systems/WorldManager';
 import { WorldStorage } from './systems/world/WorldStorage';
@@ -392,6 +395,9 @@ const App: React.FC = () => {
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
     }, []);
+
+    // Touch/mobile devices use the on-screen controls instead of pointer lock.
+    const isMobile = useMemo(() => isMobileDevice(), []);
 
   const unlockBrowserShortcuts = useCallback(() => {
       if (isElectron) return;
@@ -833,6 +839,9 @@ const App: React.FC = () => {
 
   const requestPointerLockBurst = useCallback((reason: string, opts?: { force?: boolean }) => {
       void reason;
+      // Mobile has no pointer lock; the isLocked state is driven by the gameplay-state
+      // effect below instead. Skip all pointer-lock requests/retries here.
+      if (isMobile) return;
       clearPointerLockRetryTimers();
       const tryLock = () => {
           if (!opts?.force && !wantsGameplayRef.current) return;
@@ -843,7 +852,7 @@ const App: React.FC = () => {
       if (typeof queueMicrotask === 'function') { queueMicrotask(tryLock); queueMicrotask(tryLock); }
       const retryDelays = [32, 96, 180, 320];
       pointerLockRetryTimersRef.current = retryDelays.map((delay) => window.setTimeout(tryLock, delay));
-  }, [requestPointerLockNow, clearPointerLockRetryTimers]);
+  }, [requestPointerLockNow, clearPointerLockRetryTimers, isMobile]);
 
   const exitPointerLockNow = useCallback(() => document.exitPointerLock(), []);
   const enterUIMode = useCallback(() => {
@@ -989,11 +998,18 @@ const App: React.FC = () => {
   }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
 
   const openInventory = useCallback(() => {
-    soundManager.play("ui.open"); 
+    soundManager.play("ui.open");
     if (gameMode === 'creative') setOpenContainer({ type: 'creative' }); else setOpenContainer({ type: 'inventory' });
-    isInventoryOpenRef.current = true; 
+    isInventoryOpenRef.current = true;
     enterUIMode();
   }, [gameMode, enterUIMode, setOpenContainer]);
+
+  // Mobile-only entry points for the touch controls (no Escape / E keys on a phone).
+  const mobilePause = useCallback(() => { soundManager.resume(); setIsPaused(true); }, []);
+  const mobileToggleInventory = useCallback(() => {
+    if (openContainer) closeInventory();
+    else if (!isDead && gameMode !== 'spectator') openInventory();
+  }, [openContainer, closeInventory, openInventory, isDead, gameMode]);
 
   const logMsg = useCallback((text: string, type: 'info' | 'error' | 'success' = 'info', clickAction?: string) => { 
       setMessages(prev => [...prev.slice(-19), { id: Date.now() + Math.random(), text: text, type, timestamp: Date.now(), clickAction }]);
@@ -2092,6 +2108,40 @@ const App: React.FC = () => {
       requestPointerLockBurst('gameplay-auto', { force: true });
   }, [appState, isLocked, isPaused, openContainer, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, requestPointerLockBurst]);
 
+  // Mobile: there is no pointer lock to gate gameplay, so derive isLocked directly
+  // from the same conditions desktop pointer-lock would imply. This activates the
+  // player controller, interaction loop and touch look exactly when actively playing.
+  useEffect(() => {
+      if (!isMobile) return;
+      const playing = appState === 'game' && !isPaused && !openContainer && !showCommandInput
+          && !isDead && !isSleeping && !showDeathScreen && !showAtlasViewer && !isCapturingPanorama;
+      setIsLocked(playing);
+  }, [isMobile, appState, isPaused, openContainer, showCommandInput, isDead, isSleeping, showDeathScreen, showAtlasViewer, isCapturingPanorama]);
+
+  // Mobile: enter fullscreen on the first user gesture so Chrome/Safari hide the URL
+  // bar and the canvas/UI use the whole screen (gesture-gated by the Fullscreen API).
+  useEffect(() => {
+      if (!isMobile) return;
+      const onFirstTap = () => requestFullscreen();
+      window.addEventListener('pointerdown', onFirstTap, { once: true });
+      return () => window.removeEventListener('pointerdown', onFirstTap);
+  }, [isMobile]);
+
+  // Mobile: make the hardware back button pause + leave fullscreen instead of
+  // unloading the page. A history entry is pushed while in-game and re-armed on each
+  // back press, so the page stays put and "back" reads as "exit to the pause menu".
+  useEffect(() => {
+      if (!isMobile || appState !== 'game') return;
+      history.pushState({ atlasGame: true }, '');
+      const onPop = () => {
+          if (isFullscreen()) exitFullscreen();
+          setIsPaused(true);
+          history.pushState({ atlasGame: true }, ''); // re-arm for the next back press
+      };
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+  }, [isMobile, appState]);
+
   const quitApp = useCallback(() => {
     if (isElectron) {
       window.close();
@@ -2278,7 +2328,12 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
+                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} onSelectSlot={isMobile ? setSelectedSlot : undefined} />}
+
+                    {/* Touch controls — only on mobile, only while actively playing. */}
+                    {isMobile && !isPaused && !openContainer && !showCommandInput && !isDead && !isSleeping && !showDeathScreen && !showAtlasViewer && !isCapturingPanorama && (
+                        <MobileControls gameMode={gameMode} onPause={mobilePause} onToggleInventory={mobileToggleInventory} />
+                    )}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
                     <Chat 
@@ -2374,6 +2429,7 @@ const App: React.FC = () => {
             )}
           </>
       )}
+      {isMobile && appState === 'game' && <RotateHint />}
       <Analytics />
     </div>
   );
