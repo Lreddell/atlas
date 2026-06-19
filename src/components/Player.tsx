@@ -11,8 +11,9 @@ import {
 import { simulateStep } from '../systems/player/playerMovement';
 import { applyMagneticForce, type MagneticMode } from '../systems/player/magnetism';
 import { 
-    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING, 
-    FIXED_DT, MAX_SUBSTEPS, MAX_BREATH 
+    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
+    FIXED_DT, MAX_SUBSTEPS, MAX_BREATH,
+    PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK,
 } from '../systems/player/playerConstants';
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
@@ -336,7 +337,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         // after integration (like the sprint-jump boost) so this tick's friction
         // doesn't immediately cancel it; collision is resolved next substep.
         if (magneticMode !== 'none' && !isFlying.current) {
-            applyMagneticForce(worldManager, pos.current, vel.current, magneticMode, inputState.magneticPolarity, FIXED_DT);
+            applyMagneticForce(
+                worldManager,
+                pos.current,
+                vel.current,
+                magneticMode,
+                inputState.magneticPolarity,
+                FIXED_DT,
+                intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
+            );
         }
 
         const bx = Math.floor(pos.current.x);

@@ -21,6 +21,10 @@ const MAGNETIC_METAL_ITEMS = new Set<BlockType>([
     BlockType.COPPER_SHOVEL,
     BlockType.COPPER_SWORD,
     BlockType.COPPER_HOE,
+    BlockType.COPPER_HELMET,
+    BlockType.COPPER_CHESTPLATE,
+    BlockType.COPPER_LEGGINGS,
+    BlockType.COPPER_BOOTS,
 
     BlockType.RAW_GOLD,
     BlockType.GOLD_INGOT,
@@ -29,6 +33,10 @@ const MAGNETIC_METAL_ITEMS = new Set<BlockType>([
     BlockType.GOLD_SHOVEL,
     BlockType.GOLD_SWORD,
     BlockType.GOLD_HOE,
+    BlockType.GOLD_HELMET,
+    BlockType.GOLD_CHESTPLATE,
+    BlockType.GOLD_LEGGINGS,
+    BlockType.GOLD_BOOTS,
 
     BlockType.POSITIVE_MAGNET,
     BlockType.NEGATIVE_MAGNET,

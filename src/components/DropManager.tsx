@@ -378,7 +378,12 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                             drop.position[1],
                             drop.position[2],
                         );
-                        applyMagneticFieldToVelocity(drop.velocity, field, dt);
+                        applyMagneticFieldToVelocity(
+                            drop.velocity,
+                            field,
+                            dt,
+                            drop.type === BlockType.NEGATIVE_MAGNET ? -1 : 1,
+                        );
                     }
                 }
 

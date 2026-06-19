@@ -5,11 +5,13 @@ import {
     MAGNET_FORCE,
     MAGNET_MAX_SPEED,
     MAGNET_RANGE,
+    getClosestPointOnAabb,
     getDirectionalAxis,
     getDirectionalMultiplier,
     getMagneticResponseSign,
     getMagnetPolarity as getPolarityForBlockIds,
 } from './magneticField';
+import { PLAYER_HEIGHT, PLAYER_WIDTH } from './playerConstants';
 
 // Magnetism (Phase 4). Magnet blocks emit a field; a magnetically-susceptible
 // player is pushed/pulled each tick. Susceptibility comes from equipment:
@@ -29,6 +31,10 @@ export function getMagnetPolarity(type: BlockType): 1 | -1 | 0 {
 const _acc = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _axis = { x: 0, y: 0, z: 0 };
+const _magnetCenter = { x: 0, y: 0, z: 0 };
+const _bodyMin = { x: 0, y: 0, z: 0 };
+const _bodyMax = { x: 0, y: 0, z: 0 };
+const _bodySample = { x: 0, y: 0, z: 0 };
 
 /**
  * Apply magnetic acceleration to the player's velocity for this tick. Mutates
@@ -41,30 +47,43 @@ export function applyMagneticForce(
     mode: MagneticMode,
     playerPolarity: number,
     dt: number,
+    bodyHeight = PLAYER_HEIGHT,
 ): void {
     if (mode === 'none') return;
 
     _acc.set(0, 0, 0);
-    const cx = Math.floor(pos.x);
-    const cy = Math.floor(pos.y);
-    const cz = Math.floor(pos.z);
-    // Sample around the player's torso so vertical pulls feel centered.
-    const ox = pos.x;
-    const oy = pos.y + 0.9;
-    const oz = pos.z;
+    const halfWidth = PLAYER_WIDTH * 0.5;
+    _bodyMin.x = pos.x - halfWidth;
+    _bodyMin.y = pos.y;
+    _bodyMin.z = pos.z - halfWidth;
+    _bodyMax.x = pos.x + halfWidth;
+    _bodyMax.y = pos.y + bodyHeight;
+    _bodyMax.z = pos.z + halfWidth;
+
+    const minX = Math.floor(_bodyMin.x - MAGNET_RANGE);
+    const maxX = Math.floor(_bodyMax.x + MAGNET_RANGE);
+    const minY = Math.floor(_bodyMin.y - MAGNET_RANGE);
+    const maxY = Math.floor(_bodyMax.y + MAGNET_RANGE);
+    const minZ = Math.floor(_bodyMin.z - MAGNET_RANGE);
+    const maxZ = Math.floor(_bodyMax.z + MAGNET_RANGE);
     const getBlock = (x: number, y: number, z: number) => wm.getBlock(x, y, z, false);
 
     let found = false;
-    for (let dx = -MAGNET_RANGE; dx <= MAGNET_RANGE; dx++) {
-        for (let dy = -MAGNET_RANGE; dy <= MAGNET_RANGE; dy++) {
-            for (let dz = -MAGNET_RANGE; dz <= MAGNET_RANGE; dz++) {
-                const polarity = getMagnetPolarity(wm.getBlock(cx + dx, cy + dy, cz + dz, false));
+    for (let magnetX = minX; magnetX <= maxX; magnetX++) {
+        for (let magnetY = minY; magnetY <= maxY; magnetY++) {
+            for (let magnetZ = minZ; magnetZ <= maxZ; magnetZ++) {
+                const polarity = getMagnetPolarity(wm.getBlock(magnetX, magnetY, magnetZ, false));
                 if (polarity === 0) continue;
 
-                const magnetX = cx + dx;
-                const magnetY = cy + dy;
-                const magnetZ = cz + dz;
-                _dir.set(ox - (magnetX + 0.5), oy - (magnetY + 0.5), oz - (magnetZ + 0.5));
+                _magnetCenter.x = magnetX + 0.5;
+                _magnetCenter.y = magnetY + 0.5;
+                _magnetCenter.z = magnetZ + 0.5;
+                getClosestPointOnAabb(_magnetCenter, _bodyMin, _bodyMax, _bodySample);
+                _dir.set(
+                    _bodySample.x - _magnetCenter.x,
+                    _bodySample.y - _magnetCenter.y,
+                    _bodySample.z - _magnetCenter.z,
+                );
                 const dist = _dir.length();
                 if (dist < 0.001 || dist > MAGNET_RANGE) continue;
 
