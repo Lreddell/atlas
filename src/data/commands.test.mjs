@@ -31,6 +31,9 @@ test('suggests commands and their known arguments', () => {
 
     assert.deepEqual(complete('/reg', options), ['/region']);
     assert.deepEqual(complete('/boss ', options), ['spawn', 'kill']);
+    assert.deepEqual(complete('/magf', options), ['/magfields']);
+    assert.deepEqual(complete('/magfields ', options), ['on', 'off', 'toggle']);
+    assert.deepEqual(complete('/magfields t', options), ['toggle']);
     assert.deepEqual(complete('/cleanse v', options), ['volcanic']);
     assert.deepEqual(complete('/giveitem i', options), ['iron_boots']);
     assert.deepEqual(complete('/equip i', options), ['iron_boots']);

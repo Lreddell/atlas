@@ -1,4 +1,4 @@
-export type Pr19TextureSlot = 149 | 150 | 151 | 152 | 153 | 154 | 155;
+export type Pr19TextureSlot = 149 | 150 | 151 | 152 | 153 | 154 | 155 | 156;
 
 type PixelRect = readonly [x: number, y: number, width?: number, height?: number];
 
@@ -22,6 +22,7 @@ export const PR19_TEXTURE_ASSETS: ReadonlyArray<{
     { slot: 153, path: 'items/iron_leggings.png' },
     { slot: 154, path: 'items/iron_boots.png' },
     { slot: 155, path: 'items/polarity_boots.png' },
+    { slot: 156, path: 'blocks/iron_block.png' },
 ];
 
 const IRON_SHADOW = '#9e9e9e';
@@ -126,6 +127,35 @@ export const PR19_TEXTURE_TILES: Record<Pr19TextureSlot, PixelTileDefinition> = 
             { color: '#1e88e5', rects: [[10, 5, 2, 5], [10, 10, 4, 2]] },
             { color: '#ef9a9a', rects: [[4, 5, 1, 3]] },
             { color: '#90caf9', rects: [[10, 5, 1, 3]] },
+        ],
+    },
+    156: {
+        layers: [
+            { color: '#757575', rects: [[0, 0, 16, 16]] },
+            { color: IRON_SHADOW, rects: [[1, 1, 14, 14]] },
+            {
+                color: IRON_MID,
+                rects: [
+                    [2, 2, 12, 12],
+                    [1, 4, 1, 8], [14, 4, 1, 8],
+                    [4, 1, 8, 1], [4, 14, 8, 1],
+                ],
+            },
+            {
+                color: IRON_LIGHT,
+                rects: [
+                    [3, 3, 8, 1], [3, 3, 1, 8],
+                    [5, 5, 5, 1], [5, 5, 1, 5],
+                    [12, 2, 2, 2], [2, 12, 2, 2],
+                ],
+            },
+            {
+                color: IRON_SHADOW,
+                rects: [
+                    [4, 12, 8, 1], [12, 4, 1, 8],
+                    [6, 10, 5, 1], [10, 6, 1, 5],
+                ],
+            },
         ],
     },
 };

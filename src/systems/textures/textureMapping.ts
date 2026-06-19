@@ -55,4 +55,5 @@ export const TEXTURE_PATHS: Record<number, string> = {
     153: 'items/iron_leggings.png',
     154: 'items/iron_boots.png',
     155: 'items/polarity_boots.png',
+    156: 'blocks/iron_block.png',
 };
