@@ -19,11 +19,10 @@ interface MagneticFieldDebugProps {
 const GRID_RADIUS = MAGNET_RANGE;
 const SOURCE_SCAN_RADIUS = GRID_RADIUS + MAGNET_RANGE;
 const RECHECK_INTERVAL = 0.25;
-const MIN_FIELD_MAGNITUDE = 0.2;
+const MIN_FIELD_MAGNITUDE = 0.15;
 const GRID_DIAMETER = GRID_RADIUS * 2 + 1;
-const MAX_ARROW_VERTICES = GRID_DIAMETER * GRID_DIAMETER * GRID_DIAMETER * 10;
-const POSITIVE_COLOR = new THREE.Color(0xff4a4a);
-const NEGATIVE_COLOR = new THREE.Color(0x4a8cff);
+const MAX_ARROWS = GRID_DIAMETER * GRID_DIAMETER * GRID_DIAMETER;
+const UP = new THREE.Vector3(0, 1, 0);
 
 const BLOCK_IDS = {
     positiveMagnet: BlockType.POSITIVE_MAGNET,
@@ -42,65 +41,60 @@ const createSourceSignature = (sources: readonly MagnetSource[]): string =>
         source.axis?.z ?? 0,
     ].join(':')).join('|');
 
-const appendVertex = (
-    positions: number[],
-    colors: number[],
-    point: THREE.Vector3,
-    color: THREE.Color,
-): void => {
-    positions.push(point.x, point.y, point.z);
-    colors.push(color.r, color.g, color.b);
-};
-
-const appendSegment = (
-    positions: number[],
-    colors: number[],
-    start: THREE.Vector3,
-    end: THREE.Vector3,
-    color: THREE.Color,
-): void => {
-    appendVertex(positions, colors, start, color);
-    appendVertex(positions, colors, end, color);
-};
-
 export const MagneticFieldDebug: React.FC<MagneticFieldDebugProps> = ({ playerPosRef }) => {
+    const positiveShaftRef = useRef<THREE.InstancedMesh>(null);
+    const positiveHeadRef = useRef<THREE.InstancedMesh>(null);
+    const negativeShaftRef = useRef<THREE.InstancedMesh>(null);
+    const negativeHeadRef = useRef<THREE.InstancedMesh>(null);
     const elapsedRef = useRef(RECHECK_INTERVAL);
     const lastCenterRef = useRef('');
     const lastSourceSignatureRef = useRef('');
-    const geometries = useMemo(() => [0, 1, 2].map(() => {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute(
-            'position',
-            new THREE.BufferAttribute(new Float32Array(MAX_ARROW_VERTICES * 3), 3),
-        );
-        geometry.setAttribute(
-            'color',
-            new THREE.BufferAttribute(new Float32Array(MAX_ARROW_VERTICES * 3), 3),
-        );
-        geometry.setDrawRange(0, 0);
-        return geometry;
-    }), []);
-    const materials = useMemo(
-        () => [0.35, 0.6, 0.9].map(opacity => new THREE.LineBasicMaterial({
-            vertexColors: true,
-            transparent: true,
-            opacity,
-            depthTest: false,
-            depthWrite: false,
-            toneMapped: false,
-        })),
-        [],
-    );
 
-    useEffect(() => () => {
-        geometries.forEach(geometry => geometry.dispose());
-        materials.forEach(material => material.dispose());
-    }, [geometries, materials]);
+    const shaftGeometry = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 8, 1, false), []);
+    const headGeometry = useMemo(() => new THREE.ConeGeometry(1, 1, 8, 1, false), []);
+    const positiveMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+        color: 0xff2020,
+        transparent: true,
+        opacity: 0.96,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+    }), []);
+    const negativeMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+        color: 0x00b8ff,
+        transparent: true,
+        opacity: 0.96,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+    }), []);
+
+    useEffect(() => {
+        [
+            positiveShaftRef.current,
+            positiveHeadRef.current,
+            negativeShaftRef.current,
+            negativeHeadRef.current,
+        ].forEach(mesh => mesh?.instanceMatrix.setUsage(THREE.DynamicDrawUsage));
+
+        return () => {
+            shaftGeometry.dispose();
+            headGeometry.dispose();
+            positiveMaterial.dispose();
+            negativeMaterial.dispose();
+        };
+    }, [headGeometry, negativeMaterial, positiveMaterial, shaftGeometry]);
 
     useFrame((_state, delta) => {
         elapsedRef.current += delta;
         if (elapsedRef.current < RECHECK_INTERVAL) return;
         elapsedRef.current = 0;
+
+        const positiveShaft = positiveShaftRef.current;
+        const positiveHead = positiveHeadRef.current;
+        const negativeShaft = negativeShaftRef.current;
+        const negativeHead = negativeHeadRef.current;
+        if (!positiveShaft || !positiveHead || !negativeShaft || !negativeHead) return;
 
         const centerX = Math.floor(playerPosRef.current.x);
         const centerY = Math.floor(playerPosRef.current.y);
@@ -127,16 +121,14 @@ export const MagneticFieldDebug: React.FC<MagneticFieldDebugProps> = ({ playerPo
         lastCenterRef.current = centerKey;
         lastSourceSignatureRef.current = sourceSignature;
 
-        const positions = [[], [], []] as number[][];
-        const colors = [[], [], []] as number[][];
+        let positiveCount = 0;
+        let negativeCount = 0;
         const origin = new THREE.Vector3();
         const direction = new THREE.Vector3();
-        const tip = new THREE.Vector3();
-        const headBase = new THREE.Vector3();
-        const side = new THREE.Vector3();
-        const vertical = new THREE.Vector3();
-        const wing = new THREE.Vector3();
-        const reference = new THREE.Vector3();
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        const matrix = new THREE.Matrix4();
 
         for (let x = centerX - GRID_RADIUS; x <= centerX + GRID_RADIUS; x += 1) {
             for (let y = centerY - GRID_RADIUS; y <= centerY + GRID_RADIUS; y += 1) {
@@ -147,56 +139,68 @@ export const MagneticFieldDebug: React.FC<MagneticFieldDebugProps> = ({ playerPo
                     if (magnitude < MIN_FIELD_MAGNITUDE) continue;
 
                     direction.set(field.x, field.y, field.z).multiplyScalar(1 / magnitude);
-                    const normalizedMagnitude = Math.min(1, magnitude / MAGNET_FORCE);
-                    const bucket = normalizedMagnitude < 0.2 ? 0 : normalizedMagnitude < 0.55 ? 1 : 2;
-                    const length = 0.18 + Math.min(0.7, Math.log1p(magnitude) * 0.13);
-                    const headLength = Math.min(0.22, length * 0.35);
-                    const headWidth = headLength * 0.45;
-                    const color = field.positiveStrength >= field.negativeStrength
-                        ? POSITIVE_COLOR
-                        : NEGATIVE_COLOR;
+                    quaternion.setFromUnitVectors(UP, direction);
 
-                    tip.copy(origin).addScaledVector(direction, length);
-                    headBase.copy(tip).addScaledVector(direction, -headLength);
-                    reference.set(0, Math.abs(direction.y) < 0.9 ? 1 : 0, Math.abs(direction.y) < 0.9 ? 0 : 1);
-                    side.crossVectors(direction, reference).normalize();
-                    vertical.crossVectors(direction, side).normalize();
+                    const normalizedMagnitude = Math.min(1, magnitude / (MAGNET_FORCE * 2));
+                    const totalLength = 0.42 + normalizedMagnitude * 0.95;
+                    const headLength = 0.2 + normalizedMagnitude * 0.16;
+                    const shaftLength = Math.max(0.16, totalLength - headLength);
+                    const shaftRadius = 0.035 + normalizedMagnitude * 0.025;
+                    const headRadius = 0.12 + normalizedMagnitude * 0.07;
+                    const positiveDominant = field.positiveStrength >= field.negativeStrength;
+                    const instanceIndex = positiveDominant ? positiveCount++ : negativeCount++;
+                    const shaftMesh = positiveDominant ? positiveShaft : negativeShaft;
+                    const headMesh = positiveDominant ? positiveHead : negativeHead;
 
-                    appendSegment(positions[bucket], colors[bucket], origin, tip, color);
-                    wing.copy(headBase).addScaledVector(side, headWidth);
-                    appendSegment(positions[bucket], colors[bucket], tip, wing, color);
-                    wing.copy(headBase).addScaledVector(side, -headWidth);
-                    appendSegment(positions[bucket], colors[bucket], tip, wing, color);
-                    wing.copy(headBase).addScaledVector(vertical, headWidth);
-                    appendSegment(positions[bucket], colors[bucket], tip, wing, color);
-                    wing.copy(headBase).addScaledVector(vertical, -headWidth);
-                    appendSegment(positions[bucket], colors[bucket], tip, wing, color);
+                    position.copy(origin).addScaledVector(direction, shaftLength * 0.5);
+                    scale.set(shaftRadius, shaftLength, shaftRadius);
+                    matrix.compose(position, quaternion, scale);
+                    shaftMesh.setMatrixAt(instanceIndex, matrix);
+
+                    position.copy(origin).addScaledVector(direction, shaftLength + headLength * 0.5);
+                    scale.set(headRadius, headLength, headRadius);
+                    matrix.compose(position, quaternion, scale);
+                    headMesh.setMatrixAt(instanceIndex, matrix);
                 }
             }
         }
 
-        geometries.forEach((geometry, index) => {
-            const positionAttribute = geometry.getAttribute('position') as THREE.BufferAttribute;
-            const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute;
-            (positionAttribute.array as Float32Array).set(positions[index]);
-            (colorAttribute.array as Float32Array).set(colors[index]);
-            positionAttribute.needsUpdate = true;
-            colorAttribute.needsUpdate = true;
-            geometry.setDrawRange(0, positions[index].length / 3);
-        });
+        positiveShaft.count = positiveCount;
+        positiveHead.count = positiveCount;
+        negativeShaft.count = negativeCount;
+        negativeHead.count = negativeCount;
+        positiveShaft.instanceMatrix.needsUpdate = true;
+        positiveHead.instanceMatrix.needsUpdate = true;
+        negativeShaft.instanceMatrix.needsUpdate = true;
+        negativeHead.instanceMatrix.needsUpdate = true;
     });
 
     return (
-        <group renderOrder={1000}>
-            {geometries.map((geometry, index) => (
-                <lineSegments
-                    key={index}
-                    geometry={geometry}
-                    material={materials[index]}
-                    frustumCulled={false}
-                    renderOrder={1000}
-                />
-            ))}
+        <group renderOrder={2000}>
+            <instancedMesh
+                ref={positiveShaftRef}
+                args={[shaftGeometry, positiveMaterial, MAX_ARROWS]}
+                frustumCulled={false}
+                renderOrder={2000}
+            />
+            <instancedMesh
+                ref={positiveHeadRef}
+                args={[headGeometry, positiveMaterial, MAX_ARROWS]}
+                frustumCulled={false}
+                renderOrder={2000}
+            />
+            <instancedMesh
+                ref={negativeShaftRef}
+                args={[shaftGeometry, negativeMaterial, MAX_ARROWS]}
+                frustumCulled={false}
+                renderOrder={2000}
+            />
+            <instancedMesh
+                ref={negativeHeadRef}
+                args={[headGeometry, negativeMaterial, MAX_ARROWS]}
+                frustumCulled={false}
+                renderOrder={2000}
+            />
         </group>
     );
 };

@@ -1430,8 +1430,9 @@ const App: React.FC = () => {
           }
       } else if (parts[0] === '/sound') {
           if (parts[1] === 'reload') {
-              soundManager.init();
-              logMsg("Reloaded sound manifest", 'success');
+              void soundManager.reloadManifest()
+                  .then(() => logMsg('Reloaded sound manifest and sound-effect buffers', 'success'))
+                  .catch((error) => logMsg(`Failed to reload sounds: ${String(error)}`, 'error'));
           } else if (parts[1] === 'volume') {
               const v = parseFloat(parts[2]);
               if (!isNaN(v)) {

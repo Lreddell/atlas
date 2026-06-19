@@ -56,6 +56,35 @@ class SoundManager {
         // Lazy init in init()
     }
 
+    private async loadSoundManifest(cache: RequestCache = 'default') {
+        try {
+            const url = assetUrl('assets/rvx/sounds.json');
+            const response = await fetch(url, { cache });
+            if (response.ok) {
+                const json = await response.json() as SoundManifest;
+                this.manifest = { ...DEFAULT_SOUND_MANIFEST, ...json };
+                console.log(`Loaded sound manifest with ${Object.keys(this.manifest).length} events.`);
+                return;
+            }
+
+            this.manifest = DEFAULT_SOUND_MANIFEST;
+            console.warn(`Failed to load sounds.json (${response.status}), using defaults.`);
+        } catch (e) {
+            this.manifest = DEFAULT_SOUND_MANIFEST;
+            console.debug('Error loading sounds.json, using defaults:', e);
+        }
+    }
+
+    public async reloadManifest() {
+        if (!this.ctx) {
+            await this.init();
+        }
+
+        await this.loadSoundManifest('no-store');
+        this.buffers.clear();
+        this.bufferLoadPromises.clear();
+    }
+
     public async init() {
         if (this.ctx) {
             // Already initialized — just resume if suspended, don't reload the folder index
@@ -84,20 +113,7 @@ class SoundManager {
                 this.worldGain.connect(this.worldFilter);
                 this.worldFilter.connect(this.masterGain);
 
-                // Load Manifest
-                try {
-                    const url = assetUrl('assets/rvx/sounds.json');
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        const json = await response.json();
-                        this.manifest = { ...DEFAULT_SOUND_MANIFEST, ...json };
-                        console.log(`Loaded sound manifest with ${Object.keys(this.manifest).length} events.`);
-                    } else {
-                        console.warn('Failed to load sounds.json (404), using defaults.');
-                    }
-                } catch (e) {
-                    console.debug('Error loading sounds.json, using defaults:', e);
-                }
+                await this.loadSoundManifest();
 
                 await this.loadMusicFolderIndex();
 

@@ -24,8 +24,11 @@ export type BlockSampler = (x: number, y: number, z: number) => number;
 
 export const MAGNET_RANGE = 5;
 export const MAGNET_FORCE = 70;
-export const MAGNET_MAX_SPEED = 13;
-export const DIRECTIONAL_RESIDUAL = 0.15;
+export const MAGNET_MAX_SPEED = 20;
+export const DIRECTIONAL_PEAK_MULTIPLIER = 4;
+export const DIRECTIONAL_LEAK_MULTIPLIER = 0.01;
+export const DIRECTIONAL_CONE_HALF_ANGLE = Math.PI / 6;
+const DIRECTIONAL_CONE_COSINE = Math.cos(DIRECTIONAL_CONE_HALF_ANGLE);
 
 const ADJACENT_OFFSETS = [
     [1, 0, 0],
@@ -44,6 +47,15 @@ export const getMagnetPolarity = (
     if (blockType === positiveMagnet) return 1;
     if (blockType === negativeMagnet) return -1;
     return 0;
+};
+
+export const getMagneticResponseSign = (
+    controlled: boolean,
+    playerPolarity: number,
+    magnetPolarity: 1 | -1,
+): 1 | -1 => {
+    if (!controlled) return magnetPolarity;
+    return playerPolarity === magnetPolarity ? 1 : -1;
 };
 
 export function getDirectionalAxis(
@@ -95,8 +107,12 @@ export function getDirectionalMultiplier(
             (axis.x * directionX + axis.y * directionY + axis.z * directionZ) / directionLength,
         ),
     );
-    const forwardAmount = (dot + 1) * 0.5;
-    return DIRECTIONAL_RESIDUAL + (1 - DIRECTIONAL_RESIDUAL) * forwardAmount * forwardAmount;
+    if (dot <= DIRECTIONAL_CONE_COSINE) return DIRECTIONAL_LEAK_MULTIPLIER;
+
+    const coneAmount = (dot - DIRECTIONAL_CONE_COSINE) / (1 - DIRECTIONAL_CONE_COSINE);
+    const smoothed = coneAmount * coneAmount * (3 - 2 * coneAmount);
+    return DIRECTIONAL_LEAK_MULTIPLIER
+        + (DIRECTIONAL_PEAK_MULTIPLIER - DIRECTIONAL_LEAK_MULTIPLIER) * smoothed;
 }
 
 export function collectMagnetSources(
