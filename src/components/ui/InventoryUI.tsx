@@ -63,7 +63,7 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
     BlockType.SANDSTONE, BlockType.RED_SANDSTONE, BlockType.BASALT, BlockType.OBSIDIAN,
     BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS,
-    BlockType.GLASS, BlockType.WOOL,
+    BlockType.GLASS, BlockType.WOOL, BlockType.IRON_BLOCK,
     // Slabs
     BlockType.STONE_SLAB, BlockType.COBBLESTONE_SLAB, BlockType.BRICK_SLAB, BlockType.SANDSTONE_SLAB, BlockType.RED_SANDSTONE_SLAB,
     BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,

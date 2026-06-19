@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import type { WorldManager } from '../WorldManager';
 import { BlockType } from '../../types';
+import {
+    MAGNET_FORCE,
+    MAGNET_MAX_SPEED,
+    MAGNET_RANGE,
+    getDirectionalAxis,
+    getDirectionalMultiplier,
+    getMagnetPolarity as getPolarityForBlockIds,
+} from './magneticField';
 
 // Magnetism (Phase 4). Magnet blocks emit a field; a magnetically-susceptible
 // player is pushed/pulled each tick. Susceptibility comes from equipment:
@@ -13,18 +21,13 @@ import { BlockType } from '../../types';
 
 export type MagneticMode = 'none' | 'ferro' | 'controlled';
 
-const MAGNET_RANGE = 5;
-const FORCE = 70;       // base acceleration scalar
-const MAX_SPEED = 13;   // clamp on magnetic-contributed velocity
-
 export function getMagnetPolarity(type: BlockType): number {
-    if (type === BlockType.POSITIVE_MAGNET) return 1;
-    if (type === BlockType.NEGATIVE_MAGNET) return -1;
-    return 0;
+    return getPolarityForBlockIds(type, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET);
 }
 
 const _acc = new THREE.Vector3();
 const _dir = new THREE.Vector3();
+const _axis = { x: 0, y: 0, z: 0 };
 
 /**
  * Apply magnetic acceleration to the player's velocity for this tick. Mutates
@@ -48,6 +51,7 @@ export function applyMagneticForce(
     const ox = pos.x;
     const oy = pos.y + 0.9;
     const oz = pos.z;
+    const getBlock = (x: number, y: number, z: number) => wm.getBlock(x, y, z, false);
 
     let found = false;
     for (let dx = -MAGNET_RANGE; dx <= MAGNET_RANGE; dx++) {
@@ -56,12 +60,30 @@ export function applyMagneticForce(
                 const polarity = getMagnetPolarity(wm.getBlock(cx + dx, cy + dy, cz + dz, false));
                 if (polarity === 0) continue;
 
-                _dir.set(ox - (cx + dx + 0.5), oy - (cy + dy + 0.5), oz - (cz + dz + 0.5));
+                const magnetX = cx + dx;
+                const magnetY = cy + dy;
+                const magnetZ = cz + dz;
+                _dir.set(ox - (magnetX + 0.5), oy - (magnetY + 0.5), oz - (magnetZ + 0.5));
                 const dist = _dir.length();
                 if (dist < 0.001 || dist > MAGNET_RANGE) continue;
+
+                const axis = getDirectionalAxis(
+                    getBlock,
+                    magnetX,
+                    magnetY,
+                    magnetZ,
+                    BlockType.IRON_BLOCK,
+                    _axis,
+                );
+                const directionalMultiplier = getDirectionalMultiplier(
+                    axis,
+                    _dir.x,
+                    _dir.y,
+                    _dir.z,
+                );
                 _dir.multiplyScalar(1 / dist);
 
-                const strength = FORCE / (dist * dist);
+                const strength = (MAGNET_FORCE / (dist * dist)) * directionalMultiplier;
                 // ferro always attracts; controlled: same sign repels, opposite attracts.
                 const attract = mode === 'ferro' ? true : playerPolarity !== polarity;
                 // _dir points block -> player, so +dir repels, -dir attracts.
@@ -77,11 +99,11 @@ export function applyMagneticForce(
 
     // Clamp the magnetic contribution so it stays controllable.
     const horiz = Math.hypot(vel.x, vel.z);
-    if (horiz > MAX_SPEED) {
-        const k = MAX_SPEED / horiz;
+    if (horiz > MAGNET_MAX_SPEED) {
+        const k = MAGNET_MAX_SPEED / horiz;
         vel.x *= k;
         vel.z *= k;
     }
-    if (vel.y > MAX_SPEED) vel.y = MAX_SPEED;
-    else if (vel.y < -MAX_SPEED) vel.y = -MAX_SPEED;
+    if (vel.y > MAGNET_MAX_SPEED) vel.y = MAGNET_MAX_SPEED;
+    else if (vel.y < -MAGNET_MAX_SPEED) vel.y = -MAGNET_MAX_SPEED;
 }

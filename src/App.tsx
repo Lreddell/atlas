@@ -15,6 +15,7 @@ import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
+import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
@@ -281,6 +282,7 @@ const App: React.FC = () => {
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
@@ -1626,6 +1628,19 @@ const App: React.FC = () => {
           } else {
               logMsg('Usage: /boss <spawn|kill>', 'error');
           }
+      } else if (parts[0] === '/magfields') {
+          const mode = (parts[1] || 'toggle').toLowerCase();
+          if (!['on', 'off', 'toggle'].includes(mode)) {
+              logMsg('Usage: /magfields [on|off|toggle]', 'error');
+          } else {
+              const nextVisible = mode === 'on'
+                  ? true
+                  : mode === 'off'
+                      ? false
+                      : !showMagneticFields;
+              setShowMagneticFields(nextVisible);
+              logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
+          }
       } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
       if (commandValue.trim()) {
           commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
@@ -1634,7 +1649,7 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  }, [commandValue, logMsg, resumeGame, addToInventory]);
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields]);
 
   const updateAutocomplete = useCallback((input: string) => {
       const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
@@ -2531,6 +2546,9 @@ const App: React.FC = () => {
                 />
 
                 <BreakingVisualMesh suspended={isCapturingPanorama} />
+                {appState === 'game' && showMagneticFields && (
+                    <MagneticFieldDebug playerPosRef={playerPosRef} />
+                )}
 
                 {/* Only mount Player when game is Active to ensure physics starts with correct spawn position */}
                 {appState === 'game' && (

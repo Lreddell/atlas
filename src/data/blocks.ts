@@ -246,6 +246,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // Magnetism and equipment.
   [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnet', textureSlot: 149, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
   [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnet', textureSlot: 150, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.IRON_BLOCK]: { id: BlockType.IRON_BLOCK, color: '#d7ccc8', name: 'Iron Block', textureSlot: 156, hardness: 5.0, preferredTool: 'pickaxe', minHarvestTier: 2, category: 'building', drops: [{ type: BlockType.IRON_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.IRON_HELMET]: { id: BlockType.IRON_HELMET, color: '#d7ccc8', name: 'Iron Helmet', textureSlot: 151, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_CHESTPLATE]: { id: BlockType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 152, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_LEGGINGS]: { id: BlockType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 153, hardness: 0, isItem: true, category: 'tools' },

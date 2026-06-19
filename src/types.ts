@@ -178,7 +178,8 @@ export enum BlockType {
   IRON_CHESTPLATE = 193,
   IRON_LEGGINGS = 194,
   IRON_BOOTS = 195,
-  POLARITY_BOOTS = 196
+  POLARITY_BOOTS = 196,
+  IRON_BLOCK = 197
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

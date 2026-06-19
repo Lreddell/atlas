@@ -23,6 +23,7 @@ const assignments = {
     IRON_LEGGINGS: [153, 'items/iron_leggings.png'],
     IRON_BOOTS: [154, 'items/iron_boots.png'],
     POLARITY_BOOTS: [155, 'items/polarity_boots.png'],
+    IRON_BLOCK: [156, 'blocks/iron_block.png'],
 };
 
 test('PR 19 items use unique dedicated atlas slots and PNG assets', () => {
@@ -71,8 +72,18 @@ test('armor sprites use the existing Atlas iron palette and transparent backgrou
     }
 });
 
+test('Iron Block uses the Atlas iron palette with an opaque paneled face', () => {
+    const pixels = rasterizePixelTile(PR19_TEXTURE_TILES[156]);
+    const allowedColors = new Set(['117,117,117,255', '158,158,158,255', '215,204,200,255', '238,238,238,255']);
+
+    for (let index = 0; index < pixels.length; index += 4) {
+        const rgba = Array.from(pixels.slice(index, index + 4)).join(',');
+        assert.equal(allowedColors.has(rgba), true, `Iron Block contains off-style color ${rgba}`);
+    }
+});
+
 test('committed PNGs exactly match the shared pixel definitions', () => {
-    assert.equal(PR19_TEXTURE_ASSETS.length, 7);
+    assert.equal(PR19_TEXTURE_ASSETS.length, 8);
     const result = spawnSync(
         process.execPath,
         [

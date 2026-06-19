@@ -162,6 +162,13 @@ const S = BlockType.STICK;
 const push = (gridSize: 2 | 3, pattern: (BlockType | null)[], type: BlockType, count: number) =>
     RECIPES.push({ gridSize, pattern, output: { type, count } });
 
+push(3, [
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+], BlockType.IRON_BLOCK, 1);
+push(2, [BlockType.IRON_BLOCK, null, null, null], BlockType.IRON_INGOT, 9);
+
 // Stairs (6 blocks -> 4, both handedness) + slabs (3 in a row -> 6)
 const SHAPE_FAMILIES: { mat: BlockType, slab: BlockType, stairs: BlockType }[] = [
     { mat: BlockType.OAK_PLANKS, slab: BlockType.OAK_SLAB, stairs: BlockType.OAK_STAIRS },
