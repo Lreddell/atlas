@@ -56,11 +56,30 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.GOLD_HOE]: tool(1, 'gold'),
     [BlockType.DIAMOND_HOE]: tool(1, 'diamond'),
 
-    // Armor (Minecraft iron-set defense points) + the polarity boots.
-    [BlockType.IRON_HELMET]: { defense: 2, slot: 'helmet' },
-    [BlockType.IRON_CHESTPLATE]: { defense: 6, slot: 'chestplate' },
-    [BlockType.IRON_LEGGINGS]: { defense: 5, slot: 'leggings' },
-    [BlockType.IRON_BOOTS]: { defense: 2, slot: 'boots' },
+    // Armor — Minecraft defense points + per-piece durability (factor × 11/16/15/13
+    // for helmet/chestplate/leggings/boots). Copper is non-vanilla: between gold
+    // and iron. Polarity boots are unbreakable (key traversal item).
+    // Iron (factor 15)
+    [BlockType.IRON_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 165 },
+    [BlockType.IRON_CHESTPLATE]: { defense: 6, slot: 'chestplate', maxDurability: 240 },
+    [BlockType.IRON_LEGGINGS]:   { defense: 5, slot: 'leggings',   maxDurability: 225 },
+    [BlockType.IRON_BOOTS]:      { defense: 2, slot: 'boots',      maxDurability: 195 },
+    // Gold (factor 7)
+    [BlockType.GOLD_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 77 },
+    [BlockType.GOLD_CHESTPLATE]: { defense: 5, slot: 'chestplate', maxDurability: 112 },
+    [BlockType.GOLD_LEGGINGS]:   { defense: 3, slot: 'leggings',   maxDurability: 105 },
+    [BlockType.GOLD_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 91 },
+    // Diamond (factor 33)
+    [BlockType.DIAMOND_HELMET]:     { defense: 3, slot: 'helmet',     maxDurability: 363 },
+    [BlockType.DIAMOND_CHESTPLATE]: { defense: 8, slot: 'chestplate', maxDurability: 528 },
+    [BlockType.DIAMOND_LEGGINGS]:   { defense: 6, slot: 'leggings',   maxDurability: 495 },
+    [BlockType.DIAMOND_BOOTS]:      { defense: 3, slot: 'boots',      maxDurability: 429 },
+    // Copper (factor 11; defense between gold and iron)
+    [BlockType.COPPER_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 121 },
+    [BlockType.COPPER_CHESTPLATE]: { defense: 4, slot: 'chestplate', maxDurability: 176 },
+    [BlockType.COPPER_LEGGINGS]:   { defense: 4, slot: 'leggings',   maxDurability: 165 },
+    [BlockType.COPPER_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 143 },
+    // Polarity boots — controllable polarity; unbreakable.
     [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
 };
 

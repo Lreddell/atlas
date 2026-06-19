@@ -20,7 +20,7 @@ import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
-import { createEmptyEquipment, applyArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
@@ -548,10 +548,12 @@ const App: React.FC = () => {
       });
   }, [gameMode]);
 
-  // Combat damage (entity contact/attacks) — reduced by equipped armor.
+  // Combat damage (entity contact/attacks) — reduced by armor, and wears it down.
   const damagePlayer = useCallback((d: number) => {
+      if (gameMode !== 'survival' || d <= 0) return;
       applyRawDamage(Math.max(0, Math.ceil(applyArmor(d, equipment))));
-  }, [applyRawDamage, equipment]);
+      setEquipment(prev => damageArmor(prev, d));
+  }, [applyRawDamage, equipment, gameMode]);
 
   useEffect(() => {
       entityManager.setPlayerHooks(
