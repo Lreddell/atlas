@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a normal craftable Iron Block that directs an adjacent magnet's field away from itself. Multiple adjacent Iron Blocks combine across all three axes. Add `/magfields` to visualize the actual combined raw magnetic field as small 3D arrows.
+Add a normal craftable Iron Block that acts as a magnetic backplate, concentrating and boosting an adjacent magnet's field away from itself. Multiple adjacent Iron Blocks combine across all three axes. Add `/magfields` to visualize the actual combined raw magnetic field with highly visible 3D arrows.
 
 ## Iron Block
 
@@ -30,15 +30,16 @@ Normalize the sum to produce the magnet's field axis. If there are no adjacent I
 
 ## Directional Strength
 
-Keep the existing five-block range, inverse-square falloff, force scalar, and velocity clamp.
+Keep the existing five-block range and inverse-square falloff for magnets without an Iron Block backplate.
 
-For a directional magnet, multiply its existing force by a smooth angular weight:
+For a directional magnet, replace the broad weighting with a narrow boosted cone:
 
-- Full strength on the forward axis.
-- Smoothly decreasing strength toward the sides.
-- Fifteen percent residual strength directly behind the magnet.
+- Four times the normal magnet force on the forward axis.
+- Smoothly decrease from the four-times boost to one percent of normal force within a 30-degree half-angle cone.
+- Keep only one percent of normal force at the sides and behind the magnet.
+- Multiple Iron Block directions combine before calculating the cone, so bottom plus right produces one boosted up-left cone.
 
-Use a monotonic interpolation from `0.15` at cosine `-1` to `1.0` at cosine `1`. The same helper must be used by gameplay and debug sampling so visualization cannot disagree with physics.
+The same helper must be used by gameplay, dropped items, and debug sampling so visualization cannot disagree with physics.
 
 ## Field API
 
@@ -56,10 +57,29 @@ The raw debug field uses a positive test-pole convention:
 - Directional attenuation applies before contributions are summed.
 - Opposing fields cancel naturally.
 
-Player behavior continues to map the same magnet geometry to the existing equipment rules:
+Player behavior maps the same magnet geometry to two equipment rules:
 
-- Iron armor is attracted to every magnet.
+- Ordinary ferromagnetic behavior, activated by wearing any Iron Armor piece: positive magnets repel and negative magnets attract.
 - Polarity Boots attract or repel based on selected polarity.
+
+## Dropped Metal Items
+
+Dropped metal items respond to magnets automatically:
+
+- Positive magnets repel dropped metal.
+- Negative magnets attract dropped metal.
+- Directional cone boost, inverse-square falloff, range, overlap, and cancellation match the shared field helpers.
+- Magnetic velocity is clamped so items remain physically controllable and do not tunnel excessively through blocks.
+- Player pickup attraction still runs normally after magnetic acceleration.
+
+Treat these dropped item families as metal:
+
+- Raw Iron, Iron Ingots, Iron Block, Iron tools, and Iron Armor.
+- Raw Copper, Copper Ingots, and Copper tools.
+- Raw Gold, Gold Ingots, and Gold tools.
+- Positive and Negative Magnet blocks.
+
+Stone, wood, diamond, food, plants, and unrelated blocks remain unaffected.
 
 ## Debug Visualization
 
@@ -74,11 +94,14 @@ Add `/magfields [on|off|toggle]`.
 Render a local 3D grid around the player:
 
 - Sample every one block within the existing magnetic range around nearby magnets.
-- Draw one small arrow for each non-trivial resultant raw field vector.
+- Draw one clearly visible arrow for each non-trivial resultant raw field vector.
 - Arrow direction matches the resultant vector.
+- Use thicker arrow shafts and larger cone-shaped heads.
+- Use unlit, high-emission materials that remain readable in bright daylight and complete darkness.
 - Arrow length and opacity scale with normalized magnitude and are clamped for readability.
-- Color red when positive-magnet contribution dominates.
-- Color blue when negative-magnet contribution dominates.
+- Use bright red when positive-magnet contribution dominates.
+- Use bright blue/cyan when negative-magnet contribution dominates.
+- Render above ordinary world depth so terrain cannot hide the debug overlay.
 - Omit arrows whose resultant magnitude is below a small threshold, making cancellation visible.
 - Rebuild the debug geometry only when the player changes block position or nearby magnet/iron block state changes; do not allocate arrows every frame.
 
@@ -91,6 +114,8 @@ Primary implementation areas:
 - `src/recipes.ts`
 - `src/components/ui/InventoryUI.tsx`
 - `src/systems/player/magnetism.ts`
+- `src/systems/registry/metalItems.ts`
+- `src/components/DropManager.tsx`
 - `src/components/MagneticFieldDebug.tsx`
 - `src/data/commands.ts`
 - `src/App.tsx`
@@ -100,11 +125,13 @@ Primary implementation areas:
 
 ## Validation
 
-- Pure tests for all six iron directions, diagonal composition, cancellation fallback, angular attenuation, raw polarity behavior, and overlapping-field cancellation.
+- Pure tests for all six iron directions, diagonal composition, cancellation fallback, four-times forward boost, one-percent side/rear leakage, raw polarity behavior, and overlapping-field cancellation.
+- Metal classification tests covering every affected and unaffected item family.
+- Dropped-item force tests confirming positive repulsion, negative attraction, directional boost, and velocity clamping.
 - Recipe tests for 9 ingots to block and block to 9 ingots.
 - Command autocomplete tests for `/magfields`.
 - Texture assignment and generated-PNG identity tests for Iron Block.
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build`
-- Runtime smoke test confirming `/magfields` toggles arrows and directional force agrees with the arrows.
+- Runtime smoke test confirming `/magfields` toggles readable arrows in day and night, dropped metal responds to both polarities, and directional force agrees with the arrows.
