@@ -7,12 +7,13 @@ import {
     MAGNET_RANGE,
     getDirectionalAxis,
     getDirectionalMultiplier,
+    getMagneticResponseSign,
     getMagnetPolarity as getPolarityForBlockIds,
 } from './magneticField';
 
 // Magnetism (Phase 4). Magnet blocks emit a field; a magnetically-susceptible
 // player is pushed/pulled each tick. Susceptibility comes from equipment:
-//  - 'ferro'      (iron armor): attracted to ALL magnets, no control.
+//  - 'ferro'      (iron armor): positive repels and negative attracts.
 //  - 'controlled' (polarity boots): player picks a polarity (R); same sign as a
 //                  block repels, opposite attracts — for launch/stick traversal.
 //  - 'none':       no effect.
@@ -21,7 +22,7 @@ import {
 
 export type MagneticMode = 'none' | 'ferro' | 'controlled';
 
-export function getMagnetPolarity(type: BlockType): number {
+export function getMagnetPolarity(type: BlockType): 1 | -1 | 0 {
     return getPolarityForBlockIds(type, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET);
 }
 
@@ -84,10 +85,12 @@ export function applyMagneticForce(
                 _dir.multiplyScalar(1 / dist);
 
                 const strength = (MAGNET_FORCE / (dist * dist)) * directionalMultiplier;
-                // ferro always attracts; controlled: same sign repels, opposite attracts.
-                const attract = mode === 'ferro' ? true : playerPolarity !== polarity;
-                // _dir points block -> player, so +dir repels, -dir attracts.
-                _acc.addScaledVector(_dir, attract ? -strength : strength);
+                const responseSign = getMagneticResponseSign(
+                    mode === 'controlled',
+                    playerPolarity,
+                    polarity,
+                );
+                _acc.addScaledVector(_dir, strength * responseSign);
                 found = true;
             }
         }

@@ -15,6 +15,8 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.player.hurt": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0 },
     "entity.player.death": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0, pitch: 0.6 },
     "entity.item.pickup": { category: "player", sounds: ["random/pop"], volume: 0.5, pitch: [1.5, 1.8] },
+    "ability.polarity.positive": { category: "player", sounds: ["polarity/positive"], volume: 0.7 },
+    "ability.polarity.negative": { category: "player", sounds: ["polarity/negative"], volume: 0.7 },
 
     // Generic Block Sounds (Fallback)
     "block.generic.step": { category: "blocks", sounds: ["step/stone1", "step/stone2", "step/stone3"], volume: 0.2 },

@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-    DIRECTIONAL_RESIDUAL,
+    DIRECTIONAL_CONE_HALF_ANGLE,
+    DIRECTIONAL_LEAK_MULTIPLIER,
+    DIRECTIONAL_PEAK_MULTIPLIER,
     getDirectionalAxis,
     getDirectionalMultiplier,
+    getMagneticResponseSign,
     sampleRawMagneticField,
 } from './magneticField.ts';
 
@@ -52,13 +55,22 @@ test('opposing iron blocks cancel back to a spherical field', () => {
     );
 });
 
-test('directional fields retain a small residual behind the magnet', () => {
+test('Iron-backed fields concentrate four-times force into a narrow cone', () => {
     const axis = { x: 1, y: 0, z: 0 };
+    const coneEdge = {
+        x: Math.cos(DIRECTIONAL_CONE_HALF_ANGLE),
+        y: Math.sin(DIRECTIONAL_CONE_HALF_ANGLE),
+        z: 0,
+    };
 
-    closeTo(getDirectionalMultiplier(axis, 1, 0, 0), 1);
-    closeTo(getDirectionalMultiplier(axis, -1, 0, 0), DIRECTIONAL_RESIDUAL);
-    assert.ok(getDirectionalMultiplier(axis, 0, 1, 0) > DIRECTIONAL_RESIDUAL);
-    assert.ok(getDirectionalMultiplier(axis, 0, 1, 0) < 1);
+    closeTo(getDirectionalMultiplier(null, 1, 0, 0), 1);
+    closeTo(getDirectionalMultiplier(axis, 1, 0, 0), DIRECTIONAL_PEAK_MULTIPLIER);
+    closeTo(
+        getDirectionalMultiplier(axis, coneEdge.x, coneEdge.y, coneEdge.z),
+        DIRECTIONAL_LEAK_MULTIPLIER,
+    );
+    closeTo(getDirectionalMultiplier(axis, 0, 1, 0), DIRECTIONAL_LEAK_MULTIPLIER);
+    closeTo(getDirectionalMultiplier(axis, -1, 0, 0), DIRECTIONAL_LEAK_MULTIPLIER);
 });
 
 test('raw field vectors use positive-test-pole polarity and cancel overlaps', () => {
@@ -77,10 +89,22 @@ test('raw field vectors use positive-test-pole polarity and cancel overlaps', ()
     closeTo(canceledField.positiveStrength, canceledField.negativeStrength);
 });
 
+test('ordinary metal and controlled boots use different polarity rules', () => {
+    assert.equal(getMagneticResponseSign(false, 1, 1), 1);
+    assert.equal(getMagneticResponseSign(false, 1, -1), -1);
+    assert.equal(getMagneticResponseSign(true, 1, 1), 1);
+    assert.equal(getMagneticResponseSign(true, 1, -1), -1);
+    assert.equal(getMagneticResponseSign(true, -1, 1), -1);
+    assert.equal(getMagneticResponseSign(true, -1, -1), 1);
+});
+
 test('raw field sampling applies the same directional cone as player physics', () => {
     const source = [{ x: 0.5, y: 0.5, z: 0.5, polarity: 1, axis: { x: 1, y: 0, z: 0 } }];
     const forward = sampleRawMagneticField(source, 2.5, 0.5, 0.5);
     const backward = sampleRawMagneticField(source, -1.5, 0.5, 0.5);
 
-    closeTo(Math.abs(backward.x / forward.x), DIRECTIONAL_RESIDUAL);
+    closeTo(
+        Math.abs(backward.x / forward.x),
+        DIRECTIONAL_LEAK_MULTIPLIER / DIRECTIONAL_PEAK_MULTIPLIER,
+    );
 });

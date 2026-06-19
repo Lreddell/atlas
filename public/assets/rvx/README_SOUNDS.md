@@ -28,6 +28,9 @@ public/assets/rvx/sounds/
   liquid/
     swim1.ogg
     lavapop.ogg
+  polarity/
+    positive.ogg
+    negative.ogg
   music/
     menu/
       any-name-here.ogg
@@ -49,6 +52,10 @@ If a non-music sound file is missing or empty, the engine can synthesize a small
    include the extension in `sounds.json`. Music tracks are discovered with
    their actual filenames.
 3. Use an existing category if you want it exposed through the current options menu sliders: `master`, `music`, `ambient`, `blocks`, `player`, `ui`, `hostile`, or `neutral`.
+
+Polarity Boots use `polarity/positive.ogg` and `polarity/negative.ogg`.
+Replace either file and run `/sound reload` to invalidate cached sound effects
+without restarting the game.
 
 If you add a brand-new category name, the audio runtime can create a bus for it, but the options menu slider list is still hard-coded. Add UI support in `src/components/ui/PauseMenu.tsx` if you want the category to have a visible slider.
 
