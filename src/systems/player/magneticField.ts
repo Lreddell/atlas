@@ -39,6 +39,18 @@ const ADJACENT_OFFSETS = [
     [0, 0, -1],
 ] as const;
 
+export function getClosestPointOnAabb(
+    point: Vector3Like,
+    min: Vector3Like,
+    max: Vector3Like,
+    target: Vector3Like = { x: 0, y: 0, z: 0 },
+): Vector3Like {
+    target.x = Math.max(min.x, Math.min(max.x, point.x));
+    target.y = Math.max(min.y, Math.min(max.y, point.y));
+    target.z = Math.max(min.z, Math.min(max.z, point.z));
+    return target;
+}
+
 export const getMagnetPolarity = (
     blockType: number,
     positiveMagnet: number,

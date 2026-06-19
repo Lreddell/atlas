@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as magneticFieldModule from './magneticField.ts';
 
 import {
     DIRECTIONAL_CONE_HALF_ANGLE,
@@ -107,4 +108,21 @@ test('raw field sampling applies the same directional cone as player physics', (
         Math.abs(backward.x / forward.x),
         DIRECTIONAL_LEAK_MULTIPLIER / DIRECTIONAL_PEAK_MULTIPLIER,
     );
+});
+
+test('magnetic sampling can use the closest point on the full player AABB', () => {
+    assert.equal(
+        typeof magneticFieldModule.getClosestPointOnAabb,
+        'function',
+        'expected a full-body AABB sampling helper',
+    );
+
+    const point = magneticFieldModule.getClosestPointOnAabb(
+        { x: 0.5, y: 6.5, z: 0.5 },
+        { x: 0.2, y: 0, z: 0.2 },
+        { x: 0.8, y: 1.8, z: 0.8 },
+    );
+
+    assert.deepEqual(point, { x: 0.5, y: 1.8, z: 0.5 });
+    assert.ok(Math.hypot(point.x - 0.5, point.y - 6.5, point.z - 0.5) < 5);
 });
