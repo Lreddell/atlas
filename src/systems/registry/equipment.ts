@@ -3,7 +3,7 @@
 // magnetism system reads (iron armor = ferromagnetic; polarity boots = control).
 
 import { BlockType, type EquipmentSlot, type ItemStack } from '../../types';
-import { getItemStats } from './itemStats';
+import { getItemStats, getMaxDurability } from './itemStats';
 
 export type Equipment = Record<EquipmentSlot, ItemStack | null>;
 
@@ -49,4 +49,31 @@ export function isWearingIronArmor(eq: Equipment): boolean {
 /** Polarity boots equipped → the player can control their polarity. */
 export function hasPolarityBoots(eq: Equipment): boolean {
     return eq.boots?.type === BlockType.POLARITY_BOOTS;
+}
+
+/**
+ * Wear down equipped armor from an incoming hit. Minecraft: each piece loses
+ * max(1, floor(incomingDamage / 4)) durability; unbreakable pieces (no max) are
+ * skipped; a piece that hits 0 breaks (removed). Returns new equipment if any
+ * piece changed, otherwise the same reference. Durability lazy-inits from the
+ * registry on first hit.
+ */
+export function damageArmor(eq: Equipment, incomingDamage: number): Equipment {
+    if (incomingDamage <= 0) return eq;
+    const loss = Math.max(1, Math.floor(incomingDamage / 4));
+    let changed = false;
+    const next: Equipment = { ...eq };
+    for (const slot of EQUIPMENT_SLOTS) {
+        const item = eq[slot];
+        if (!item) continue;
+        const max = getMaxDurability(item.type);
+        if (max === undefined) continue; // unbreakable (e.g. polarity boots, accessories)
+        const current = item.instance?.durability ?? max;
+        const left = current - loss;
+        changed = true;
+        next[slot] = left <= 0
+            ? null
+            : { ...item, instance: { ...(item.instance ?? {}), durability: left, maxDurability: max } };
+    }
+    return changed ? next : eq;
 }

@@ -251,7 +251,20 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.IRON_CHESTPLATE]: { id: BlockType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 152, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_LEGGINGS]: { id: BlockType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 153, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_BOOTS]: { id: BlockType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 154, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' }
+  [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
+  // Gold / diamond / copper armor — placeholder textures (material ingot/gem slots); real art TODO.
+  [BlockType.GOLD_HELMET]: { id: BlockType.GOLD_HELMET, color: '#fbc02d', name: 'Gold Helmet', textureSlot: 101, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.GOLD_CHESTPLATE]: { id: BlockType.GOLD_CHESTPLATE, color: '#fbc02d', name: 'Gold Chestplate', textureSlot: 101, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.GOLD_LEGGINGS]: { id: BlockType.GOLD_LEGGINGS, color: '#fbc02d', name: 'Gold Leggings', textureSlot: 101, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.GOLD_BOOTS]: { id: BlockType.GOLD_BOOTS, color: '#fbc02d', name: 'Gold Boots', textureSlot: 101, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.DIAMOND_HELMET]: { id: BlockType.DIAMOND_HELMET, color: '#00bcd4', name: 'Diamond Helmet', textureSlot: 102, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.DIAMOND_CHESTPLATE]: { id: BlockType.DIAMOND_CHESTPLATE, color: '#00bcd4', name: 'Diamond Chestplate', textureSlot: 102, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.DIAMOND_LEGGINGS]: { id: BlockType.DIAMOND_LEGGINGS, color: '#00bcd4', name: 'Diamond Leggings', textureSlot: 102, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.DIAMOND_BOOTS]: { id: BlockType.DIAMOND_BOOTS, color: '#00bcd4', name: 'Diamond Boots', textureSlot: 102, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.COPPER_HELMET]: { id: BlockType.COPPER_HELMET, color: '#e67e22', name: 'Copper Helmet', textureSlot: 60, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.COPPER_CHESTPLATE]: { id: BlockType.COPPER_CHESTPLATE, color: '#e67e22', name: 'Copper Chestplate', textureSlot: 60, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.COPPER_LEGGINGS]: { id: BlockType.COPPER_LEGGINGS, color: '#e67e22', name: 'Copper Leggings', textureSlot: 60, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.COPPER_BOOTS]: { id: BlockType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 60, hardness: 0, isItem: true, category: 'tools' }
 };
 
 export const ATLAS_COLS = 8;
