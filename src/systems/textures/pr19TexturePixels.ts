@@ -84,6 +84,9 @@ export const PR19_TEXTURE_ASSETS: ReadonlyArray<{
     { slot: 166, path: 'items/copper_chestplate.png' },
     { slot: 167, path: 'items/copper_leggings.png' },
     { slot: 168, path: 'items/copper_boots.png' },
+    { slot: 194, path: 'blocks/jungle_sapling.png' },
+    { slot: 199, path: 'blocks/dark_oak_sapling.png' },
+    { slot: 204, path: 'blocks/acacia_sapling.png' },
 ];
 
 const IRON_SHADOW = '#9e9e9e';
@@ -231,6 +234,31 @@ interface MaterialPalette {
 const layer = (color: string, rects: readonly PixelRect[]): PixelLayer => ({ color, rects });
 const tile = (...layers: PixelLayer[]): PixelTileDefinition => ({ layers });
 
+const saplingTile = (
+    trunk: string,
+    shadow: string,
+    base: string,
+    highlight: string,
+    shape: readonly PixelRect[],
+): PixelTileDefinition => tile(
+    layer(trunk, [[7, 8, 2, 8], [5, 13, 3, 1], [8, 11, 3, 1]]),
+    layer(shadow, shape),
+    layer(base, [[6, 3, 4, 6], [4, 6, 8, 3]]),
+    layer(highlight, [[7, 3, 2, 2], [5, 6, 2, 2], [10, 7, 2, 1]]),
+);
+
+Object.assign(PR19_TEXTURE_TILES, {
+    194: saplingTile('#6b4229', '#1f5f2d', '#2f7f3d', '#68b963', [
+        [6, 2, 4, 3], [4, 5, 8, 4], [3, 7, 4, 3], [9, 7, 4, 3],
+    ]),
+    199: saplingTile('#3b281f', '#143d23', '#235633', '#4a8350', [
+        [7, 1, 2, 4], [5, 4, 6, 3], [3, 7, 5, 3], [9, 7, 4, 3],
+    ]),
+    204: saplingTile('#6c4729', '#4b6f27', '#678f34', '#9abe57', [
+        [7, 2, 2, 4], [4, 5, 8, 3], [3, 8, 4, 3], [10, 8, 3, 3],
+    ]),
+});
+
 const MATERIAL_PALETTES = {
     wood: { outline: '#3e2723', shadow: '#5d4037', base: '#8d6e63', highlight: '#bcaaa4' },
     stone: { outline: '#424242', shadow: '#616161', base: '#9e9e9e', highlight: '#e0e0e0' },
@@ -341,18 +369,38 @@ const rawOreTile = (
     layer(ore.highlight, [[7, 6], [10, 7]]),
 );
 
-const gemTile = (palette: MaterialPalette): PixelTileDefinition => tile(
-    layer(palette.outline, [[7, 2, 2, 1], [5, 3, 6, 1], [4, 4, 8, 4], [5, 8, 6, 2], [7, 10, 2, 3]]),
-    layer(palette.shadow, [[4, 6, 2, 2], [10, 4, 2, 4], [7, 9, 2, 3]]),
-    layer(palette.base, [[6, 4, 4, 5], [5, 5, 6, 2]]),
-    layer(palette.highlight, [[6, 4, 3, 1], [6, 5, 2, 2]]),
+const diamondGemTile = (): PixelTileDefinition => tile(
+    layer(MATERIAL_PALETTES.diamond.outline, [
+        [5, 3, 6, 1], [3, 4, 10, 3], [4, 7, 8, 2],
+        [5, 9, 6, 2], [6, 11, 4, 2], [7, 13, 2, 1],
+    ]),
+    layer(MATERIAL_PALETTES.diamond.shadow, [
+        [10, 4, 3, 3], [9, 7, 3, 2], [8, 9, 3, 2], [8, 11, 2, 2],
+    ]),
+    layer(MATERIAL_PALETTES.diamond.base, [
+        [5, 4, 5, 3], [5, 7, 4, 2], [6, 9, 2, 2], [7, 11],
+    ]),
+    layer(MATERIAL_PALETTES.diamond.highlight, [[5, 4, 3, 1], [4, 5, 2, 2], [6, 7, 2, 1]]),
+);
+
+const emeraldGemTile = (): PixelTileDefinition => tile(
+    layer('#1b5e20', [
+        [6, 2, 4, 1], [5, 3, 6, 2], [4, 5, 8, 6],
+        [5, 11, 6, 2], [6, 13, 4, 1],
+    ]),
+    layer('#2e7d32', [[9, 3, 2, 2], [9, 5, 3, 6], [8, 11, 3, 2], [8, 13, 2, 1]]),
+    layer('#00c853', [[6, 3, 3, 2], [5, 5, 4, 6], [6, 11, 2, 2]]),
+    layer('#b9f6ca', [[6, 3, 2, 1], [5, 5, 2, 3], [7, 5, 1, 2]]),
 );
 
 Object.assign(PR19_TEXTURE_TILES, {
     35: tile(
-        layer('#3e2723', [[3, 12, 2, 2], [4, 11, 2, 2], [5, 10, 2, 2], [6, 9, 2, 2], [7, 8, 2, 2], [8, 7, 2, 2], [9, 6, 2, 2], [10, 5, 2, 2], [11, 4, 2, 2]]),
-        layer('#6d4c41', [[4, 12], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [11, 5]]),
-        layer('#a1887f', [[5, 10], [6, 9], [7, 8], [8, 7]]),
+        layer('#3e2723', [
+            [2, 13, 2, 2], [3, 12, 2, 2], [4, 11, 2, 2], [5, 10, 2, 2], [6, 9, 2, 2],
+            [7, 8, 2, 2], [8, 7, 2, 2], [9, 6, 2, 2], [10, 5, 2, 2], [11, 4, 2, 2],
+        ]),
+        layer('#6d4c41', [[3, 13], [4, 12], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [11, 5]]),
+        layer('#a1887f', [[5, 11], [6, 10], [7, 9], [8, 8], [9, 7]]),
     ),
     48: tile(
         layer('#050505', [[4, 5, 1, 6], [5, 3, 6, 1], [11, 4, 2, 2], [12, 6, 1, 5], [5, 11, 7, 2]]),
@@ -402,13 +450,8 @@ Object.assign(PR19_TEXTURE_TILES, {
     ),
     100: rawOreTile(RAW_ROCK, MATERIAL_PALETTES.gold),
     101: ingotTile(MATERIAL_PALETTES.gold),
-    102: gemTile(MATERIAL_PALETTES.diamond),
-    103: gemTile({
-        outline: '#1b5e20',
-        shadow: '#2e7d32',
-        base: '#00c853',
-        highlight: '#b9f6ca',
-    }),
+    102: diamondGemTile(),
+    103: emeraldGemTile(),
     104: tile(
         layer('#0d175f', [[4, 7, 2, 4], [6, 5, 3, 6], [9, 4, 2, 7], [11, 7, 2, 4], [5, 11, 7, 1]]),
         layer('#1a237e', [[5, 7, 2, 3], [7, 6, 3, 5], [10, 5, 1, 5], [11, 8, 1, 2]]),

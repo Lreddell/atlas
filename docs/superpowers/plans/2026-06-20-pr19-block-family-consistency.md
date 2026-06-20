@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the Dead Forest biome, make every PR 19 block family follow Atlas's established behavior, and replace weak added textures with deterministic 16x16 artwork.
+**Goal:** Remove the Dead Forest biome, make every PR 19 block family follow Atlas's established behavior, improve new sapling/item artwork, and expose optional PNG paths for every used atlas slot.
 
-**Architecture:** Add one shared registry for wood, log, grass, and stone family membership, then use it from interaction and recipe code instead of repeated conditionals. Keep block IDs stable, remove only Dead Forest routing, and extend the existing deterministic PR 19 texture catalog so committed PNGs are generated and byte-checked from TypeScript definitions.
+**Architecture:** Add one shared registry for wood, log, grass, and stone family membership, then use it from interaction and recipe code instead of repeated conditionals. Keep block IDs stable, remove only Dead Forest routing, retain existing placed-block PNGs, generate only the approved sapling/item artwork, and complete the existing `TEXTURE_PATHS` fallback map.
 
 **Tech Stack:** TypeScript, React, Three.js, Node.js native test runner, deterministic RGBA pixel definitions, custom PNG encoder.
 
@@ -35,11 +35,13 @@
 - Modify `src/recipes.test.mjs`
   - Verify every family recipe through the real `checkRecipe` API.
 - Modify `src/systems/textures/pr19TexturePixels.ts`
-  - Add deterministic definitions for slots 169-204 and improve slots 35, 102, and 103.
+  - Add deterministic definitions for saplings 194, 199, and 204 and improve slots 35, 102, and 103.
 - Modify `src/systems/textures/pr19TextureAssignments.test.mjs`
-  - Verify complete deterministic block catalog, dimensions, byte identity, and visual signatures.
-- Regenerate `public/assets/textures/blocks/*.png`
-  - Replace all GLM-added external block textures with deterministic files.
+  - Verify all used atlas slots have optional PNG mappings, generated dimensions, byte identity, and sapling/item visual signatures.
+- Regenerate:
+  - `public/assets/textures/blocks/jungle_sapling.png`
+  - `public/assets/textures/blocks/dark_oak_sapling.png`
+  - `public/assets/textures/blocks/acacia_sapling.png`
 - Regenerate:
   - `public/assets/textures/items/stick.png`
   - `public/assets/textures/items/diamond.png`
@@ -327,46 +329,46 @@ node --test src/recipes.test.mjs
 
 Expected: PASS.
 
-### Task 5: Deterministic Block And Corrected Item Textures
+### Task 5: Complete PNG Override Coverage And Corrected Artwork
 
 **Files:**
 - Modify: `src/systems/textures/pr19TextureAssignments.test.mjs`
 - Modify: `src/systems/textures/pr19TexturePixels.ts`
 - Modify: `src/systems/textures/textureMapping.ts`
-- Regenerate: `public/assets/textures/blocks/*.png`
+- Regenerate:
+  - `public/assets/textures/blocks/jungle_sapling.png`
+  - `public/assets/textures/blocks/dark_oak_sapling.png`
+  - `public/assets/textures/blocks/acacia_sapling.png`
 - Regenerate:
   - `public/assets/textures/items/stick.png`
   - `public/assets/textures/items/diamond.png`
   - `public/assets/textures/items/emerald.png`
 
-- [ ] **Step 1: Add failing deterministic catalog tests**
+- [ ] **Step 1: Add failing override coverage and generated-art tests**
 
-Require generated definitions for slots 169-204:
+Derive used slots from `blocks.ts`, `atlasTileFamilies.ts`, `textures.ts`, and
+`textureResolver.ts`. Require a descriptive `blocks/*.png` or `items/*.png`
+mapping for every used slot:
 
 ```js
-const GLM_BLOCK_SLOTS = Array.from({ length: 36 }, (_, index) => 169 + index);
-const generatedSlots = new Set(PR19_TEXTURE_ASSETS.map(({ slot }) => slot));
-GLM_BLOCK_SLOTS.forEach((slot) => assert.equal(generatedSlots.has(slot), true));
-assert.equal(PR19_TEXTURE_ASSETS.length, 105);
+for (const slot of usedSlots) {
+    assert.ok(mappedPaths.get(slot), `slot ${slot} has no optional PNG mapping`);
+}
 ```
 
-Verify all generated files are 16x16 RGBA. Verify unique signatures for:
-
-- log sides: 191, 196, 201
-- planks: 192, 197, 202
-- saplings: 194, 199, 204
-- stones: 184, 185, 186, 189
-- grass tops: 170, 172, 174, 176, 178, 180
+Require generated definitions only for saplings 194, 199, and 204. Verify all
+generated files are 16x16 RGBA and the saplings have distinct signatures.
 
 Verify item silhouettes:
 
 ```js
-assert.ok(opaqueCount(35) >= 20, 'stick must be a readable two-pixel shaft');
+assert.ok(opaqueCount(35) >= 30, 'stick must be a readable two-pixel shaft');
 assert.notDeepEqual(alphaMask(102), alphaMask(103));
-assert.ok(lowestOpaqueY(102) > highestOpaqueY(102));
+assert.ok(opaqueCount(102) >= 40);
+assert.ok(opaqueCount(103) >= 40);
 ```
 
-- [ ] **Step 2: Run texture tests and verify RED**
+- [ ] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -374,35 +376,29 @@ Run:
 node --test src/systems/textures/pr19TextureAssignments.test.mjs
 ```
 
-Expected: FAIL because slots 169-204 are not in the deterministic catalog and
-the current stick/diamond/emerald definitions do not meet the new silhouette
-requirements.
+Expected: FAIL because several used procedural/face slots have no
+`TEXTURE_PATHS` entry, the three saplings are not generated, and the current
+stick/diamond/emerald definitions do not meet the new silhouette requirements.
 
-- [ ] **Step 3: Add deterministic texture definitions**
+- [ ] **Step 3: Complete `TEXTURE_PATHS`**
+
+Add descriptive mappings for every missing used slot, including crafting table,
+furnace, chest, torch, bed, cherry/birch wood, terracotta, ores, cactus, and
+packed ice. Do not create the missing PNG files; absence must preserve the
+current procedural fallback.
+
+- [ ] **Step 4: Add deterministic sapling and item definitions**
 
 Extend `PR19_TEXTURE_ASSETS` with:
 
-- slot 169: `blocks/packed_ice.png`
-- slots 170-189: all biome grass, podzol, stone, dirt, mud, and mossy cobble files
-- slots 190-204: jungle, dark oak, and acacia log/plank/leaf/sapling files
-
-Add reusable helpers:
-
-```ts
-const opaqueTile = (...layers: PixelLayer[]) => tile(...layers);
-const cutoutTile = (...layers: PixelLayer[]) => tile(...layers);
-const pixelSignature = not exported; tests use rasterized output.
-```
-
-Use explicit rectangle layers only. Do not use randomness. Keep all block
-textures fully opaque except leaves and saplings, which use hard alpha.
+- slot 194: `blocks/jungle_sapling.png`
+- slot 199: `blocks/dark_oak_sapling.png`
+- slot 204: `blocks/acacia_sapling.png`
 
 Replace slots 35, 102, and 103 with the approved stick, diamond, and emerald
 silhouettes.
 
-Add slot 169 to `TEXTURE_PATHS` as `blocks/packed_ice.png`.
-
-- [ ] **Step 4: Generate PNGs**
+- [ ] **Step 5: Generate PNGs**
 
 Run:
 
@@ -410,9 +406,10 @@ Run:
 node --no-warnings --experimental-strip-types scripts/generate_pr19_textures.mjs
 ```
 
-Expected: 105 generated assets, including all slots 169-204.
+Expected: 72 generated assets. Existing non-sapling placed-block PNGs remain
+unchanged.
 
-- [ ] **Step 5: Run texture tests and verify GREEN**
+- [ ] **Step 6: Run texture tests and verify GREEN**
 
 Run:
 
@@ -432,9 +429,7 @@ Expected: PASS.
 
 Create temporary contact sheets outside the repository for:
 
-- all seven wood families;
-- all saplings and leaves;
-- new grass/soil/stone blocks;
+- jungle, dark oak, and acacia saplings;
 - diamond, emerald, and stick.
 
 Inspect for blank pixels, clipping, weak contrast, duplicated patterns, and
@@ -474,10 +469,10 @@ Verify:
 
 - main menu loads;
 - a new creative world reaches gameplay;
-- no texture loading errors appear;
+- absent mapped PNGs fall back without image decode errors;
 - creative inventory shows the added wood and stone blocks;
 - representative new logs rotate correctly when placed if pointer-lock input is
-  available.
+available.
 
 - [ ] **Step 5: Commit and push**
 

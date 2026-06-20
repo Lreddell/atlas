@@ -61,7 +61,6 @@ export const DEFAULTS = {
         taiga: { maxTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 74, scale: 30 },
         iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.60, base: 72, scale: 8 },
         mountains: { minWeird: 0.40, base: 145, scale: 120 },
-        deadForest: { minTemp: -0.4, minWeird: -1.0, maxWeird: -0.55, base: 72, scale: 20 },
         swamp: { minTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 64, scale: 8 },
         stoneShore: { continentalnessMax: -0.18, base: 62, scale: 10 },
     },

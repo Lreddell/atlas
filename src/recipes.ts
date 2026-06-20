@@ -1,5 +1,6 @@
 
 import { BlockType } from './types';
+import { STONE_TOOL_MATERIALS, WOOD_FAMILIES } from './systems/registry/blockFamilies';
 
 export interface Recipe {
     gridSize: 2 | 3;
@@ -194,7 +195,6 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_PICKAXE, count: 1 } },
     
@@ -206,7 +206,6 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, BlockType.JUNGLE_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, BlockType.DARK_OAK_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, BlockType.ACACIA_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, BlockType.COBBLESTONE, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, BlockType.IRON_INGOT, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, BlockType.COPPER_INGOT, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_AXE, count: 1 } },
 
@@ -218,7 +217,6 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, null, BlockType.JUNGLE_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, null, BlockType.DARK_OAK_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, null, BlockType.ACACIA_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, null, BlockType.COBBLESTONE, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.STONE_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, null, BlockType.IRON_INGOT, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.IRON_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, null, BlockType.COPPER_INGOT, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.COPPER_AXE, count: 1 } },
 
@@ -230,7 +228,6 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [null, BlockType.JUNGLE_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.DARK_OAK_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.ACACIA_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
-    { gridSize: 3, pattern: [null, BlockType.COBBLESTONE, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.IRON_INGOT, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.COPPER_INGOT, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_SHOVEL, count: 1 } },
 ];
@@ -249,13 +246,7 @@ push(2, [BlockType.IRON_BLOCK, null, null, null], BlockType.IRON_INGOT, 9);
 
 // Stairs (6 blocks -> 4, both handedness) + slabs (3 in a row -> 6)
 const SHAPE_FAMILIES: { mat: BlockType, slab: BlockType, stairs: BlockType }[] = [
-    { mat: BlockType.OAK_PLANKS, slab: BlockType.OAK_SLAB, stairs: BlockType.OAK_STAIRS },
-    { mat: BlockType.SPRUCE_PLANKS, slab: BlockType.SPRUCE_SLAB, stairs: BlockType.SPRUCE_STAIRS },
-    { mat: BlockType.BIRCH_PLANKS, slab: BlockType.BIRCH_SLAB, stairs: BlockType.BIRCH_STAIRS },
-    { mat: BlockType.CHERRY_PLANKS, slab: BlockType.CHERRY_SLAB, stairs: BlockType.CHERRY_STAIRS },
-    { mat: BlockType.JUNGLE_PLANKS, slab: BlockType.JUNGLE_SLAB, stairs: BlockType.JUNGLE_STAIRS },
-    { mat: BlockType.DARK_OAK_PLANKS, slab: BlockType.DARK_OAK_SLAB, stairs: BlockType.DARK_OAK_STAIRS },
-    { mat: BlockType.ACACIA_PLANKS, slab: BlockType.ACACIA_SLAB, stairs: BlockType.ACACIA_STAIRS },
+    ...WOOD_FAMILIES.map(({ planks, slab, stairs }) => ({ mat: planks, slab, stairs })),
     { mat: BlockType.COBBLESTONE, slab: BlockType.COBBLESTONE_SLAB, stairs: BlockType.COBBLESTONE_STAIRS },
     { mat: BlockType.STONE, slab: BlockType.STONE_SLAB, stairs: BlockType.STONE_STAIRS },
     { mat: BlockType.SANDSTONE, slab: BlockType.SANDSTONE_SLAB, stairs: BlockType.SANDSTONE_STAIRS },
@@ -270,7 +261,6 @@ for (const f of SHAPE_FAMILIES) {
 
 // Swords (2 material + stick) and hoes (2 material + 2 sticks, both handedness)
 const SWORD_HOE: { mat: BlockType, sword: BlockType, hoe: BlockType }[] = [
-    { mat: BlockType.COBBLESTONE, sword: BlockType.STONE_SWORD, hoe: BlockType.STONE_HOE },
     { mat: BlockType.IRON_INGOT, sword: BlockType.IRON_SWORD, hoe: BlockType.IRON_HOE },
     { mat: BlockType.COPPER_INGOT, sword: BlockType.COPPER_SWORD, hoe: BlockType.COPPER_HOE },
     { mat: BlockType.GOLD_INGOT, sword: BlockType.GOLD_SWORD, hoe: BlockType.GOLD_HOE },
@@ -281,11 +271,21 @@ for (const t of SWORD_HOE) {
     push(3, [t.mat, t.mat, null, null, S, null, null, S, null], t.hoe, 1);
     push(3, [null, t.mat, t.mat, null, S, null, null, S, null], t.hoe, 1);
 }
-// Wooden swords/hoes (one per plank type)
-for (const p of [BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.ACACIA_PLANKS]) {
-    push(3, [null, p, null, null, p, null, null, S, null], BlockType.WOOD_SWORD, 1);
-    push(3, [p, p, null, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
-    push(3, [null, p, p, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+// Wooden swords/hoes (one per plank family)
+for (const { planks } of WOOD_FAMILIES) {
+    push(3, [null, planks, null, null, planks, null, null, S, null], BlockType.WOOD_SWORD, 1);
+    push(3, [planks, planks, null, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+    push(3, [null, planks, planks, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+}
+
+for (const material of STONE_TOOL_MATERIALS) {
+    push(3, [material, material, material, null, S, null, null, S, null], BlockType.STONE_PICKAXE, 1);
+    push(3, [material, material, null, material, S, null, null, S, null], BlockType.STONE_AXE, 1);
+    push(3, [material, material, null, null, material, S, null, S, null], BlockType.STONE_AXE, 1);
+    push(3, [null, material, null, null, S, null, null, S, null], BlockType.STONE_SHOVEL, 1);
+    push(3, [null, material, null, null, material, null, null, S, null], BlockType.STONE_SWORD, 1);
+    push(3, [material, material, null, null, S, null, null, S, null], BlockType.STONE_HOE, 1);
+    push(3, [null, material, material, null, S, null, null, S, null], BlockType.STONE_HOE, 1);
 }
 
 // Gold & Diamond pickaxe / axe / shovel (the other tiers already existed)

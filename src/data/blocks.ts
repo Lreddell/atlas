@@ -173,8 +173,8 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.IRON_SHOVEL]: { id: BlockType.IRON_SHOVEL, color: '#d7ccc8', name: 'Iron Shovel', textureSlot: 41, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'shovel', toolTier: 3, category: 'tools' },
   [BlockType.COPPER_SHOVEL]: { id: BlockType.COPPER_SHOVEL, color: '#e67e22', name: 'Copper Shovel', textureSlot: 63, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
 
-  [BlockType.WOOD_SWORD]: { id: BlockType.WOOD_SWORD, color: '#8d6e63', name: 'Wood Sword', textureSlot: 105, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.WOOD_HOE]: { id: BlockType.WOOD_HOE, color: '#8d6e63', name: 'Wood Hoe', textureSlot: 106, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.WOOD_SWORD]: { id: BlockType.WOOD_SWORD, color: '#8d6e63', name: 'Wood Sword', textureSlot: 105, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [BlockType.WOOD_HOE]: { id: BlockType.WOOD_HOE, color: '#8d6e63', name: 'Wood Hoe', textureSlot: 106, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
   
   [BlockType.STONE_SWORD]: { id: BlockType.STONE_SWORD, color: '#757575', name: 'Stone Sword', textureSlot: 107, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.STONE_HOE]: { id: BlockType.STONE_HOE, color: '#757575', name: 'Stone Hoe', textureSlot: 108, hardness: 0, isItem: true, category: 'tools' },
@@ -271,18 +271,18 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // ===== Biome-specific surface blocks (Task ID 5) =====
   // Grass-topped blocks: textureSlot = top texture; the resolver uses a paired
   // side texture + dirt (slot 0) for the bottom. See textureResolver.ts.
-  [BlockType.MOSSY_GRASS]: { id: BlockType.MOSSY_GRASS, color: '#568b48', name: 'Mossy Grass', textureSlot: 170, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.LUSH_GRASS]: { id: BlockType.LUSH_GRASS, color: '#5aaa50', name: 'Lush Grass', textureSlot: 172, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.DARK_GRASS]: { id: BlockType.DARK_GRASS, color: '#2c5230', name: 'Dark Grass', textureSlot: 174, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.MOSSY_GRASS]: { id: BlockType.MOSSY_GRASS, color: '#568b48', name: 'Mossy Grass', textureSlot: 170, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.LUSH_GRASS]: { id: BlockType.LUSH_GRASS, color: '#5aaa50', name: 'Lush Grass', textureSlot: 172, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DARK_GRASS]: { id: BlockType.DARK_GRASS, color: '#2c5230', name: 'Dark Grass', textureSlot: 174, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
   [BlockType.PODZOL]: { id: BlockType.PODZOL, color: '#6e5037', name: 'Podzol', textureSlot: 182, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
 
   // Mountain stone variants
-  [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
-  [BlockType.DIORITE]: { id: BlockType.DIORITE, color: '#e1e1de', name: 'Diorite', textureSlot: 185, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
-  [BlockType.GRANITE]: { id: BlockType.GRANITE, color: '#af6e5f', name: 'Granite', textureSlot: 186, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.ANDESITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.DIORITE]: { id: BlockType.DIORITE, color: '#e1e1de', name: 'Diorite', textureSlot: 185, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.DIORITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.GRANITE]: { id: BlockType.GRANITE, color: '#af6e5f', name: 'Granite', textureSlot: 186, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.GRANITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
 
   // Other biome surfaces
   [BlockType.COARSE_DIRT]: { id: BlockType.COARSE_DIRT, color: '#6e5541', name: 'Coarse Dirt', textureSlot: 187, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
