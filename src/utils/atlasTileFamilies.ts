@@ -128,6 +128,13 @@ export const CUTOUT_TILE_CONFIGS: CutoutTileConfig[] = [
     { slot: 76 },
     { slot: 86 },
     { slot: 89 },
+    // New wood family leaves + saplings (Task ID 6)
+    { slot: 193 },  // jungle leaves
+    { slot: 194 },  // jungle sapling
+    { slot: 198 },  // dark oak leaves
+    { slot: 199 },  // dark oak sapling
+    { slot: 203 },  // acacia leaves
+    { slot: 204 },  // acacia sapling
 ];
 
 export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {

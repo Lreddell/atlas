@@ -138,7 +138,10 @@ const is2DBlock = (type: BlockType): boolean => {
            type === BlockType.SAPLING ||
            type === BlockType.SPRUCE_SAPLING ||
            type === BlockType.BIRCH_SAPLING ||
-           type === BlockType.CHERRY_SAPLING;
+           type === BlockType.CHERRY_SAPLING ||
+           type === BlockType.JUNGLE_SAPLING ||
+           type === BlockType.DARK_OAK_SAPLING ||
+           type === BlockType.ACACIA_SAPLING;
 };
 
 // Cache for scanning pixel data

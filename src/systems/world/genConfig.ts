@@ -21,7 +21,7 @@ export interface NoiseParams {
 export const DEFAULTS = {
     noise: {
         temperature: { scale: 0.0006, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.5 },
-        weirdness: { scale: 0.002, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.0 },
+        weirdness: { scale: 0.0012, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.0 },
         continentalness: { scale: 0.001, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, offset: -0.15 },
         river: { scale: 0.004, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, jitter: 0.5 },
         // Terrain uses manual octaves in chunkGeneration, but we expose base params here
@@ -36,10 +36,10 @@ export const DEFAULTS = {
         oceanScale: 8,         // Terrain noise scale underwater
     },
     biomes: {
-        ocean: { continentalnessMax: -0.30, base: 38, scale: 8 }, 
+        ocean: { continentalnessMax: -0.30, base: 38, scale: 8 },
         tundra: { maxTemp: -0.7, base: 75, scale: 35 }, // Tundra Land Settings & Water Freezing Threshold
         river: { width: 0.012, base: 58, scale: 5 },
-        
+
         volcanic: { minTemp: 0.80, minWeird: 0.50, base: 80, scale: 85 },
         mesaBryce: { minTemp: 0.65, minWeird: 0.30, maxWeird: 0.45, base: 72, scale: 10 },
         mesa: { minTemp: 0.6, base: 72, scale: 10 },
@@ -47,6 +47,23 @@ export const DEFAULTS = {
         plains: { minTemp: 0.0, base: 70, scale: 20 },
         forest: { minTemp: -0.4, base: 72, scale: 25 },
         cherry: { minTemp: -0.7, base: 85, scale: 45 },
+
+        // --- New biomes (Task ID 4) ---
+        // Weirdness sub-bands within each temperature band. minWeird/maxWeird
+        // select the variant; base/scale shape terrain height blending.
+        // Bands are widened (Task ID 5) so small biomes spawn at a healthy size.
+        birchForest: { minTemp: -0.4, minWeird: -0.55, maxWeird: -0.25, base: 73, scale: 22 },
+        flowerForest: { minTemp: -0.4, minWeird: 0.30, maxWeird: 0.55, base: 73, scale: 24 },
+        darkForest: { minTemp: -0.4, minWeird: 0.55, maxWeird: 1.0, base: 74, scale: 28 },
+        meadow: { minTemp: -0.7, minWeird: -0.30, maxWeird: 0.40, base: 80, scale: 14 },
+        savanna: { minTemp: 0.0, minWeird: -1.0, maxWeird: -0.30, base: 71, scale: 12 },
+        jungle: { minTemp: 0.0, minWeird: 0.45, maxWeird: 1.0, base: 74, scale: 30 },
+        taiga: { maxTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 74, scale: 30 },
+        iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.60, base: 72, scale: 8 },
+        mountains: { minWeird: 0.40, base: 145, scale: 120 },
+        deadForest: { minTemp: -0.4, minWeird: -1.0, maxWeird: -0.55, base: 72, scale: 20 },
+        swamp: { minTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 64, scale: 8 },
+        stoneShore: { continentalnessMax: -0.18, base: 62, scale: 10 },
     },
     height: {
         globalScale: 1.0,

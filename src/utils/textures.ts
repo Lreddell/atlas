@@ -769,6 +769,127 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         withTile(slot, () => paintPixelTile(ctx, PR19_TEXTURE_TILES[slot]));
     });
 
+    // 169: Packed Ice — denser, more crystalline ice for the Ice Spikes biome.
+    withTile(169, () => {
+        fill('#b3e5fc');
+        ctx.fillStyle = '#81d4fa';
+        for (let i = 0; i < 24; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#4fc3f7';
+        // Diagonal crystalline streaks
+        for (let i = 0; i < 16; i++) {
+            ctx.fillRect(i, (i * 2) % 16, 1, 1);
+            ctx.fillRect((i * 3) % 16, i, 1, 1);
+        }
+        ctx.fillStyle = '#e1f5fe';
+        ctx.fillRect(2, 2, 2, 1); ctx.fillRect(9, 5, 2, 1); ctx.fillRect(4, 11, 2, 1); ctx.fillRect(12, 13, 2, 1);
+    });
+
+    // --- Biome block procedural fallbacks (Task ID 5) ---
+    // These are simple fallbacks; the real textures ship as PNG assets in
+    // public/assets/textures/blocks/ and override these at runtime.
+    const grassTopFallback = (slot: number, base: string, light: string, dark: string) => {
+        withTile(slot, () => {
+            fill(base);
+            ctx.fillStyle = light;
+            for (let i = 0; i < 30; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            ctx.fillStyle = dark;
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const grassSideFallback = (slot: number, grassCol: string) => {
+        withTile(slot, () => {
+            fill('#5d4037');
+            ctx.fillStyle = '#3e2723';
+            for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            // grass fringe top 3 rows
+            ctx.fillStyle = grassCol;
+            for (let x = 0; x < 16; x++) { ctx.fillRect(x, 0, 1, 1); ctx.fillRect(x, 1, 1, 1); if (Math.random() < 0.6) ctx.fillRect(x, 2, 1, 1); }
+        });
+    };
+    grassTopFallback(170, '#568b48', '#7ab06a', '#3a6b30'); grassSideFallback(171, '#568b48');  // Mossy Grass
+    grassTopFallback(172, '#5aaa50', '#7fc870', '#3d7a35'); grassSideFallback(173, '#5aaa50');  // Lush Grass
+    grassTopFallback(174, '#2c5230', '#3e7a42', '#1b3a1f'); grassSideFallback(175, '#2c5230');  // Dark Grass
+    grassTopFallback(176, '#78aa50', '#9ac870', '#527a35'); grassSideFallback(177, '#78aa50');  // Meadow Grass
+    grassTopFallback(178, '#b0a83c', '#c8c060', '#827a28'); grassSideFallback(179, '#b0a83c');  // Savanna Grass
+    grassTopFallback(180, '#3c8c32', '#5ab04a', '#2a6a22'); grassSideFallback(181, '#3c8c32');  // Jungle Grass
+    // Podzol
+    withTile(182, () => { fill('#6e5037'); ctx.fillStyle = '#4a3525'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<6;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(183, () => { fill('#5d4037'); ctx.fillStyle='#3e2723'; for (let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#6e5037'; for(let i=0;i<8;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Stone variants
+    withTile(184, () => { fill('#8c8a86'); ctx.fillStyle='#6e6c68'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#aeaca8'; for(let i=0;i<20;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Andesite
+    withTile(185, () => { fill('#e1e1de'); ctx.fillStyle='#555'; for (let i=0;i<32;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Diorite
+    withTile(186, () => { fill('#af6e5f'); ctx.fillStyle='#8c5040'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#d29a8a'; for(let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Granite
+    // Coarse Dirt
+    withTile(187, () => { fill('#6e5541'); ctx.fillStyle='#503c28'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#8c7050'; for(let i=0;i<12;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Mud
+    withTile(188, () => { fill('#3c3026'); ctx.fillStyle='#2a2018'; for (let i=0;i<16;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#504030'; for(let i=0;i<10;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Mossy Cobblestone
+    withTile(189, () => { fill('#787878'); ctx.fillStyle='#3a3a3a'; for (let x=0;x<16;x++) for (let y=0;y<16;y++) if ((x%8===0||y%8===0) && Math.random()<0.5) ctx.fillRect(x,y,1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+
+    // --- New wood family fallbacks (Task ID 6) ---
+    const shadeHex = (hex: string, amount: number): string => {
+        const v = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, Math.min(255, ((v >> 16) & 255) + amount));
+        const g = Math.max(0, Math.min(255, ((v >> 8) & 255) + amount));
+        const b = Math.max(0, Math.min(255, (v & 255) + amount));
+        return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+    };
+    const logTopFallback = (slot: number, ring: string, bark: string) => {
+        withTile(slot, () => {
+            fill(bark);
+            ctx.fillStyle = ring;
+            ctx.fillRect(2, 2, 12, 12);
+            ctx.fillStyle = shadeHex(ring, -20);
+            ctx.fillRect(4, 4, 8, 8);
+            ctx.fillStyle = shadeHex(ring, -35);
+            ctx.fillRect(7, 7, 2, 2);
+        });
+    };
+    const logSideFallback = (slot: number, bark: string) => {
+        withTile(slot, () => {
+            fill(bark);
+            ctx.fillStyle = shadeHex(bark, -25);
+            for (let x = 0; x < 16; x += 3) ctx.fillRect(x, 0, 1, 16);
+            ctx.fillStyle = shadeHex(bark, 15);
+            for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const planksFallback = (slot: number, col: string) => {
+        withTile(slot, () => {
+            fill(col);
+            ctx.fillStyle = shadeHex(col, -30);
+            ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1); ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1); ctx.fillRect(0, 15, 16, 1);
+            ctx.fillStyle = shadeHex(col, 15);
+            for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const leavesFallback = (slot: number, col: string) => {
+        withTile(slot, () => {
+            fill(col);
+            ctx.fillStyle = shadeHex(col, 25);
+            for (let i = 0; i < 28; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            ctx.fillStyle = shadeHex(col, -25);
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const saplingFallback = (slot: number, leafCol: string, stemCol: string) => {
+        withTile(slot, () => {
+            // transparent bg — only draw stem + canopy
+            ctx.fillStyle = stemCol;
+            ctx.fillRect(7, 11, 2, 4);
+            ctx.fillStyle = leafCol;
+            ctx.fillRect(5, 5, 6, 5); ctx.fillRect(6, 4, 4, 1); ctx.fillRect(6, 10, 4, 1);
+            ctx.fillStyle = shadeHex(leafCol, 25);
+            ctx.fillRect(6, 5, 2, 1); ctx.fillRect(9, 7, 1, 1);
+        });
+    };
+    // Jungle
+    logTopFallback(190, '#8c6437', '#5f6420'); logSideFallback(191, '#5f6420'); planksFallback(192, '#8c6437'); leavesFallback(193, '#327028'); saplingFallback(194, '#327028', '#5f6420');
+    // Dark Oak
+    logTopFallback(195, '#46321f', '#302218'); logSideFallback(196, '#302218'); planksFallback(197, '#46321f'); leavesFallback(198, '#1e461e'); saplingFallback(199, '#1e461e', '#302218');
+    // Acacia
+    logTopFallback(200, '#aa8255', '#694e34'); logSideFallback(201, '#694e34'); planksFallback(202, '#aa8255'); leavesFallback(203, '#6e8c32'); saplingFallback(204, '#6e8c32', '#694e34');
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);

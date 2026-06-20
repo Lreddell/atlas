@@ -8,6 +8,17 @@ import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenPara
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
 import { index3D } from './worldCoords';
+
+// Grassy-surface test: true for all grass-topped biome surface blocks (so
+// vegetation placement works on mossy/lush/dark/meadow/savanna/jungle grass,
+// podzol, plus the original grass/snowy-grass).
+const GRASSY_SURFACES = new Set<BlockType>([
+    BlockType.GRASS, BlockType.SNOWY_GRASS,
+    BlockType.MOSSY_GRASS, BlockType.LUSH_GRASS, BlockType.DARK_GRASS,
+    BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS,
+    BlockType.PODZOL,
+]);
+const isGrassySurface = (t: BlockType) => GRASSY_SURFACES.has(t);
 import { generateTreeBlocks, isValidSoil } from './trees';
 import type { TreeKind } from './trees';
 
@@ -68,11 +79,31 @@ function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height:
         const tFactor = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const wFactor = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
         const volcanicFactor = tFactor * wFactor;
-        
+
         const jagged = Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.15, (z + toz) * 0.15));
         const jaggedLow = noiseSet.weirdness.noise2D((x + tox) * 0.03, (z + toz) * 0.03);
-        
+
         elevation += (jagged * 12 + jaggedLow * 6) * volcanicFactor;
+    }
+
+    // --- MOUNTAIN JAGGED PEAKS ---
+    // Adds sharp, high-frequency peak detail so mountains read as jagged peaks
+    // rather than smooth rounded hills. Only applied at the mountain CORE (high
+    // weirdness), NOT in the foothills transition zone — so the gradual climb
+    // stays smooth while the summit is jagged and dramatic.
+    if (b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird) {
+        const peakBlend = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird, b.mountains.minWeird + 0.20);
+        // Suppress where volcanic dominates
+        const volTemp = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
+        const volWeird = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
+        const mtnFactor = peakBlend * (1.0 - volTemp * volWeird);
+        if (mtnFactor > 0) {
+            // Ridge noise: sharp peaks at noise zero-crossings
+            const ridge = 1.0 - Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.08, (z + toz) * 0.08));
+            const ridge2 = 1.0 - Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.02 + 50, (z + toz) * 0.02 + 50));
+            // Large-scale peak boost + fine ridge detail
+            elevation += (ridge * ridge * 35 + ridge2 * 20) * mtnFactor;
+        }
     }
 
     // --- MESA & BRYCE PLATEAU LOGIC ---
@@ -158,6 +189,21 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
+    // Mountains — elevation-banded surface (matches the terrain pass): grass
+    // foothills, stone-variant slopes, snow caps. Trees only root in the grass band.
+    if (biome.id === 'mountains') {
+        if (height > 150) {
+            surface = BlockType.SNOW_BLOCK;
+        } else if (height > 110) {
+            // Approximate the terrain-pass stone-variant pick. The exact per-column
+            // noise choice isn't re-evaluated here; ANDESITE is a safe default that
+            // passes isValidSoil=false (so trees won't root on bare rock, correct).
+            surface = BlockType.ANDESITE;
+        } else {
+            surface = BlockType.GRASS;
+        }
+    }
+
     // Beach zone detection — matches terrain pass
     const params = getGenerationParams(wx, wz, noiseSet);
     const contVal = params.continentalness;
@@ -178,7 +224,7 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
-    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce') {
+    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce' && biome.id !== 'stone_shore' && biome.id !== 'mountains') {
         surface = BlockType.SAND;
     }
 
@@ -318,7 +364,24 @@ function generateChunkInner(cx: number, cz: number) {
                         else if (lavaNoise > 0.3) type = BlockType.MAGMA;
                     }
 
-                    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce') {
+                    // Mountains — elevation-banded surface: grass foothills,
+                    // bare stone-variant slopes (andesite/diorite/granite), snow caps.
+                    if (biome.id === 'mountains' && y === height) {
+                        if (height > 150) {
+                            type = BlockType.SNOW_BLOCK;
+                        } else if (height > 110) {
+                            // Use the column's noise to pick a stone variant so
+                            // bands of andesite/diorite/granite streak the cliffs.
+                            const stoneNoise = noiseSet.cave.noise2D(cwx * 0.1, cwz * 0.1);
+                            if (stoneNoise > 0.33) type = BlockType.GRANITE;
+                            else if (stoneNoise < -0.33) type = BlockType.DIORITE;
+                            else type = BlockType.ANDESITE;
+                        } else {
+                            type = BlockType.GRASS;
+                        }
+                    }
+
+                    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce' && biome.id !== 'stone_shore' && biome.id !== 'mountains') {
                         const depth = height - y;
                         if (depth < 4) {
                             if (depth === 3) type = BlockType.SANDSTONE;
@@ -569,9 +632,13 @@ function generateChunkInner(cx: number, cz: number) {
                 if ((t === biome.surfaceBlock || t === BlockType.SAND || t === BlockType.RED_SAND || t === BlockType.TERRACOTTA_ORANGE) && terrainY < MAX_Y - 3) {
                     const upIdx = index3D(rootLx, terrainY + 1, rootLz);
                     if (blocks[upIdx] === BlockType.AIR) {
-                        if (biome.id === 'desert' || biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
+                        const plantRnd = seededRand01(rootWx, terrainY, rootWz, 214);
+                        const vType = biome.vegetationType || 'none';
+                        const markH = () => { colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1); };
+
+                        if (vType === 'desert') {
                             if (t === BlockType.SAND || t === BlockType.RED_SAND) {
-                                if (biome.id === 'desert' && seededRand01(rootWx, terrainY, rootWz, 211) < 0.4) {
+                                if (plantRnd < 0.4) {
                                     const h = 1 + Math.floor(seededRand01(rootWx, terrainY, rootWz, 212) * 3);
                                     for (let i = 1; i <= h; i++) {
                                         const cy = terrainY + i;
@@ -583,26 +650,118 @@ function generateChunkInner(cx: number, cz: number) {
                                     }
                                 } else {
                                     blocks[upIdx] = BlockType.DEAD_BUSH;
-                                    colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                    markH();
                                 }
-                            } else if (biome.id === 'mesa_bryce' && seededRand01(rootWx, terrainY, rootWz, 213) < 0.05) {
+                            } else if (plantRnd < 0.05) {
+                                // Terracotta strata (mesa/bryce) — occasional dead bush.
                                 blocks[upIdx] = BlockType.DEAD_BUSH;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                markH();
                             }
-                        } else if (biome.id === 'plains' || biome.id === 'forest') {
-                            if (t === BlockType.GRASS) {
-                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 214);
+                        } else if (vType === 'forest') {
+                            if (isGrassySurface(t)) {
                                 if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
                                 else if (plantRnd < 0.85) blocks[upIdx] = BlockType.DANDELION;
                                 else blocks[upIdx] = BlockType.ROSE;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                markH();
                             }
-                        } else if (biome.id === 'cherry_grove') {
-                            if (t === BlockType.GRASS) {
-                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 215);
+                        } else if (vType === 'flowers') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.3) blocks[upIdx] = BlockType.DANDELION;
+                                else if (plantRnd < 0.6) blocks[upIdx] = BlockType.ROSE;
+                                else if (plantRnd < 0.8) blocks[upIdx] = BlockType.PINK_FLOWER;
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
+                            }
+                        } else if (vType === 'sparse') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        } else if (vType === 'cherry') {
+                            if (isGrassySurface(t)) {
                                 if (plantRnd < 0.3) blocks[upIdx] = BlockType.PINK_FLOWER;
-                                else if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
+                            }
+                        } else if (vType === 'savanna') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.8) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        } else if (vType === 'jungle') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.6) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else if (plantRnd < 0.8) blocks[upIdx] = BlockType.ROSE;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.DANDELION;
+                                else blocks[upIdx] = BlockType.PINK_FLOWER;
+                                markH();
+                            }
+                        } else if (vType === 'taiga') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.6) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
+                            }
+                        } else if (vType === 'dead') {
+                            if (t === BlockType.COARSE_DIRT || t === BlockType.DIRT) {
+                                if (plantRnd < 0.7) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        } else if (vType === 'swamp') {
+                            if (t === BlockType.MUD || t === BlockType.DIRT) {
+                                if (plantRnd < 0.5) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        }
+                        // vType === 'none': no decoration
+                    }
+                }
+            }
+
+            // Ice Spikes — rare towering packed-ice pillars rising from the snow.
+            if (biome.id === 'ice_spikes') {
+                const rootLx = rootWx - worldX;
+                const rootLz = rootWz - worldZ;
+                if (rootLx >= 0 && rootLx < CHUNK_SIZE && rootLz >= 0 && rootLz < CHUNK_SIZE) {
+                    const spikeRnd = seededRand01(rootWx, 0, rootWz, 231);
+                    if (spikeRnd < 0.05) {
+                        const terrainY = getTerrainHeight(rootWx, rootWz, noiseSet);
+                        if (terrainY > 63 && terrainY < MAX_Y - 14) {
+                            const baseIdx = index3D(rootLx, terrainY, rootLz);
+                            if (blocks[baseIdx] === BlockType.SNOW_BLOCK) {
+                                const spikeH = 5 + Math.floor(seededRand01(rootWx, terrainY, rootWz, 232) * 9); // 5-13 tall
+                                for (let h = 1; h <= spikeH; h++) {
+                                    const cy = terrainY + h;
+                                    if (cy > MAX_Y) break;
+                                    // Plus-shaped base for the bottom 3 layers, single column above,
+                                    // with a tapered tip — reads as a sharp icicle from a distance.
+                                    const isBase = h <= 3;
+                                    const isTip = h >= spikeH - 1;
+                                    const placeIce = (lx: number, lz: number) => {
+                                        if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) return;
+                                        const cIdx = index3D(lx, cy, lz);
+                                        if (cIdx < 0 || cIdx >= blocks.length) return;
+                                        const cur = blocks[cIdx];
+                                        if (cur === BlockType.AIR || cur === BlockType.SNOW_BLOCK) {
+                                            blocks[cIdx] = BlockType.PACKED_ICE;
+                                            colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], cy);
+                                        }
+                                    };
+                                    placeIce(rootLx, rootLz);
+                                    if (isBase && !isTip) {
+                                        placeIce(rootLx + 1, rootLz);
+                                        placeIce(rootLx - 1, rootLz);
+                                        placeIce(rootLx, rootLz + 1);
+                                        placeIce(rootLx, rootLz - 1);
+                                    }
+                                }
                             }
                         }
                     }

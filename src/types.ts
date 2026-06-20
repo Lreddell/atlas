@@ -191,7 +191,51 @@ export enum BlockType {
   COPPER_HELMET = 206,
   COPPER_CHESTPLATE = 207,
   COPPER_LEGGINGS = 208,
-  COPPER_BOOTS = 209
+  COPPER_BOOTS = 209,
+
+  // Packed Ice (denser ice for Ice Spikes biome)
+  PACKED_ICE = 210,
+
+  // --- Biome-specific surface blocks (Task ID 5) ---
+  // Grass-topped biome blocks (each uses a top + side texture pair)
+  MOSSY_GRASS = 211,       // Birch Forest
+  LUSH_GRASS = 212,        // Flower Forest
+  DARK_GRASS = 213,        // Dark Forest
+  MEADOW_GRASS = 214,      // Meadow
+  SAVANNA_GRASS = 215,     // Savanna
+  JUNGLE_GRASS = 216,      // Jungle
+  PODZOL = 217,            // Taiga
+  // Mountain stone variants
+  ANDESITE = 218,
+  DIORITE = 219,
+  GRANITE = 220,
+  // Other biome surfaces
+  COARSE_DIRT = 221,       // Dead Forest
+  MUD = 222,               // Swamp
+  MOSSY_COBBLESTONE = 223, // Stone Shore
+
+  // --- New tree wood families (Task ID 6): Jungle, Dark Oak, Acacia ---
+  // Each family: LOG, LEAVES, PLANKS, SAPLING, SLAB, STAIRS
+  JUNGLE_LOG = 224,
+  JUNGLE_LEAVES = 225,
+  JUNGLE_PLANKS = 226,
+  JUNGLE_SAPLING = 227,
+  JUNGLE_SLAB = 228,
+  JUNGLE_STAIRS = 229,
+
+  DARK_OAK_LOG = 230,
+  DARK_OAK_LEAVES = 231,
+  DARK_OAK_PLANKS = 232,
+  DARK_OAK_SAPLING = 233,
+  DARK_OAK_SLAB = 234,
+  DARK_OAK_STAIRS = 235,
+
+  ACACIA_LOG = 236,
+  ACACIA_LEAVES = 237,
+  ACACIA_PLANKS = 238,
+  ACACIA_SAPLING = 239,
+  ACACIA_SLAB = 240,
+  ACACIA_STAIRS = 241
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';
