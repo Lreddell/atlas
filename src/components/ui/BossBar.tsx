@@ -34,10 +34,16 @@ export const BossBar: React.FC = () => {
             <div className="mb-1 font-minecraft text-lg text-white [text-shadow:2px_2px_0px_#000]">
                 {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
             </div>
-            <div className="h-3 w-full border border-black/70 bg-[#2a0030]">
+            <div
+                className="h-4 w-full overflow-hidden border border-black/80"
+                style={{ background: '#1c1c22' }}
+            >
                 <div
-                    className="h-full bg-gradient-to-b from-[#ff4d4d] to-[#a80000] transition-[width] duration-200"
-                    style={{ width: `${pct * 100}%` }}
+                    className="h-full transition-[width] duration-150"
+                    style={{
+                        width: `${pct * 100}%`,
+                        background: 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)',
+                    }}
                 />
             </div>
         </div>
