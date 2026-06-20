@@ -49,7 +49,6 @@ const MUSIC_PACKS: Record<string, string[]> = {
     "birch_forest": ["music.forest"],
     "flower_forest": ["music.forest"],
     "dark_forest": ["music.forest"],
-    "dead_forest": ["music.forest"],
     "jungle": ["music.forest"],
     "swamp": ["music.forest"],
 

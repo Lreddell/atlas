@@ -705,13 +705,6 @@ function generateChunkInner(cx: number, cz: number) {
                                 else blocks[upIdx] = BlockType.GRASS_PLANT;
                                 markH();
                             }
-                        } else if (vType === 'dead') {
-                            if (t === BlockType.COARSE_DIRT || t === BlockType.DIRT) {
-                                if (plantRnd < 0.7) blocks[upIdx] = BlockType.DEAD_BUSH;
-                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
-                                else blocks[upIdx] = BlockType.DANDELION;
-                                markH();
-                            }
                         } else if (vType === 'swamp') {
                             if (t === BlockType.MUD || t === BlockType.DIRT) {
                                 if (plantRnd < 0.5) blocks[upIdx] = BlockType.DEAD_BUSH;

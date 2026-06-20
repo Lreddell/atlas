@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -14,6 +15,9 @@ import {
 const root = path.resolve(import.meta.dirname, '../../..');
 const blocksSource = fs.readFileSync(path.join(root, 'src/data/blocks.ts'), 'utf8');
 const mappingSource = fs.readFileSync(path.join(root, 'src/systems/textures/textureMapping.ts'), 'utf8');
+const atlasFamiliesSource = fs.readFileSync(path.join(root, 'src/utils/atlasTileFamilies.ts'), 'utf8');
+const atlasSource = fs.readFileSync(path.join(root, 'src/utils/textures.ts'), 'utf8');
+const resolverSource = fs.readFileSync(path.join(root, 'src/systems/world/textureResolver.ts'), 'utf8');
 
 // Biome wood-family saplings are placeable items that render straight from the
 // block atlas (blocks/*_sapling.png), so they intentionally have no dedicated
@@ -86,6 +90,16 @@ const ARMOR_SLOTS = [
     165, 166, 167, 168,
 ];
 
+const alphaMask = (slot) => {
+    const pixels = rasterizePixelTile(PR19_TEXTURE_TILES[slot]);
+    return Array.from({ length: 256 }, (_, index) => pixels[index * 4 + 3] > 0 ? 1 : 0);
+};
+
+const opaqueCount = (slot) => alphaMask(slot).reduce((total, value) => total + value, 0);
+
+const pixelSignature = (slot) =>
+    Buffer.from(rasterizePixelTile(PR19_TEXTURE_TILES[slot])).toString('base64');
+
 test('every non-block item has one unique external PNG mapping', () => {
     assert.equal(itemEntries.length, 66);
 
@@ -122,10 +136,36 @@ test('all armor and polarity boots have generated assets', () => {
     ARMOR_SLOTS.forEach((slot) => assert.equal(generatedSlots.has(slot), true));
 });
 
-test('generated catalog contains every item plus the three PR 19 blocks', () => {
-    assert.equal(PR19_TEXTURE_ASSETS.length, 69);
-    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ slot }) => slot)).size, 69);
-    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ path: relativePath }) => relativePath)).size, 69);
+test('every used atlas slot has a descriptive optional PNG mapping', () => {
+    const usedSlots = new Set();
+    const collect = (source, pattern) => {
+        for (const match of source.matchAll(pattern)) usedSlots.add(Number(match[1]));
+    };
+
+    collect(blocksSource, /\btextureSlot:\s*(\d+)/g);
+    collect(atlasFamiliesSource, /\bslot:\s*(\d+)/g);
+    collect(
+        atlasSource,
+        /\b(?:withTile|grassTopFallback|grassSideFallback|logTopFallback|logSideFallback|planksFallback|leavesFallback|saplingFallback)\((\d+)/g,
+    );
+    collect(
+        resolverSource,
+        /\b(?:texIdx|topTex|sideTex|frontTex)\s*=\s*(\d+)/g,
+    );
+
+    for (const slot of [...usedSlots].sort((left, right) => left - right)) {
+        const relativePath = [...mappedItemPaths.entries()]
+            .find(([mappedSlot]) => mappedSlot === slot)?.[1]
+            ?? mappingSource.match(new RegExp(`^\\s*${slot}:\\s*['"]([^'"]+\\.png)['"]`, 'm'))?.[1];
+        assert.ok(relativePath, `slot ${slot} has no optional PNG mapping`);
+        assert.match(relativePath, /^(?:blocks|items)\/[a-z0-9_]+\.png$/);
+    }
+});
+
+test('generated catalog contains every item, sapling, and existing PR 19 block', () => {
+    assert.equal(PR19_TEXTURE_ASSETS.length, 72);
+    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ slot }) => slot)).size, 72);
+    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ path: relativePath }) => relativePath)).size, 72);
 
     for (const { slot } of PR19_TEXTURE_ASSETS) {
         assert.ok(PR19_TEXTURE_TILES[slot], `slot ${slot} has no pixel definition`);
@@ -166,6 +206,21 @@ test('all generated item PNGs are 16x16 RGBA images', () => {
     }
 });
 
+test('all generated PNGs are 16x16 RGBA images', () => {
+    for (const { path: relativePath } of PR19_TEXTURE_ASSETS) {
+        const bytes = fs.readFileSync(path.join(root, 'public/assets/textures', relativePath));
+        assert.deepEqual(
+            Array.from(bytes.subarray(0, 8)),
+            [137, 80, 78, 71, 13, 10, 26, 10],
+            `${relativePath} is not a PNG`,
+        );
+        assert.equal(bytes.readUInt32BE(16), 16, `${relativePath} width`);
+        assert.equal(bytes.readUInt32BE(20), 16, `${relativePath} height`);
+        assert.equal(bytes[24], 8, `${relativePath} bit depth`);
+        assert.equal(bytes[25], 6, `${relativePath} color type`);
+    }
+});
+
 test('all item definitions use hard transparent or opaque alpha', () => {
     for (const { slot, path: relativePath } of PR19_TEXTURE_ASSETS) {
         if (!relativePath.startsWith('items/')) continue;
@@ -181,10 +236,6 @@ test('all item definitions use hard transparent or opaque alpha', () => {
 });
 
 test('material variants share silhouettes while retaining distinct palettes', () => {
-    const alphaMask = (slot) => {
-        const pixels = rasterizePixelTile(PR19_TEXTURE_TILES[slot]);
-        return Array.from({ length: 256 }, (_, index) => pixels[index * 4 + 3] > 0 ? 1 : 0);
-    };
     const colors = (slot) => {
         const pixels = rasterizePixelTile(PR19_TEXTURE_TILES[slot]);
         return new Set(Array.from({ length: 256 }, (_, index) =>
@@ -210,6 +261,17 @@ test('material variants share silhouettes while retaining distinct palettes', ()
     assert.notDeepEqual(colors(157), colors(161));
     assert.notDeepEqual(colors(157), colors(165));
     assert.notDeepEqual(colors(161), colors(165));
+});
+
+test('new wood saplings keep distinct generated artwork', () => {
+    assert.equal(new Set([194, 199, 204].map(pixelSignature)).size, 3);
+});
+
+test('stick, diamond, and emerald use readable distinct silhouettes', () => {
+    assert.ok(opaqueCount(35) >= 30, 'stick must be a readable two-pixel shaft');
+    assert.notDeepEqual(alphaMask(102), alphaMask(103));
+    assert.ok(opaqueCount(102) >= 40, 'diamond silhouette is too small');
+    assert.ok(opaqueCount(103) >= 40, 'emerald silhouette is too small');
 });
 
 test('PR 19 items use unique dedicated atlas slots and PNG assets', () => {
@@ -269,7 +331,7 @@ test('Iron Block uses the Atlas iron palette with an opaque paneled face', () =>
 });
 
 test('committed PNGs exactly match the shared pixel definitions', () => {
-    assert.equal(PR19_TEXTURE_ASSETS.length, 69);
+    assert.equal(PR19_TEXTURE_ASSETS.length, 72);
     const result = spawnSync(
         process.execPath,
         [

@@ -39,7 +39,6 @@ export type VegetationType =
     | 'savanna'     // tall grass + occasional dead bush on grass
     | 'jungle'      // dense grass + flowers, lush
     | 'taiga'       // dead bush + sparse grass on snowy grass
-    | 'dead'        // mostly dead bush on dirt
     | 'swamp';      // dead bush + grass on dirt
 
 // Sea Level is 63
@@ -139,11 +138,6 @@ export const BIOMES: Record<string, Biome> = {
     MOUNTAINS: {
         id: 'mountains', name: 'Mountains', surfaceBlock: BlockType.ANDESITE, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
         terrainScale: 70, terrainBase: 110, treeChance: 0.01, treeType: 'spruce', vegetationChance: 0.05, color: '#9e9e9e', vegetationType: 'sparse', tags: ['snowy']
-    },
-    // Dead Forest — gloomy, leafless-feeling dirt woodland with dead bushes.
-    DEAD_FOREST: {
-        id: 'dead_forest', name: 'Dead Forest', surfaceBlock: BlockType.COARSE_DIRT, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
-        terrainScale: 20, terrainBase: 72, treeChance: 0.012, treeType: 'oak', vegetationChance: 0.18, color: '#5d4037', vegetationType: 'dead'
     },
     // Swamp — low-lying, waterlogged dirtland with dead bushes and sparse oak.
     SWAMP: {
@@ -518,10 +512,6 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
         if (b.birchForest && typeof b.birchForest.minWeird === 'number' && typeof b.birchForest.maxWeird === 'number'
             && weirdness > b.birchForest.minWeird && weirdness <= b.birchForest.maxWeird) {
             return BIOMES.BIRCH_FOREST;
-        }
-        // Dead Forest — very low weirdness (gloomy)
-        if (b.deadForest && typeof b.deadForest.maxWeird === 'number' && weirdness <= b.deadForest.maxWeird) {
-            return BIOMES.DEAD_FOREST;
         }
         return BIOMES.FOREST;
     }

@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { entityManager } from '../../systems/entities/EntityManager';
 import { getAttackDamage, isSword } from '../../systems/registry/itemStats';
+import { isLogBlock } from '../../systems/registry/blockFamilies';
 import { gameEvents } from '../../systems/events/GameEvents';
 import { getRegionAt } from '../../systems/world/regions';
 import { BLOCKS } from '../../data/blocks';
@@ -359,7 +360,7 @@ export const InteractionController = ({
                 if (heldItem.type === BlockType.TORCH || heldItem.type === BlockType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
                     
                     let rotation = 0;
-                    if (heldItem.type === BlockType.LOG || heldItem.type === BlockType.SPRUCE_LOG || heldItem.type === BlockType.CHERRY_LOG || heldItem.type === BlockType.BIRCH_LOG) {
+                    if (isLogBlock(heldItem.type)) {
                         if (Math.abs(hit.ny) > 0.5) rotation = 0;
                         else if (Math.abs(hit.nx) > 0.5) rotation = 1;
                         else if (Math.abs(hit.nz) > 0.5) rotation = 2;
