@@ -31,14 +31,34 @@ export function resolveTexture(
         else if (dy === -1) texIdx = 0; 
         else texIdx = 25; 
     }
-    // 3. Logs (Oak, Spruce, Cherry, Birch) & Basalt
-    else if (type === BlockType.LOG || type === BlockType.SPRUCE_LOG || type === BlockType.CHERRY_LOG || type === BlockType.BIRCH_LOG || type === BlockType.BASALT) {
+    // 2b. Biome grass-topped blocks (Task ID 5): top texture = primary slot,
+    // side = slot+1, bottom = dirt (0). Each pair is registered consecutively
+    // in TEXTURE_PATHS (e.g. MOSSY_GRASS top=170/side=171).
+    else if (
+        type === BlockType.MOSSY_GRASS ||
+        type === BlockType.LUSH_GRASS ||
+        type === BlockType.DARK_GRASS ||
+        type === BlockType.MEADOW_GRASS ||
+        type === BlockType.SAVANNA_GRASS ||
+        type === BlockType.JUNGLE_GRASS ||
+        type === BlockType.PODZOL
+    ) {
+        const topSlot = def.textureSlot || 0;
+        if (dy === 1) texIdx = topSlot;        // top
+        else if (dy === -1) texIdx = 0;        // bottom (dirt)
+        else texIdx = topSlot + 1;             // side
+    }
+    // 3. Logs (Oak, Spruce, Cherry, Birch, Jungle, Dark Oak, Acacia) & Basalt
+    else if (type === BlockType.LOG || type === BlockType.SPRUCE_LOG || type === BlockType.CHERRY_LOG || type === BlockType.BIRCH_LOG || type === BlockType.JUNGLE_LOG || type === BlockType.DARK_OAK_LOG || type === BlockType.ACACIA_LOG || type === BlockType.BASALT) {
         let topTex = 13; // Generic Log Top
         let sideTex = 7; // Generic Log Side
-        
+
         if (type === BlockType.SPRUCE_LOG) { sideTex = 23; }
         else if (type === BlockType.CHERRY_LOG) { sideTex = 74; topTex = 75; }
         else if (type === BlockType.BIRCH_LOG) { sideTex = 87; topTex = 88; }
+        else if (type === BlockType.JUNGLE_LOG) { sideTex = 191; topTex = 190; }
+        else if (type === BlockType.DARK_OAK_LOG) { sideTex = 196; topTex = 195; }
+        else if (type === BlockType.ACACIA_LOG) { sideTex = 201; topTex = 200; }
         else if (type === BlockType.BASALT) { sideTex = 83; topTex = 84; }
         
         // Rotation 0: Upright (Y)

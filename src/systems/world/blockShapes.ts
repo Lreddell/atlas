@@ -8,12 +8,14 @@ const SLAB_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,
     BlockType.COBBLESTONE_SLAB, BlockType.STONE_SLAB, BlockType.SANDSTONE_SLAB,
     BlockType.RED_SANDSTONE_SLAB, BlockType.BRICK_SLAB,
+    BlockType.JUNGLE_SLAB, BlockType.DARK_OAK_SLAB, BlockType.ACACIA_SLAB,
 ]);
 
 const STAIR_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.OAK_STAIRS, BlockType.SPRUCE_STAIRS, BlockType.BIRCH_STAIRS, BlockType.CHERRY_STAIRS,
     BlockType.COBBLESTONE_STAIRS, BlockType.STONE_STAIRS, BlockType.SANDSTONE_STAIRS,
     BlockType.RED_SANDSTONE_STAIRS, BlockType.BRICK_STAIRS,
+    BlockType.JUNGLE_STAIRS, BlockType.DARK_OAK_STAIRS, BlockType.ACACIA_STAIRS,
 ]);
 
 export const isSlab = (t: BlockType): boolean => SLAB_TYPES.has(t);
@@ -181,6 +183,7 @@ export function stairBackDir(meta: number): number {
 // a smaller, plant-sized box instead.
 const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
     BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION,
     BlockType.DEBUG_CROSS, BlockType.PINK_FLOWER,
 ]);

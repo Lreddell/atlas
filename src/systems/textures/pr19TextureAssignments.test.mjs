@@ -15,6 +15,15 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const blocksSource = fs.readFileSync(path.join(root, 'src/data/blocks.ts'), 'utf8');
 const mappingSource = fs.readFileSync(path.join(root, 'src/systems/textures/textureMapping.ts'), 'utf8');
 
+// Biome wood-family saplings are placeable items that render straight from the
+// block atlas (blocks/*_sapling.png), so they intentionally have no dedicated
+// items/*.png mapping like the PR 19 tool/armor/ingredient items below.
+const BLOCK_TEXTURED_ITEMS = new Set([
+    'JUNGLE_SAPLING',
+    'DARK_OAK_SAPLING',
+    'ACACIA_SAPLING',
+]);
+
 const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];
 const itemEntries = blockEntryStarts.flatMap((match, index) => {
     const body = blocksSource.slice(
@@ -22,6 +31,7 @@ const itemEntries = blockEntryStarts.flatMap((match, index) => {
         blockEntryStarts[index + 1]?.index ?? blocksSource.length,
     );
     if (!/\bisItem:\s*true\b/.test(body)) return [];
+    if (BLOCK_TEXTURED_ITEMS.has(match[1])) return [];
     const slot = Number(body.match(/textureSlot:\s*(\d+)/)?.[1]);
     assert.ok(Number.isInteger(slot), `Unable to parse item slot for ${match[1]}`);
     return [{ type: match[1], slot }];

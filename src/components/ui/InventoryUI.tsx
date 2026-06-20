@@ -63,21 +63,30 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
     BlockType.SANDSTONE, BlockType.RED_SANDSTONE, BlockType.BASALT, BlockType.OBSIDIAN,
     BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS,
+    BlockType.JUNGLE_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.ACACIA_PLANKS,
     BlockType.GLASS, BlockType.WOOL, BlockType.IRON_BLOCK,
+    BlockType.ANDESITE, BlockType.DIORITE, BlockType.GRANITE, BlockType.MOSSY_COBBLESTONE,
     // Slabs
     BlockType.STONE_SLAB, BlockType.COBBLESTONE_SLAB, BlockType.BRICK_SLAB, BlockType.SANDSTONE_SLAB, BlockType.RED_SANDSTONE_SLAB,
     BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,
+    BlockType.JUNGLE_SLAB, BlockType.DARK_OAK_SLAB, BlockType.ACACIA_SLAB,
     // Stairs
     BlockType.STONE_STAIRS, BlockType.COBBLESTONE_STAIRS, BlockType.BRICK_STAIRS, BlockType.SANDSTONE_STAIRS, BlockType.RED_SANDSTONE_STAIRS,
     BlockType.OAK_STAIRS, BlockType.SPRUCE_STAIRS, BlockType.BIRCH_STAIRS, BlockType.CHERRY_STAIRS,
+    BlockType.JUNGLE_STAIRS, BlockType.DARK_OAK_STAIRS, BlockType.ACACIA_STAIRS,
     BlockType.TERRACOTTA, BlockType.TERRACOTTA_WHITE, BlockType.TERRACOTTA_LIGHT_GRAY, BlockType.TERRACOTTA_BROWN, BlockType.TERRACOTTA_RED, BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_YELLOW, BlockType.TERRACOTTA_MAGENTA,
 
     // --- NATURAL ---
-    BlockType.GRASS, BlockType.DIRT, BlockType.SAND, BlockType.RED_SAND, BlockType.SNOWY_GRASS, BlockType.SNOW_BLOCK, BlockType.ICE,
+    BlockType.GRASS, BlockType.DIRT, BlockType.COARSE_DIRT, BlockType.MUD, BlockType.SAND, BlockType.RED_SAND, BlockType.SNOWY_GRASS, BlockType.SNOW_BLOCK, BlockType.ICE, BlockType.PACKED_ICE,
+    BlockType.MOSSY_GRASS, BlockType.LUSH_GRASS, BlockType.DARK_GRASS, BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS, BlockType.PODZOL,
     BlockType.LOG, BlockType.SPRUCE_LOG, BlockType.BIRCH_LOG, BlockType.CHERRY_LOG,
+    BlockType.JUNGLE_LOG, BlockType.DARK_OAK_LOG, BlockType.ACACIA_LOG,
     BlockType.LEAVES, BlockType.SPRUCE_LEAVES, BlockType.BIRCH_LEAVES, BlockType.CHERRY_LEAVES,
+    BlockType.JUNGLE_LEAVES, BlockType.DARK_OAK_LEAVES, BlockType.ACACIA_LEAVES,
     BlockType.CACTUS, BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER, BlockType.WHEAT_SEEDS,
-    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING, BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
+    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
+    BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
     BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.COPPER_ORE, BlockType.GOLD_ORE, BlockType.LAPIS_ORE, BlockType.DIAMOND_ORE, BlockType.EMERALD_ORE,
 
     // --- TOOLS (Tiered) ---

@@ -263,7 +263,74 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.COPPER_HELMET]: { id: BlockType.COPPER_HELMET, color: '#e67e22', name: 'Copper Helmet', textureSlot: 165, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.COPPER_CHESTPLATE]: { id: BlockType.COPPER_CHESTPLATE, color: '#e67e22', name: 'Copper Chestplate', textureSlot: 166, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.COPPER_LEGGINGS]: { id: BlockType.COPPER_LEGGINGS, color: '#e67e22', name: 'Copper Leggings', textureSlot: 167, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_BOOTS]: { id: BlockType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 168, hardness: 0, isItem: true, category: 'tools' }
+  [BlockType.COPPER_BOOTS]: { id: BlockType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 168, hardness: 0, isItem: true, category: 'tools' },
+
+  // Packed Ice — denser ice for the Ice Spikes biome
+  [BlockType.PACKED_ICE]: { id: BlockType.PACKED_ICE, color: '#4fc3f7', name: 'Packed Ice', textureSlot: 169, hardness: 1.0, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.PACKED_ICE, chance: 1, min: 1, max: 1 }] },
+
+  // ===== Biome-specific surface blocks (Task ID 5) =====
+  // Grass-topped blocks: textureSlot = top texture; the resolver uses a paired
+  // side texture + dirt (slot 0) for the bottom. See textureResolver.ts.
+  [BlockType.MOSSY_GRASS]: { id: BlockType.MOSSY_GRASS, color: '#568b48', name: 'Mossy Grass', textureSlot: 170, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.LUSH_GRASS]: { id: BlockType.LUSH_GRASS, color: '#5aaa50', name: 'Lush Grass', textureSlot: 172, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.DARK_GRASS]: { id: BlockType.DARK_GRASS, color: '#2c5230', name: 'Dark Grass', textureSlot: 174, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.PODZOL]: { id: BlockType.PODZOL, color: '#6e5037', name: 'Podzol', textureSlot: 182, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
+
+  // Mountain stone variants
+  [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.DIORITE]: { id: BlockType.DIORITE, color: '#e1e1de', name: 'Diorite', textureSlot: 185, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.GRANITE]: { id: BlockType.GRANITE, color: '#af6e5f', name: 'Granite', textureSlot: 186, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
+
+  // Other biome surfaces
+  [BlockType.COARSE_DIRT]: { id: BlockType.COARSE_DIRT, color: '#6e5541', name: 'Coarse Dirt', textureSlot: 187, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.MUD]: { id: BlockType.MUD, color: '#3c3026', name: 'Mud', textureSlot: 188, hardness: 0.4, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.MOSSY_COBBLESTONE]: { id: BlockType.MOSSY_COBBLESTONE, color: '#506050', name: 'Mossy Cobblestone', textureSlot: 189, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building', drops: [{ type: BlockType.MOSSY_COBBLESTONE, chance: 1, min: 1, max: 1 }] },
+
+  // ===== New tree wood families (Task ID 6): Jungle, Dark Oak, Acacia =====
+  // Jungle
+  [BlockType.JUNGLE_LOG]: { id: BlockType.JUNGLE_LOG, color: '#5f6420', name: 'Jungle Log', textureSlot: 190, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.JUNGLE_LEAVES]: {
+      id: BlockType.JUNGLE_LEAVES, color: '#327028', name: 'Jungle Leaves', transparent: true, textureSlot: 193, hardness: 0.2,
+      drops: [
+          { type: BlockType.JUNGLE_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+      ], category: 'natural'
+  },
+  [BlockType.JUNGLE_PLANKS]: { id: BlockType.JUNGLE_PLANKS, color: '#8c6437', name: 'Jungle Planks', textureSlot: 192, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
+  [BlockType.JUNGLE_SAPLING]: { id: BlockType.JUNGLE_SAPLING, color: '#327028', name: 'Jungle Sapling', textureSlot: 194, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.JUNGLE_SLAB]: { id: BlockType.JUNGLE_SLAB, color: '#8c6437', name: 'Jungle Slab', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.JUNGLE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.JUNGLE_STAIRS]: { id: BlockType.JUNGLE_STAIRS, color: '#8c6437', name: 'Jungle Stairs', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.JUNGLE_STAIRS, chance: 1, min: 1, max: 1 }] },
+
+  // Dark Oak
+  [BlockType.DARK_OAK_LOG]: { id: BlockType.DARK_OAK_LOG, color: '#302218', name: 'Dark Oak Log', textureSlot: 195, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.DARK_OAK_LEAVES]: {
+      id: BlockType.DARK_OAK_LEAVES, color: '#1e461e', name: 'Dark Oak Leaves', transparent: true, textureSlot: 198, hardness: 0.2,
+      drops: [
+          { type: BlockType.DARK_OAK_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+      ], category: 'natural'
+  },
+  [BlockType.DARK_OAK_PLANKS]: { id: BlockType.DARK_OAK_PLANKS, color: '#46321f', name: 'Dark Oak Planks', textureSlot: 197, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
+  [BlockType.DARK_OAK_SAPLING]: { id: BlockType.DARK_OAK_SAPLING, color: '#1e461e', name: 'Dark Oak Sapling', textureSlot: 199, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.DARK_OAK_SLAB]: { id: BlockType.DARK_OAK_SLAB, color: '#46321f', name: 'Dark Oak Slab', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.DARK_OAK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.DARK_OAK_STAIRS]: { id: BlockType.DARK_OAK_STAIRS, color: '#46321f', name: 'Dark Oak Stairs', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.DARK_OAK_STAIRS, chance: 1, min: 1, max: 1 }] },
+
+  // Acacia
+  [BlockType.ACACIA_LOG]: { id: BlockType.ACACIA_LOG, color: '#694e34', name: 'Acacia Log', textureSlot: 200, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.ACACIA_LEAVES]: {
+      id: BlockType.ACACIA_LEAVES, color: '#6e8c32', name: 'Acacia Leaves', transparent: true, textureSlot: 203, hardness: 0.2,
+      drops: [
+          { type: BlockType.ACACIA_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+      ], category: 'natural'
+  },
+  [BlockType.ACACIA_PLANKS]: { id: BlockType.ACACIA_PLANKS, color: '#aa8255', name: 'Acacia Planks', textureSlot: 202, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
+  [BlockType.ACACIA_SAPLING]: { id: BlockType.ACACIA_SAPLING, color: '#6e8c32', name: 'Acacia Sapling', textureSlot: 204, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.ACACIA_SLAB]: { id: BlockType.ACACIA_SLAB, color: '#aa8255', name: 'Acacia Slab', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.ACACIA_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] }
 };
 
 export const ATLAS_COLS = 8;

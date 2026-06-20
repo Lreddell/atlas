@@ -118,9 +118,13 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.DEBUG_CROSS ||
                      type === BlockType.WHEAT_SEEDS ||
                      type === BlockType.PINK_FLOWER ||
+                     type === BlockType.SAPLING ||
                      type === BlockType.SPRUCE_SAPLING ||
                      type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING;
+                     type === BlockType.CHERRY_SAPLING ||
+                     type === BlockType.JUNGLE_SAPLING ||
+                     type === BlockType.DARK_OAK_SAPLING ||
+                     type === BlockType.ACACIA_SAPLING;
 
         if (is2D) {
             const geo = new THREE.PlaneGeometry(0.4, 0.4);
@@ -243,9 +247,13 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.DEBUG_CROSS ||
                      type === BlockType.WHEAT_SEEDS ||
                      type === BlockType.PINK_FLOWER ||
+                     type === BlockType.SAPLING ||
                      type === BlockType.SPRUCE_SAPLING ||
                      type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING;
+                     type === BlockType.CHERRY_SAPLING ||
+                     type === BlockType.JUNGLE_SAPLING ||
+                     type === BlockType.DARK_OAK_SAPLING ||
+                     type === BlockType.ACACIA_SAPLING;
 
              if (!is2D) {
                  dummy.rotation.x = Math.sin(time) * 0.5;

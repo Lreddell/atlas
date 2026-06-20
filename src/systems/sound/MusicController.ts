@@ -43,7 +43,28 @@ const MUSIC_PACKS: Record<string, string[]> = {
     "mesa_bryce": ["music.mesa"],
     
     "volcanic": ["music.volcanic"],
-    
+
+    // --- New biomes (Task ID 4/5): mapped to the closest existing music pack ---
+    // Forest family → forest music
+    "birch_forest": ["music.forest"],
+    "flower_forest": ["music.forest"],
+    "dark_forest": ["music.forest"],
+    "dead_forest": ["music.forest"],
+    "jungle": ["music.forest"],
+    "swamp": ["music.forest"],
+
+    // Open grasslands → plains music
+    "meadow": ["music.plains"],
+    "savanna": ["music.plains"],
+
+    // Cold/snowy biomes → cold music (also get auroras via the 'snowy' tag)
+    "taiga": ["music.cold"],
+    "ice_spikes": ["music.cold"],
+    "mountains": ["music.cold"],
+
+    // Coastal bare rock → ocean music (coastal ambiance)
+    "stone_shore": ["music.ocean"],
+
     // Fallback
     "generic": ["music.plains"]
 };

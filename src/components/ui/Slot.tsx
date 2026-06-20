@@ -128,7 +128,10 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.SPRUCE_SAPLING &&
                    item.type !== BlockType.BIRCH_SAPLING &&
                    item.type !== BlockType.CHERRY_SAPLING &&
-                   item.type !== BlockType.WATER && 
+                   item.type !== BlockType.JUNGLE_SAPLING &&
+                   item.type !== BlockType.DARK_OAK_SAPLING &&
+                   item.type !== BlockType.ACACIA_SAPLING &&
+                   item.type !== BlockType.WATER &&
                    item.type !== BlockType.LAVA &&
                    item.type !== BlockType.DEAD_BUSH &&
                    item.type !== BlockType.GRASS_PLANT &&
