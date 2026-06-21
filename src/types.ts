@@ -235,7 +235,22 @@ export enum BlockType {
   ACACIA_PLANKS = 238,
   ACACIA_SAPLING = 239,
   ACACIA_SLAB = 240,
-  ACACIA_STAIRS = 241
+  ACACIA_STAIRS = 241,
+
+  // --- Magnetic Fields biome (signature terrain + traversal + boss content) ---
+  // Magnetite Block: plain gray metallic terrain block (NOT a magnetic source).
+  MAGNETITE_BLOCK = 242,
+  // Resource crystals (cross-plane, red = positive, blue = negative).
+  POSITIVE_MAGNETITE_CRYSTAL = 243,
+  NEGATIVE_MAGNETITE_CRYSTAL = 244,
+  // Hazard spike (cross-plane, multiplies fall damage on landing).
+  MAGNETIC_SPIKE = 245,
+  // Arena content blocks.
+  MAGNETIC_BOSS_SUMMONER = 246,
+  MAGNETIC_SHIELD_CRYSTAL = 247
+  // NOTE: the solid "Positive/Negative Magnetite Block" traversal sources reuse
+  // the existing POSITIVE_MAGNET (190) / NEGATIVE_MAGNET (191) ids for save
+  // compatibility; only their user-facing names are magnetite-themed.
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

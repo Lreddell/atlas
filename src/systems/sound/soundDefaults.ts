@@ -72,5 +72,7 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.bloodmoon": { category: "music", sounds: ["music/bloodmoon"], volume: 0.48 },
     "music.cherry": { category: "music", sounds: ["music/cherry"], volume: 0.5 },
     "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce
-    "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 }
+    "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 },
+    "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 }, // Magnetic Fields biome
+    "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 } // Magnetic Warden fight
 };

@@ -244,8 +244,8 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.BRICK_STAIRS]: { id: BlockType.BRICK_STAIRS, color: '#b71c1c', name: 'Brick Stairs', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // Magnetism and equipment.
-  [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnet', textureSlot: 149, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
-  [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnet', textureSlot: 150, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnetite Block', textureSlot: 149, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnetite Block', textureSlot: 150, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
   [BlockType.IRON_BLOCK]: { id: BlockType.IRON_BLOCK, color: '#d7ccc8', name: 'Iron Block', textureSlot: 156, hardness: 5.0, preferredTool: 'pickaxe', minHarvestTier: 2, category: 'building', drops: [{ type: BlockType.IRON_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.IRON_HELMET]: { id: BlockType.IRON_HELMET, color: '#d7ccc8', name: 'Iron Helmet', textureSlot: 151, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_CHESTPLATE]: { id: BlockType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 152, hardness: 0, isItem: true, category: 'tools' },
@@ -330,7 +330,30 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.ACACIA_PLANKS]: { id: BlockType.ACACIA_PLANKS, color: '#aa8255', name: 'Acacia Planks', textureSlot: 202, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
   [BlockType.ACACIA_SAPLING]: { id: BlockType.ACACIA_SAPLING, color: '#6e8c32', name: 'Acacia Sapling', textureSlot: 204, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.ACACIA_SLAB]: { id: BlockType.ACACIA_SLAB, color: '#aa8255', name: 'Acacia Slab', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.ACACIA_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] }
+  [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] },
+
+  // ===== Magnetic Fields biome content =====
+  // Magnetite Block — signature gray metallic terrain (shelves, walls, pillars,
+  // arena). Solid, opaque, NOT a magnetic source by itself.
+  [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building', drops: [{ type: BlockType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
+
+  // Resource crystals — cross-plane, red (positive) / blue (negative). Not
+  // magnetic sources this pass; used to craft Polarity Boots and magnetite blocks.
+  [BlockType.POSITIVE_MAGNETITE_CRYSTAL]: { id: BlockType.POSITIVE_MAGNETITE_CRYSTAL, color: '#ff4030', name: 'Positive Magnetite Crystal', textureSlot: 206, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POSITIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
+  [BlockType.NEGATIVE_MAGNETITE_CRYSTAL]: { id: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, color: '#3060ff', name: 'Negative Magnetite Crystal', textureSlot: 207, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetic Spike — cross-plane hazard rendered as sharp spikes but with solid
+  // collision so the player lands on it; multiplies fall damage (see Player.tsx +
+  // getFallDamageMultiplierForLandingBlock).
+  [BlockType.MAGNETIC_SPIKE]: { id: BlockType.MAGNETIC_SPIKE, color: '#2b2b30', name: 'Magnetic Spike', textureSlot: 208, hardness: 1.5, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETIC_SPIKE, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetic Boss Summoner — placed at arena center; right-click summons the
+  // Magnetic Warden (interaction wired in InteractionController).
+  [BlockType.MAGNETIC_BOSS_SUMMONER]: { id: BlockType.MAGNETIC_BOSS_SUMMONER, color: '#7b1fa2', name: 'Magnetic Boss Summoner', textureSlot: 209, hardness: 4.0, preferredTool: 'pickaxe', minHarvestTier: 2, lightLevel: 7, category: 'functional', drops: [{ type: BlockType.MAGNETIC_BOSS_SUMMONER, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetic Shield Crystal — cross-plane breakable crystal atop each arena
+  // pillar; breaking all of them drops the Magnetic Warden's shield.
+  [BlockType.MAGNETIC_SHIELD_CRYSTAL]: { id: BlockType.MAGNETIC_SHIELD_CRYSTAL, color: '#b388ff', name: 'Magnetic Shield Crystal', textureSlot: 210, hardness: 0.8, transparent: true, noCollision: true, lightLevel: 9, category: 'functional', drops: [] }
 };
 
 export const ATLAS_COLS = 8;
