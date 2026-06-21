@@ -335,7 +335,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // ===== Magnetic Fields biome content =====
   // Magnetite Block — signature gray metallic terrain (shelves, walls, pillars,
   // arena). Solid, opaque, NOT a magnetic source by itself.
-  [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building', drops: [{ type: BlockType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
 
   // Resource crystals — cross-plane, red (positive) / blue (negative). Not
   // magnetic sources this pass; used to craft Polarity Boots and magnetite blocks.

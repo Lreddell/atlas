@@ -1351,7 +1351,10 @@ export class WorldManager {
   }
   public locateBiome(biomeId: string, startX: number, startZ: number) {
       this.log(`Locating biome: ${biomeId}...`, 'info');
-      const SEARCH_RADIUS = 5000;
+      // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
+      // they need a wider search than ordinary biomes to stay reliably findable.
+      const isRareBossBiome = biomeId === 'magnetic_fields';
+      const SEARCH_RADIUS = isRareBossBiome ? 20000 : 5000;
       const STEP = 64;
       let found = false;
       let closestX = 0; let closestZ = 0;

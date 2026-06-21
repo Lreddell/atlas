@@ -126,18 +126,22 @@ class MusicController {
     private nightSlowdownEnabled: boolean = true;
     private isNight: boolean = false;
 
-    // Boss-music override: set while the Magnetic Warden fight is active so the
-    // dedicated boss track plays, then cleared on defeat/leave so biome music
-    // resumes. Scoped to the magnetic_warden boss so other regions are unaffected.
-    private bossActive: boolean = false;
+    // Boss-music override. The dedicated boss track plays only while the Magnetic
+    // Warden is alive AND the player is actively in combat (aggro'd). So it stops
+    // when the boss dies, when the player dies, or when the player leaves / loses
+    // aggro — but survives a brief loss of line-of-sight and resumes on re-engage.
+    private bossAlive: boolean = false;
+    private inCombat: boolean = false;
 
     constructor() {
         // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
         gameEvents.on('boss:spawned', ({ bossId }) => {
-            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossActive = true;
+            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = true;
         });
-        gameEvents.on('boss:defeated', () => { this.bossActive = false; });
-        gameEvents.on('boss:cleared', () => { this.bossActive = false; });
+        gameEvents.on('boss:defeated', () => { this.bossAlive = false; });
+        gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
+        gameEvents.on('combat:start', () => { this.inCombat = true; });
+        gameEvents.on('combat:stop', () => { this.inCombat = false; });
 
         if (typeof window === 'undefined') return;
 
@@ -273,8 +277,8 @@ class MusicController {
         
         if (inMenu) {
             targetContext = "MENU";
-        } else if (this.bossActive && gameMode !== 'creative') {
-            // Magnetic Warden fight overrides biome/ambient music.
+        } else if (this.bossAlive && this.inCombat && gameMode !== 'creative') {
+            // Magnetic Warden fight overrides biome/ambient music while engaged.
             targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
@@ -389,6 +393,10 @@ class MusicController {
     }
 
     public stopForDeath(fadeOut = DEATH_FADE_OUT) {
+        // Player death always ends the boss fight context (music must not resume
+        // the boss track on respawn).
+        this.bossAlive = false;
+        this.inCombat = false;
         if (this.isDeathSuspended) return; // already in death music — don't restart it
 
         this.isDeathSuspended = true;

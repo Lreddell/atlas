@@ -194,7 +194,11 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                      itemType === BlockType.CHERRY_SAPLING ||
                      itemType === BlockType.JUNGLE_SAPLING ||
                      itemType === BlockType.DARK_OAK_SAPLING ||
-                     itemType === BlockType.ACACIA_SAPLING;
+                     itemType === BlockType.ACACIA_SAPLING ||
+                     itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                     itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                     itemType === BlockType.MAGNETIC_SPIKE ||
+                     itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL;
 
         if (!is2D) {
             const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
@@ -327,7 +331,11 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 itemType === BlockType.CHERRY_SAPLING ||
                 itemType === BlockType.JUNGLE_SAPLING ||
                 itemType === BlockType.DARK_OAK_SAPLING ||
-                itemType === BlockType.ACACIA_SAPLING
+                itemType === BlockType.ACACIA_SAPLING ||
+                itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                itemType === BlockType.MAGNETIC_SPIKE ||
+                itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL
             );
 
             if (itemType && !is2D) {
