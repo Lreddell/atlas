@@ -890,6 +890,68 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // Acacia
     logTopFallback(200, '#aa8255', '#694e34'); logSideFallback(201, '#694e34'); planksFallback(202, '#aa8255'); leavesFallback(203, '#6e8c32'); saplingFallback(204, '#6e8c32', '#694e34');
 
+    // ===== Magnetic Fields biome tiles (Magnetic Warden content) =====
+    // 205: Magnetite Block — gray metallic with dark flecks + subtle purple sheen.
+    withTile(205, () => {
+        fill('#4a4a55');
+        ctx.fillStyle = '#2e2e36';
+        for (let i = 0; i < 26; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#6a6a78';
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#5b4a78';
+        for (let i = 0; i < 6; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+    });
+
+    // Crystal silhouette on a transparent background (cross-plane cutout).
+    const crystalTile = (slot: number, core: string, light: string, dark: string) => {
+        withTile(slot, () => {
+            const set = (x: number, y: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); };
+            // Vertical faceted shard, widest at the middle.
+            const spans: [number, number, number][] = [
+                [7, 1, 1], [6, 2, 3], [6, 3, 3], [5, 4, 5], [5, 5, 5],
+                [4, 6, 7], [4, 7, 7], [5, 8, 5], [5, 9, 5], [6, 10, 3], [6, 11, 3], [7, 12, 1], [7, 13, 1],
+            ];
+            for (const [x, y, w] of spans) {
+                for (let i = 0; i < w; i++) set(x + i, y, core);
+            }
+            // Left facet lighter, right facet darker for a faceted read.
+            for (const [x, y, w] of spans) {
+                set(x, y, light);
+                set(x + w - 1, y, dark);
+            }
+        });
+    };
+    crystalTile(206, '#ff4030', '#ff8a7a', '#a01810'); // Positive Magnetite Crystal (red)
+    crystalTile(207, '#3060ff', '#84a4ff', '#102aa0'); // Negative Magnetite Crystal (blue)
+    crystalTile(210, '#b388ff', '#e0ccff', '#6a3fb0'); // Magnetic Shield Crystal (violet glow)
+
+    // 208: Magnetic Spike — dark metal spikes on transparent background.
+    withTile(208, () => {
+        const tri = (cx: number, baseY: number, h: number, color: string) => {
+            ctx.fillStyle = color;
+            for (let r = 0; r < h; r++) {
+                const half = Math.max(0, Math.floor((h - r) / 2));
+                for (let x = cx - half; x <= cx + half; x++) ctx.fillRect(x, baseY - r, 1, 1);
+            }
+        };
+        tri(3, 15, 9, '#2b2b30'); tri(8, 15, 13, '#37373d'); tri(12, 15, 8, '#2b2b30');
+        // metallic glints near the tips
+        ctx.fillStyle = '#7a7a86';
+        ctx.fillRect(8, 3, 1, 2); ctx.fillRect(3, 7, 1, 1); ctx.fillRect(12, 8, 1, 1);
+    });
+
+    // 209: Magnetic Boss Summoner — purple housing with a red/blue polarity core.
+    withTile(209, () => {
+        fill('#3a1054');
+        ctx.fillStyle = '#7b1fa2';
+        ctx.fillRect(1, 1, 14, 14);
+        ctx.fillStyle = '#2a0a3e';
+        ctx.fillRect(3, 3, 10, 10);
+        ctx.fillStyle = '#ff4030'; ctx.fillRect(4, 6, 3, 4);
+        ctx.fillStyle = '#3060ff'; ctx.fillRect(9, 6, 3, 4);
+        ctx.fillStyle = '#e0ccff'; ctx.fillRect(7, 4, 2, 8);
+    });
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);

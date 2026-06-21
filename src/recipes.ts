@@ -304,6 +304,19 @@ for (const t of HEAVY) {
 push(2, [BlockType.SAND, BlockType.SAND, BlockType.SAND, BlockType.SAND], BlockType.SANDSTONE, 1);
 push(2, [BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND], BlockType.RED_SANDSTONE, 1);
 
+// --- Magnetic Fields: magnetite traversal blocks + Polarity Boots ---
+// Positive/Negative Magnetite Block: eight matching crystals around one iron ingot.
+const PC = BlockType.POSITIVE_MAGNETITE_CRYSTAL;
+const NC = BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+const FE = BlockType.IRON_INGOT;
+push(3, [PC, PC, PC, PC, FE, PC, PC, PC, PC], BlockType.POSITIVE_MAGNET, 1);
+push(3, [NC, NC, NC, NC, FE, NC, NC, NC, NC], BlockType.NEGATIVE_MAGNET, 1);
+
+// Polarity Boots: boots silhouette (iron sides) with one crystal of each polarity
+// in the bottom corners. Mirrored so crystal order doesn't matter.
+push(3, [null, null, null, FE, null, FE, PC, null, NC], BlockType.POLARITY_BOOTS, 1);
+push(3, [null, null, null, FE, null, FE, NC, null, PC], BlockType.POLARITY_BOOTS, 1);
+
 interface TrimmedGrid {
     cells: (BlockType | null)[];
     w: number;

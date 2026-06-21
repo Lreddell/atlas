@@ -1,5 +1,7 @@
 
 import { soundManager } from './SoundManager';
+import { gameEvents } from '../events/GameEvents';
+import { MAGNETIC_WARDEN_BOSS_ID } from '../world/magneticFields';
 
 const MUSIC_DELAY_MIN_KEY = 'atlas.music.delay.min';
 const MUSIC_DELAY_MAX_KEY = 'atlas.music.delay.max';
@@ -64,6 +66,10 @@ const MUSIC_PACKS: Record<string, string[]> = {
     // Coastal bare rock → ocean music (coastal ambiance)
     "stone_shore": ["music.ocean"],
 
+    // Magnetic Fields biome ambience + dedicated Magnetic Warden boss track.
+    "magnetic_fields": ["music.magnetic_fields"],
+    "BOSS_MAGNETIC": ["music.boss_magnetic_warden"],
+
     // Fallback
     "generic": ["music.plains"]
 };
@@ -120,7 +126,19 @@ class MusicController {
     private nightSlowdownEnabled: boolean = true;
     private isNight: boolean = false;
 
+    // Boss-music override: set while the Magnetic Warden fight is active so the
+    // dedicated boss track plays, then cleared on defeat/leave so biome music
+    // resumes. Scoped to the magnetic_warden boss so other regions are unaffected.
+    private bossActive: boolean = false;
+
     constructor() {
+        // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
+        gameEvents.on('boss:spawned', ({ bossId }) => {
+            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossActive = true;
+        });
+        gameEvents.on('boss:defeated', () => { this.bossActive = false; });
+        gameEvents.on('boss:cleared', () => { this.bossActive = false; });
+
         if (typeof window === 'undefined') return;
 
         // Load before the delay parsing below (which may early-return on bad data).
@@ -255,6 +273,9 @@ class MusicController {
         
         if (inMenu) {
             targetContext = "MENU";
+        } else if (this.bossActive && gameMode !== 'creative') {
+            // Magnetic Warden fight overrides biome/ambient music.
+            targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
         } else if (gameMode === 'creative') {
@@ -283,7 +304,8 @@ class MusicController {
         const isDeathSwitch = this.currentContext === "DEATH"; // leaving death resumes instantly
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
         const isCaveSwitch = targetContext === "CAVES" || this.currentContext === "CAVES";
-        const threshold = (isMenuSwitch || isDeathSwitch)
+        const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC';
+        const threshold = (isMenuSwitch || isDeathSwitch || isBossSwitch)
             ? 0
             : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 

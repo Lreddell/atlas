@@ -33,6 +33,13 @@ const REGION_DEFS: Record<string, RegionDef> = {
         tintColor: 0xff5530,
         sealedByDefault: true,
     },
+    magnetic_fields: {
+        id: 'magnetic_fields',
+        bossId: 'magnetic_warden',
+        displayName: 'Magnetic Fields',
+        tintColor: 0x7b5bd6,
+        sealedByDefault: true,
+    },
 };
 
 /** All declared regions (for HUD/codex listing and debug commands). */

@@ -198,4 +198,13 @@ export const TEXTURE_PATHS: Record<number, string> = {
     202: 'blocks/acacia_planks.png',
     203: 'blocks/acacia_leaves.png',
     204: 'blocks/acacia_sapling.png',
+
+    // --- MAGNETIC FIELDS biome (procedurally generated in utils/textures.ts;
+    // these declare optional override PNG paths and follow the atlas convention) ---
+    205: 'blocks/magnetite_block.png',
+    206: 'blocks/positive_magnetite_crystal.png',
+    207: 'blocks/negative_magnetite_crystal.png',
+    208: 'blocks/magnetic_spike.png',
+    209: 'blocks/magnetic_boss_summoner.png',
+    210: 'blocks/magnetic_shield_crystal.png',
 };

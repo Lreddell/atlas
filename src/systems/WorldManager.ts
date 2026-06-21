@@ -17,6 +17,8 @@ import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
 import { tickPlantGrowth } from './world/plantGrowth';
 import { getRegionAt } from './world/regions';
+import { MAGNETIC_FIELDS_REGION_ID } from './world/magneticFields';
+import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
 
 // --- Types ---
@@ -1221,7 +1223,17 @@ export class WorldManager {
   canEditBlock(x: number, y: number, z: number): boolean {
       const region = getRegionAt(x, y, z);
       if (!region || !region.sealedByDefault) return true;
-      return progression.isRegionCleansed(region.id);
+      if (progression.isRegionCleansed(region.id)) return true;
+      // Sealed-region exception: in the Magnetic Fields, the two magnetite
+      // crystals are the only blocks a player may mine while the region is still
+      // sealed (so Polarity Boots can be crafted before the boss). This targets
+      // BREAKING a crystal — placement targets are AIR (never a crystal), so
+      // placing stays denied, and other sealed regions are unaffected.
+      if (region.id === MAGNETIC_FIELDS_REGION_ID) {
+          const here = this.getBlock(x, y, z);
+          if (SEALED_MINEABLE_BLOCKS.has(here)) return true;
+      }
+      return false;
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }

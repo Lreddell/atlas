@@ -22,6 +22,9 @@
     "assets/rvx/sounds/music/menu/menu2.ogg",
     "assets/rvx/sounds/music/menu/menu3.ogg"
   ],
+  "ocean": [
+    "assets/rvx/sounds/music/ocean/Waves.ogg"
+  ],
   "plains": [
     "assets/rvx/sounds/music/plains/atlas.ogg",
     "assets/rvx/sounds/music/plains/plains1.ogg",

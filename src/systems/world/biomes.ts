@@ -2,6 +2,7 @@ import { BlockType } from '../../types';
 import { GlobalNoise, SimpleNoise, NoiseSet } from '../../utils/noise';
 import * as THREE from 'three';
 import { GenConfig, NoiseType } from './genConfig';
+import { isInMagneticFields, MF_BASE_HEIGHT } from './magneticFields';
 
 export interface Biome {
     id: string;
@@ -148,6 +149,13 @@ export const BIOMES: Record<string, Biome> = {
     STONE_SHORE: {
         id: 'stone_shore', name: 'Stone Shore', surfaceBlock: BlockType.MOSSY_COBBLESTONE, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
         terrainScale: 10, terrainBase: 62, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#757575', vegetationType: 'none'
+    },
+    // Magnetic Fields — rare, huge, tiered magnetic-convergence biome (sealed boss
+    // region). Terrain/structure is driven by the deterministic instance system in
+    // magneticFields.ts, not by ordinary noise; surface is metallic Magnetite.
+    MAGNETIC_FIELDS: {
+        id: 'magnetic_fields', name: 'Magnetic Fields', surfaceBlock: BlockType.MAGNETITE_BLOCK, subBlock: BlockType.MAGNETITE_BLOCK, waterBlock: BlockType.LAVA,
+        terrainScale: 4, terrainBase: MF_BASE_HEIGHT, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#5b4a78', vegetationType: 'none', tags: ['magnetic']
     }
 };
 
@@ -424,6 +432,10 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
 }
 
 export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): Biome {
+    // Magnetic Fields takes top priority: rare, deterministic instances (seeded by
+    // the world seed) override ordinary noise-derived biomes wherever they land.
+    if (isInMagneticFields(x, z, noiseSet.seed | 0)) return BIOMES.MAGNETIC_FIELDS;
+
     const { temp, continentalness, riverVal, weirdness } = getGenerationParams(x, z, noiseSet);
     const b = GenConfig.biomes;
 

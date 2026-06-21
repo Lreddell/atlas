@@ -18,6 +18,7 @@ import {
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
+import { getFallDamageMultiplierForLandingBlock } from '../systems/player/fallDamage';
 import { isEditableElement } from '../utils/dom';
 
 export interface PlayerHandle {
@@ -278,7 +279,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
                 const SAFE_FALL = 3.0;
                 if (fallDistance.current > SAFE_FALL) {
-                    applyDamage(Math.ceil(fallDistance.current - SAFE_FALL));
+                    // Magnetic Spikes (and any future hazard surface) amplify the
+                    // base fall damage, applied once per landing.
+                    const multiplier = getFallDamageMultiplierForLandingBlock(landedBlock);
+                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier));
                 }
                 fallDistance.current = 0;
             }

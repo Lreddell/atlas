@@ -192,7 +192,11 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.ROSE,
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER
+    BlockType.PINK_FLOWER,
+    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+    BlockType.MAGNETIC_SPIKE,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL
 ].forEach(t => { IS_CUTOUT[t] = 1; });
 
 [
@@ -215,7 +219,11 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.ROSE,
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER
+    BlockType.PINK_FLOWER,
+    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+    BlockType.MAGNETIC_SPIKE,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL
 ].forEach(t => { IS_CROSS[t] = 1; });
 
 // Slabs / stairs: rendered as partial boxes, never as full cubes or greedy quads.
