@@ -432,9 +432,11 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
 }
 
 export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): Biome {
-    // Magnetic Fields takes top priority: rare, deterministic instances (seeded by
-    // the world seed) override ordinary noise-derived biomes wherever they land.
-    if (isInMagneticFields(x, z, noiseSet.seed | 0)) return BIOMES.MAGNETIC_FIELDS;
+    // Magnetic Fields takes top priority: rare, noise-gated instances override
+    // ordinary biomes. Placement/shape come from the dedicated bossBiome noise.
+    if (isInMagneticFields(x, z, noiseSet.seed | 0, (px, pz) => noiseSet.bossBiome.noise2D(px, pz))) {
+        return BIOMES.MAGNETIC_FIELDS;
+    }
 
     const { temp, continentalness, riverVal, weirdness } = getGenerationParams(x, z, noiseSet);
     const b = GenConfig.biomes;

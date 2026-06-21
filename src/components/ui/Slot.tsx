@@ -139,7 +139,11 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.DANDELION &&
                    item.type !== BlockType.DEBUG_CROSS &&
                    item.type !== BlockType.WHEAT_SEEDS &&
-                   item.type !== BlockType.PINK_FLOWER;
+                   item.type !== BlockType.PINK_FLOWER &&
+                   item.type !== BlockType.POSITIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.NEGATIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.MAGNETIC_SPIKE &&
+                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL;
 
       if (is3D) {
           // Top Face (dy=1)

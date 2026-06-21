@@ -7,6 +7,7 @@ import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
 import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
+import { getMagneticFieldColumn } from './magneticFields';
 import { index3D } from './worldCoords';
 
 // Grassy-surface test: true for all grass-topped biome surface blocks (so
@@ -52,6 +53,13 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
 }
 
 function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
+    // Magnetic Fields: deterministic tiered shelves (flat) separated by tall flat
+    // magnetite walls, converging inward on the central arena. This replaces the
+    // ordinary noise terrain so the cliffs read as built, not random — and keeps the
+    // whole biome above sea level (no stray water/lava fill).
+    const mf = getMagneticFieldColumn(x, z, noiseSet.seed | 0, (px, pz) => noiseSet.bossBiome.noise2D(px, pz));
+    if (mf) return { height: mf.surfaceY, baseHeight: mf.surfaceY };
+
     const { terrainBase, terrainScale } = getBiomeHeightInfo(x, z, noiseSet);
     
     const nc = GenConfig.noise.terrain;
@@ -344,6 +352,12 @@ function generateChunkInner(cx: number, cz: number) {
                         type = biome.subBlock;
                     } else {
                         type = biome.surfaceBlock;
+                    }
+
+                    // Magnetic Fields: solid magnetite all the way down so the
+                    // tier walls read as full metallic cliffs, not stone with a cap.
+                    if (biome.id === 'magnetic_fields') {
+                        type = BlockType.MAGNETITE_BLOCK;
                     }
 
                     if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {

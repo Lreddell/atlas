@@ -141,7 +141,11 @@ const is2DBlock = (type: BlockType): boolean => {
            type === BlockType.CHERRY_SAPLING ||
            type === BlockType.JUNGLE_SAPLING ||
            type === BlockType.DARK_OAK_SAPLING ||
-           type === BlockType.ACACIA_SAPLING;
+           type === BlockType.ACACIA_SAPLING ||
+           type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+           type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+           type === BlockType.MAGNETIC_SPIKE ||
+           type === BlockType.MAGNETIC_SHIELD_CRYSTAL;
 };
 
 // Cache for scanning pixel data

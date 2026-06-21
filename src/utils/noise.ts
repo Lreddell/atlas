@@ -285,6 +285,7 @@ export interface NoiseOffsets {
     weirdness: { x: number; z: number };
     terrain: { x: number; z: number };
     cave: { x: number; z: number };
+    bossBiome: { x: number; z: number };
 }
 
 function deriveOffset(seed: number, salt: string): { x: number; z: number } {
@@ -302,6 +303,7 @@ function createNoiseOffsets(seed: number): NoiseOffsets {
         weirdness: deriveOffset(seed, 'weirdness'),
         terrain: deriveOffset(seed, 'terrain'),
         cave: deriveOffset(seed, 'cave'),
+        bossBiome: deriveOffset(seed, 'bossBiome'),
     };
 }
 
@@ -314,6 +316,8 @@ export interface NoiseSet {
     weirdness: SimpleNoise;
     biomeWarpA: SimpleNoise;
     biomeWarpB: SimpleNoise;
+    /** Low-frequency field gating rare, sealed boss biomes (e.g. Magnetic Fields). */
+    bossBiome: SimpleNoise;
     seed: number;
     offsets: NoiseOffsets;
 }
@@ -328,6 +332,7 @@ export function createNoiseSet(masterSeed: number): NoiseSet {
         weirdness: new SimpleNoise(masterSeed + 500),
         biomeWarpA: new SimpleNoise(masterSeed + 600),
         biomeWarpB: new SimpleNoise(masterSeed + 700),
+        bossBiome: new SimpleNoise(masterSeed + 800),
         seed: masterSeed,
         offsets: createNoiseOffsets(masterSeed)
     };

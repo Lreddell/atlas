@@ -3,22 +3,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-// Pure, enum-free module → safe to import under --experimental-strip-types.
+// Pure, enum-free modules → safe to import under --experimental-strip-types.
 import {
     getMagneticFieldInstanceAt,
+    getMagneticFieldColumn,
     isInMagneticFields,
     getMagneticFieldTier,
     getMagneticFieldTierHeight,
     getArenaCenter,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
-    MF_CELL,
+    MF_EDGE_AMP,
     MF_TIER_COUNT,
-    MF_SPAWN_CHANCE,
+    MF_ARENA_FLOOR_Y,
+    MF_BASE_HEIGHT,
     MAGNETIC_FIELDS_BIOME_ID,
     MAGNETIC_FIELDS_REGION_ID,
     MAGNETIC_WARDEN_BOSS_ID,
 } from './magneticFields.ts';
+import { SimpleNoise } from '../../utils/noise.ts';
 
 // Anything that touches the BlockType enum is asserted via source text, matching
 // the repo convention (see recipes.test.mjs) since enums can't be stripped.
@@ -28,16 +31,29 @@ const blocksSrc = read('src/data/blocks.ts');
 const recipesSrc = read('src/recipes.ts');
 
 const SEED = 1234;
+// Real boss-biome noise channel (mirrors createNoiseSet: masterSeed + 800).
+const bossNoise = new SimpleNoise(SEED + 800);
+const noise2D = (x, z) => bossNoise.noise2D(x, z);
 
-const findInstance = () => {
-    for (let cx = 0; cx < 40; cx++) {
-        for (let cz = 0; cz < 40; cz++) {
-            const inst = getMagneticFieldInstanceAt(cx * MF_CELL, cz * MF_CELL, SEED);
-            if (inst) return inst;
+// Scan a wide area to find a concrete active instance + measure rarity.
+const scan = () => {
+    let inCount = 0;
+    let total = 0;
+    let firstInstance = null;
+    for (let x = -40000; x <= 40000; x += 256) {
+        for (let z = -40000; z <= 40000; z += 256) {
+            total++;
+            const inst = getMagneticFieldInstanceAt(x, z, SEED, noise2D);
+            if (inst) {
+                inCount++;
+                if (!firstInstance) firstInstance = inst;
+            }
         }
     }
-    return null;
+    return { inCount, total, firstInstance };
 };
+const SCAN = scan();
+const findInstance = () => SCAN.firstInstance;
 
 test('Magnetic Fields ids are stable', () => {
     assert.equal(MAGNETIC_FIELDS_BIOME_ID, 'magnetic_fields');
@@ -47,32 +63,45 @@ test('Magnetic Fields ids are stable', () => {
 
 test('instance lookup is deterministic', () => {
     assert.deepEqual(
-        getMagneticFieldInstanceAt(5000, -8000, SEED),
-        getMagneticFieldInstanceAt(5000, -8000, SEED),
+        getMagneticFieldInstanceAt(5000, -8000, SEED, noise2D),
+        getMagneticFieldInstanceAt(5000, -8000, SEED, noise2D),
     );
 });
 
-test('biome is rare: only a small fraction of cells host an instance', () => {
-    let hosts = 0;
-    const N = 30;
-    for (let cx = 0; cx < N; cx++) {
-        for (let cz = 0; cz < N; cz++) {
-            const inst = getMagneticFieldInstanceAt(cx * MF_CELL + MF_CELL / 2, cz * MF_CELL + MF_CELL / 2, SEED);
-            if (inst && Math.floor(inst.centerX / MF_CELL) === cx && Math.floor(inst.centerZ / MF_CELL) === cz) hosts++;
-        }
-    }
-    const frac = hosts / (N * N);
-    assert.ok(frac > 0, 'expected at least one instance in the sampled grid');
-    assert.ok(frac < MF_SPAWN_CHANCE + 0.12, `instances too common: ${frac}`);
+test('biome is rare: covers a tiny fraction of the world', () => {
+    assert.ok(SCAN.inCount > 0, 'expected at least one magnetic-fields column in the scan');
+    const coverage = SCAN.inCount / SCAN.total;
+    assert.ok(coverage < 0.03, `biome too common: ${coverage}`);
 });
 
-test('biome is large and coherent: one center covers a wide radius', () => {
+test('biome is coherent: one center owns its whole footprint', () => {
     const inst = findInstance();
     assert.ok(inst, 'expected to find an instance');
-    assert.deepEqual(getMagneticFieldInstanceAt(inst.centerX, inst.centerZ, SEED), inst);
-    assert.deepEqual(getMagneticFieldInstanceAt(inst.centerX + MF_RADIUS - 50, inst.centerZ, SEED), inst);
-    assert.equal(getMagneticFieldInstanceAt(inst.centerX + MF_RADIUS + 200, inst.centerZ, SEED), null);
-    assert.ok(MF_RADIUS >= 500, 'biome should be very large');
+    // The center column resolves to that same center (coherent, not fragmented).
+    assert.deepEqual(getMagneticFieldInstanceAt(inst.centerX, inst.centerZ, SEED, noise2D), inst);
+    // Far outside the warped radius there is no instance (bounded region).
+    const far = MF_RADIUS * (1 + MF_EDGE_AMP) + 300;
+    assert.equal(getMagneticFieldInstanceAt(inst.centerX + far, inst.centerZ, SEED, noise2D), null);
+});
+
+test('biome boundary is organic, not a circle', () => {
+    const inst = findInstance();
+    const boundary = [];
+    for (let a = 0; a < 24; a++) {
+        const ang = (a / 24) * Math.PI * 2;
+        let r = 0;
+        // Walk outward until we leave the region; record the first exit radius.
+        while (r < MF_RADIUS * (1 + MF_EDGE_AMP) + 100) {
+            const x = inst.centerX + Math.cos(ang) * r;
+            const z = inst.centerZ + Math.sin(ang) * r;
+            if (!isInMagneticFields(x, z, SEED, noise2D)) break;
+            r += 4;
+        }
+        boundary.push(r);
+    }
+    const spread = Math.max(...boundary) - Math.min(...boundary);
+    // A perfect circle would have spread ~0; the noise warp must vary it noticeably.
+    assert.ok(spread > 24, `boundary too circular (spread ${spread})`);
 });
 
 test('terrain tiers converge inward and are NOT crater-shaped', () => {
@@ -94,17 +123,41 @@ test('terrain tiers converge inward and are NOT crater-shaped', () => {
 
 test('exactly one arena center per instance, at the deterministic center', () => {
     const inst = findInstance();
-    const arena = getArenaCenter(inst.centerX + 100, inst.centerZ - 100, SEED);
+    const arena = getArenaCenter(inst.centerX + 40, inst.centerZ - 40, SEED, noise2D);
     assert.ok(arena);
     assert.equal(arena.x, inst.centerX);
     assert.equal(arena.z, inst.centerZ);
-    assert.equal(getArenaCenter(inst.centerX + MF_RADIUS + 5000, inst.centerZ, SEED), null);
+    assert.equal(arena.y, MF_ARENA_FLOOR_Y);
+    assert.equal(getArenaCenter(inst.centerX + MF_RADIUS + 5000, inst.centerZ, SEED, noise2D), null);
+});
+
+test('per-column terrain: flat arena floor at center, tiered shelves outward, null outside', () => {
+    const inst = findInstance();
+    // Center column is the arena floor (highest, flat).
+    const center = getMagneticFieldColumn(inst.centerX, inst.centerZ, SEED, noise2D);
+    assert.ok(center && center.isArena);
+    assert.equal(center.surfaceY, MF_ARENA_FLOOR_Y);
+    assert.equal(center.tier, MF_TIER_COUNT - 1);
+
+    // Every in-biome column sits on a discrete flat shelf height (→ vertical walls
+    // between tiers) and never below the outer base height.
+    let sawLowerTier = false;
+    for (let r = 0; r <= MF_RADIUS; r += 8) {
+        const col = getMagneticFieldColumn(inst.centerX + r, inst.centerZ, SEED, noise2D);
+        if (!col) continue;
+        assert.ok(col.surfaceY >= MF_BASE_HEIGHT, 'no column below outer base → never underwater');
+        assert.equal((col.surfaceY - MF_BASE_HEIGHT) % 14, 0, 'shelves are discrete height bands');
+        if (col.tier < MF_TIER_COUNT - 1) sawLowerTier = true;
+    }
+    assert.ok(sawLowerTier, 'outward columns drop to lower tiers (converging terrain)');
+
+    assert.equal(getMagneticFieldColumn(inst.centerX + MF_RADIUS + 5000, inst.centerZ, SEED, noise2D), null);
 });
 
 test('isInMagneticFields agrees with instance lookup', () => {
     const inst = findInstance();
-    assert.equal(isInMagneticFields(inst.centerX, inst.centerZ, SEED), true);
-    assert.equal(isInMagneticFields(inst.centerX + MF_RADIUS + 3000, inst.centerZ, SEED), false);
+    assert.equal(isInMagneticFields(inst.centerX, inst.centerZ, SEED, noise2D), true);
+    assert.equal(isInMagneticFields(inst.centerX + MF_RADIUS + 3000, inst.centerZ, SEED, noise2D), false);
 });
 
 test('Magnetic Spike fall multiplier is configured and amplifies', () => {
