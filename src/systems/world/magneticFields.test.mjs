@@ -12,7 +12,9 @@ import {
     getMagneticFieldTierHeight,
     getArenaCenter,
     getMagnetiteWallPolarity,
-    getShelfDecoration,
+    getMagneticFeature,
+    isChargedVein,
+    magneticFieldsTouchBox,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
     MF_EDGE_AMP,
@@ -178,29 +180,46 @@ test('cliff walls are magnetized in clusters, not everywhere', () => {
     assert.equal(getMagnetiteWallPolarity(40, 18, SEED), getMagnetiteWallPolarity(40, 18, SEED));
 });
 
-test('shelf decorations are deterministic, sparse, and valid', () => {
-    const counts = {};
+test('magnetic features are deterministic, sparse, and well-formed', () => {
+    const counts = { spike: 0, spire: 0, launchpad: 0, crystals: 0, none: 0 };
     let total = 0;
-    for (let x = 0; x < 200; x++) {
-        for (let z = 0; z < 200; z++) {
-            const d = getShelfDecoration(x, z, SEED);
-            counts[d] = (counts[d] || 0) + 1;
+    for (let x = 0; x < 300; x++) {
+        for (let z = 0; z < 300; z++) {
+            const f = getMagneticFeature(x, z, SEED);
+            counts[f ? f.kind : 'none']++;
             total++;
+            if (f && f.kind === 'spike') assert.ok(f.height >= 3 && f.height <= 6);
+            if (f && f.kind === 'spire') { assert.ok(f.height >= 7); assert.ok(f.polarity === 1 || f.polarity === -1); assert.ok(f.count >= 2); }
+            if (f && f.kind === 'crystals') { assert.ok(f.polarity === 1 || f.polarity === -1); assert.ok(f.count >= 1); }
         }
     }
-    assert.equal(getShelfDecoration(11, 22, SEED), getShelfDecoration(11, 22, SEED));
-    // Mostly empty so shelves stay traversable.
-    assert.ok(counts.none / total > 0.9, 'shelves should be mostly clear');
-    // Every decoration type shows up at least once across a large sample.
-    for (const kind of ['spike', 'crystal_pos', 'crystal_neg', 'shard', 'accent']) {
-        assert.ok((counts[kind] || 0) > 0, `expected some ${kind}`);
+    // Deterministic + sparse (mostly empty so the biome reads designed, not busy).
+    assert.deepEqual(getMagneticFeature(13, 24, SEED), getMagneticFeature(13, 24, SEED));
+    assert.ok(counts.none / total > 0.95, 'features should be sparse');
+    for (const kind of ['spike', 'spire', 'launchpad', 'crystals']) {
+        assert.ok(counts[kind] > 0, `expected some ${kind}`);
     }
+
+    // Contrast veins are very rare and deterministic.
+    let veins = 0;
+    for (let x = 0; x < 200; x++) for (let z = 0; z < 200; z++) if (isChargedVein(x, z, SEED)) veins++;
+    assert.ok(veins > 0 && veins / 40000 < 0.03, 'charged veins are rare');
+    assert.equal(isChargedVein(7, 9, SEED), isChargedVein(7, 9, SEED));
 });
 
 test('isInMagneticFields agrees with instance lookup', () => {
     const inst = findInstance();
     assert.equal(isInMagneticFields(inst.centerX, inst.centerZ, SEED, noise2D), true);
     assert.equal(isInMagneticFields(inst.centerX + MF_RADIUS + 3000, inst.centerZ, SEED, noise2D), false);
+});
+
+test('chunk-level reject matches whether any center is active near the box', () => {
+    const inst = findInstance();
+    // Real noise: a 16-block box at an active center is covered.
+    assert.equal(magneticFieldsTouchBox(inst.centerX, inst.centerZ, inst.centerX + 16, inst.centerZ + 16, SEED, noise2D), true);
+    // Stub where no center ever activates → every box is rejected (distant chunks skip).
+    const never = () => -1;
+    assert.equal(magneticFieldsTouchBox(inst.centerX, inst.centerZ, inst.centerX + 16, inst.centerZ + 16, SEED, never), false);
 });
 
 test('Magnetic Spike fall multiplier is configured and amplifies', () => {
@@ -246,18 +265,27 @@ test('new blocks are defined with the right shape', () => {
     assert.match(shard, /noCollision:\s*true/);
 });
 
-test('terrain wiring: edge blend + wall magnets + decorations are generated', () => {
+test('terrain wiring: edge blend + wall magnets + feature pass are generated', () => {
     const cg = read('src/systems/world/chunkGeneration.ts');
-    // Outer apron blends down to ambient terrain, clamped above sea level.
+    // Outer apron blends down to ambient terrain (soft shore, no hard ocean wall).
     assert.match(cg, /MF_APRON/);
     assert.match(cg, /computeAmbientTerrainInfo/);
     // Polarity magnets embedded on wall bands.
     assert.match(cg, /getMagnetiteWallPolarity/);
     assert.match(cg, /POSITIVE_MAGNET\s*:\s*BlockType\.NEGATIVE_MAGNET/);
-    // Decoration pass places spikes/crystals/shards/accents.
-    assert.match(cg, /getShelfDecoration/);
+    // Feature pass builds spike formations, magnet spires, launch pads, crystals.
+    assert.match(cg, /getMagneticFeature/);
     assert.match(cg, /MAGNETIC_SPIKE/);
     assert.match(cg, /CHARGED_MAGNETITE/);
+
+    // Ocean blend: biome water is WATER (soft shore), not a hard lava border.
+    const biomes = read('src/systems/world/biomes.ts');
+    assert.match(biomes, /MAGNETIC_FIELDS:\s*{[\s\S]*?waterBlock:\s*BlockType\.WATER/);
+
+    // Charged Magnetite acts as a launch pad in the player physics.
+    const player = read('src/components/Player.tsx');
+    assert.match(player, /CHARGED_MAGNETITE/);
+    assert.match(player, /MAGNETIC_LAUNCH_VELOCITY/);
 });
 
 test('magnetite traversal blocks use magnetite user-facing names', () => {

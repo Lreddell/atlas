@@ -154,7 +154,7 @@ export const BIOMES: Record<string, Biome> = {
     // region). Terrain/structure is driven by the deterministic instance system in
     // magneticFields.ts, not by ordinary noise; surface is metallic Magnetite.
     MAGNETIC_FIELDS: {
-        id: 'magnetic_fields', name: 'Magnetic Fields', surfaceBlock: BlockType.MAGNETITE_BLOCK, subBlock: BlockType.MAGNETITE_BLOCK, waterBlock: BlockType.LAVA,
+        id: 'magnetic_fields', name: 'Magnetic Fields', surfaceBlock: BlockType.MAGNETITE_BLOCK, subBlock: BlockType.MAGNETITE_BLOCK, waterBlock: BlockType.WATER,
         terrainScale: 4, terrainBase: MF_BASE_HEIGHT, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#5b4a78', vegetationType: 'none', tags: ['magnetic']
     }
 };
