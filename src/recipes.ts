@@ -252,6 +252,8 @@ const SHAPE_FAMILIES: { mat: BlockType, slab: BlockType, stairs: BlockType }[] =
     { mat: BlockType.SANDSTONE, slab: BlockType.SANDSTONE_SLAB, stairs: BlockType.SANDSTONE_STAIRS },
     { mat: BlockType.RED_SANDSTONE, slab: BlockType.RED_SANDSTONE_SLAB, stairs: BlockType.RED_SANDSTONE_STAIRS },
     { mat: BlockType.BRICK, slab: BlockType.BRICK_SLAB, stairs: BlockType.BRICK_STAIRS },
+    { mat: BlockType.MAGNETITE_BLOCK, slab: BlockType.MAGNETITE_SLAB, stairs: BlockType.MAGNETITE_STAIRS },
+    { mat: BlockType.MAGNETITE_BRICKS, slab: BlockType.MAGNETITE_BRICK_SLAB, stairs: BlockType.MAGNETITE_BRICK_STAIRS },
 ];
 for (const f of SHAPE_FAMILIES) {
     push(3, [null, null, null, f.mat, f.mat, f.mat, null, null, null], f.slab, 6);
@@ -316,6 +318,11 @@ push(3, [NC, NC, NC, NC, FE, NC, NC, NC, NC], BlockType.NEGATIVE_MAGNET, 1);
 // in the bottom corners. Mirrored so crystal order doesn't matter.
 push(3, [null, null, null, FE, null, FE, PC, null, NC], BlockType.POLARITY_BOOTS, 1);
 push(3, [null, null, null, FE, null, FE, NC, null, PC], BlockType.POLARITY_BOOTS, 1);
+
+// Magnetite building set: bricks (2x2 → 4), chiseled (2 slabs stacked → 1).
+const MAG = BlockType.MAGNETITE_BLOCK;
+push(2, [MAG, MAG, MAG, MAG], BlockType.MAGNETITE_BRICKS, 4);
+push(2, [BlockType.MAGNETITE_SLAB, null, BlockType.MAGNETITE_SLAB, null], BlockType.CHISELED_MAGNETITE, 1);
 
 interface TrimmedGrid {
     cells: (BlockType | null)[];

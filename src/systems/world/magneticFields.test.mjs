@@ -12,12 +12,6 @@ import {
     getMagneticFieldTierHeight,
     getArenaCenter,
     getActiveCenters,
-    getArenaPillarPosition,
-    getArenaPillarPolarity,
-    MF_ARENA_PILLAR_COUNT,
-    MF_ARENA_PILLAR_R,
-    MF_ARENA_PLATFORM_R,
-    MF_ARENA_MOAT_OUTER_R,
     getMagnetiteWallPolarity,
     getMagneticFeature,
     magneticFieldsTouchBox,
@@ -25,6 +19,7 @@ import {
     MF_RADIUS,
     MF_EDGE_AMP,
     MF_TIER_COUNT,
+    MF_TIER_HEIGHT,
     MF_ARENA_FLOOR_Y,
     MF_BASE_HEIGHT,
     MAGNETIC_FIELDS_BIOME_ID,
@@ -152,16 +147,21 @@ test('per-column terrain: flat arena floor at center, tiered shelves outward, nu
     // Every in-biome column sits near a discrete shelf band (small natural jitter
     // only) and never far below the outer base height (→ stays above sea level).
     let sawLowerTier = false;
+    let sawArena = false;
     for (let r = 0; r <= MF_RADIUS; r += 8) {
         const col = getMagneticFieldColumn(inst.centerX + r, inst.centerZ, SEED, noise2D);
         if (!col) continue;
         assert.ok(col.surfaceY >= MF_BASE_HEIGHT - 3, 'no column far below outer base → never underwater');
-        if (!col.isArena) {
-            const band = (col.surfaceY - MF_BASE_HEIGHT) - (col.tier * 14);
+        if (col.isArena) {
+            sawArena = true;
+            assert.equal(col.surfaceY, MF_ARENA_FLOOR_Y);
+        } else {
+            const band = (col.surfaceY - MF_BASE_HEIGHT) - (col.tier * MF_TIER_HEIGHT);
             assert.ok(Math.abs(band) <= 3, `shelf within jitter of its tier band (off by ${band})`);
         }
         if (col.tier < MF_TIER_COUNT - 1) sawLowerTier = true;
     }
+    assert.ok(sawArena, 'center resolves to the flat arena plateau');
     assert.ok(sawLowerTier, 'outward columns drop to lower tiers (converging terrain)');
 
     assert.equal(getMagneticFieldColumn(inst.centerX + MF_RADIUS + 5000, inst.centerZ, SEED, noise2D), null);
@@ -206,36 +206,50 @@ test('magnetic features are deterministic, sparse crystal clusters', () => {
     assert.ok(crystals / total < 0.05, 'features stay sparse');
 });
 
-test('arena: one center, ≥4 alternating-polarity pillars in the moat ring', () => {
+test('getActiveCenters finds the instance near it and nothing in an empty stub', () => {
     const inst = findInstance();
-    // getActiveCenters finds exactly this instance near its own center, and none in
-    // an empty stub.
-    const near = getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, noise2D, 40);
+    const near = getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, noise2D, 80);
     assert.ok(near.some((c) => c.centerX === inst.centerX && c.centerZ === inst.centerZ));
-    assert.equal(getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, () => -1, 40).length, 0);
-
-    assert.ok(MF_ARENA_PILLAR_COUNT >= 4);
-    let pos = 0, neg = 0;
-    for (let i = 0; i < MF_ARENA_PILLAR_COUNT; i++) {
-        const p = getArenaPillarPosition(inst, i);
-        const d = Math.hypot(p.x - inst.centerX, p.z - inst.centerZ);
-        // Pillars sit in the lava-moat ring (outside the platform, inside the moat).
-        assert.ok(d > MF_ARENA_PLATFORM_R && d <= MF_ARENA_MOAT_OUTER_R, `pillar ${i} at radius ${d}`);
-        assert.ok(Math.abs(d - MF_ARENA_PILLAR_R) <= 2);
-        if (getArenaPillarPolarity(i) > 0) pos++; else neg++;
-    }
-    // Polarity varies around the ring (must switch polarity to cross).
-    assert.ok(pos > 0 && neg > 0);
-    assert.notEqual(getArenaPillarPolarity(0), getArenaPillarPolarity(1));
+    assert.equal(getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, () => -1, 80).length, 0);
 });
 
-test('arena build pass is wired into chunk generation', () => {
+test('arena generator is a large composed structure with the required parts', () => {
+    const a = read('src/systems/world/magneticArena.ts');
+    // Centralized dimensions and a large footprint (~150 across).
+    assert.match(a, /ARENA_OUTER_RADIUS\s*=\s*(\d+)/);
+    const outer = Number(a.match(/ARENA_OUTER_RADIUS\s*=\s*(\d+)/)[1]);
+    assert.ok(outer >= 60, 'arena should be large');
+    for (const c of ['ARENA_CENTRAL_RADIUS', 'ARENA_LAVA_INNER_RADIUS', 'ARENA_LAVA_OUTER_RADIUS',
+        'ARENA_WALL_HEIGHT', 'ARENA_PILLAR_HEIGHT', 'ARENA_PROTECTED_RADIUS', 'ARENA_FOUNDATION_DEPTH']) {
+        assert.match(a, new RegExp(`export const ${c}`));
+    }
+    // Named sub-builders (deliberate generator, not scattered code).
+    for (const b of ['clearArenaAirspace', 'buildProtectedFoundationVolume', 'buildOuterFoundation',
+        'buildOuterRim', 'buildOuterTerrace', 'buildLavaMoat', 'buildCentralPlatform',
+        'buildMagneticPillarTowers', 'buildShieldCrystalPedestals', 'buildBossSummoner',
+        'buildLaunchRoutes']) {
+        assert.match(a, new RegExp(`function ${b}`));
+    }
+    // Materials/landmarks: summoner centred, crystals on towers, lava moat, magnets,
+    // brick + chiseled detailing, alternating tower polarity.
+    assert.match(a, /MAGNETIC_BOSS_SUMMONER/);
+    assert.match(a, /MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(a, /BlockType\.LAVA/);
+    assert.match(a, /POSITIVE_MAGNET/);
+    assert.match(a, /NEGATIVE_MAGNET/);
+    assert.match(a, /MAGNETITE_BRICKS/);
+    assert.match(a, /CHISELED_MAGNETITE/);
+    assert.match(a, /ARENA_PILLAR_COUNT\s*=\s*4/);
+    assert.match(a, /arenaPillarPolarity[\s\S]*i % 2 === 0 \? 1 : -1/);
+});
+
+test('arena build pass is wired into chunk generation, off natural features', () => {
     const cg = read('src/systems/world/chunkGeneration.ts');
+    assert.match(cg, /generateMagneticWardenArena/);
     assert.match(cg, /getActiveCenters/);
-    assert.match(cg, /MAGNETIC_BOSS_SUMMONER/);   // summoner at centre
-    assert.match(cg, /MAGNETIC_SHIELD_CRYSTAL/);  // crystal on each pillar top
-    assert.match(cg, /BlockType\.LAVA/);          // moat
-    assert.match(cg, /getArenaPillarPosition/);
+    // The generator reserves its volume (no caves) and features skip the structure.
+    assert.match(cg, /ARENA_PROTECTED_RADIUS/);
+    assert.match(cg, /onArena\(rootWx, rootWz\)/);
 });
 
 test('isInMagneticFields agrees with instance lookup', () => {

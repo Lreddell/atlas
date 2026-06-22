@@ -209,4 +209,6 @@ export const TEXTURE_PATHS: Record<number, string> = {
     210: 'blocks/magnetic_shield_crystal.png',
     211: 'blocks/charged_magnetite.png',
     212: 'blocks/magnetite_shard.png',
+    213: 'blocks/magnetite_bricks.png',
+    214: 'blocks/chiseled_magnetite.png',
 };

@@ -46,21 +46,19 @@ export const MF_SHELF_JITTER_AMP = 1.8;  // ≈ ±2 blocks of bumpiness on shelv
 export const MF_APRON = 64;
 export const MF_APRON_MIN_Y = 60;
 
-// --- Tier (height-band) layout, outer rim inward to the central arena ---
-export const MF_BASE_HEIGHT = 70;       // outer shelf surface (world Y of tier 0)
-export const MF_TIER_HEIGHT = 14;       // vertical rise of each flat magnetite wall
-export const MF_TIER_COUNT = 5;         // shelves: tier 0 (outer) .. tier 4 (arena rim)
-export const MF_TIER_BAND = MF_RADIUS / MF_TIER_COUNT; // radial width of each shelf
+// --- Central arena plateau ---
+// The arena is a large generated structure (see magneticArena.ts), so the flat
+// plateau it sits on must be sized to match its footprint. The tiers then lead up
+// from the biome edge to this plateau.
+export const MF_ARENA_RADIUS = 80;                       // flat plateau the arena sits on
+export const MF_ARENA_FLOOR_Y = 132;                     // world Y of the plateau / arena base
 
-// --- Central arena (one grand structure at each instance center) ---
-export const MF_ARENA_RADIUS = 36;                       // flat plateau the arena sits on
-export const MF_ARENA_FLOOR_Y = MF_BASE_HEIGHT + MF_TIER_HEIGHT * MF_TIER_COUNT;
-export const MF_ARENA_PLATFORM_R = 12;                   // solid central fight platform
-export const MF_ARENA_MOAT_OUTER_R = 22;                 // lava moat ring: (platform, outer]
-export const MF_ARENA_MOAT_DEPTH = 5;                    // moat is this many blocks of lava deep
-export const MF_ARENA_PILLAR_R = 17;                     // pillars rise from the moat at this radius
-export const MF_ARENA_PILLAR_COUNT = 4;                  // ≥4 polarity pillars, alternating
-export const MF_ARENA_PILLAR_HEIGHT = 8;                 // pillar top above the floor (shield crystal on top)
+// --- Tier (height-band) layout, outer rim inward to the arena plateau ---
+export const MF_BASE_HEIGHT = 70;       // outer shelf surface (world Y of tier 0)
+export const MF_TIER_HEIGHT = 12;       // vertical rise of each flat magnetite wall
+export const MF_TIER_COUNT = 5;         // shelves: tier 0 (outer) .. tier 4 (plateau rim)
+// Tiers occupy the radial band between the plateau edge and the biome boundary.
+export const MF_TIER_BAND = (MF_RADIUS - MF_ARENA_RADIUS) / MF_TIER_COUNT;
 
 /** Fall-damage multiplier when a player lands on a Magnetic Spike. */
 export const MAGNETIC_SPIKE_FALL_MULTIPLIER = 2.5;
@@ -167,7 +165,8 @@ export function magneticFieldsTouchBox(
  * what makes terrain converge inward in stable height bands rather than a bowl.
  */
 export function getMagneticFieldTier(distanceToCenter: number): number {
-    const tier = MF_TIER_COUNT - 1 - Math.floor(distanceToCenter / MF_TIER_BAND);
+    const d = Math.max(0, distanceToCenter - MF_ARENA_RADIUS);
+    const tier = MF_TIER_COUNT - 1 - Math.floor(d / MF_TIER_BAND);
     return Math.max(0, Math.min(MF_TIER_COUNT - 1, tier));
 }
 
@@ -280,23 +279,6 @@ export function getActiveCenters(
         }
     }
     return out;
-}
-
-/**
- * Which polarity a given arena pillar (0..count-1) uses: alternating +/- around
- * the ring so the player must switch polarity to cross. 1 = positive, -1 = negative.
- */
-export function getArenaPillarPolarity(index: number): number {
-    return index % 2 === 0 ? 1 : -1;
-}
-
-/** World position of arena pillar `index` around the moat ring of a center. */
-export function getArenaPillarPosition(center: MagneticFieldInstance, index: number): { x: number; z: number } {
-    const ang = (index / MF_ARENA_PILLAR_COUNT) * Math.PI * 2 + Math.PI / 4;
-    return {
-        x: center.centerX + Math.round(Math.cos(ang) * MF_ARENA_PILLAR_R),
-        z: center.centerZ + Math.round(Math.sin(ang) * MF_ARENA_PILLAR_R),
-    };
 }
 
 /** The single arena center of the instance covering (wx, wz), or null. */
