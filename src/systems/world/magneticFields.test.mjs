@@ -11,6 +11,8 @@ import {
     getMagneticFieldTier,
     getMagneticFieldTierHeight,
     getArenaCenter,
+    getMagnetiteWallPolarity,
+    getShelfDecoration,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
     MF_EDGE_AMP,
@@ -139,19 +141,60 @@ test('per-column terrain: flat arena floor at center, tiered shelves outward, nu
     assert.equal(center.surfaceY, MF_ARENA_FLOOR_Y);
     assert.equal(center.tier, MF_TIER_COUNT - 1);
 
-    // Every in-biome column sits on a discrete flat shelf height (→ vertical walls
-    // between tiers) and never below the outer base height.
+    // Every in-biome column sits near a discrete shelf band (small natural jitter
+    // only) and never far below the outer base height (→ stays above sea level).
     let sawLowerTier = false;
     for (let r = 0; r <= MF_RADIUS; r += 8) {
         const col = getMagneticFieldColumn(inst.centerX + r, inst.centerZ, SEED, noise2D);
         if (!col) continue;
-        assert.ok(col.surfaceY >= MF_BASE_HEIGHT, 'no column below outer base → never underwater');
-        assert.equal((col.surfaceY - MF_BASE_HEIGHT) % 14, 0, 'shelves are discrete height bands');
+        assert.ok(col.surfaceY >= MF_BASE_HEIGHT - 3, 'no column far below outer base → never underwater');
+        if (!col.isArena) {
+            const band = (col.surfaceY - MF_BASE_HEIGHT) - (col.tier * 14);
+            assert.ok(Math.abs(band) <= 3, `shelf within jitter of its tier band (off by ${band})`);
+        }
         if (col.tier < MF_TIER_COUNT - 1) sawLowerTier = true;
     }
     assert.ok(sawLowerTier, 'outward columns drop to lower tiers (converging terrain)');
 
     assert.equal(getMagneticFieldColumn(inst.centerX + MF_RADIUS + 5000, inst.centerZ, SEED, noise2D), null);
+});
+
+test('cliff walls are magnetized in clusters, not everywhere', () => {
+    let pos = 0, neg = 0, bare = 0;
+    for (let x = 0; x < 240; x += 2) {
+        for (let z = 0; z < 240; z += 2) {
+            const p = getMagnetiteWallPolarity(x, z, SEED);
+            if (p === 1) pos++; else if (p === -1) neg++; else bare++;
+            assert.ok(p === 0 || p === 1 || p === -1);
+        }
+    }
+    const magnetized = pos + neg;
+    const total = magnetized + bare;
+    // Some walls magnetized, but most bare (you must wrap around to find a route).
+    assert.ok(magnetized > 0 && bare > 0);
+    assert.ok(magnetized / total < 0.6, 'most wall area should be bare magnetite');
+    assert.ok(pos > 0 && neg > 0, 'both polarities appear');
+    // Deterministic.
+    assert.equal(getMagnetiteWallPolarity(40, 18, SEED), getMagnetiteWallPolarity(40, 18, SEED));
+});
+
+test('shelf decorations are deterministic, sparse, and valid', () => {
+    const counts = {};
+    let total = 0;
+    for (let x = 0; x < 200; x++) {
+        for (let z = 0; z < 200; z++) {
+            const d = getShelfDecoration(x, z, SEED);
+            counts[d] = (counts[d] || 0) + 1;
+            total++;
+        }
+    }
+    assert.equal(getShelfDecoration(11, 22, SEED), getShelfDecoration(11, 22, SEED));
+    // Mostly empty so shelves stay traversable.
+    assert.ok(counts.none / total > 0.9, 'shelves should be mostly clear');
+    // Every decoration type shows up at least once across a large sample.
+    for (const kind of ['spike', 'crystal_pos', 'crystal_neg', 'shard', 'accent']) {
+        assert.ok((counts[kind] || 0) > 0, `expected some ${kind}`);
+    }
 });
 
 test('isInMagneticFields agrees with instance lookup', () => {
@@ -193,6 +236,28 @@ test('new blocks are defined with the right shape', () => {
 
     assert.match(blocksSrc, /\[BlockType\.MAGNETIC_BOSS_SUMMONER\]:/);
     assert.match(blocksSrc, /\[BlockType\.MAGNETIC_SHIELD_CRYSTAL\]:/);
+
+    // Contrast decoration blocks: emissive solid accent + bright cross-plane shard.
+    const charged = blocksSrc.match(/\[BlockType\.CHARGED_MAGNETITE\]:\s*{[^}]*}/)[0];
+    assert.match(charged, /lightLevel:\s*\d/);
+    assert.ok(!/noCollision/.test(charged), 'charged magnetite is a solid accent');
+    const shard = blocksSrc.match(/\[BlockType\.MAGNETITE_SHARD\]:\s*{[^}]*}/)[0];
+    assert.match(shard, /transparent:\s*true/);
+    assert.match(shard, /noCollision:\s*true/);
+});
+
+test('terrain wiring: edge blend + wall magnets + decorations are generated', () => {
+    const cg = read('src/systems/world/chunkGeneration.ts');
+    // Outer apron blends down to ambient terrain, clamped above sea level.
+    assert.match(cg, /MF_APRON/);
+    assert.match(cg, /computeAmbientTerrainInfo/);
+    // Polarity magnets embedded on wall bands.
+    assert.match(cg, /getMagnetiteWallPolarity/);
+    assert.match(cg, /POSITIVE_MAGNET\s*:\s*BlockType\.NEGATIVE_MAGNET/);
+    // Decoration pass places spikes/crystals/shards/accents.
+    assert.match(cg, /getShelfDecoration/);
+    assert.match(cg, /MAGNETIC_SPIKE/);
+    assert.match(cg, /CHARGED_MAGNETITE/);
 });
 
 test('magnetite traversal blocks use magnetite user-facing names', () => {

@@ -198,7 +198,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                      itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
                      itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
                      itemType === BlockType.MAGNETIC_SPIKE ||
-                     itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL;
+                     itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     itemType === BlockType.MAGNETITE_SHARD;
 
         if (!is2D) {
             const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
@@ -335,7 +336,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
                 itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
                 itemType === BlockType.MAGNETIC_SPIKE ||
-                itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL
+                itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                itemType === BlockType.MAGNETITE_SHARD
             );
 
             if (itemType && !is2D) {

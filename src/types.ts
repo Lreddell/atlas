@@ -247,7 +247,10 @@ export enum BlockType {
   MAGNETIC_SPIKE = 245,
   // Arena content blocks.
   MAGNETIC_BOSS_SUMMONER = 246,
-  MAGNETIC_SHIELD_CRYSTAL = 247
+  MAGNETIC_SHIELD_CRYSTAL = 247,
+  // Contrast decoration: emissive accent block + bright cross-plane shard.
+  CHARGED_MAGNETITE = 248,
+  MAGNETITE_SHARD = 249
   // NOTE: the solid "Positive/Negative Magnetite Block" traversal sources reuse
   // the existing POSITIVE_MAGNET (190) / NEGATIVE_MAGNET (191) ids for save
   // compatibility; only their user-facing names are magnetite-themed.

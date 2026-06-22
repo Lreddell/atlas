@@ -23,18 +23,27 @@ export const MAGNETIC_WARDEN_BOSS_ID = 'magnetic_warden';
 export type Noise2D = (x: number, z: number) => number;
 
 // --- Rarity / size ---
-// Tuned so instances sit ~10k blocks apart on average: rare (you must seek one,
-// you won't stumble onto it), but reliably reachable by /locate's search radius.
+// Size (radius) is intentionally compact and fixed. Rarity is tuned so boss biomes
+// feel like a genuine expedition find: instances sit ~20k blocks apart on average.
 export const MF_CELL = 2560;            // grid spacing between candidate centers (blocks)
 export const MF_RADIUS = 256;           // base biome radius (warped per-edge); kept compact
 export const MF_FIELD_FREQ = 0.0009;    // boss-biome noise frequency for center activation
-export const MF_FIELD_THRESHOLD = 0.40; // center activates only where the field peaks (rare)
+export const MF_FIELD_THRESHOLD = 0.55; // center activates only where the field peaks (rare)
 
 // --- Natural (non-circular) shaping ---
 export const MF_EDGE_FREQ = 0.011;      // boundary wobble frequency
 export const MF_EDGE_AMP = 0.28;        // boundary radius varies by ±28% → organic outline
 export const MF_TIER_WARP_FREQ = 0.02;  // cliff-ring wobble frequency
 export const MF_TIER_WARP_AMP = 16;     // cliff rings shift in/out by up to 16 blocks
+
+// Gentle per-column surface variation so shelves read as natural rock, not a table.
+export const MF_SHELF_JITTER_FREQ = 0.075;
+export const MF_SHELF_JITTER_AMP = 1.8;  // ≈ ±2 blocks of bumpiness on shelves
+
+// Outer apron: within this many blocks of the boundary, the outer shelf ramps down
+// to the surrounding terrain so the biome blends in rather than ending in a wall.
+export const MF_APRON = 40;
+export const MF_APRON_MIN_Y = 64;        // keep the apron above sea level (even in ocean)
 
 // --- Tier (height-band) layout, outer rim inward to the central arena ---
 export const MF_BASE_HEIGHT = 70;       // outer shelf surface (world Y of tier 0)
@@ -140,16 +149,19 @@ export interface MagneticFieldColumn {
     tier: number;
     surfaceY: number;
     isArena: boolean;
+    /** Distance (blocks) from this column to the warped outer boundary (>= 0). */
+    edgeDistance: number;
 }
 
 /**
  * Full per-column resolution for terrain generation: which instance, the warped
- * radial distance (for wavy cliff rings), the tier, the flat shelf surface Y, and
- * whether this column is the central arena floor. Returns null outside the biome.
+ * radial distance (for wavy cliff rings), the tier, the flat-but-bumpy shelf
+ * surface Y, the central-arena flag, and how close the column is to the outer
+ * boundary (for edge blending). Returns null outside the biome.
  *
- * Because each tier maps to one flat Y and adjacent tiers differ by MF_TIER_HEIGHT,
- * the band edges become 1-column-wide vertical magnetite walls — flat shelves
- * separated by tall flat climb walls, converging on the arena.
+ * Because each tier maps to one near-flat Y and adjacent tiers differ by
+ * MF_TIER_HEIGHT, the band edges become vertical magnetite walls — natural shelves
+ * separated by tall climb walls, converging on the arena.
  */
 export function getMagneticFieldColumn(
     wx: number,
@@ -163,6 +175,7 @@ export function getMagneticFieldColumn(
     const dx = wx - instance.centerX;
     const dz = wz - instance.centerZ;
     const rawDist = Math.sqrt(dx * dx + dz * dz);
+    const edgeDistance = Math.max(0, warpedRadius(wx, wz, noise2D) - rawDist);
     // Warp the radial distance so the cliff rings (and thus the walls) are organic
     // rather than perfectly concentric circles.
     const warpedDist = Math.max(
@@ -171,10 +184,45 @@ export function getMagneticFieldColumn(
     );
 
     if (warpedDist <= MF_ARENA_RADIUS) {
-        return { instance, distance: warpedDist, tier: MF_TIER_COUNT - 1, surfaceY: MF_ARENA_FLOOR_Y, isArena: true };
+        // The arena floor stays perfectly flat for the boss fight.
+        return { instance, distance: warpedDist, tier: MF_TIER_COUNT - 1, surfaceY: MF_ARENA_FLOOR_Y, isArena: true, edgeDistance };
     }
     const tier = getMagneticFieldTier(warpedDist);
-    return { instance, distance: warpedDist, tier, surfaceY: getMagneticFieldTierHeight(tier), isArena: false };
+    const jitter = Math.round(noise2D(wx * MF_SHELF_JITTER_FREQ, wz * MF_SHELF_JITTER_FREQ) * MF_SHELF_JITTER_AMP);
+    return { instance, distance: warpedDist, tier, surfaceY: getMagneticFieldTierHeight(tier) + jitter, isArena: false, edgeDistance };
+}
+
+// --- Wall magnetism + decoration placement (pure, hash-driven) ---
+
+/**
+ * Whether a magnetite cliff wall at (wx, wz) carries a climbable magnet, and its
+ * polarity: 0 = bare magnetite, 1 = Positive Magnetite Block, -1 = Negative.
+ * Magnets appear in coarse clusters covering only part of the walls, so the player
+ * must wrap around a spire to find a route rather than climbing anywhere.
+ */
+export function getMagnetiteWallPolarity(wx: number, wz: number, worldSeed: number): number {
+    const cx = Math.floor(wx / 6);
+    const cz = Math.floor(wz / 6);
+    if (hash3(cx, 11, cz, worldSeed ^ 0x77616c6c) >= 0.4) return 0; // ~40% of walls magnetized
+    return hash3(cx, 12, cz, worldSeed ^ 0x706f6c) < 0.5 ? 1 : -1;
+}
+
+export type ShelfDecoration = 'none' | 'spike' | 'crystal_pos' | 'crystal_neg' | 'accent' | 'shard';
+
+/**
+ * Deterministic decoration sitting on a shelf surface at (wx, wz). Sparse, so
+ * shelves stay traversable: scattered Magnetic Spikes (hazard), resource crystal
+ * clusters (red/blue), and bright accent blocks/shards for contrast against the
+ * dark magnetite.
+ */
+export function getShelfDecoration(wx: number, wz: number, worldSeed: number): ShelfDecoration {
+    const r = hash3(wx, 31, wz, worldSeed ^ 0x6465636f);
+    if (r < 0.012) return 'spike';
+    if (r < 0.024) return 'crystal_pos';
+    if (r < 0.036) return 'crystal_neg';
+    if (r < 0.044) return 'shard';
+    if (r < 0.050) return 'accent';
+    return 'none';
 }
 
 /** The single arena center of the instance covering (wx, wz), or null. */
