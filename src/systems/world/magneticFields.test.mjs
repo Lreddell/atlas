@@ -252,6 +252,29 @@ test('arena build pass is wired into chunk generation, off natural features', ()
     assert.match(cg, /onArena\(rootWx, rootWz\)/);
 });
 
+test('magnetite slabs/stairs are registered in the shape system', () => {
+    // Regression: SLAB_TYPES/STAIR_TYPES are hardcoded; the magnetite set must be in
+    // them or placed blocks render as full cubes and the slab icon looks like a stair.
+    const shapes = read('src/systems/world/blockShapes.ts');
+    for (const t of ['MAGNETITE_SLAB', 'MAGNETITE_BRICK_SLAB']) {
+        assert.match(shapes, new RegExp(`SLAB_TYPES[\\s\\S]*BlockType\\.${t}`));
+    }
+    for (const t of ['MAGNETITE_STAIRS', 'MAGNETITE_BRICK_STAIRS']) {
+        assert.match(shapes, new RegExp(`STAIR_TYPES[\\s\\S]*BlockType\\.${t}`));
+    }
+});
+
+test('arena tweaks: continuous climb face, no platform magnets, no lava pylons', () => {
+    const a = read('src/systems/world/magneticArena.ts');
+    // The climb face is pure magnet (trim bands only on other faces, via else-if).
+    assert.match(a, /if \(innerFace\) t = magnet;\s*\n\s*else if \(cheb === 3/);
+    // The lava-pit pylon builder was removed.
+    assert.doesNotMatch(a, /buildMoatPylons/);
+    // The central platform floor no longer paints polarity magnets.
+    const platform = a.match(/function buildCentralPlatform[\s\S]*?\n}/)[0];
+    assert.doesNotMatch(platform, /POSITIVE_MAGNET|NEGATIVE_MAGNET/);
+});
+
 test('isInMagneticFields agrees with instance lookup', () => {
     const inst = findInstance();
     assert.equal(isInMagneticFields(inst.centerX, inst.centerZ, SEED, noise2D), true);
