@@ -34,6 +34,17 @@ export const inputState: PlayerInputState = {
     magneticPolarity: 1
 };
 
+// Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
+// camera (Player). While `active`, the pointer-lock handler stops driving the
+// world-up Euler camera and instead accumulates raw deltas here, which Player
+// consumes as look around the wall normal. When inactive this is untouched, so
+// normal first-person look is completely unaffected.
+export const lookBridge = {
+    active: false,
+    dYaw: 0,
+    dPitch: 0,
+};
+
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
 
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
