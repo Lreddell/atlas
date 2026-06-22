@@ -93,7 +93,24 @@ export function generateMagneticWardenArena(
     buildLaunchRoutes(centerX, centerZ, baseY, ctx);
     buildMagneticPillarTowers(centerX, centerZ, baseY, ctx);
     buildShieldCrystalPedestals(centerX, centerZ, baseY, ctx);
+    buildArenaLights(centerX, centerZ, baseY, ctx);
     buildBossSummoner(centerX, centerZ, baseY, ctx);
+}
+
+// Glowing Magnetite Shards for night visibility — a ring along the wall top, a
+// sparse terrace ring, and a few by the centre. Kept modest (not overdone).
+function buildArenaLights(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    const ring = (r: number, n: number, y: number, off: number): void => {
+        for (let a = 0; a < n; a++) {
+            const ang = (a / n) * Math.PI * 2 + off;
+            const x = centerX + Math.round(Math.cos(ang) * r);
+            const z = centerZ + Math.round(Math.sin(ang) * r);
+            if (inChunk(ctx, x, z)) ctx.setBlock(x, y, z, BlockType.MAGNETITE_SHARD);
+        }
+    };
+    ring(ARENA_RIM_INNER - 1, 16, baseY + ARENA_WALL_HEIGHT + 1, 0);                       // wall-top ring
+    ring((ARENA_LAVA_OUTER_RADIUS + ARENA_RIM_INNER) / 2, 8, baseY + 1, Math.PI / 8);      // terrace ring
+    ring(7, 4, baseY + 1, Math.PI / 4);                                                    // near the summoner
 }
 
 // Iterate the chunk∩(centre±r) columns, invoking fn with world x/z and |dx|,|dz|,dist.
@@ -278,8 +295,10 @@ function buildLaunchRoutes(centerX: number, centerZ: number, baseY: number, ctx:
     }
 }
 
-// 10. Four thick polarity towers rising from the pit floor: flared base, trim
-//     bands, ONE designated magnet climb face (toward the centre), chiseled cap.
+// 10. Four thick polarity towers rising from the pit floor. The two centre-facing
+//     faces are an UNBROKEN magnet climb path bottom→top; the other faces are bricks
+//     with chiseled vertical CORNER borders for shape (no horizontal bands that would
+//     break the climb). Flared base founded in the lava.
 function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     const pitFloor = baseY - ARENA_MOAT_PIT_DEPTH;
     const top = baseY + ARENA_PILLAR_HEIGHT;
@@ -293,51 +312,43 @@ function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: numb
                 if (!inChunk(ctx, wx, wz)) continue;
                 const cheb = Math.max(Math.abs(ox), Math.abs(oz));
                 if (cheb === 4) {
-                    // Flared 9×9 base founded in the lava + a ledge band higher up.
+                    // Flared 9×9 base founded in the lava (just a short skirt).
                     fillColumn(ctx, wx, pitFloor, baseY - 2, wz, BlockType.MAGNETITE_BRICKS);
                     ctx.setBlock(wx, baseY - 1, wz, BlockType.MAGNETITE_BRICK_SLAB);
-                    if ((baseY + 12) <= top) ctx.setBlock(wx, baseY + 12, wz, BlockType.MAGNETITE_BRICK_SLAB);
                     continue;
                 }
-                // 7×7 shaft. The two centre-facing faces are a CONTINUOUS magnet
-                // climb path from the pit floor to the top (no trim breaks), so the
-                // player can climb them with Polarity Boots. Other faces get bricks
-                // with chiseled trim bands.
-                const innerFace = cheb === 3 && (ox === -3 * dirX || oz === -3 * dirZ);
-                for (let y = pitFloor; y <= top; y++) {
-                    let t: BlockType = BlockType.MAGNETITE_BRICKS;
-                    if (innerFace) t = magnet;
-                    else if (cheb === 3 && (y - baseY) % 6 === 0) t = BlockType.CHISELED_MAGNETITE;
-                    ctx.setBlock(wx, y, wz, t);
-                }
-            }
-        }
-        // Low chiseled parapet on the OUTER edges only — leaves the climb faces open
-        // at the top so the player can mantle onto the 7×7 cap and reach the crystal.
-        for (let ox = -3; ox <= 3; ox++) {
-            for (let oz = -3; oz <= 3; oz++) {
-                const wx = c.x + ox, wz = c.z + oz;
-                if (!inChunk(ctx, wx, wz)) continue;
-                const isInner = ox === -3 * dirX || oz === -3 * dirZ;
-                if (Math.max(Math.abs(ox), Math.abs(oz)) === 3 && !isInner) {
-                    ctx.setBlock(wx, top + 1, wz, BlockType.CHISELED_MAGNETITE);
-                }
+                const isCorner = Math.abs(ox) === 3 && Math.abs(oz) === 3;
+                const innerFace = cheb === 3 && !isCorner && (ox === -3 * dirX || oz === -3 * dirZ);
+                const t = isCorner ? BlockType.CHISELED_MAGNETITE
+                    : innerFace ? magnet
+                        : BlockType.MAGNETITE_BRICKS;
+                fillColumn(ctx, wx, pitFloor, top, wz, t);
             }
         }
     }
 }
 
-// 11. Pedestal + shield crystal on each tower top.
+// 11. Tower cap: a chiseled rim set ONE BLOCK INWARD all the way around (even, with
+//     shape, but it doesn't block the player), framing a shield crystal that sits on
+//     the platform at the centre.
 function buildShieldCrystalPedestals(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         const c = arenaPillarCenter(centerX, centerZ, i);
-        for (let ox = -1; ox <= 1; ox++) {
-            for (let oz = -1; oz <= 1; oz++) {
-                if (inChunk(ctx, c.x + ox, c.z + oz)) ctx.setBlock(c.x + ox, top + 1, c.z + oz, BlockType.CHISELED_MAGNETITE);
+        const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
+        for (let ox = -3; ox <= 3; ox++) {
+            for (let oz = -3; oz <= 3; oz++) {
+                const wx = c.x + ox, wz = c.z + oz;
+                if (!inChunk(ctx, wx, wz)) continue;
+                const cheb = Math.max(Math.abs(ox), Math.abs(oz));
+                // Leave the two centre-facing climb-face cells as the shaft set them
+                // (magnet), so the climb path runs unbroken to the very top.
+                const isClimbFace = cheb === 3 && (ox === -3 * dirX || oz === -3 * dirZ);
+                if (!isClimbFace) ctx.setBlock(wx, top, wz, BlockType.MAGNETITE_BRICKS); // clean 7×7 cap
+                if (cheb === 2) ctx.setBlock(wx, top + 1, wz, BlockType.CHISELED_MAGNETITE); // inset rim
             }
         }
-        if (inChunk(ctx, c.x, c.z)) ctx.setBlock(c.x, top + 2, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        if (inChunk(ctx, c.x, c.z)) ctx.setBlock(c.x, top + 1, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
     }
 }
 

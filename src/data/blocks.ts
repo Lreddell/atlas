@@ -360,7 +360,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: BlockType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
 
   // Magnetite Shard — bright cross-plane crystal cluster for contrast decoration.
-  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 6, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 12, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
 
   // Magnetite building set — for the arena (and player builds). Bricks + chiseled
   // get their own textures; slabs/stairs reuse a parent texture via textureParent.

@@ -252,22 +252,27 @@ test('arena build pass is wired into chunk generation, off natural features', ()
     assert.match(cg, /onArena\(rootWx, rootWz\)/);
 });
 
-test('magnetite slabs/stairs are registered in the shape system', () => {
-    // Regression: SLAB_TYPES/STAIR_TYPES are hardcoded; the magnetite set must be in
-    // them or placed blocks render as full cubes and the slab icon looks like a stair.
+test('shape detection is data-driven (future-proof), not a hardcoded list', () => {
+    // Regression: placed slabs/stairs rendered as full cubes because the type lists
+    // were hardcoded. isSlab/isStairs now read each block's `shape` field instead.
     const shapes = read('src/systems/world/blockShapes.ts');
-    for (const t of ['MAGNETITE_SLAB', 'MAGNETITE_BRICK_SLAB']) {
-        assert.match(shapes, new RegExp(`SLAB_TYPES[\\s\\S]*BlockType\\.${t}`));
-    }
-    for (const t of ['MAGNETITE_STAIRS', 'MAGNETITE_BRICK_STAIRS']) {
-        assert.match(shapes, new RegExp(`STAIR_TYPES[\\s\\S]*BlockType\\.${t}`));
-    }
+    assert.match(shapes, /isSlab\s*=\s*\(t: BlockType\): boolean =>\s*BLOCKS\[t\]\?\.shape === 'slab'/);
+    assert.match(shapes, /isStairs\s*=\s*\(t: BlockType\): boolean =>\s*BLOCKS\[t\]\?\.shape === 'stairs'/);
+    assert.doesNotMatch(shapes, /const SLAB_TYPES/);
+    // And the magnetite shaped blocks carry the right `shape` so they auto-register.
+    assert.match(blocksSrc, /MAGNETITE_SLAB\][^\n]*shape:\s*'slab'/);
+    assert.match(blocksSrc, /MAGNETITE_STAIRS\][^\n]*shape:\s*'stairs'/);
+    assert.match(blocksSrc, /MAGNETITE_BRICK_SLAB\][^\n]*shape:\s*'slab'/);
+    assert.match(blocksSrc, /MAGNETITE_BRICK_STAIRS\][^\n]*shape:\s*'stairs'/);
 });
 
 test('arena tweaks: continuous climb face, no platform magnets, no lava pylons', () => {
     const a = read('src/systems/world/magneticArena.ts');
-    // The climb face is pure magnet (trim bands only on other faces, via else-if).
-    assert.match(a, /if \(innerFace\) t = magnet;\s*\n\s*else if \(cheb === 3/);
+    // The climb face is pure magnet, filled in one unbroken column to the top.
+    const towers = a.match(/function buildMagneticPillarTowers[\s\S]*?\n}/)[0];
+    assert.match(towers, /innerFace \? magnet/);
+    assert.match(towers, /fillColumn\(ctx, wx, pitFloor, top, wz, t\)/);
+    assert.doesNotMatch(towers, /% 6 === 0/); // no horizontal trim bands breaking the climb
     // The lava-pit pylon builder was removed.
     assert.doesNotMatch(a, /buildMoatPylons/);
     // The central platform floor no longer paints polarity magnets.
