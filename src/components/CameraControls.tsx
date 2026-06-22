@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { lookBridge } from '../systems/player/playerInput';
 
 export interface CameraControlsHandle {
     lock: () => void;
@@ -71,6 +72,15 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
             // Defensively handle movement values to prevent NaN propagation
             const mx = Number.isFinite(e.movementX) ? e.movementX : 0;
             const my = Number.isFinite(e.movementY) ? e.movementY : 0;
+
+            // While latched to a magnetic wall, look is around the wall normal —
+            // Player owns the camera orientation, so just hand it the raw deltas
+            // instead of mutating the world-up Euler camera.
+            if (lookBridge.active) {
+                lookBridge.dYaw -= mx * 0.002;
+                lookBridge.dPitch -= my * 0.002;
+                return;
+            }
 
             camera.rotation.y -= mx * 0.002;
             camera.rotation.x -= my * 0.002;
