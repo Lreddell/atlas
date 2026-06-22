@@ -250,7 +250,15 @@ export enum BlockType {
   MAGNETIC_SHIELD_CRYSTAL = 247,
   // Contrast decoration: emissive accent block + bright cross-plane shard.
   CHARGED_MAGNETITE = 248,
-  MAGNETITE_SHARD = 249
+  MAGNETITE_SHARD = 249,
+
+  // --- Magnetite building set (for the Magnetic Warden arena) ---
+  MAGNETITE_SLAB = 250,
+  MAGNETITE_STAIRS = 251,
+  MAGNETITE_BRICKS = 252,
+  MAGNETITE_BRICK_SLAB = 253,
+  MAGNETITE_BRICK_STAIRS = 254,
+  CHISELED_MAGNETITE = 255
   // NOTE: the solid "Positive/Negative Magnetite Block" traversal sources reuse
   // the existing POSITIVE_MAGNET (190) / NEGATIVE_MAGNET (191) ids for save
   // compatibility; only their user-facing names are magnetite-themed.

@@ -13,18 +13,11 @@ import {
     getMagneticFeature,
     magneticFieldsTouchBox,
     getActiveCenters,
-    getArenaPillarPosition,
-    getArenaPillarPolarity,
     MF_APRON,
     MF_APRON_MIN_Y,
     MF_ARENA_FLOOR_Y,
-    MF_ARENA_RADIUS,
-    MF_ARENA_PLATFORM_R,
-    MF_ARENA_MOAT_OUTER_R,
-    MF_ARENA_MOAT_DEPTH,
-    MF_ARENA_PILLAR_COUNT,
-    MF_ARENA_PILLAR_HEIGHT,
 } from './magneticFields';
+import { generateMagneticWardenArena, ARENA_PROTECTED_RADIUS } from './magneticArena';
 import { index3D } from './worldCoords';
 
 // Grassy-surface test: true for all grass-topped biome surface blocks (so
@@ -841,9 +834,18 @@ function generateChunkInner(cx: number, cz: number) {
         worldX + CHUNK_SIZE + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE + MF_FEATURE_PADDING,
         noiseSet.seed | 0, mfNoise2D(noiseSet),
     );
+    // Arena centers near this chunk (also used to keep features off the structure).
+    const arenaCenters = getActiveCenters(
+        worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
+        worldX + CHUNK_SIZE - 1 + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE - 1 + MF_FEATURE_PADDING,
+        noiseSet.seed | 0, mfNoise2D(noiseSet), ARENA_PROTECTED_RADIUS,
+    );
+    const onArena = (wx: number, wz: number): boolean =>
+        arenaCenters.some((c) => Math.hypot(wx - c.centerX, wz - c.centerZ) <= ARENA_PROTECTED_RADIUS);
     for (let rootWx = worldX - MF_FEATURE_PADDING; mfBox && rootWx < worldX + CHUNK_SIZE + MF_FEATURE_PADDING; rootWx++) {
         for (let rootWz = worldZ - MF_FEATURE_PADDING; rootWz < worldZ + CHUNK_SIZE + MF_FEATURE_PADDING; rootWz++) {
             if (getBiome(rootWx, rootWz, noiseSet).id !== 'magnetic_fields') continue;
+            if (onArena(rootWx, rootWz)) continue; // never on the arena structure
             const feature = getMagneticFeature(rootWx, rootWz, noiseSet.seed | 0);
             if (!feature) continue;
             const surfaceY = getTerrainHeight(rootWx, rootWz, noiseSet);
@@ -855,42 +857,27 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2c. Magnetic Fields arena — one grand structure at each instance center: a
-    // solid fight platform ringed by a lava moat, crossed by tall alternating-
-    // polarity magnet pillars (shield crystal on each top), with the Magnetic Boss
-    // Summoner at the centre. Built for whatever part of the arena overlaps this chunk.
-    const arenaCenters = getActiveCenters(
-        worldX, worldZ, worldX + CHUNK_SIZE - 1, worldZ + CHUNK_SIZE - 1,
-        noiseSet.seed | 0, mfNoise2D(noiseSet), MF_ARENA_RADIUS,
-    );
-    for (const center of arenaCenters) {
-        const floorY = MF_ARENA_FLOOR_Y;
-        // Carve the lava moat (this chunk's columns only).
-        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-                const dd = Math.hypot(worldX + lx - center.centerX, worldZ + lz - center.centerZ);
-                if (dd > MF_ARENA_PLATFORM_R && dd <= MF_ARENA_MOAT_OUTER_R) {
-                    if (floorY <= MAX_Y) blocks[index3D(lx, floorY, lz)] = BlockType.AIR;
-                    for (let y = floorY - 1; y >= floorY - MF_ARENA_MOAT_DEPTH && y > MIN_Y; y--) {
-                        blocks[index3D(lx, y, lz)] = BlockType.LAVA;
-                    }
-                }
+    // 2c. Magnetic Fields arena — the monumental Magnetic Warden structure at each
+    // instance center. The dedicated generator fills/reserves its whole volume (no
+    // caves cut through) and only builds the slice overlapping this chunk.
+    if (arenaCenters.length > 0) {
+        const setArenaBlock = (wx: number, wy: number, wz: number, type: BlockType) => {
+            const lx = wx - worldX, lz = wz - worldZ;
+            if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE || wy < MIN_Y || wy > MAX_Y) return;
+            const idx = index3D(lx, wy, lz);
+            blocks[idx] = type;
+            if (type !== BlockType.AIR) {
+                const colIdx = lz * CHUNK_SIZE + lx;
+                if (wy > colHeightmap[colIdx]) colHeightmap[colIdx] = wy;
             }
+        };
+        for (const center of arenaCenters) {
+            generateMagneticWardenArena(center.centerX, center.centerZ, MF_ARENA_FLOOR_Y, {
+                setBlock: setArenaBlock,
+                minX: worldX, maxX: worldX + CHUNK_SIZE - 1,
+                minZ: worldZ, maxZ: worldZ + CHUNK_SIZE - 1,
+            });
         }
-        // Pillars rising from the moat (2×2, one polarity each, shield crystal on top).
-        for (let i = 0; i < MF_ARENA_PILLAR_COUNT; i++) {
-            const p = getArenaPillarPosition(center, i);
-            const block = getArenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
-            const top = floorY + MF_ARENA_PILLAR_HEIGHT;
-            for (let ox = 0; ox <= 1; ox++) {
-                for (let oz = 0; oz <= 1; oz++) {
-                    for (let y = floorY - MF_ARENA_MOAT_DEPTH; y <= top; y++) placeIfInChunk(p.x + ox, y, p.z + oz, block);
-                }
-            }
-            placeIfInChunk(p.x, top + 1, p.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
-        }
-        // Boss summoner at the centre of the platform.
-        placeIfInChunk(center.centerX, floorY + 1, center.centerZ, BlockType.MAGNETIC_BOSS_SUMMONER);
     }
 
     // 3. Initial Light Scan

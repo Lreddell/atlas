@@ -360,7 +360,16 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: BlockType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
 
   // Magnetite Shard — bright cross-plane crystal cluster for contrast decoration.
-  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 6, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] }
+  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 6, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetite building set — for the arena (and player builds). Bricks + chiseled
+  // get their own textures; slabs/stairs reuse a parent texture via textureParent.
+  [BlockType.MAGNETITE_BRICKS]: { id: BlockType.MAGNETITE_BRICKS, color: '#43434f', name: 'Magnetite Bricks', textureSlot: 213, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICKS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CHISELED_MAGNETITE]: { id: BlockType.CHISELED_MAGNETITE, color: '#4a4a58', name: 'Chiseled Magnetite', textureSlot: 214, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CHISELED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_SLAB]: { id: BlockType.MAGNETITE_SLAB, color: '#4a4a55', name: 'Magnetite Slab', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_STAIRS]: { id: BlockType.MAGNETITE_STAIRS, color: '#4a4a55', name: 'Magnetite Stairs', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BRICK_SLAB]: { id: BlockType.MAGNETITE_BRICK_SLAB, color: '#43434f', name: 'Magnetite Brick Slab', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] }
 };
 
 export const ATLAS_COLS = 8;

@@ -964,6 +964,31 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#e0ccff'; ctx.fillRect(7, 4, 2, 8);
     });
 
+    // 213: Magnetite Bricks — dark metallic brick courses with offset joints.
+    withTile(213, () => {
+        fill('#43434f');
+        ctx.fillStyle = '#2c2c36';
+        for (let y = 0; y < 16; y += 4) ctx.fillRect(0, y, 16, 1);                 // horizontal mortar
+        for (let y = 0; y < 16; y += 8) { ctx.fillRect(8, y, 1, 4); ctx.fillRect(0, y + 4, 1, 4); ctx.fillRect(8, y + 4, 1, 4); }
+        ctx.fillStyle = '#56566a';
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#5b4a78';
+        ctx.fillRect(3, 1, 1, 1); ctx.fillRect(11, 9, 1, 1);
+    });
+
+    // 214: Chiseled Magnetite — framed panel with an engraved polarity sigil.
+    withTile(214, () => {
+        fill('#4a4a58');
+        ctx.fillStyle = '#2c2c36';
+        ctx.fillRect(1, 1, 14, 14);
+        ctx.fillStyle = '#43434f';
+        ctx.fillRect(3, 3, 10, 10);
+        ctx.fillStyle = '#ff4030'; ctx.fillRect(6, 5, 4, 1); ctx.fillRect(7, 4, 2, 3);   // '+' (red)
+        ctx.fillStyle = '#3060ff'; ctx.fillRect(6, 10, 4, 1);                            // '-' (blue)
+        ctx.fillStyle = '#6a6a80';
+        ctx.fillRect(2, 2, 1, 1); ctx.fillRect(13, 2, 1, 1); ctx.fillRect(2, 13, 1, 1); ctx.fillRect(13, 13, 1, 1);
+    });
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);
