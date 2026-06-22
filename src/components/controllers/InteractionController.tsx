@@ -206,16 +206,22 @@ export const InteractionController = ({
             if (targetType === null) return;
 
             if (!isContinuous && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                const isInteractive = targetType === BlockType.CRAFTING_TABLE || 
-                                      targetType === BlockType.FURNACE || 
-                                      targetType === BlockType.FURNACE_ACTIVE || 
+                const isInteractive = targetType === BlockType.CRAFTING_TABLE ||
+                                      targetType === BlockType.FURNACE ||
+                                      targetType === BlockType.FURNACE_ACTIVE ||
                                       targetType === BlockType.CHEST ||
-                                      targetType === BlockType.BED_FOOT || 
-                                      targetType === BlockType.BED_HEAD;
+                                      targetType === BlockType.BED_FOOT ||
+                                      targetType === BlockType.BED_HEAD ||
+                                      targetType === BlockType.MAGNETIC_BOSS_SUMMONER;
 
                 if (isInteractive && !isShiftHeld) {
                     soundManager.play("ui.open");
-                    if (targetType === BlockType.CRAFTING_TABLE) {
+                    if (targetType === BlockType.MAGNETIC_BOSS_SUMMONER) {
+                        // Resolve which boss this region summons; open a confirmation.
+                        const region = getRegionAt(bx, by, bz);
+                        setOpenContainer({ type: 'boss_confirm', x: bx, y: by, z: bz, bossId: region?.bossId ?? 'magnetic_warden', regionId: region?.id ?? null });
+                        return;
+                    } else if (targetType === BlockType.CRAFTING_TABLE) {
                         setOpenContainer({ type: 'crafting', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.FURNACE || targetType === BlockType.FURNACE_ACTIVE) {
@@ -680,6 +686,10 @@ export const InteractionController = ({
                     // A double slab is one block but yields two slabs — capture its meta
                     // before the cell is cleared.
                     const isDoubleSlab = isSlab(targetType) && (worldManager.getMetadata(bx, by, bz) & SLAB_DOUBLE) !== 0;
+                    // Breaking a Magnetic Shield Crystal weakens the Magnetic Warden's shield.
+                    if (targetType === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
+                        gameEvents.emit('crystal:broken', { x: bx, y: by, z: bz, regionId: getRegionAt(bx, by, bz)?.id ?? null });
+                    }
                     const droppedItems = worldManager.setBlock(bx, by, bz, BlockType.AIR);
                     if (gameMode === 'survival') {
                         const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
