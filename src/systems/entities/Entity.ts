@@ -26,6 +26,28 @@ export interface Entity {
     isBoss: boolean;
     bossId?: string;
     regionId?: string;
+    // --- Magnetic Warden boss mechanics ---
+    /** While true the boss takes no damage (its shield crystals are intact). */
+    shielded: boolean;
+    /** Shield crystals still standing; the shield drops at 0. */
+    shieldCrystals: number;
+    /** Current polarity: 1 = positive (red), -1 = negative (blue). */
+    polarity: number;
+    /** Seconds until the next polarity swap. */
+    polarityTimer: number;
+    /** Seconds until the next projectile volley. */
+    projectileTimer: number;
+}
+
+// A boss projectile (a magnetic bolt). Simple ballistic mover that damages the
+// player on contact, themed by polarity colour.
+export interface Projectile {
+    id: number;
+    pos: THREE.Vector3;
+    vel: THREE.Vector3;
+    ttl: number;
+    damage: number;
+    polarity: number;
 }
 
 export interface DropSpec {
@@ -55,6 +77,14 @@ export interface EntityKind {
     drops?: DropSpec[];
     /** can the entity jump up a 1-block step while chasing. */
     canStep?: boolean;
+    /** Boss starts shielded with this many crystals (0/undefined = no shield). */
+    shieldCrystals?: number;
+    /** Seconds between polarity swaps (undefined = never swaps). */
+    polaritySwapInterval?: number;
+    /** Seconds between projectile volleys (undefined = no projectiles). */
+    projectileInterval?: number;
+    /** Damage per projectile hit. */
+    projectileDamage?: number;
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
@@ -83,5 +113,22 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         color: 0xff5530,
         isBoss: true,
         canStep: true,
+    },
+    magnetic_warden: {
+        id: 'magnetic_warden',
+        maxHp: 240,
+        width: 1.8,
+        height: 2.8,
+        speed: 1.8,
+        aggroRange: 30,
+        contactDamage: 8,
+        attackCooldown: 1.0,
+        color: 0x8e24aa,
+        isBoss: true,
+        canStep: true,
+        shieldCrystals: 4,
+        polaritySwapInterval: 6,
+        projectileInterval: 2.2,
+        projectileDamage: 5,
     },
 };

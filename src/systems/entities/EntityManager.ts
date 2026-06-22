@@ -4,8 +4,9 @@ import { checkCollision, getSupportTop } from '../player/playerCollision';
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
-import { ENTITY_KINDS, type Entity, type EntityKind } from './Entity';
-import type { GameMode } from '../../types';
+import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile } from './Entity';
+import { inputState } from '../player/playerInput';
+import { BlockType, type GameMode } from '../../types';
 import {
     canTargetPlayer,
     shouldForgetTarget,
@@ -20,6 +21,11 @@ export interface SpawnOptions {
 const MAX_FALL_SPEED = 40;
 const STEP_HEIGHT = 1.0;
 
+const BOSS_NAMES: Record<string, string> = {
+    cinder_warden: 'Cinder Warden',
+    magnetic_warden: 'Magnetic Warden',
+};
+
 /**
  * Owns all non-player entities. Ticked from the fixed-timestep GameLoop. Keeps
  * the simulation framework-agnostic; rendering subscribes to structural changes
@@ -27,13 +33,17 @@ const STEP_HEIGHT = 1.0;
  */
 class EntityManager {
     private entities = new Map<number, Entity>();
+    private projectiles: Projectile[] = [];
     private nextId = 1;
+    private nextProjectileId = 1;
     private inCombat = false;
 
     // Injected by App so entities can chase/damage the player without importing
     // React state.
     private playerPosProvider: (() => { x: number; y: number; z: number } | null) | null = null;
     private playerDamageHandler: ((amount: number, knockX: number, knockZ: number) => void) | null = null;
+    // Optional: apply a velocity impulse to the player (the boss's magnetic field).
+    private playerImpulseHandler: ((x: number, y: number, z: number) => void) | null = null;
 
     // Structural-change subscribers (the renderer rebuilds its mesh list on these).
     private structureListeners = new Set<() => void>();
@@ -41,9 +51,15 @@ class EntityManager {
     setPlayerHooks(
         posProvider: () => { x: number; y: number; z: number } | null,
         damageHandler: (amount: number, knockX: number, knockZ: number) => void,
+        impulseHandler?: (x: number, y: number, z: number) => void,
     ): void {
         this.playerPosProvider = posProvider;
         this.playerDamageHandler = damageHandler;
+        this.playerImpulseHandler = impulseHandler ?? null;
+    }
+
+    getProjectiles(): Projectile[] {
+        return this.projectiles;
     }
 
     onStructureChange(cb: () => void): () => void {
@@ -85,6 +101,11 @@ class EntityManager {
             isBoss: !!kind.isBoss,
             bossId: opts.bossId ?? (kind.isBoss ? kind.id : undefined),
             regionId: opts.regionId,
+            shielded: (kind.shieldCrystals ?? 0) > 0,
+            shieldCrystals: kind.shieldCrystals ?? 0,
+            polarity: 1,
+            polarityTimer: kind.polaritySwapInterval ?? 0,
+            projectileTimer: kind.projectileInterval ?? 0,
         };
         this.entities.set(entity.id, entity);
         this.notifyStructure();
@@ -92,11 +113,32 @@ class EntityManager {
             gameEvents.emit('boss:spawned', {
                 bossId: entity.bossId,
                 entityId: entity.id,
-                name: kind.id === 'cinder_warden' ? 'Cinder Warden' : kind.id,
+                name: BOSS_NAMES[kind.id] ?? kind.id,
                 maxHp: entity.maxHp,
             });
+            if (entity.shielded) {
+                gameEvents.emit('boss:shield', { bossId: entity.bossId, entityId: entity.id, crystals: entity.shieldCrystals });
+            }
         }
         return entity;
+    }
+
+    /**
+     * A shield crystal in a sealed boss region was destroyed: drop the shield by one
+     * on that region's boss; when the last crystal falls the boss becomes vulnerable.
+     */
+    onShieldCrystalBroken(regionId: string | null): void {
+        for (const e of this.entities.values()) {
+            if (!e.shielded || e.shieldCrystals <= 0) continue;
+            if (regionId && e.regionId && e.regionId !== regionId) continue;
+            e.shieldCrystals -= 1;
+            if (e.bossId) gameEvents.emit('boss:shield', { bossId: e.bossId, entityId: e.id, crystals: e.shieldCrystals });
+            if (e.shieldCrystals <= 0) {
+                e.shielded = false;
+                if (e.bossId) gameEvents.emit('boss:vulnerable', { bossId: e.bossId, entityId: e.id });
+            }
+            return; // one crystal → one shield point
+        }
     }
 
     despawn(id: number): void {
@@ -106,6 +148,7 @@ class EntityManager {
     clear(): void {
         const hadEntities = this.entities.size > 0;
         this.entities.clear();
+        this.projectiles = [];
         if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
         gameEvents.emit('boss:cleared', {});
         if (hadEntities) this.notifyStructure();
@@ -115,6 +158,8 @@ class EntityManager {
     damageEntity(id: number, amount: number, knockX = 0, knockZ = 0): void {
         const e = this.entities.get(id);
         if (!e || e.hp <= 0) return;
+        // Shielded bosses take no damage until their crystals are broken.
+        if (e.shielded) { e.hurtUntil = Date.now() + 80; return; }
         e.hp -= amount;
         e.hurtUntil = Date.now() + 180;
         e.aggro = true;
@@ -212,10 +257,100 @@ class EntityManager {
                 this.playerDamageHandler?.(kind.contactDamage, pp.x - e.pos.x, pp.z - e.pos.z);
                 e.attackCooldown = kind.attackCooldown;
             }
+
+            // --- Magnetic Warden boss mechanics (polarity swap, field, projectiles) ---
+            if (kind.polaritySwapInterval && pp && targetable) {
+                this.tickBossMechanics(e, kind, pp, dt);
+            }
         }
+
+        this.tickProjectiles(dt, pp, targetable);
 
         if (anyAggro && !this.inCombat) { this.inCombat = true; gameEvents.emit('combat:start', {}); }
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
+    }
+
+    // Polarity swap, the magnetic field that pushes/pulls the player, and projectile
+    // volleys — all data-driven from the boss's EntityKind.
+    private tickBossMechanics(
+        e: Entity, kind: EntityKind,
+        pp: { x: number; y: number; z: number }, dt: number,
+    ): void {
+        if (kind.polaritySwapInterval) {
+            e.polarityTimer -= dt;
+            if (e.polarityTimer <= 0) {
+                e.polarity *= -1;
+                e.polarityTimer = kind.polaritySwapInterval;
+                if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
+            }
+        }
+        // Magnetic field: same polarity repels (push away), opposite attracts (pull in).
+        if (e.aggro && this.playerImpulseHandler) {
+            const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z;
+            const dist = Math.hypot(dx, dz) || 1;
+            if (dist < 22) {
+                const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
+                const sign = playerPol === e.polarity ? 1 : -1;
+                const strength = (1 - dist / 22) * 4.5 * dt;
+                this.playerImpulseHandler((dx / dist) * sign * strength, 0, (dz / dist) * sign * strength);
+            }
+        }
+        if (kind.projectileInterval && e.aggro) {
+            e.projectileTimer -= dt;
+            if (e.projectileTimer <= 0) {
+                e.projectileTimer = kind.projectileInterval;
+                this.fireVolley(e, kind, pp);
+            }
+        }
+    }
+
+    private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }): void {
+        const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
+        const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
+        const d = Math.hypot(dx, dy, dz) || 1;
+        const speed = 15;
+        for (const spread of [-0.2, 0, 0.2]) {
+            const ca = Math.cos(spread), sa = Math.sin(spread);
+            this.projectiles.push({
+                id: this.nextProjectileId++,
+                pos: new THREE.Vector3(ox, oy, oz),
+                vel: new THREE.Vector3(
+                    (dx * ca - dz * sa) / d * speed,
+                    dy / d * speed,
+                    (dx * sa + dz * ca) / d * speed,
+                ),
+                ttl: 4,
+                damage: kind.projectileDamage ?? 4,
+                polarity: e.polarity,
+            });
+        }
+    }
+
+    private tickProjectiles(
+        dt: number,
+        pp: { x: number; y: number; z: number } | null,
+        targetable: boolean,
+    ): void {
+        if (this.projectiles.length === 0) return;
+        const survivors: Projectile[] = [];
+        for (const p of this.projectiles) {
+            p.ttl -= dt;
+            p.pos.x += p.vel.x * dt;
+            p.pos.y += p.vel.y * dt;
+            p.pos.z += p.vel.z * dt;
+            p.vel.y -= GRAVITY * 0.25 * dt; // gentle arc
+            if (p.ttl <= 0) continue;
+            if (worldManager.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z), false) !== BlockType.AIR) continue;
+            if (targetable && pp) {
+                const dx = p.pos.x - pp.x, dy = p.pos.y - (pp.y + PLAYER_HEIGHT * 0.5), dz = p.pos.z - pp.z;
+                if (dx * dx + dy * dy + dz * dz < 1.2) {
+                    this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
+                    continue;
+                }
+            }
+            survivors.push(p);
+        }
+        this.projectiles = survivors;
     }
 
     private moveWithCollision(e: Entity, kind: EntityKind, dt: number): void {

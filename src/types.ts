@@ -370,7 +370,8 @@ export type OpenContainer =
     | { type: 'creative' }
     | ({ type: 'crafting' } & ContainerLocation)
     | ({ type: 'furnace' } & ContainerLocation)
-    | ({ type: 'chest' } & ContainerLocation);
+    | ({ type: 'chest' } & ContainerLocation)
+    | ({ type: 'boss_confirm'; bossId: string; regionId: string | null } & ContainerLocation);
 
 export type OpenContainerState = OpenContainer | null;
 

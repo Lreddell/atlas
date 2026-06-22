@@ -20,6 +20,12 @@ export interface GameEventMap {
     'boss:damaged': { bossId: string; entityId: number; hp: number; maxHp: number };
     'boss:defeated': { bossId: string; entityId: number; regionId?: string };
     'boss:cleared': Record<string, never>;
+    /** Magnetic Warden: shield crystal count changed (drops to 0 → vulnerable). */
+    'boss:shield': { bossId: string; entityId: number; crystals: number };
+    'boss:vulnerable': { bossId: string; entityId: number };
+    'boss:polarity': { bossId: string; entityId: number; polarity: number };
+    /** A magnetic shield crystal block was destroyed at a position in a region. */
+    'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     'entity:died': { entityId: number; type: string };
     'combat:start': Record<string, never>;
     'combat:stop': Record<string, never>;

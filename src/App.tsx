@@ -14,6 +14,7 @@ import { InteractionController } from './components/controllers/InteractionContr
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
+import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
@@ -566,6 +567,8 @@ const App: React.FC = () => {
               const length = Math.hypot(knockX, knockZ) || 1;
               playerRef.current?.applyImpulse((knockX / length) * 5, 2.5, (knockZ / length) * 5);
           },
+          // Magnetic field impulse (the Magnetic Warden pushing/pulling the player).
+          (x, y, z) => playerRef.current?.applyImpulse(x, y, z),
       );
   }, [damagePlayer]);
 
@@ -874,7 +877,11 @@ const App: React.FC = () => {
           progression.markBossDefeated(bossId);
           if (regionId) progression.cleanseRegion(regionId);
       });
-      return () => { offDenied(); offCleansed(); offDefeated(); };
+      // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
+      const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
+          entityManager.onShieldCrystalBroken(regionId);
+      });
+      return () => { offDenied(); offCleansed(); offDefeated(); offCrystal(); };
   }, []);
 
   // Update Chunks & Stream
@@ -2497,7 +2504,23 @@ const App: React.FC = () => {
                     {!showDeathScreen && <BossBar />}
                     {!showDeathScreen && magneticMode === 'controlled' && <PolarityIndicator />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
+                    {openContainer?.type === 'boss_confirm' && (
+                        <BossConfirmModal
+                            bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : openContainer.bossId}
+                            onConfirm={() => {
+                                const { x, y, z, bossId, regionId } = openContainer;
+                                const active = entityManager.getEntities().some((e) => e.bossId === bossId && e.hp > 0);
+                                if (active) {
+                                    worldManager.log('The boss is already active.', 'error');
+                                } else {
+                                    entityManager.spawn(bossId, x + 0.5, y, z + 4, { bossId, regionId: regionId ?? undefined });
+                                }
+                                handleInventoryContainerChange(null);
+                            }}
+                            onCancel={() => handleInventoryContainerChange(null)}
+                        />
+                    )}
                     <Chat 
                         messages={messages} 
                         showInput={showCommandInput} 
