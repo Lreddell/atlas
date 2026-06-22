@@ -1,32 +1,36 @@
 // Magnetic Warden arena — a dedicated, deterministic voxel-structure generator.
 //
 // The arena is the monumental centre of every Magnetic Fields biome instance: a
-// large octagonal magnetite fortress with a battlemented outer wall, a wide
-// terrace, a lava moat, four tall alternating-polarity climb towers rising from
-// the lava (shield crystal on each), and the boss summoner on a raised central
-// pedestal. It reserves and fills its whole volume so no caves/terrain cut through.
+// large octagonal magnetite fortress whose battlemented outer wall is broken up by
+// massive vertical ribs, corner buttress towers, an upper walkway and grouped
+// climb panels. Inside, a wide terrace steps down to a RECESSED lava pit (the lava
+// sits well below the arena floor, so a missed jump drops into air first), crossed
+// by four cardinal bridges to a detailed central platform. Four thick polarity
+// towers rise from the pit, each with a flared base, trim bands, a single
+// designated magnet climb face, a chiseled cap and a shield-crystal pedestal.
 //
-// It is written as composable sub-builders driven by a clipped `setBlock` so each
-// world chunk only generates the slice of the structure that overlaps it (the same
-// deterministic call from every chunk produces one seamless landmark).
+// It reserves and fills its whole volume so no caves/terrain cut through, and is
+// built per world chunk for the slice that overlaps it (one seamless landmark).
 
 import { BlockType } from '../../types';
 
 // --- Centralized dimensions (all radii in blocks, relative to the centre) ---
 export const ARENA_OUTER_RADIUS = 72;        // octagonal footprint → ~150 across
 export const ARENA_PROTECTED_RADIUS = 80;    // reserved volume (airspace clear + no caves)
-export const ARENA_FOUNDATION_DEPTH = 24;    // solid fill below the base
-export const ARENA_WALL_HEIGHT = 11;         // outer rim wall height
-export const ARENA_RIM_INNER = 64;           // rim wall band: [RIM_INNER, OUTER]
+export const ARENA_FOUNDATION_DEPTH = 26;    // solid fill below the base
+export const ARENA_WALL_HEIGHT = 12;         // outer rim wall height
+export const ARENA_RIM_INNER = 62;           // rim wall band: [RIM_INNER, OUTER]
 export const ARENA_TERRACE_INNER = 46;       // terrace floor band: [TERRACE_INNER, RIM_INNER)
-export const ARENA_LAVA_OUTER_RADIUS = 44;   // lava moat band: (LAVA_INNER, LAVA_OUTER)
-export const ARENA_LAVA_INNER_RADIUS = 28;
-export const ARENA_CENTRAL_RADIUS = 26;      // central fight platform
-export const ARENA_PILLAR_RADIUS = 36;       // tower centres (in the lava)
+export const ARENA_LAVA_OUTER_RADIUS = 44;   // lava pit band: (LAVA_INNER, LAVA_OUTER)
+export const ARENA_LAVA_INNER_RADIUS = 26;
+export const ARENA_CENTRAL_RADIUS = 24;      // central fight platform
+export const ARENA_MOAT_PIT_DEPTH = 12;      // pit floor depth below the arena floor
+export const ARENA_LAVA_THICKNESS = 3;       // lava lies at the BOTTOM of the pit
+export const ARENA_PILLAR_RADIUS = 35;       // tower centres (in the pit)
 export const ARENA_PILLAR_HALF = 3;          // 7×7 towers
-export const ARENA_PILLAR_HEIGHT = 26;       // tower top above the base
-export const ARENA_MOAT_DEPTH = 9;           // lava depth
+export const ARENA_PILLAR_HEIGHT = 26;       // tower top above the arena floor
 export const ARENA_PILLAR_COUNT = 4;
+export const ARENA_RIB_SPACING = 16;         // massive wall ribs roughly every 16 blocks
 
 export interface ArenaCtx {
     /** Place a block at world (x,y,z); implementations clip to the current chunk. */
@@ -42,7 +46,18 @@ export interface ArenaCtx {
 const inOctagon = (adx: number, adz: number, r: number): boolean =>
     Math.max(adx, adz) <= r && adx + adz <= Math.round(r * 1.34);
 
-/** Pillar centre for tower `i`, on the diagonals so it sits in the lava ring. */
+// True near a rib gridline (gives evenly spaced vertical ribs along the wall).
+const onRibLine = (d: number): boolean => {
+    const m = ((d % ARENA_RIB_SPACING) + ARENA_RIB_SPACING) % ARENA_RIB_SPACING;
+    return m <= 1;
+};
+// True near the middle of a rib-to-rib bay (where grouped climb panels sit).
+const inBayCenter = (d: number): boolean => {
+    const m = ((d % ARENA_RIB_SPACING) + ARENA_RIB_SPACING) % ARENA_RIB_SPACING;
+    return Math.abs(m - ARENA_RIB_SPACING / 2) <= 1.5;
+};
+
+/** Pillar centre for tower `i`, on the diagonals so it sits in the lava pit. */
 export function arenaPillarCenter(centerX: number, centerZ: number, i: number): { x: number; z: number } {
     const ang = Math.PI / 4 + (i / ARENA_PILLAR_COUNT) * Math.PI * 2;
     return {
@@ -54,9 +69,13 @@ export function arenaPillarCenter(centerX: number, centerZ: number, i: number): 
 /** Alternating polarity per tower (1 = positive/red, -1 = negative/blue). */
 export const arenaPillarPolarity = (i: number): number => (i % 2 === 0 ? 1 : -1);
 
+/** Lava surface Y inside the recessed pit (well below the arena floor). */
+export const arenaLavaSurfaceY = (baseY: number): number =>
+    baseY - ARENA_MOAT_PIT_DEPTH + ARENA_LAVA_THICKNESS;
+
 /**
  * Generate (the part of) the Magnetic Warden arena that overlaps this chunk.
- * centerX/centerZ = instance centre, baseY = plateau surface Y.
+ * centerX/centerZ = instance centre, baseY = plateau / arena-floor Y.
  */
 export function generateMagneticWardenArena(
     centerX: number,
@@ -67,9 +86,10 @@ export function generateMagneticWardenArena(
     clearArenaAirspace(centerX, centerZ, baseY, ctx);
     buildProtectedFoundationVolume(centerX, centerZ, baseY, ctx);
     buildOuterFoundation(centerX, centerZ, baseY, ctx);
+    buildLavaMoat(centerX, centerZ, baseY, ctx);
+    buildMoatPylons(centerX, centerZ, baseY, ctx);
     buildOuterTerrace(centerX, centerZ, baseY, ctx);
     buildOuterRim(centerX, centerZ, baseY, ctx);
-    buildLavaMoat(centerX, centerZ, baseY, ctx);
     buildCentralPlatform(centerX, centerZ, baseY, ctx);
     buildLaunchRoutes(centerX, centerZ, baseY, ctx);
     buildMagneticPillarTowers(centerX, centerZ, baseY, ctx);
@@ -99,9 +119,12 @@ const fillColumn = (ctx: ArenaCtx, wx: number, y0: number, y1: number, wz: numbe
     for (let y = y0; y <= y1; y++) ctx.setBlock(wx, y, wz, type);
 };
 
+const inChunk = (ctx: ArenaCtx, wx: number, wz: number): boolean =>
+    wx >= ctx.minX && wx <= ctx.maxX && wz >= ctx.minZ && wz <= ctx.maxZ;
+
 // 1. Clear everything above the base across the reserved volume (trees/terrain).
 function clearArenaAirspace(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    const top = baseY + ARENA_WALL_HEIGHT + ARENA_PILLAR_HEIGHT + 6;
+    const top = baseY + ARENA_WALL_HEIGHT + ARENA_PILLAR_HEIGHT + 8;
     forColumns(centerX, centerZ, ARENA_PROTECTED_RADIUS, ctx, (wx, wz, adx, adz) => {
         if (!inOctagon(adx, adz, ARENA_PROTECTED_RADIUS)) return;
         fillColumn(ctx, wx, baseY + 1, top, wz, BlockType.AIR);
@@ -118,154 +141,218 @@ function buildProtectedFoundationVolume(centerX: number, centerZ: number, baseY:
 
 // 3. Stepped outer foundation: bevel the footprint edge down into the tiers.
 function buildOuterFoundation(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    forColumns(centerX, centerZ, ARENA_OUTER_RADIUS + 2, ctx, (wx, wz, adx, adz) => {
-        const edge = Math.round(ARENA_OUTER_RADIUS * 1.34) - (adx + adz); // distance inside the octagon corner
+    forColumns(centerX, centerZ, ARENA_OUTER_RADIUS + 3, ctx, (wx, wz, adx, adz) => {
+        const corner = Math.round(ARENA_OUTER_RADIUS * 1.34) - (adx + adz);
         const cheb = ARENA_OUTER_RADIUS - Math.max(adx, adz);
-        const margin = Math.min(edge, cheb);
+        const margin = Math.min(corner, cheb);
         if (margin < 0 || margin > 3) return;
-        // Three stepped brick rings hanging just below the rim for a built bevel.
         const y = baseY - (3 - margin);
         ctx.setBlock(wx, y, wz, BlockType.MAGNETITE_BRICKS);
         ctx.setBlock(wx, y - 1, wz, BlockType.MAGNETITE_SLAB);
     });
 }
 
-// 4. Wide outer terrace floor (brick) with concentric chiseled trim rings.
+// 4. RECESSED lava pit ringing the platform: lava sits at the bottom, with several
+//    blocks of open air above it and a brick lip on each edge.
+function buildLavaMoat(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    const lavaTop = arenaLavaSurfaceY(baseY);            // e.g. baseY-9
+    const pitFloor = baseY - ARENA_MOAT_PIT_DEPTH;       // e.g. baseY-12
+    forColumns(centerX, centerZ, ARENA_LAVA_OUTER_RADIUS + 2, ctx, (wx, wz, _adx, _adz, dist) => {
+        if (dist <= ARENA_CENTRAL_RADIUS || dist > ARENA_LAVA_OUTER_RADIUS + 1) return;
+        if (dist > ARENA_LAVA_INNER_RADIUS && dist <= ARENA_LAVA_OUTER_RADIUS) {
+            // Open the pit down to the lava, fill lava only at the very bottom.
+            fillColumn(ctx, wx, lavaTop + 1, baseY, wz, BlockType.AIR);
+            fillColumn(ctx, wx, pitFloor + 1, lavaTop, wz, BlockType.LAVA);
+        } else {
+            // Inner/outer lip: a brick rim framing the pit at floor level.
+            ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS);
+            if (Math.round(dist) === ARENA_LAVA_INNER_RADIUS || Math.round(dist) === ARENA_LAVA_OUTER_RADIUS + 1) {
+                ctx.setBlock(wx, baseY + 1, wz, BlockType.MAGNETITE_BRICK_SLAB); // curb
+            }
+        }
+    });
+}
+
+// 5. Support pylons in the pit: thin chiseled columns by the lava edge so the pit
+//    reads as a built structure rather than a flat orange ring.
+function buildMoatPylons(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    const pitFloor = baseY - ARENA_MOAT_PIT_DEPTH;
+    for (let a = 0; a < 12; a++) {
+        const ang = (a / 12) * Math.PI * 2 + Math.PI / 12;
+        const r = a % 2 === 0 ? ARENA_LAVA_INNER_RADIUS + 2 : ARENA_LAVA_OUTER_RADIUS - 2;
+        const px = centerX + Math.round(Math.cos(ang) * r);
+        const pz = centerZ + Math.round(Math.sin(ang) * r);
+        if (!inChunk(ctx, px, pz)) continue;
+        fillColumn(ctx, px, pitFloor + 1, baseY - 2, pz, BlockType.CHISELED_MAGNETITE);
+        ctx.setBlock(px, baseY - 1, pz, BlockType.MAGNETITE_BRICK_SLAB);
+    }
+}
+
+// 6. Wide outer terrace floor (brick) with concentric chiseled trim rings.
 function buildOuterTerrace(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     forColumns(centerX, centerZ, ARENA_RIM_INNER, ctx, (wx, wz, adx, adz, dist) => {
-        if (dist < ARENA_LAVA_OUTER_RADIUS + 1 || !inOctagon(adx, adz, ARENA_RIM_INNER)) return;
-        const ring = (Math.round(dist) % 8 === 0) || (Math.round(dist) % 8 === 1);
+        if (dist < ARENA_LAVA_OUTER_RADIUS + 2 || !inOctagon(adx, adz, ARENA_RIM_INNER)) return;
+        const rd = Math.round(dist);
+        const ring = rd % 7 === 0;
         ctx.setBlock(wx, baseY, wz, ring ? BlockType.CHISELED_MAGNETITE : BlockType.MAGNETITE_BRICKS);
     });
 }
 
-// 5. Battlemented outer rim wall with corner buttresses, climb panels, 4 entries.
+// 7. Outer rim: massive ribs + corner buttresses, stepped trim bands, grouped climb
+//    panels, battlements, an inner upper walkway, and four cardinal entry gates.
 function buildOuterRim(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    const top = baseY + ARENA_WALL_HEIGHT;
     forColumns(centerX, centerZ, ARENA_OUTER_RADIUS, ctx, (wx, wz, adx, adz) => {
         if (!inOctagon(adx, adz, ARENA_OUTER_RADIUS) || inOctagon(adx, adz, ARENA_RIM_INNER - 1)) return;
-        // Four cardinal entry gaps (a clear approach from each side).
-        const isEntry = (adx <= 5 && adz >= ARENA_RIM_INNER - 2) || (adz <= 5 && adx >= ARENA_RIM_INNER - 2);
+        const dx = wx - centerX, dz = wz - centerZ;
+
+        // Four cardinal entry gates aligned with the bridges (clear approach in).
+        const isEntry = (Math.abs(dx) <= 4 && adz >= ARENA_RIM_INNER - 1) || (Math.abs(dz) <= 4 && adx >= ARENA_RIM_INNER - 1);
         if (isEntry) { ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS); return; }
 
-        const onOuter = !inOctagon(adx, adz, ARENA_OUTER_RADIUS - 3);
-        if (onOuter) {
-            // The wall proper: tall brick with vertical chiseled ribs + battlements.
-            const rib = ((wx + wz) & 3) === 0;
-            fillColumn(ctx, wx, baseY, baseY + ARENA_WALL_HEIGHT, wz, rib ? BlockType.CHISELED_MAGNETITE : BlockType.MAGNETITE_BRICKS);
-            // Battlement teeth on the very top.
-            if (((wx ^ wz) & 1) === 0) ctx.setBlock(wx, baseY + ARENA_WALL_HEIGHT + 1, wz, BlockType.MAGNETITE_BRICK_SLAB);
-            // Buttress caps at the octagon corners.
-            if (adx + adz >= Math.round(ARENA_OUTER_RADIUS * 1.34) - 1) {
-                ctx.setBlock(wx, baseY + ARENA_WALL_HEIGHT + 1, wz, BlockType.CHISELED_MAGNETITE);
+        const isCorner = adx + adz >= Math.round(ARENA_OUTER_RADIUS * 1.34) - 2;
+        const isRib = onRibLine(dx) || onRibLine(dz) || isCorner;
+        const onOuterShell = !inOctagon(adx, adz, ARENA_OUTER_RADIUS - 3);
+        const onInnerShell = inOctagon(adx, adz, ARENA_RIM_INNER + 1);
+
+        // Stepped trim band along the base of the wall.
+        ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICK_SLAB);
+
+        if (onOuterShell) {
+            if (isRib) {
+                // Massive rib / buttress: taller chiseled column with a slab cap.
+                fillColumn(ctx, wx, baseY, top + 3, wz, BlockType.CHISELED_MAGNETITE);
+                ctx.setBlock(wx, top + 4, wz, BlockType.MAGNETITE_BRICK_SLAB);
+            } else {
+                fillColumn(ctx, wx, baseY, top, wz, BlockType.MAGNETITE_BRICKS);
+                // Stepped trim band near the top + battlement teeth.
+                ctx.setBlock(wx, top - 1, wz, BlockType.CHISELED_MAGNETITE);
+                if (((wx ^ wz) & 1) === 0) ctx.setBlock(wx, top + 1, wz, BlockType.MAGNETITE_BRICK_SLAB);
             }
+        } else if (onInnerShell) {
+            // Inner face: walkway floor, grouped magnet climb panels in bay centres,
+            // and an upper walkway slab path along the rim.
+            fillColumn(ctx, wx, baseY, top, wz, BlockType.MAGNETITE_BRICKS);
+            const bay = inBayCenter(dx) && inBayCenter(dz);
+            if (bay && !isRib) {
+                const polarity = (Math.floor(dx / ARENA_RIB_SPACING) + Math.floor(dz / ARENA_RIB_SPACING)) & 1;
+                fillColumn(ctx, wx, baseY + 2, top - 2, wz, polarity === 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET);
+            }
+            ctx.setBlock(wx, top + 1, wz, BlockType.MAGNETITE_BRICK_SLAB); // upper walkway
         } else {
-            // Inner wall face: walkway floor + readable magnet climb panels.
-            ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS);
-            const seg = Math.floor((wx + wz) / 5) & 1;
-            const panel = (((wx * 7 + wz * 13) & 7) < 3);
-            if (panel) {
-                fillColumn(ctx, wx, baseY + 1, baseY + ARENA_WALL_HEIGHT - 1, wz,
-                    seg === 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET);
-            }
+            fillColumn(ctx, wx, baseY, top, wz, BlockType.MAGNETITE_BRICKS);
         }
     });
 }
 
-// 6. Lava moat ringing the platform, with a brick lip on each edge.
-function buildLavaMoat(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    forColumns(centerX, centerZ, ARENA_LAVA_OUTER_RADIUS + 2, ctx, (wx, wz, _adx, _adz, dist) => {
-        if (dist <= ARENA_CENTRAL_RADIUS || dist > ARENA_LAVA_OUTER_RADIUS + 1) return;
-        if (dist > ARENA_LAVA_INNER_RADIUS && dist <= ARENA_LAVA_OUTER_RADIUS) {
-            ctx.setBlock(wx, baseY, wz, BlockType.AIR);
-            fillColumn(ctx, wx, baseY - ARENA_MOAT_DEPTH + 1, baseY - 1, wz, BlockType.LAVA);
-        } else {
-            // Inner/outer lip (a 2-block brick rim above the lava).
-            ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS);
-        }
-    });
-}
-
-// 7. Central fight platform: brick floor, polarity accents, raised summoner dais.
+// 8. Central fight platform: brick floor, radial polarity pattern + trim rings,
+//    and a raised stepped summoner pedestal at the exact centre.
 function buildCentralPlatform(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     forColumns(centerX, centerZ, ARENA_CENTRAL_RADIUS, ctx, (wx, wz, adx, adz, dist) => {
         if (dist > ARENA_CENTRAL_RADIUS) return;
-        let floor: BlockType = BlockType.MAGNETITE_BRICKS;
+        const dx = wx - centerX, dz = wz - centerZ;
         const rd = Math.round(dist);
-        if (rd === ARENA_CENTRAL_RADIUS - 1 || rd === ARENA_CENTRAL_RADIUS - 2) floor = BlockType.CHISELED_MAGNETITE; // rim trim
-        else if (rd === 14) floor = BlockType.CHISELED_MAGNETITE; // inner accent ring
-        // Diagonal polarity spokes (subtle red/blue floor accents).
-        else if (adx === adz && rd > 6 && rd < 22) floor = (wx - centerX) * (wz - centerZ) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+        let floor: BlockType = BlockType.MAGNETITE_BRICKS;
+        if (rd >= ARENA_CENTRAL_RADIUS - 1) floor = BlockType.CHISELED_MAGNETITE;     // rim trim
+        else if (rd === 16 || rd === 9) floor = BlockType.CHISELED_MAGNETITE;          // concentric rings
+        else if (Math.abs(adx - adz) <= 1 && rd > 5) floor = BlockType.POSITIVE_MAGNET; // red diagonal spokes
+        else if ((adx <= 1 || adz <= 1) && rd > 5) floor = BlockType.NEGATIVE_MAGNET;   // blue cardinal spokes
         ctx.setBlock(wx, baseY, wz, floor);
-        // Raised central dais for the summoner.
-        if (dist <= 4) {
-            ctx.setBlock(wx, baseY + 1, wz, dist <= 2 ? BlockType.CHISELED_MAGNETITE : BlockType.MAGNETITE_BRICK_SLAB);
-        }
+        // Raised stepped summoner dais.
+        if (dist <= 5) ctx.setBlock(wx, baseY + 1, wz, BlockType.MAGNETITE_BRICKS);
+        if (dist <= 3) ctx.setBlock(wx, baseY + 2, wz, BlockType.CHISELED_MAGNETITE);
+        if (dx === 0 && dz === 0) ctx.setBlock(wx, baseY + 3, wz, BlockType.CHISELED_MAGNETITE);
     });
 }
 
-// 8. Broken approach bridges from each cardinal entry, stopping short over the lava.
+// 9. Four cardinal bridges across the pit to the platform (so the centre is
+//    reachable), with low brick-slab curbs, plus broken stubs toward the towers.
 function buildLaunchRoutes(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    const reach = ARENA_LAVA_OUTER_RADIUS + 2;
     for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        for (let d = ARENA_LAVA_OUTER_RADIUS + 1; d >= ARENA_LAVA_OUTER_RADIUS - 5; d--) {
-            const wx = centerX + sx * d;
-            const wz = centerZ + sz * d;
-            if (wx < ctx.minX || wx > ctx.maxX || wz < ctx.minZ || wz > ctx.maxZ) continue;
-            if (d > reach) continue;
-            ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS);
-            ctx.setBlock(wx + sz, baseY, wz + sx, BlockType.MAGNETITE_BRICK_SLAB);
-            ctx.setBlock(wx - sz, baseY, wz - sx, BlockType.MAGNETITE_BRICK_SLAB);
+        for (let d = ARENA_CENTRAL_RADIUS - 1; d <= ARENA_LAVA_OUTER_RADIUS + 2; d++) {
+            for (let w = -1; w <= 1; w++) {
+                const wx = centerX + sx * d + sz * w;
+                const wz = centerZ + sz * d + sx * w;
+                if (!inChunk(ctx, wx, wz)) continue;
+                ctx.setBlock(wx, baseY, wz, w === 0 ? BlockType.MAGNETITE_BRICKS : BlockType.CHISELED_MAGNETITE);
+            }
+            // Low curb rails on each side of the deck.
+            const rx = centerX + sx * d + sz * 2, rz = centerZ + sz * d + sx * 2;
+            const lx = centerX + sx * d - sz * 2, lz = centerZ + sz * d - sx * 2;
+            if (inChunk(ctx, rx, rz)) ctx.setBlock(rx, baseY + 1, rz, BlockType.MAGNETITE_BRICK_SLAB);
+            if (inChunk(ctx, lx, lz)) ctx.setBlock(lx, baseY + 1, lz, BlockType.MAGNETITE_BRICK_SLAB);
+        }
+    }
+    // Broken stubs reaching from the terrace toward each tower (hint the climb route).
+    for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
+        const c = arenaPillarCenter(centerX, centerZ, i);
+        const ux = Math.sign(c.x - centerX), uz = Math.sign(c.z - centerZ);
+        for (let s = 0; s < 4; s++) {
+            const wx = centerX + ux * (ARENA_LAVA_OUTER_RADIUS + 1 + s - 5);
+            const wz = centerZ + uz * (ARENA_LAVA_OUTER_RADIUS + 1 + s - 5);
+            if (inChunk(ctx, wx, wz)) ctx.setBlock(wx, baseY, wz, BlockType.MAGNETITE_BRICKS);
         }
     }
 }
 
-// 9. Four tall 7×7 climb towers rising from the lava: alternating polarity faces,
-//    a stepped base founded in the lava, and a chiseled cap.
+// 10. Four thick polarity towers rising from the pit floor: flared base, trim
+//     bands, ONE designated magnet climb face (toward the centre), chiseled cap.
 function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    const pitFloor = baseY - ARENA_MOAT_PIT_DEPTH;
+    const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         const c = arenaPillarCenter(centerX, centerZ, i);
         const magnet = arenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
-        const base = baseY - ARENA_MOAT_DEPTH;
-        const top = baseY + ARENA_PILLAR_HEIGHT;
-        // Stepped 9×9 → 7×7 base founded in the lava.
+        const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
         for (let ox = -4; ox <= 4; ox++) {
             for (let oz = -4; oz <= 4; oz++) {
                 const wx = c.x + ox, wz = c.z + oz;
-                if (wx < ctx.minX || wx > ctx.maxX || wz < ctx.minZ || wz > ctx.maxZ) continue;
+                if (!inChunk(ctx, wx, wz)) continue;
                 const cheb = Math.max(Math.abs(ox), Math.abs(oz));
-                if (cheb === 4) { ctx.setBlock(wx, base, wz, BlockType.MAGNETITE_BRICK_SLAB); continue; }
-                // Shaft 7×7: outer shell = magnet climb panel, inner = brick core.
-                const yTop = cheb === 3 ? top : top + 1; // recessed core, paneled faces stand proud
-                for (let y = base; y <= yTop; y++) {
-                    ctx.setBlock(wx, y, wz, cheb === 3 ? magnet : BlockType.MAGNETITE_BRICKS);
+                if (cheb === 4) {
+                    // Flared 9×9 base founded in the lava + a ledge band higher up.
+                    fillColumn(ctx, wx, pitFloor, baseY - 2, wz, BlockType.MAGNETITE_BRICKS);
+                    ctx.setBlock(wx, baseY - 1, wz, BlockType.MAGNETITE_BRICK_SLAB);
+                    if ((baseY + 12) <= top) ctx.setBlock(wx, baseY + 12, wz, BlockType.MAGNETITE_BRICK_SLAB);
+                    continue;
+                }
+                // 7×7 shaft.
+                const innerFace = cheb === 3 && (ox === -3 * dirX || oz === -3 * dirZ);
+                for (let y = pitFloor; y <= top; y++) {
+                    let t: BlockType = BlockType.MAGNETITE_BRICKS;
+                    if (innerFace) t = magnet;                              // the climb face
+                    if (cheb === 3 && (y - baseY) % 6 === 0) t = BlockType.CHISELED_MAGNETITE; // trim bands
+                    ctx.setBlock(wx, y, wz, t);
                 }
             }
         }
-        // Chiseled cap ring just under the pedestal.
+        // Chiseled cap ring + a small top platform under the pedestal.
         for (let ox = -3; ox <= 3; ox++) {
             for (let oz = -3; oz <= 3; oz++) {
-                if (Math.max(Math.abs(ox), Math.abs(oz)) !== 3) continue;
-                ctx.setBlock(c.x + ox, top, c.z + oz, BlockType.CHISELED_MAGNETITE);
+                const wx = c.x + ox, wz = c.z + oz;
+                if (!inChunk(ctx, wx, wz)) continue;
+                if (Math.max(Math.abs(ox), Math.abs(oz)) === 3) ctx.setBlock(wx, top, wz, BlockType.CHISELED_MAGNETITE);
+                else ctx.setBlock(wx, top, wz, BlockType.MAGNETITE_BRICKS);
             }
         }
     }
 }
 
-// 10. Pedestal + shield crystal on each tower top.
+// 11. Pedestal + shield crystal on each tower top.
 function buildShieldCrystalPedestals(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         const c = arenaPillarCenter(centerX, centerZ, i);
         for (let ox = -1; ox <= 1; ox++) {
             for (let oz = -1; oz <= 1; oz++) {
-                ctx.setBlock(c.x + ox, top + 1, c.z + oz, BlockType.CHISELED_MAGNETITE);
+                if (inChunk(ctx, c.x + ox, c.z + oz)) ctx.setBlock(c.x + ox, top + 1, c.z + oz, BlockType.CHISELED_MAGNETITE);
             }
         }
-        ctx.setBlock(c.x, top + 2, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        if (inChunk(ctx, c.x, c.z)) ctx.setBlock(c.x, top + 2, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
     }
 }
 
-// 11. Boss summoner on the central dais.
+// 12. Boss summoner on the raised central dais.
 function buildBossSummoner(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    ctx.setBlock(centerX, baseY + 2, centerZ, BlockType.MAGNETIC_BOSS_SUMMONER);
+    if (inChunk(ctx, centerX, centerZ)) ctx.setBlock(centerX, baseY + 4, centerZ, BlockType.MAGNETIC_BOSS_SUMMONER);
 }
