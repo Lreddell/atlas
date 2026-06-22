@@ -11,9 +11,15 @@ import {
     getMagneticFieldTier,
     getMagneticFieldTierHeight,
     getArenaCenter,
+    getActiveCenters,
+    getArenaPillarPosition,
+    getArenaPillarPolarity,
+    MF_ARENA_PILLAR_COUNT,
+    MF_ARENA_PILLAR_R,
+    MF_ARENA_PLATFORM_R,
+    MF_ARENA_MOAT_OUTER_R,
     getMagnetiteWallPolarity,
     getMagneticFeature,
-    isChargedVein,
     magneticFieldsTouchBox,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
@@ -180,31 +186,56 @@ test('cliff walls are magnetized in clusters, not everywhere', () => {
     assert.equal(getMagnetiteWallPolarity(40, 18, SEED), getMagnetiteWallPolarity(40, 18, SEED));
 });
 
-test('magnetic features are deterministic, sparse, and well-formed', () => {
-    const counts = { spike: 0, spire: 0, launchpad: 0, crystals: 0, none: 0 };
+test('magnetic features are deterministic, sparse crystal clusters', () => {
+    let crystals = 0;
     let total = 0;
     for (let x = 0; x < 300; x++) {
         for (let z = 0; z < 300; z++) {
             const f = getMagneticFeature(x, z, SEED);
-            counts[f ? f.kind : 'none']++;
             total++;
-            if (f && f.kind === 'spike') assert.ok(f.height >= 3 && f.height <= 6);
-            if (f && f.kind === 'spire') { assert.ok(f.height >= 7); assert.ok(f.polarity === 1 || f.polarity === -1); assert.ok(f.count >= 2); }
-            if (f && f.kind === 'crystals') { assert.ok(f.polarity === 1 || f.polarity === -1); assert.ok(f.count >= 1); }
+            if (f) {
+                assert.equal(f.kind, 'crystals'); // spike/spire/launchpad removed for now
+                assert.ok(f.polarity === 1 || f.polarity === -1);
+                assert.ok(f.count >= 1);
+                crystals++;
+            }
         }
     }
-    // Deterministic + sparse (mostly empty so the biome reads designed, not busy).
     assert.deepEqual(getMagneticFeature(13, 24, SEED), getMagneticFeature(13, 24, SEED));
-    assert.ok(counts.none / total > 0.95, 'features should be sparse');
-    for (const kind of ['spike', 'spire', 'launchpad', 'crystals']) {
-        assert.ok(counts[kind] > 0, `expected some ${kind}`);
-    }
+    assert.ok(crystals > 0, 'expected some crystal clusters (the craft resource)');
+    assert.ok(crystals / total < 0.05, 'features stay sparse');
+});
 
-    // Contrast veins are very rare and deterministic.
-    let veins = 0;
-    for (let x = 0; x < 200; x++) for (let z = 0; z < 200; z++) if (isChargedVein(x, z, SEED)) veins++;
-    assert.ok(veins > 0 && veins / 40000 < 0.03, 'charged veins are rare');
-    assert.equal(isChargedVein(7, 9, SEED), isChargedVein(7, 9, SEED));
+test('arena: one center, ≥4 alternating-polarity pillars in the moat ring', () => {
+    const inst = findInstance();
+    // getActiveCenters finds exactly this instance near its own center, and none in
+    // an empty stub.
+    const near = getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, noise2D, 40);
+    assert.ok(near.some((c) => c.centerX === inst.centerX && c.centerZ === inst.centerZ));
+    assert.equal(getActiveCenters(inst.centerX, inst.centerZ, inst.centerX, inst.centerZ, SEED, () => -1, 40).length, 0);
+
+    assert.ok(MF_ARENA_PILLAR_COUNT >= 4);
+    let pos = 0, neg = 0;
+    for (let i = 0; i < MF_ARENA_PILLAR_COUNT; i++) {
+        const p = getArenaPillarPosition(inst, i);
+        const d = Math.hypot(p.x - inst.centerX, p.z - inst.centerZ);
+        // Pillars sit in the lava-moat ring (outside the platform, inside the moat).
+        assert.ok(d > MF_ARENA_PLATFORM_R && d <= MF_ARENA_MOAT_OUTER_R, `pillar ${i} at radius ${d}`);
+        assert.ok(Math.abs(d - MF_ARENA_PILLAR_R) <= 2);
+        if (getArenaPillarPolarity(i) > 0) pos++; else neg++;
+    }
+    // Polarity varies around the ring (must switch polarity to cross).
+    assert.ok(pos > 0 && neg > 0);
+    assert.notEqual(getArenaPillarPolarity(0), getArenaPillarPolarity(1));
+});
+
+test('arena build pass is wired into chunk generation', () => {
+    const cg = read('src/systems/world/chunkGeneration.ts');
+    assert.match(cg, /getActiveCenters/);
+    assert.match(cg, /MAGNETIC_BOSS_SUMMONER/);   // summoner at centre
+    assert.match(cg, /MAGNETIC_SHIELD_CRYSTAL/);  // crystal on each pillar top
+    assert.match(cg, /BlockType\.LAVA/);          // moat
+    assert.match(cg, /getArenaPillarPosition/);
 });
 
 test('isInMagneticFields agrees with instance lookup', () => {
@@ -265,7 +296,7 @@ test('new blocks are defined with the right shape', () => {
     assert.match(shard, /noCollision:\s*true/);
 });
 
-test('terrain wiring: edge blend + wall magnets + feature pass are generated', () => {
+test('terrain wiring: edge blend + wall magnets + crystal feature pass', () => {
     const cg = read('src/systems/world/chunkGeneration.ts');
     // Outer apron blends down to ambient terrain (soft shore, no hard ocean wall).
     assert.match(cg, /MF_APRON/);
@@ -273,19 +304,17 @@ test('terrain wiring: edge blend + wall magnets + feature pass are generated', (
     // Polarity magnets embedded on wall bands.
     assert.match(cg, /getMagnetiteWallPolarity/);
     assert.match(cg, /POSITIVE_MAGNET\s*:\s*BlockType\.NEGATIVE_MAGNET/);
-    // Feature pass builds spike formations, magnet spires, launch pads, crystals.
+    // Feature pass places the resource crystal clusters.
     assert.match(cg, /getMagneticFeature/);
-    assert.match(cg, /MAGNETIC_SPIKE/);
-    assert.match(cg, /CHARGED_MAGNETITE/);
+    assert.match(cg, /POSITIVE_MAGNETITE_CRYSTAL/);
 
     // Ocean blend: biome water is WATER (soft shore), not a hard lava border.
     const biomes = read('src/systems/world/biomes.ts');
     assert.match(biomes, /MAGNETIC_FIELDS:\s*{[\s\S]*?waterBlock:\s*BlockType\.WATER/);
 
-    // Charged Magnetite acts as a launch pad in the player physics.
+    // The Charged Magnetite launch-pad bounce was removed.
     const player = read('src/components/Player.tsx');
-    assert.match(player, /CHARGED_MAGNETITE/);
-    assert.match(player, /MAGNETIC_LAUNCH_VELOCITY/);
+    assert.doesNotMatch(player, /MAGNETIC_LAUNCH_VELOCITY/);
 });
 
 test('magnetite traversal blocks use magnetite user-facing names', () => {

@@ -21,9 +21,6 @@ import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
 import { getFallDamageMultiplierForLandingBlock } from '../systems/player/fallDamage';
 import { isEditableElement } from '../utils/dom';
 
-// Upward velocity imparted by a Charged Magnetite launch pad (≈ a few tiers high).
-const MAGNETIC_LAUNCH_VELOCITY = 13;
-
 export interface PlayerHandle {
     teleport: (pos: Vector3) => void;
     applyImpulse: (x: number, y: number, z: number) => void;
@@ -291,19 +288,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             }
         } else {
             fallDistance.current = 0;
-        }
-
-        // Charged Magnetite launch pads: standing on one flings the player upward —
-        // a magnetic traversal kick to reach higher tiers/spires. Not in spectator.
-        if (simRes.grounded && !isFlying.current && gameMode !== 'spectator') {
-            const lbx = Math.floor(simRes.position.x);
-            const lby = Math.floor(simRes.position.y - 0.2);
-            const lbz = Math.floor(simRes.position.z);
-            if (worldManager.getBlock(lbx, lby, lbz, false) === BlockType.CHARGED_MAGNETITE) {
-                simRes.velocity.y = MAGNETIC_LAUNCH_VELOCITY;
-                simRes.grounded = false;
-                fallDistance.current = 0;
-            }
         }
 
         // FOOTSTEPS

@@ -11,10 +11,19 @@ import {
     getMagneticFieldColumn,
     getMagnetiteWallPolarity,
     getMagneticFeature,
-    isChargedVein,
     magneticFieldsTouchBox,
+    getActiveCenters,
+    getArenaPillarPosition,
+    getArenaPillarPolarity,
     MF_APRON,
     MF_APRON_MIN_Y,
+    MF_ARENA_FLOOR_Y,
+    MF_ARENA_RADIUS,
+    MF_ARENA_PLATFORM_R,
+    MF_ARENA_MOAT_OUTER_R,
+    MF_ARENA_MOAT_DEPTH,
+    MF_ARENA_PILLAR_COUNT,
+    MF_ARENA_PILLAR_HEIGHT,
 } from './magneticFields';
 import { index3D } from './worldCoords';
 
@@ -822,14 +831,11 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2b. Magnetic Fields feature pass — deliberate, sparse formations rooted in
-    // world space (so multi-block features cross chunk borders cleanly):
-    //  - jagged Magnetic Spike formations (block-built spires of spikes)
-    //  - lines of tall single-polarity magnet spires for spire-to-spire traversal
-    //  - Charged Magnetite launch pads (fling the player upward)
-    //  - small red/blue crystal resource clusters
-    // Plus a very rare Charged Magnetite "vein" recolour for subtle contrast.
-    const MF_FEATURE_PADDING = 12;
+    // 2b. Magnetic Fields feature pass — sparse resource crystal clusters rooted in
+    // world space (so clusters crossing chunk borders place cleanly). Spike/spire/
+    // launch-pad formations were removed pending a redesign; the cliff-wall magnets
+    // and tiered terrain remain the structural content.
+    const MF_FEATURE_PADDING = 4;
     const mfBox = magneticFieldsTouchBox(
         worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
         worldX + CHUNK_SIZE + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE + MF_FEATURE_PADDING,
@@ -841,57 +847,50 @@ function generateChunkInner(cx: number, cz: number) {
             const feature = getMagneticFeature(rootWx, rootWz, noiseSet.seed | 0);
             if (!feature) continue;
             const surfaceY = getTerrainHeight(rootWx, rootWz, noiseSet);
-
-            if (feature.kind === 'spike') {
-                // Jagged formation: a central spike column flanked by shorter ones,
-                // tipped with a bright shard.
-                const tip = surfaceY + feature.height;
-                for (let y = surfaceY + 1; y <= tip; y++) placeIfInChunk(rootWx, y, rootWz, BlockType.MAGNETIC_SPIKE, true);
-                placeIfInChunk(rootWx, tip + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
-                const arms = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-                for (const [ox, oz] of arms) {
-                    const ah = Math.max(1, feature.height - 2 - ((rootWx + rootWz + ox - oz) & 1));
-                    for (let y = surfaceY + 1; y <= surfaceY + ah; y++) {
-                        placeIfInChunk(rootWx + ox, y, rootWz + oz, BlockType.MAGNETIC_SPIKE, true);
-                    }
-                }
-            } else if (feature.kind === 'spire') {
-                // A short line of tall magnet pillars (one polarity) you hop between.
-                const block = feature.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
-                for (let i = 0; i < feature.count; i++) {
-                    const sx = rootWx + i * 4;
-                    const top = surfaceY + feature.height - (i & 1) * 2; // slight stagger
-                    for (let y = surfaceY + 1; y <= top; y++) placeIfInChunk(sx, y, rootWz, block, true);
-                    placeIfInChunk(sx, top + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
-                }
-            } else if (feature.kind === 'launchpad') {
-                // 3x3 Charged Magnetite pad set flush into the shelf surface.
-                for (let ox = -1; ox <= 1; ox++) {
-                    for (let oz = -1; oz <= 1; oz++) {
-                        placeIfInChunk(rootWx + ox, surfaceY, rootWz + oz, BlockType.CHARGED_MAGNETITE);
-                    }
-                }
-            } else if (feature.kind === 'crystals') {
-                const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
-                const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
-                for (let i = 0; i < feature.count && i < cells.length; i++) {
-                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
-                }
+            const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+            const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
+            for (let i = 0; i < feature.count && i < cells.length; i++) {
+                placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
             }
         }
     }
-    // Sparse contrast veins (chunk-local surface recolour).
-    for (let x = 0; mfBox && x < CHUNK_SIZE; x++) {
-        for (let z = 0; z < CHUNK_SIZE; z++) {
-            const wx = worldX + x;
-            const wz = worldZ + z;
-            if (getBiome(wx, wz, noiseSet).id !== 'magnetic_fields') continue;
-            if (!isChargedVein(wx, wz, noiseSet.seed | 0)) continue;
-            const surfaceY = getTerrainHeight(wx, wz, noiseSet);
-            if (surfaceY >= MIN_Y && surfaceY <= MAX_Y && blocks[index3D(x, surfaceY, z)] === BlockType.MAGNETITE_BLOCK) {
-                blocks[index3D(x, surfaceY, z)] = BlockType.CHARGED_MAGNETITE;
+
+    // 2c. Magnetic Fields arena — one grand structure at each instance center: a
+    // solid fight platform ringed by a lava moat, crossed by tall alternating-
+    // polarity magnet pillars (shield crystal on each top), with the Magnetic Boss
+    // Summoner at the centre. Built for whatever part of the arena overlaps this chunk.
+    const arenaCenters = getActiveCenters(
+        worldX, worldZ, worldX + CHUNK_SIZE - 1, worldZ + CHUNK_SIZE - 1,
+        noiseSet.seed | 0, mfNoise2D(noiseSet), MF_ARENA_RADIUS,
+    );
+    for (const center of arenaCenters) {
+        const floorY = MF_ARENA_FLOOR_Y;
+        // Carve the lava moat (this chunk's columns only).
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                const dd = Math.hypot(worldX + lx - center.centerX, worldZ + lz - center.centerZ);
+                if (dd > MF_ARENA_PLATFORM_R && dd <= MF_ARENA_MOAT_OUTER_R) {
+                    if (floorY <= MAX_Y) blocks[index3D(lx, floorY, lz)] = BlockType.AIR;
+                    for (let y = floorY - 1; y >= floorY - MF_ARENA_MOAT_DEPTH && y > MIN_Y; y--) {
+                        blocks[index3D(lx, y, lz)] = BlockType.LAVA;
+                    }
+                }
             }
         }
+        // Pillars rising from the moat (2×2, one polarity each, shield crystal on top).
+        for (let i = 0; i < MF_ARENA_PILLAR_COUNT; i++) {
+            const p = getArenaPillarPosition(center, i);
+            const block = getArenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+            const top = floorY + MF_ARENA_PILLAR_HEIGHT;
+            for (let ox = 0; ox <= 1; ox++) {
+                for (let oz = 0; oz <= 1; oz++) {
+                    for (let y = floorY - MF_ARENA_MOAT_DEPTH; y <= top; y++) placeIfInChunk(p.x + ox, y, p.z + oz, block);
+                }
+            }
+            placeIfInChunk(p.x, top + 1, p.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        }
+        // Boss summoner at the centre of the platform.
+        placeIfInChunk(center.centerX, floorY + 1, center.centerZ, BlockType.MAGNETIC_BOSS_SUMMONER);
     }
 
     // 3. Initial Light Scan
