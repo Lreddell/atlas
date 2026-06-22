@@ -42,8 +42,9 @@ export const MF_SHELF_JITTER_AMP = 1.8;  // ≈ ±2 blocks of bumpiness on shelv
 
 // Outer apron: within this many blocks of the boundary, the outer shelf ramps down
 // to the surrounding terrain so the biome blends in rather than ending in a wall.
-export const MF_APRON = 40;
-export const MF_APRON_MIN_Y = 64;        // keep the apron above sea level (even in ocean)
+// Kept just below sea level so an ocean edge becomes a soft rocky shore, not a cliff.
+export const MF_APRON = 64;
+export const MF_APRON_MIN_Y = 60;
 
 // --- Tier (height-band) layout, outer rim inward to the central arena ---
 export const MF_BASE_HEIGHT = 70;       // outer shelf surface (world Y of tier 0)
@@ -129,6 +130,32 @@ export function isInMagneticFields(wx: number, wz: number, worldSeed: number, no
 }
 
 /**
+ * Cheap chunk-level reject: does any active instance reach the axis-aligned box
+ * [minX,maxX]×[minZ,maxZ]? Lets the (rare) biome's per-chunk feature passes
+ * early-out for the vast majority of chunks without scanning every column.
+ */
+export function magneticFieldsTouchBox(
+    minX: number, minZ: number, maxX: number, maxZ: number,
+    worldSeed: number, noise2D: Noise2D,
+): boolean {
+    const reach = MF_RADIUS * (1 + MF_EDGE_AMP);
+    const c0x = Math.floor((minX - reach) / MF_CELL);
+    const c1x = Math.floor((maxX + reach) / MF_CELL);
+    const c0z = Math.floor((minZ - reach) / MF_CELL);
+    const c1z = Math.floor((maxZ + reach) / MF_CELL);
+    for (let cx = c0x; cx <= c1x; cx++) {
+        for (let cz = c0z; cz <= c1z; cz++) {
+            const inst = cellCenter(cx, cz, worldSeed);
+            if (!isCenterActive(inst, noise2D)) continue;
+            const dx = Math.max(minX - inst.centerX, 0, inst.centerX - maxX);
+            const dz = Math.max(minZ - inst.centerZ, 0, inst.centerZ - maxZ);
+            if (dx * dx + dz * dz <= reach * reach) return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Tier index (0 = outer shelf .. MF_TIER_COUNT-1 = arena rim) for a radial
  * distance to the center. Closer to center = higher tier = taller/harder. This is
  * what makes terrain converge inward in stable height bands rather than a bowl.
@@ -210,19 +237,42 @@ export function getMagnetiteWallPolarity(wx: number, wz: number, worldSeed: numb
 export type ShelfDecoration = 'none' | 'spike' | 'crystal_pos' | 'crystal_neg' | 'accent' | 'shard';
 
 /**
- * Deterministic decoration sitting on a shelf surface at (wx, wz). Sparse, so
- * shelves stay traversable: scattered Magnetic Spikes (hazard), resource crystal
- * clusters (red/blue), and bright accent blocks/shards for contrast against the
- * dark magnetite.
+ * Whether a sparse magnetite "vein" recolours a shelf surface block at (wx, wz)
+ * with Charged Magnetite, for subtle contrast against the dark terrain. Kept very
+ * rare so shelves stay clean and traversable (the busy scatter was removed in
+ * favour of deliberate formations — see getMagneticFeature).
  */
-export function getShelfDecoration(wx: number, wz: number, worldSeed: number): ShelfDecoration {
-    const r = hash3(wx, 31, wz, worldSeed ^ 0x6465636f);
-    if (r < 0.012) return 'spike';
-    if (r < 0.024) return 'crystal_pos';
-    if (r < 0.036) return 'crystal_neg';
-    if (r < 0.044) return 'shard';
-    if (r < 0.050) return 'accent';
-    return 'none';
+export function isChargedVein(wx: number, wz: number, worldSeed: number): boolean {
+    return hash3(wx, 31, wz, worldSeed ^ 0x7665696e) < 0.006;
+}
+
+/**
+ * A deliberate, multi-block Magnetic Fields feature rooted at (rootWx, rootWz), or
+ * null. Sparse and deterministic so the biome reads as designed, not noisy:
+ *  - 'spike'     : a jagged Magnetic Spike formation (cluster of stacked spikes)
+ *  - 'spire'     : a short line of tall single-polarity magnet pillars you can
+ *                  jump/climb between (spire-to-spire traversal)
+ *  - 'launchpad' : a Charged Magnetite pad that flings the player upward
+ *  - 'crystals'  : a small resource cluster of one polarity
+ */
+export type MagneticFeature =
+    | { kind: 'spike'; height: number }
+    | { kind: 'spire'; height: number; polarity: number; count: number }
+    | { kind: 'launchpad' }
+    | { kind: 'crystals'; polarity: number; count: number }
+    | null;
+
+export function getMagneticFeature(rootWx: number, rootWz: number, worldSeed: number): MagneticFeature {
+    const r = hash3(rootWx, 41, rootWz, worldSeed ^ 0x66656174);
+    const h = (salt: number) => hash3(rootWx, salt, rootWz, worldSeed ^ 0x66656174);
+    // Deliberately sparse: a few dozen of each large feature across a whole biome,
+    // so it reads as designed rather than cluttered. Crystals (the resource) are a
+    // bit more common but still scattered.
+    if (r < 0.0006) return { kind: 'spike', height: 3 + Math.floor(h(42) * 4) };               // 3..6 tall
+    if (r < 0.0010) return { kind: 'spire', height: 7 + Math.floor(h(43) * 6), polarity: h(44) < 0.5 ? 1 : -1, count: 2 + Math.floor(h(47) * 2) };
+    if (r < 0.0014) return { kind: 'launchpad' };
+    if (r < 0.0040) return { kind: 'crystals', polarity: h(45) < 0.5 ? 1 : -1, count: 1 + Math.floor(h(46) * 3) };
+    return null;
 }
 
 /** The single arena center of the instance covering (wx, wz), or null. */

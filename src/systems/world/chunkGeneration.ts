@@ -10,7 +10,9 @@ import { GenConfig } from './genConfig';
 import {
     getMagneticFieldColumn,
     getMagnetiteWallPolarity,
-    getShelfDecoration,
+    getMagneticFeature,
+    isChargedVein,
+    magneticFieldsTouchBox,
     MF_APRON,
     MF_APRON_MIN_Y,
 } from './magneticFields';
@@ -820,35 +822,75 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2b. Magnetic Fields decoration pass — sparse hazards/resources/contrast on
-    // shelves: Magnetic Spikes, red/blue crystal clusters, bright Magnetite Shards,
-    // and Charged Magnetite accent veins. Chunk-local (single-block features).
-    for (let x = 0; x < CHUNK_SIZE; x++) {
+    // 2b. Magnetic Fields feature pass — deliberate, sparse formations rooted in
+    // world space (so multi-block features cross chunk borders cleanly):
+    //  - jagged Magnetic Spike formations (block-built spires of spikes)
+    //  - lines of tall single-polarity magnet spires for spire-to-spire traversal
+    //  - Charged Magnetite launch pads (fling the player upward)
+    //  - small red/blue crystal resource clusters
+    // Plus a very rare Charged Magnetite "vein" recolour for subtle contrast.
+    const MF_FEATURE_PADDING = 12;
+    const mfBox = magneticFieldsTouchBox(
+        worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
+        worldX + CHUNK_SIZE + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE + MF_FEATURE_PADDING,
+        noiseSet.seed | 0, mfNoise2D(noiseSet),
+    );
+    for (let rootWx = worldX - MF_FEATURE_PADDING; mfBox && rootWx < worldX + CHUNK_SIZE + MF_FEATURE_PADDING; rootWx++) {
+        for (let rootWz = worldZ - MF_FEATURE_PADDING; rootWz < worldZ + CHUNK_SIZE + MF_FEATURE_PADDING; rootWz++) {
+            if (getBiome(rootWx, rootWz, noiseSet).id !== 'magnetic_fields') continue;
+            const feature = getMagneticFeature(rootWx, rootWz, noiseSet.seed | 0);
+            if (!feature) continue;
+            const surfaceY = getTerrainHeight(rootWx, rootWz, noiseSet);
+
+            if (feature.kind === 'spike') {
+                // Jagged formation: a central spike column flanked by shorter ones,
+                // tipped with a bright shard.
+                const tip = surfaceY + feature.height;
+                for (let y = surfaceY + 1; y <= tip; y++) placeIfInChunk(rootWx, y, rootWz, BlockType.MAGNETIC_SPIKE, true);
+                placeIfInChunk(rootWx, tip + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
+                const arms = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                for (const [ox, oz] of arms) {
+                    const ah = Math.max(1, feature.height - 2 - ((rootWx + rootWz + ox - oz) & 1));
+                    for (let y = surfaceY + 1; y <= surfaceY + ah; y++) {
+                        placeIfInChunk(rootWx + ox, y, rootWz + oz, BlockType.MAGNETIC_SPIKE, true);
+                    }
+                }
+            } else if (feature.kind === 'spire') {
+                // A short line of tall magnet pillars (one polarity) you hop between.
+                const block = feature.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+                for (let i = 0; i < feature.count; i++) {
+                    const sx = rootWx + i * 4;
+                    const top = surfaceY + feature.height - (i & 1) * 2; // slight stagger
+                    for (let y = surfaceY + 1; y <= top; y++) placeIfInChunk(sx, y, rootWz, block, true);
+                    placeIfInChunk(sx, top + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
+                }
+            } else if (feature.kind === 'launchpad') {
+                // 3x3 Charged Magnetite pad set flush into the shelf surface.
+                for (let ox = -1; ox <= 1; ox++) {
+                    for (let oz = -1; oz <= 1; oz++) {
+                        placeIfInChunk(rootWx + ox, surfaceY, rootWz + oz, BlockType.CHARGED_MAGNETITE);
+                    }
+                }
+            } else if (feature.kind === 'crystals') {
+                const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+                const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
+                for (let i = 0; i < feature.count && i < cells.length; i++) {
+                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
+                }
+            }
+        }
+    }
+    // Sparse contrast veins (chunk-local surface recolour).
+    for (let x = 0; mfBox && x < CHUNK_SIZE; x++) {
         for (let z = 0; z < CHUNK_SIZE; z++) {
             const wx = worldX + x;
             const wz = worldZ + z;
             if (getBiome(wx, wz, noiseSet).id !== 'magnetic_fields') continue;
+            if (!isChargedVein(wx, wz, noiseSet.seed | 0)) continue;
             const surfaceY = getTerrainHeight(wx, wz, noiseSet);
-            const deco = getShelfDecoration(wx, wz, noiseSet.seed | 0);
-            if (deco === 'none') continue;
-
-            if (deco === 'accent') {
-                // Replace the shelf surface block with a glowing accent vein.
-                if (surfaceY >= MIN_Y && surfaceY <= MAX_Y) blocks[index3D(x, surfaceY, z)] = BlockType.CHARGED_MAGNETITE;
-                continue;
+            if (surfaceY >= MIN_Y && surfaceY <= MAX_Y && blocks[index3D(x, surfaceY, z)] === BlockType.MAGNETITE_BLOCK) {
+                blocks[index3D(x, surfaceY, z)] = BlockType.CHARGED_MAGNETITE;
             }
-
-            const topY = surfaceY + 1;
-            if (topY > MAX_Y) continue;
-            const topIdx = index3D(x, topY, z);
-            if (blocks[topIdx] !== BlockType.AIR) continue;
-            blocks[topIdx] =
-                deco === 'spike' ? BlockType.MAGNETIC_SPIKE
-                : deco === 'crystal_pos' ? BlockType.POSITIVE_MAGNETITE_CRYSTAL
-                : deco === 'crystal_neg' ? BlockType.NEGATIVE_MAGNETITE_CRYSTAL
-                : BlockType.MAGNETITE_SHARD;
-            const colIdx = z * CHUNK_SIZE + x;
-            if (topY > colHeightmap[colIdx]) colHeightmap[colIdx] = topY;
         }
     }
 
