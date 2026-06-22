@@ -353,7 +353,14 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
 
   // Magnetic Shield Crystal — cross-plane breakable crystal atop each arena
   // pillar; breaking all of them drops the Magnetic Warden's shield.
-  [BlockType.MAGNETIC_SHIELD_CRYSTAL]: { id: BlockType.MAGNETIC_SHIELD_CRYSTAL, color: '#b388ff', name: 'Magnetic Shield Crystal', textureSlot: 210, hardness: 0.8, transparent: true, noCollision: true, lightLevel: 9, category: 'functional', drops: [] }
+  [BlockType.MAGNETIC_SHIELD_CRYSTAL]: { id: BlockType.MAGNETIC_SHIELD_CRYSTAL, color: '#b388ff', name: 'Magnetic Shield Crystal', textureSlot: 210, hardness: 0.8, transparent: true, noCollision: true, lightLevel: 9, category: 'functional', drops: [] },
+
+  // Charged Magnetite — emissive lighter accent block for contrast against the
+  // dark magnetite terrain (decorative veins on shelves).
+  [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: BlockType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
+
+  // Magnetite Shard — bright cross-plane crystal cluster for contrast decoration.
+  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 6, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] }
 };
 
 export const ATLAS_COLS = 8;

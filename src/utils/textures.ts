@@ -924,6 +924,18 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     crystalTile(206, '#ff4030', '#ff8a7a', '#a01810'); // Positive Magnetite Crystal (red)
     crystalTile(207, '#3060ff', '#84a4ff', '#102aa0'); // Negative Magnetite Crystal (blue)
     crystalTile(210, '#b388ff', '#e0ccff', '#6a3fb0'); // Magnetic Shield Crystal (violet glow)
+    crystalTile(212, '#7fe0ff', '#d6f7ff', '#3aa8d0'); // Magnetite Shard (bright cyan contrast)
+
+    // 211: Charged Magnetite — lighter emissive accent with glowing purple veins.
+    withTile(211, () => {
+        fill('#5a5470');
+        ctx.fillStyle = '#3a3550';
+        for (let i = 0; i < 22; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#b9a8ff';
+        for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#e6dcff';
+        ctx.fillRect(3, 3, 2, 1); ctx.fillRect(10, 6, 2, 1); ctx.fillRect(6, 11, 2, 1); ctx.fillRect(12, 12, 1, 2);
+    });
 
     // 208: Magnetic Spike — dark metal spikes on transparent background.
     withTile(208, () => {

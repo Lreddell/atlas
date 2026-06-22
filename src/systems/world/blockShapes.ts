@@ -188,7 +188,7 @@ const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.DEBUG_CROSS, BlockType.PINK_FLOWER,
     // Magnetic Fields resource/objective crystals (cross-plane, slim hitbox).
     BlockType.POSITIVE_MAGNETITE_CRYSTAL, BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
-    BlockType.MAGNETIC_SHIELD_CRYSTAL,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL, BlockType.MAGNETITE_SHARD,
 ]);
 
 // Flowers get a slim box; leafy plants (grass, ferns, saplings, dead bush) get a

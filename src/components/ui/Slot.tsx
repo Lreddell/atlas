@@ -143,7 +143,8 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.POSITIVE_MAGNETITE_CRYSTAL &&
                    item.type !== BlockType.NEGATIVE_MAGNETITE_CRYSTAL &&
                    item.type !== BlockType.MAGNETIC_SPIKE &&
-                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL;
+                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL &&
+                   item.type !== BlockType.MAGNETITE_SHARD;
 
       if (is3D) {
           // Top Face (dy=1)

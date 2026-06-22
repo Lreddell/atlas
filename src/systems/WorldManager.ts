@@ -1354,8 +1354,8 @@ export class WorldManager {
       // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
       // they need a wider search than ordinary biomes to stay reliably findable.
       const isRareBossBiome = biomeId === 'magnetic_fields';
-      const SEARCH_RADIUS = isRareBossBiome ? 20000 : 5000;
-      const STEP = 64;
+      const SEARCH_RADIUS = isRareBossBiome ? 36000 : 5000;
+      const STEP = isRareBossBiome ? 128 : 64;
       let found = false;
       let closestX = 0; let closestZ = 0;
       for (let r = 0; r < SEARCH_RADIUS; r += STEP) {

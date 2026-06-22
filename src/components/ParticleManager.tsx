@@ -145,7 +145,8 @@ const is2DBlock = (type: BlockType): boolean => {
            type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
            type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
            type === BlockType.MAGNETIC_SPIKE ||
-           type === BlockType.MAGNETIC_SHIELD_CRYSTAL;
+           type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+           type === BlockType.MAGNETITE_SHARD;
 };
 
 // Cache for scanning pixel data

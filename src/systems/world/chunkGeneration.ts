@@ -7,7 +7,13 @@ import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
 import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
-import { getMagneticFieldColumn } from './magneticFields';
+import {
+    getMagneticFieldColumn,
+    getMagnetiteWallPolarity,
+    getShelfDecoration,
+    MF_APRON,
+    MF_APRON_MIN_Y,
+} from './magneticFields';
 import { index3D } from './worldCoords';
 
 // Grassy-surface test: true for all grass-topped biome surface blocks (so
@@ -52,14 +58,31 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
     return computeTerrainInfo(x, z, noiseSet);
 }
 
-function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
-    // Magnetic Fields: deterministic tiered shelves (flat) separated by tall flat
-    // magnetite walls, converging inward on the central arena. This replaces the
-    // ordinary noise terrain so the cliffs read as built, not random — and keeps the
-    // whole biome above sea level (no stray water/lava fill).
-    const mf = getMagneticFieldColumn(x, z, noiseSet.seed | 0, (px, pz) => noiseSet.bossBiome.noise2D(px, pz));
-    if (mf) return { height: mf.surfaceY, baseHeight: mf.surfaceY };
+function mfNoise2D(noiseSet: NoiseSet): (px: number, pz: number) => number {
+    return (px, pz) => noiseSet.bossBiome.noise2D(px, pz);
+}
 
+function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
+    // Magnetic Fields: deterministic, naturally-bumpy tiered shelves separated by
+    // tall magnetite walls, converging inward on the central arena. Replaces the
+    // ordinary noise terrain, and its outer apron blends down into the surrounding
+    // land (kept above sea level) so the biome reads as a structure embedded in
+    // terrain rather than a hard-walled disc.
+    const mf = getMagneticFieldColumn(x, z, noiseSet.seed | 0, mfNoise2D(noiseSet));
+    if (mf) {
+        let surfaceY = mf.surfaceY;
+        if (mf.tier === 0 && mf.edgeDistance < MF_APRON) {
+            const ambient = computeAmbientTerrainInfo(x, z, noiseSet).height;
+            const target = Math.max(ambient, MF_APRON_MIN_Y);
+            const t = THREE.MathUtils.smoothstep(mf.edgeDistance, 0, MF_APRON); // 0 at edge → 1 inside
+            surfaceY = Math.round(THREE.MathUtils.lerp(target, surfaceY, t));
+        }
+        return { height: surfaceY, baseHeight: surfaceY };
+    }
+    return computeAmbientTerrainInfo(x, z, noiseSet);
+}
+
+function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
     const { terrainBase, terrainScale } = getBiomeHeightInfo(x, z, noiseSet);
     
     const nc = GenConfig.noise.terrain;
@@ -312,7 +335,24 @@ function generateChunkInner(cx: number, cz: number) {
             
             const biome = getBiome(wx, wz, noiseSet);
             const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
-            
+
+            // Magnetic Fields cliff walls: a column whose lowest 4-neighbour sits a
+            // full tier below is a wall face. On ~40% of walls (in clusters) we embed
+            // a magnetite magnet block of one polarity, so the player must wrap around
+            // a spire to find a climbable route rather than scaling any face.
+            let mfWallFloor = height;
+            let mfWallPolarity = 0;
+            if (biome.id === 'magnetic_fields') {
+                const nMin = Math.min(
+                    getTerrainHeight(wx + 1, wz, noiseSet), getTerrainHeight(wx - 1, wz, noiseSet),
+                    getTerrainHeight(wx, wz + 1, noiseSet), getTerrainHeight(wx, wz - 1, noiseSet),
+                );
+                if (nMin <= height - 4) {
+                    mfWallFloor = nMin;
+                    mfWallPolarity = getMagnetiteWallPolarity(wx, wz, noiseSet.seed | 0);
+                }
+            }
+
             const params = getGenerationParams(wx, wz, noiseSet);
             const contVal = params.continentalness;
             const riverVal = Math.abs(params.riverVal);
@@ -354,10 +394,13 @@ function generateChunkInner(cx: number, cz: number) {
                         type = biome.surfaceBlock;
                     }
 
-                    // Magnetic Fields: solid magnetite all the way down so the
-                    // tier walls read as full metallic cliffs, not stone with a cap.
+                    // Magnetic Fields: solid magnetite all the way down so the tier
+                    // walls read as full metallic cliffs; embed polarity magnets on
+                    // the exposed wall band where this column is a magnetized wall.
                     if (biome.id === 'magnetic_fields') {
-                        type = BlockType.MAGNETITE_BLOCK;
+                        type = (mfWallPolarity !== 0 && y > mfWallFloor)
+                            ? (mfWallPolarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET)
+                            : BlockType.MAGNETITE_BLOCK;
                     }
 
                     if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
@@ -774,6 +817,38 @@ function generateChunkInner(cx: number, cz: number) {
                     }
                 }
             }
+        }
+    }
+
+    // 2b. Magnetic Fields decoration pass — sparse hazards/resources/contrast on
+    // shelves: Magnetic Spikes, red/blue crystal clusters, bright Magnetite Shards,
+    // and Charged Magnetite accent veins. Chunk-local (single-block features).
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+        for (let z = 0; z < CHUNK_SIZE; z++) {
+            const wx = worldX + x;
+            const wz = worldZ + z;
+            if (getBiome(wx, wz, noiseSet).id !== 'magnetic_fields') continue;
+            const surfaceY = getTerrainHeight(wx, wz, noiseSet);
+            const deco = getShelfDecoration(wx, wz, noiseSet.seed | 0);
+            if (deco === 'none') continue;
+
+            if (deco === 'accent') {
+                // Replace the shelf surface block with a glowing accent vein.
+                if (surfaceY >= MIN_Y && surfaceY <= MAX_Y) blocks[index3D(x, surfaceY, z)] = BlockType.CHARGED_MAGNETITE;
+                continue;
+            }
+
+            const topY = surfaceY + 1;
+            if (topY > MAX_Y) continue;
+            const topIdx = index3D(x, topY, z);
+            if (blocks[topIdx] !== BlockType.AIR) continue;
+            blocks[topIdx] =
+                deco === 'spike' ? BlockType.MAGNETIC_SPIKE
+                : deco === 'crystal_pos' ? BlockType.POSITIVE_MAGNETITE_CRYSTAL
+                : deco === 'crystal_neg' ? BlockType.NEGATIVE_MAGNETITE_CRYSTAL
+                : BlockType.MAGNETITE_SHARD;
+            const colIdx = z * CHUNK_SIZE + x;
+            if (topY > colHeightmap[colIdx]) colHeightmap[colIdx] = topY;
         }
     }
 

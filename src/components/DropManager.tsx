@@ -128,7 +128,8 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
                      type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
                      type === BlockType.MAGNETIC_SPIKE ||
-                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL;
+                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     type === BlockType.MAGNETITE_SHARD;
 
         if (is2D) {
             const geo = new THREE.PlaneGeometry(0.4, 0.4);
@@ -261,7 +262,8 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
                      type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
                      type === BlockType.MAGNETIC_SPIKE ||
-                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL;
+                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     type === BlockType.MAGNETITE_SHARD;
 
              if (!is2D) {
                  dummy.rotation.x = Math.sin(time) * 0.5;

@@ -140,6 +140,7 @@ export const CUTOUT_TILE_CONFIGS: CutoutTileConfig[] = [
     { slot: 207 },  // negative magnetite crystal
     { slot: 208 },  // magnetic spike
     { slot: 210 },  // magnetic shield crystal
+    { slot: 212 },  // magnetite shard
 ];
 
 export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {
