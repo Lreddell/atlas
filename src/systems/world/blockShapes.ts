@@ -9,6 +9,7 @@ const SLAB_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.COBBLESTONE_SLAB, BlockType.STONE_SLAB, BlockType.SANDSTONE_SLAB,
     BlockType.RED_SANDSTONE_SLAB, BlockType.BRICK_SLAB,
     BlockType.JUNGLE_SLAB, BlockType.DARK_OAK_SLAB, BlockType.ACACIA_SLAB,
+    BlockType.MAGNETITE_SLAB, BlockType.MAGNETITE_BRICK_SLAB,
 ]);
 
 const STAIR_TYPES: ReadonlySet<BlockType> = new Set([
@@ -16,6 +17,7 @@ const STAIR_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.COBBLESTONE_STAIRS, BlockType.STONE_STAIRS, BlockType.SANDSTONE_STAIRS,
     BlockType.RED_SANDSTONE_STAIRS, BlockType.BRICK_STAIRS,
     BlockType.JUNGLE_STAIRS, BlockType.DARK_OAK_STAIRS, BlockType.ACACIA_STAIRS,
+    BlockType.MAGNETITE_STAIRS, BlockType.MAGNETITE_BRICK_STAIRS,
 ]);
 
 export const isSlab = (t: BlockType): boolean => SLAB_TYPES.has(t);

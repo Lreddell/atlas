@@ -87,7 +87,6 @@ export function generateMagneticWardenArena(
     buildProtectedFoundationVolume(centerX, centerZ, baseY, ctx);
     buildOuterFoundation(centerX, centerZ, baseY, ctx);
     buildLavaMoat(centerX, centerZ, baseY, ctx);
-    buildMoatPylons(centerX, centerZ, baseY, ctx);
     buildOuterTerrace(centerX, centerZ, baseY, ctx);
     buildOuterRim(centerX, centerZ, baseY, ctx);
     buildCentralPlatform(centerX, centerZ, baseY, ctx);
@@ -173,22 +172,7 @@ function buildLavaMoat(centerX: number, centerZ: number, baseY: number, ctx: Are
     });
 }
 
-// 5. Support pylons in the pit: thin chiseled columns by the lava edge so the pit
-//    reads as a built structure rather than a flat orange ring.
-function buildMoatPylons(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
-    const pitFloor = baseY - ARENA_MOAT_PIT_DEPTH;
-    for (let a = 0; a < 12; a++) {
-        const ang = (a / 12) * Math.PI * 2 + Math.PI / 12;
-        const r = a % 2 === 0 ? ARENA_LAVA_INNER_RADIUS + 2 : ARENA_LAVA_OUTER_RADIUS - 2;
-        const px = centerX + Math.round(Math.cos(ang) * r);
-        const pz = centerZ + Math.round(Math.sin(ang) * r);
-        if (!inChunk(ctx, px, pz)) continue;
-        fillColumn(ctx, px, pitFloor + 1, baseY - 2, pz, BlockType.CHISELED_MAGNETITE);
-        ctx.setBlock(px, baseY - 1, pz, BlockType.MAGNETITE_BRICK_SLAB);
-    }
-}
-
-// 6. Wide outer terrace floor (brick) with concentric chiseled trim rings.
+// 5. Wide outer terrace floor (brick) with concentric chiseled trim rings.
 function buildOuterTerrace(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     forColumns(centerX, centerZ, ARENA_RIM_INNER, ctx, (wx, wz, adx, adz, dist) => {
         if (dist < ARENA_LAVA_OUTER_RADIUS + 2 || !inOctagon(adx, adz, ARENA_RIM_INNER)) return;
@@ -255,8 +239,7 @@ function buildCentralPlatform(centerX: number, centerZ: number, baseY: number, c
         let floor: BlockType = BlockType.MAGNETITE_BRICKS;
         if (rd >= ARENA_CENTRAL_RADIUS - 1) floor = BlockType.CHISELED_MAGNETITE;     // rim trim
         else if (rd === 16 || rd === 9) floor = BlockType.CHISELED_MAGNETITE;          // concentric rings
-        else if (Math.abs(adx - adz) <= 1 && rd > 5) floor = BlockType.POSITIVE_MAGNET; // red diagonal spokes
-        else if ((adx <= 1 || adz <= 1) && rd > 5) floor = BlockType.NEGATIVE_MAGNET;   // blue cardinal spokes
+        else if (Math.abs(adx - adz) <= 1 && rd > 5) floor = BlockType.CHISELED_MAGNETITE; // radial spokes
         ctx.setBlock(wx, baseY, wz, floor);
         // Raised stepped summoner dais.
         if (dist <= 5) ctx.setBlock(wx, baseY + 1, wz, BlockType.MAGNETITE_BRICKS);
@@ -316,23 +299,29 @@ function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: numb
                     if ((baseY + 12) <= top) ctx.setBlock(wx, baseY + 12, wz, BlockType.MAGNETITE_BRICK_SLAB);
                     continue;
                 }
-                // 7×7 shaft.
+                // 7×7 shaft. The two centre-facing faces are a CONTINUOUS magnet
+                // climb path from the pit floor to the top (no trim breaks), so the
+                // player can climb them with Polarity Boots. Other faces get bricks
+                // with chiseled trim bands.
                 const innerFace = cheb === 3 && (ox === -3 * dirX || oz === -3 * dirZ);
                 for (let y = pitFloor; y <= top; y++) {
                     let t: BlockType = BlockType.MAGNETITE_BRICKS;
-                    if (innerFace) t = magnet;                              // the climb face
-                    if (cheb === 3 && (y - baseY) % 6 === 0) t = BlockType.CHISELED_MAGNETITE; // trim bands
+                    if (innerFace) t = magnet;
+                    else if (cheb === 3 && (y - baseY) % 6 === 0) t = BlockType.CHISELED_MAGNETITE;
                     ctx.setBlock(wx, y, wz, t);
                 }
             }
         }
-        // Chiseled cap ring + a small top platform under the pedestal.
+        // Low chiseled parapet on the OUTER edges only — leaves the climb faces open
+        // at the top so the player can mantle onto the 7×7 cap and reach the crystal.
         for (let ox = -3; ox <= 3; ox++) {
             for (let oz = -3; oz <= 3; oz++) {
                 const wx = c.x + ox, wz = c.z + oz;
                 if (!inChunk(ctx, wx, wz)) continue;
-                if (Math.max(Math.abs(ox), Math.abs(oz)) === 3) ctx.setBlock(wx, top, wz, BlockType.CHISELED_MAGNETITE);
-                else ctx.setBlock(wx, top, wz, BlockType.MAGNETITE_BRICKS);
+                const isInner = ox === -3 * dirX || oz === -3 * dirZ;
+                if (Math.max(Math.abs(ox), Math.abs(oz)) === 3 && !isInner) {
+                    ctx.setBlock(wx, top + 1, wz, BlockType.CHISELED_MAGNETITE);
+                }
             }
         }
     }
