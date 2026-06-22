@@ -52,9 +52,15 @@ export const MF_TIER_HEIGHT = 14;       // vertical rise of each flat magnetite 
 export const MF_TIER_COUNT = 5;         // shelves: tier 0 (outer) .. tier 4 (arena rim)
 export const MF_TIER_BAND = MF_RADIUS / MF_TIER_COUNT; // radial width of each shelf
 
-// --- Central arena ---
-export const MF_ARENA_RADIUS = 36;
+// --- Central arena (one grand structure at each instance center) ---
+export const MF_ARENA_RADIUS = 36;                       // flat plateau the arena sits on
 export const MF_ARENA_FLOOR_Y = MF_BASE_HEIGHT + MF_TIER_HEIGHT * MF_TIER_COUNT;
+export const MF_ARENA_PLATFORM_R = 12;                   // solid central fight platform
+export const MF_ARENA_MOAT_OUTER_R = 22;                 // lava moat ring: (platform, outer]
+export const MF_ARENA_MOAT_DEPTH = 5;                    // moat is this many blocks of lava deep
+export const MF_ARENA_PILLAR_R = 17;                     // pillars rise from the moat at this radius
+export const MF_ARENA_PILLAR_COUNT = 4;                  // ≥4 polarity pillars, alternating
+export const MF_ARENA_PILLAR_HEIGHT = 8;                 // pillar top above the floor (shield crystal on top)
 
 /** Fall-damage multiplier when a player lands on a Magnetic Spike. */
 export const MAGNETIC_SPIKE_FALL_MULTIPLIER = 2.5;
@@ -234,45 +240,63 @@ export function getMagnetiteWallPolarity(wx: number, wz: number, worldSeed: numb
     return hash3(cx, 12, cz, worldSeed ^ 0x706f6c) < 0.5 ? 1 : -1;
 }
 
-export type ShelfDecoration = 'none' | 'spike' | 'crystal_pos' | 'crystal_neg' | 'accent' | 'shard';
+export type ShelfDecoration = 'none' | 'crystal_pos' | 'crystal_neg';
 
 /**
- * Whether a sparse magnetite "vein" recolours a shelf surface block at (wx, wz)
- * with Charged Magnetite, for subtle contrast against the dark terrain. Kept very
- * rare so shelves stay clean and traversable (the busy scatter was removed in
- * favour of deliberate formations — see getMagneticFeature).
- */
-export function isChargedVein(wx: number, wz: number, worldSeed: number): boolean {
-    return hash3(wx, 31, wz, worldSeed ^ 0x7665696e) < 0.006;
-}
-
-/**
- * A deliberate, multi-block Magnetic Fields feature rooted at (rootWx, rootWz), or
- * null. Sparse and deterministic so the biome reads as designed, not noisy:
- *  - 'spike'     : a jagged Magnetic Spike formation (cluster of stacked spikes)
- *  - 'spire'     : a short line of tall single-polarity magnet pillars you can
- *                  jump/climb between (spire-to-spire traversal)
- *  - 'launchpad' : a Charged Magnetite pad that flings the player upward
- *  - 'crystals'  : a small resource cluster of one polarity
+ * A deliberate, sparse Magnetic Fields feature rooted at (rootWx, rootWz), or null.
+ * Currently only resource crystal clusters — the spike/spire/launch-pad formations
+ * are deferred (to be redesigned later). Magnets on the cliff walls and the tiered
+ * terrain remain the structural traversal content.
  */
 export type MagneticFeature =
-    | { kind: 'spike'; height: number }
-    | { kind: 'spire'; height: number; polarity: number; count: number }
-    | { kind: 'launchpad' }
     | { kind: 'crystals'; polarity: number; count: number }
     | null;
 
 export function getMagneticFeature(rootWx: number, rootWz: number, worldSeed: number): MagneticFeature {
     const r = hash3(rootWx, 41, rootWz, worldSeed ^ 0x66656174);
     const h = (salt: number) => hash3(rootWx, salt, rootWz, worldSeed ^ 0x66656174);
-    // Deliberately sparse: a few dozen of each large feature across a whole biome,
-    // so it reads as designed rather than cluttered. Crystals (the resource) are a
-    // bit more common but still scattered.
-    if (r < 0.0006) return { kind: 'spike', height: 3 + Math.floor(h(42) * 4) };               // 3..6 tall
-    if (r < 0.0010) return { kind: 'spire', height: 7 + Math.floor(h(43) * 6), polarity: h(44) < 0.5 ? 1 : -1, count: 2 + Math.floor(h(47) * 2) };
-    if (r < 0.0014) return { kind: 'launchpad' };
-    if (r < 0.0040) return { kind: 'crystals', polarity: h(45) < 0.5 ? 1 : -1, count: 1 + Math.floor(h(46) * 3) };
+    if (r < 0.0030) return { kind: 'crystals', polarity: h(45) < 0.5 ? 1 : -1, count: 1 + Math.floor(h(46) * 3) };
     return null;
+}
+
+/** Active instance centers within `margin` of the box (for the arena build pass). */
+export function getActiveCenters(
+    minX: number, minZ: number, maxX: number, maxZ: number,
+    worldSeed: number, noise2D: Noise2D, margin: number,
+): MagneticFieldInstance[] {
+    const out: MagneticFieldInstance[] = [];
+    const c0x = Math.floor((minX - margin) / MF_CELL);
+    const c1x = Math.floor((maxX + margin) / MF_CELL);
+    const c0z = Math.floor((minZ - margin) / MF_CELL);
+    const c1z = Math.floor((maxZ + margin) / MF_CELL);
+    for (let cx = c0x; cx <= c1x; cx++) {
+        for (let cz = c0z; cz <= c1z; cz++) {
+            const inst = cellCenter(cx, cz, worldSeed);
+            if (!isCenterActive(inst, noise2D)) continue;
+            if (inst.centerX >= minX - margin && inst.centerX <= maxX + margin
+                && inst.centerZ >= minZ - margin && inst.centerZ <= maxZ + margin) {
+                out.push(inst);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * Which polarity a given arena pillar (0..count-1) uses: alternating +/- around
+ * the ring so the player must switch polarity to cross. 1 = positive, -1 = negative.
+ */
+export function getArenaPillarPolarity(index: number): number {
+    return index % 2 === 0 ? 1 : -1;
+}
+
+/** World position of arena pillar `index` around the moat ring of a center. */
+export function getArenaPillarPosition(center: MagneticFieldInstance, index: number): { x: number; z: number } {
+    const ang = (index / MF_ARENA_PILLAR_COUNT) * Math.PI * 2 + Math.PI / 4;
+    return {
+        x: center.centerX + Math.round(Math.cos(ang) * MF_ARENA_PILLAR_R),
+        z: center.centerZ + Math.round(Math.sin(ang) * MF_ARENA_PILLAR_R),
+    };
 }
 
 /** The single arena center of the instance covering (wx, wz), or null. */
