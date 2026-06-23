@@ -476,20 +476,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         }
 
         const feetBlock = worldManager.getBlock(Math.floor(simRes.position.x), Math.floor(simRes.position.y), Math.floor(simRes.position.z), false);
-        // Treat a landing as "wet" (no fall damage) if there is water anywhere in
-        // the body footprint at the feet — or one block below — so the flush arena
-        // landing pools save the player even when they touch down on the rim.
-        const wetLanding = feetBlock === BlockType.WATER || (() => {
-            const r = PLAYER_WIDTH / 2;
-            const fy = Math.floor(simRes.position.y);
-            for (const ox of [-r, 0, r]) for (const oz of [-r, 0, r]) {
-                const bx = Math.floor(simRes.position.x + ox), bz = Math.floor(simRes.position.z + oz);
-                if (worldManager.getBlock(bx, fy, bz, false) === BlockType.WATER) return true;
-                if (worldManager.getBlock(bx, fy - 1, bz, false) === BlockType.WATER) return true;
-            }
-            return false;
-        })();
-        if (wetLanding) {
+        if (feetBlock === BlockType.WATER) {
             fallDistance.current = 0;
         } else if (gameMode === 'survival' && !isFlying.current) {
             const dy = simRes.velocity.y * FIXED_DT;
