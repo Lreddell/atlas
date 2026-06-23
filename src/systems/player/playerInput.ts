@@ -13,6 +13,8 @@ export interface PlayerInputState {
     flyToggleTrigger: boolean;
     /** Player's chosen magnetic polarity (+1 / -1); only effective with polarity boots. */
     magneticPolarity: number;
+    /** Whether the polarity ability is switched on (toggled with N on upgraded boots). */
+    polarityPowerOn: boolean;
 }
 
 // Internal state for double-tap detection
@@ -31,7 +33,8 @@ export const inputState: PlayerInputState = {
     sprint: false,
     sprintLatch: false,
     flyToggleTrigger: false,
-    magneticPolarity: 1
+    magneticPolarity: 1,
+    polarityPowerOn: true,
 };
 
 // Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
@@ -104,10 +107,18 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             if (inputState.forward) inputState.sprintLatch = true;
             break;
         case 'KeyR':
+            // Never let Ctrl/Cmd+R reload the page mid-game.
+            if (e && (e.ctrlKey || e.metaKey)) { e.preventDefault(); break; }
             // Flip magnetic polarity (only has an effect while wearing polarity boots).
             if (e && e.repeat) break;
             inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
             gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
+            break;
+        case 'KeyN':
+            // Toggle the polarity ability on/off (only effective with upgraded boots).
+            if (e && e.repeat) break;
+            inputState.polarityPowerOn = !inputState.polarityPowerOn;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
             break;
     }
 };
@@ -177,6 +188,7 @@ export const resetInputState = () => {
     inputState.sprintLatch = false;
     inputState.flyToggleTrigger = false;
     inputState.magneticPolarity = 1;
+    inputState.polarityPowerOn = true;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;

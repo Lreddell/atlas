@@ -252,6 +252,8 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.IRON_LEGGINGS]: { id: BlockType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 153, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.IRON_BOOTS]: { id: BlockType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 154, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.POLARITY_BOOTS_UPGRADE]: { id: BlockType.POLARITY_BOOTS_UPGRADE, color: '#8a7fd6', name: 'Polarity Boots Upgrade', textureSlot: 211, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.UPGRADED_POLARITY_BOOTS]: { id: BlockType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.GOLD_HELMET]: { id: BlockType.GOLD_HELMET, color: '#fbc02d', name: 'Gold Helmet', textureSlot: 157, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.GOLD_CHESTPLATE]: { id: BlockType.GOLD_CHESTPLATE, color: '#fbc02d', name: 'Gold Chestplate', textureSlot: 158, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.GOLD_LEGGINGS]: { id: BlockType.GOLD_LEGGINGS, color: '#fbc02d', name: 'Gold Leggings', textureSlot: 159, hardness: 0, isItem: true, category: 'tools' },

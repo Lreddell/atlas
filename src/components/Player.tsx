@@ -556,6 +556,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         // after integration (like the sprint-jump boost) so this tick's friction
         // doesn't immediately cancel it; collision is resolved next substep.
         if (magneticMode !== 'none' && !isFlying.current) {
+            // Gentle pull while grounded (so you can stand and walk to a block's
+            // edge), full strength airborne (so traversal/attaching still works).
             applyMagneticForce(
                 worldManager,
                 pos.current,
@@ -564,6 +566,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 inputState.magneticPolarity,
                 FIXED_DT,
                 intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
+                grounded.current ? 0.25 : 1,
             );
         }
 

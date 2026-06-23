@@ -40,12 +40,15 @@ export const EntityRenderer: React.FC = () => {
                 const base = kind.polaritySwapInterval ? (e.polarity > 0 ? POLARITY_RED : POLARITY_BLUE) : kind.color;
                 mat.color.setHex(now < e.hurtUntil ? 0xffffff : base);
             }
-            // Shield bubble: visible only while the boss is shielded.
+            // Shield bubble: visible only while the boss is shielded. A blocked
+            // hit makes it flare so the invulnerability reads clearly.
             const shield = shieldRefs.current.get(e.id);
             if (shield) {
                 shield.visible = e.shielded;
                 shield.position.set(e.pos.x, e.pos.y + e.height / 2, e.pos.z);
                 shield.rotation.y += 0.02;
+                const sm = shield.material as THREE.MeshBasicMaterial;
+                sm.opacity = now < e.shieldHitUntil ? 0.85 : 0.35;
             }
             // Magnetic field aura: a flat ring at the boss's feet, coloured by
             // polarity, gently pulsing — and flaring out on each polarity swap.

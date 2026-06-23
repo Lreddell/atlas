@@ -17,7 +17,12 @@ import {
 export interface SpawnOptions {
     bossId?: string;
     regionId?: string;
+    /** World positions of the boss's shield crystals (so a reset can restore them). */
+    shieldCrystalPositions?: { x: number; y: number; z: number }[];
 }
+
+/** Beyond this distance from its home a boss fully resets (fresh fight). */
+const BOSS_RESET_RADIUS = 96;
 
 const MAX_FALL_SPEED = 40;
 const STEP_HEIGHT = 1.0;
@@ -38,6 +43,9 @@ class EntityManager {
     private nextId = 1;
     private nextProjectileId = 1;
     private inCombat = false;
+    // Shield-crystal blocks to re-place once their chunk is loaded (a boss that
+    // reset while the player was away restores its crystals when they return).
+    private pendingCrystalRestores: { x: number; y: number; z: number }[] = [];
 
     // Injected by App so entities can chase/damage the player without importing
     // React state.
@@ -118,6 +126,7 @@ class EntityManager {
             grounded: false,
             aggro: false,
             hurtUntil: 0,
+            shieldHitUntil: 0,
             attackCooldown: 0,
             knockbackSeconds: 0,
             yaw: 0,
@@ -130,6 +139,8 @@ class EntityManager {
             polarityTimer: kind.polaritySwapInterval ?? 0,
             projectileTimer: kind.projectileInterval ?? 0,
             home: new THREE.Vector3(x, y, z),
+            shieldCrystalPositions: opts.shieldCrystalPositions,
+            maxShieldCrystals: kind.shieldCrystals ?? 0,
         };
         this.entities.set(entity.id, entity);
         this.notifyStructure();
@@ -178,12 +189,17 @@ class EntityManager {
         if (hadEntities) this.notifyStructure();
     }
 
-    /** Apply damage to an entity (from a melee hit). knock is a horizontal dir. */
-    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0): void {
+    /**
+     * Apply damage to an entity (from a melee hit). knock is a horizontal dir.
+     * Returns 'blocked' if a shield absorbed it (no damage, no knockback, no hurt
+     * flash) so the caller can give distinct feedback, 'damaged' otherwise.
+     */
+    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0): 'damaged' | 'blocked' | 'none' {
         const e = this.entities.get(id);
-        if (!e || e.hp <= 0) return;
-        // Shielded bosses take no damage until their crystals are broken.
-        if (e.shielded) { e.hurtUntil = Date.now() + 80; return; }
+        if (!e || e.hp <= 0) return 'none';
+        // Shielded bosses are fully invulnerable until every crystal is broken:
+        // no damage, no knockback, no white hurt flash — only a shield shimmer.
+        if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
         e.hp -= amount;
         e.hurtUntil = Date.now() + 180;
         e.aggro = true;
@@ -197,6 +213,58 @@ class EntityManager {
             gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: Math.max(0, e.hp), maxHp: e.maxHp });
         }
         if (e.hp <= 0) this.kill(e);
+        return 'damaged';
+    }
+
+    /**
+     * Reset every boss to its fresh state (full HP, shield, polarity, position)
+     * and restore its broken shield crystals. Used when the player dies — the
+     * boss must not stay weakened/half-shielded far from the arena.
+     */
+    resetAllBosses(): void {
+        for (const e of this.entities.values()) {
+            if (e.isBoss && e.hp > 0) this.resetBoss(e);
+        }
+    }
+
+    private resetBoss(e: Entity): void {
+        const kind = ENTITY_KINDS[e.kind];
+        if (!kind) return;
+        e.hp = e.maxHp;
+        e.aggro = false;
+        e.vel.set(0, 0, 0);
+        e.polarity = 1;
+        e.polarityTimer = kind.polaritySwapInterval ?? 0;
+        e.projectileTimer = kind.projectileInterval ?? 0;
+        if (e.home) e.pos.copy(e.home);
+        // Restore the shield + crystal blocks.
+        const max = e.maxShieldCrystals ?? kind.shieldCrystals ?? 0;
+        if (max > 0) {
+            e.shielded = true;
+            e.shieldCrystals = max;
+            for (const c of e.shieldCrystalPositions ?? []) this.pendingCrystalRestores.push({ ...c });
+            if (e.bossId) gameEvents.emit('boss:shield', { bossId: e.bossId, entityId: e.id, crystals: max });
+        }
+        // Refresh the boss bar HP.
+        if (e.bossId) gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: e.hp, maxHp: e.maxHp });
+        // Its projectiles disperse.
+        this.projectiles = [];
+    }
+
+    /** Re-place any queued shield-crystal blocks whose chunk is now loaded. */
+    private processPendingCrystalRestores(): void {
+        if (this.pendingCrystalRestores.length === 0) return;
+        const still: { x: number; y: number; z: number }[] = [];
+        for (const c of this.pendingCrystalRestores) {
+            if (worldManager.hasChunk(Math.floor(c.x / 16), Math.floor(c.z / 16))) {
+                if (worldManager.getBlock(c.x, c.y, c.z, false) !== BlockType.MAGNETIC_SHIELD_CRYSTAL) {
+                    worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+                }
+            } else {
+                still.push(c);
+            }
+        }
+        this.pendingCrystalRestores = still;
     }
 
     private kill(e: Entity): void {
@@ -230,6 +298,7 @@ class EntityManager {
     }
 
     tick(dt: number, gameMode: GameMode): void {
+        this.processPendingCrystalRestores();
         if (this.entities.size === 0) {
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             return;
@@ -241,6 +310,13 @@ class EntityManager {
         for (const e of this.entities.values()) {
             const kind = ENTITY_KINDS[e.kind];
             if (!kind) continue;
+
+            // A boss whose fight the player has abandoned (wandered far from the
+            // arena) resets to full so the next attempt starts clean.
+            if (e.isBoss && e.home && (e.shieldCrystals < (e.maxShieldCrystals ?? 0) || e.hp < e.maxHp)) {
+                const far = !pp || Math.hypot(pp.x - e.home.x, pp.z - e.home.z) > BOSS_RESET_RADIUS;
+                if (far) { this.resetBoss(e); continue; }
+            }
 
             e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
             const preserveKnockback = shouldPreserveKnockback(e.knockbackSeconds);
@@ -299,7 +375,9 @@ class EntityManager {
             }
 
             // --- Magnetic Warden boss mechanics (polarity swap, field, projectiles) ---
-            if (kind.polaritySwapInterval && pp && targetable) {
+            // Only while actively engaged, so it stays silent and idle when the
+            // player is dead or away (no phantom polarity-swap sounds).
+            if (kind.polaritySwapInterval && pp && targetable && e.aggro) {
                 this.tickBossMechanics(e, kind, pp, dt);
             }
         }
@@ -357,8 +435,11 @@ class EntityManager {
         const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = enraged ? 18 : 15;
-        // Wider 5-bolt fan once enraged, a tight 3-bolt fan while shielded.
-        const spreads = enraged ? [-0.34, -0.17, 0, 0.17, 0.34] : [-0.2, 0, 0.2];
+        // A dense 5-bolt fan, widening to 7 once enraged — heavy pressure on a
+        // player exposed on a pillar.
+        const spreads = enraged
+            ? [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45]
+            : [-0.3, -0.15, 0, 0.15, 0.3];
         for (const spread of spreads) {
             const ca = Math.cos(spread), sa = Math.sin(spread);
             this.projectiles.push({

@@ -81,6 +81,8 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.COPPER_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 143 },
     // Polarity boots — controllable polarity; unbreakable.
     [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
+    // Upgraded polarity boots — adds an on/off toggle (N); unbreakable.
+    [BlockType.UPGRADED_POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
 };
 
 /** True for swords (durability-cost rules differ from other tools). */

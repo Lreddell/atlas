@@ -52,8 +52,11 @@ export function applyMagneticForce(
     playerPolarity: number,
     dt: number,
     bodyHeight = PLAYER_HEIGHT,
+    /** Scales the pull — lowered while grounded so standing on/near magnet
+     *  blocks isn't slippery and you can walk to a block's edge. */
+    strengthScale = 1,
 ): void {
-    if (mode === 'none') return;
+    if (mode === 'none' || strengthScale <= 0) return;
 
     _acc.set(0, 0, 0);
     const halfWidth = PLAYER_WIDTH * 0.5;
@@ -121,7 +124,7 @@ export function applyMagneticForce(
 
     if (!found) return;
 
-    vel.addScaledVector(_acc, dt);
+    vel.addScaledVector(_acc, dt * strengthScale);
 
     // Clamp the magnetic contribution so it stays controllable.
     const horiz = Math.hypot(vel.x, vel.z);

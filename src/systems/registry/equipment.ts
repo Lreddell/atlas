@@ -46,9 +46,15 @@ export function isWearingIronArmor(eq: Equipment): boolean {
     });
 }
 
-/** Polarity boots equipped → the player can control their polarity. */
+/** Polarity boots (or the upgraded pair) equipped → the player controls polarity. */
 export function hasPolarityBoots(eq: Equipment): boolean {
-    return eq.boots?.type === BlockType.POLARITY_BOOTS;
+    return eq.boots?.type === BlockType.POLARITY_BOOTS
+        || eq.boots?.type === BlockType.UPGRADED_POLARITY_BOOTS;
+}
+
+/** Upgraded polarity boots: same control plus an on/off toggle (the N key). */
+export function hasUpgradedPolarityBoots(eq: Equipment): boolean {
+    return eq.boots?.type === BlockType.UPGRADED_POLARITY_BOOTS;
 }
 
 /**
