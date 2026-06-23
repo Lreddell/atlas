@@ -387,13 +387,15 @@ test('magnetite block recipes: eight crystals around one iron ingot', () => {
     assert.equal((neg[1].match(/\bFE\b/g) || []).length, 1);
 });
 
-test('only the two crystals are mineable while sealed', () => {
+test('only the crystals are mineable while sealed', () => {
     const src = read('src/systems/world/magneticFieldsBlocks.ts');
     assert.match(src, /POSITIVE_MAGNETITE_CRYSTAL/);
     assert.match(src, /NEGATIVE_MAGNETITE_CRYSTAL/);
-    // Exactly two entries in the set.
+    assert.match(src, /MAGNETIC_SHIELD_CRYSTAL/);
+    // Exactly the three crystals — the two craftable resource crystals plus the
+    // boss shield crystals; no other terrain becomes mineable while sealed.
     const inside = src.match(/new Set\(\[([\s\S]*?)\]\)/)[1];
-    assert.equal((inside.match(/BlockType\./g) || []).length, 2);
+    assert.equal((inside.match(/BlockType\./g) || []).length, 3);
 });
 
 test('Magnetic Fields biome + sealed region are registered', () => {
@@ -409,6 +411,15 @@ test('sealed-region crystal-mining exception is wired into canEditBlock', () => 
     const wm = read('src/systems/WorldManager.ts');
     assert.match(wm, /MAGNETIC_FIELDS_REGION_ID/);
     assert.match(wm, /SEALED_MINEABLE_BLOCKS\.has/);
+});
+
+test('shield crystals are mineable while the region is sealed (so the boss can be beaten)', () => {
+    // The Warden's shield crystals must be breakable during the sealed fight,
+    // alongside the two craftable resource crystals.
+    const blocks = read('src/systems/world/magneticFieldsBlocks.ts');
+    assert.match(blocks, /SEALED_MINEABLE_BLOCKS[\s\S]*?MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(blocks, /POSITIVE_MAGNETITE_CRYSTAL/);
+    assert.match(blocks, /NEGATIVE_MAGNETITE_CRYSTAL/);
 });
 
 test('Magnetic Fields + Magnetic Warden music are wired with on-disk folders', () => {
