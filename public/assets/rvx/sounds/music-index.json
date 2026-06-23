@@ -2,6 +2,9 @@
   "bloodmoon": [
     "assets/rvx/sounds/music/bloodmoon/Blood_Moon_-_Rhino_X.ogg"
   ],
+  "boss_magnetic_warden": [
+    "assets/rvx/sounds/music/boss_magnetic_warden/magboss.ogg"
+  ],
   "caves": [
     "assets/rvx/sounds/music/caves/Expedition_-_Rhino_X.ogg",
     "assets/rvx/sounds/music/caves/Vibey_Cave_Melodies_-_Rhino_X.ogg"
@@ -15,6 +18,9 @@
   ],
   "forest": [
     "assets/rvx/sounds/music/forest/forest1.ogg"
+  ],
+  "magnetic_fields": [
+    "assets/rvx/sounds/music/magnetic_fields/magnetite.ogg"
   ],
   "menu": [
     "assets/rvx/sounds/music/menu/atlas.ogg",
