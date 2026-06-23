@@ -10,6 +10,8 @@ import {
     getDirectionalMultiplier,
     getMagneticResponseSign,
     sampleRawMagneticField,
+    bossFieldVelocityDelta,
+    BOSS_FIELD_MAX_DRIFT,
 } from './magneticField.ts';
 
 const IRON_BLOCK = 197;
@@ -108,6 +110,53 @@ test('raw field sampling applies the same directional cone as player physics', (
         Math.abs(backward.x / forward.x),
         DIRECTIONAL_LEAK_MULTIPLIER / DIRECTIONAL_PEAK_MULTIPLIER,
     );
+});
+
+test('boss field: same polarity repels (pushes away), opposite attracts (pulls in)', () => {
+    // Boss at the origin, player 5 blocks out on +X, at rest.
+    const boss = (polarity) => [{ x: 0, y: 0, z: 0, polarity, range: 30, force: 40 }];
+    const dt = 0.05;
+
+    // Player +1 vs boss +1 (same): pushed further out (+X).
+    const repel = bossFieldVelocityDelta(boss(1), 5, 0, 0, 0, 0, 0, 1, dt);
+    assert.ok(repel.active);
+    assert.ok(repel.x > 0, `expected +X repulsion, got ${repel.x}`);
+
+    // Player +1 vs boss -1 (opposite): pulled toward the boss (−X).
+    const attract = bossFieldVelocityDelta(boss(-1), 5, 0, 0, 0, 0, 0, 1, dt);
+    assert.ok(attract.x < 0, `expected −X attraction, got ${attract.x}`);
+
+    // Flipping the player's polarity flips the response.
+    const flipped = bossFieldVelocityDelta(boss(1), 5, 0, 0, 0, 0, 0, -1, dt);
+    assert.ok(flipped.x < 0, 'flipping polarity should reverse the force');
+});
+
+test('boss field: zero outside range, stronger up close, drift-capped (air-safe)', () => {
+    const src = [{ x: 0, y: 0, z: 0, polarity: 1, range: 30, force: 40 }];
+    const dt = 0.05;
+
+    // Out of range → inactive, no push.
+    const far = bossFieldVelocityDelta(src, 100, 0, 0, 0, 0, 0, 1, dt);
+    assert.equal(far.active, false);
+    assert.equal(far.x, 0);
+
+    // Closer is stronger: it ramps toward a higher terminal drift. At a probe
+    // velocity that sits between the far and near drift caps, only the near
+    // field still pushes (the far field has already reached its lower cap).
+    const probeV = 5.0; // between mid cap (~3.5) and near cap (~6.3)
+    const nearPush = bossFieldVelocityDelta(src, 3, 0, 0, probeV, 0, 0, 1, dt).x;
+    const farPush = bossFieldVelocityDelta(src, 15, 0, 0, probeV, 0, 0, 1, dt).x;
+    assert.ok(nearPush > 0, 'near field ramps toward its higher drift cap');
+    assert.equal(farPush, 0, 'far field has already reached its lower drift cap');
+
+    // Velocity-aware: a player already drifting at/over the target receives no
+    // further push — this is what stops an airborne player being flung.
+    const atTarget = bossFieldVelocityDelta(src, 3, 0, 0, BOSS_FIELD_MAX_DRIFT + 5, 0, 0, 1, dt);
+    assert.equal(atTarget.x, 0, 'should never push past the drift cap');
+
+    // And a single tick can never add more than the drift cap.
+    const oneTick = bossFieldVelocityDelta(src, 3, 0, 0, 0, 0, 0, 1, dt);
+    assert.ok(Math.hypot(oneTick.x, oneTick.z) <= BOSS_FIELD_MAX_DRIFT + 1e-9);
 });
 
 test('magnetic sampling can use the closest point on the full player AABB', () => {

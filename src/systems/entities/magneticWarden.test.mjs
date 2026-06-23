@@ -64,6 +64,43 @@ test('App wires the confirmation modal, no-duplicate spawn, and crystal→shield
     assert.match(app, /applyImpulse\(x, y, z\)/);
 });
 
+test('the Warden is leashed and refuses to path into the lava moat', () => {
+    // Hazard/ledge guard: under its own power it won't step off a ledge or onto lava.
+    assert.match(manager, /isSafeGround/);
+    assert.match(manager, /BlockType\.LAVA/);
+    assert.match(manager, /getSupportTop/);
+    // Hard leash containment around the spawn (home).
+    assert.match(manager, /applyLeash/);
+    assert.match(manager, /home:\s*new THREE\.Vector3/);
+    // Movement is guarded only while grounded and not being knocked back.
+    assert.match(manager, /const guard = e\.grounded && !preserveKnockback/);
+    // The boss kind declares a leash radius and a magnetic field.
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?leashRadius:/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?magneticFieldRange:/);
+});
+
+test('the Warden field is exposed to the player physics and applied with clamping', () => {
+    // EntityManager publishes the field as sources for the player to apply.
+    assert.match(manager, /getMagneticFieldSources\(\)/);
+    // The pure, clamped field math lives in magneticField and is wrapped in magnetism.
+    const field = read('src/systems/player/magneticField.ts');
+    assert.match(field, /bossFieldVelocityDelta/);
+    assert.match(field, /BOSS_FIELD_MAX_DRIFT/);
+    const magnetism = read('src/systems/player/magnetism.ts');
+    assert.match(magnetism, /applyBossMagneticFields/);
+    // The player physics actually applies the boss field each tick.
+    const player = read('src/components/Player.tsx');
+    assert.match(player, /getMagneticFieldSources\(\)/);
+    assert.match(player, /applyBossMagneticFields/);
+});
+
+test('polarity swaps shockwave the player, and the boss enrages once unshielded', () => {
+    assert.match(manager, /emitPolarityShockwave/);
+    // Enrage: shorter intervals + a wider volley once the shield is gone.
+    assert.match(manager, /const enraged = !e\.shielded/);
+    assert.match(manager, /enraged \?/);
+});
+
 test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {
     // Region is configured (bossId magnetic_warden) and boss:defeated → cleanse.
     const regions = read('src/systems/world/regions.ts');

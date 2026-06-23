@@ -10,7 +10,11 @@ import {
     getDirectionalMultiplier,
     getMagneticResponseSign,
     getMagnetPolarity as getPolarityForBlockIds,
+    bossFieldVelocityDelta,
+    type BossFieldSource,
 } from './magneticField';
+
+export type { BossFieldSource } from './magneticField';
 import { PLAYER_HEIGHT, PLAYER_WIDTH } from './playerConstants';
 
 // Magnetism (Phase 4). Magnet blocks emit a field; a magnetically-susceptible
@@ -128,4 +132,37 @@ export function applyMagneticForce(
     }
     if (vel.y > MAGNET_MAX_SPEED) vel.y = MAGNET_MAX_SPEED;
     else if (vel.y < -MAGNET_MAX_SPEED) vel.y = -MAGNET_MAX_SPEED;
+}
+
+/**
+ * Apply the Magnetic Warden's arena field to the player's velocity this tick.
+ * Mutates `vel`; returns whether any boss field was in range. Kept separate from
+ * the block field so its strong, clamped acceleration is added with the player's
+ * real velocity in hand (no global speed cap that would kill jumps).
+ */
+export function applyBossMagneticFields(
+    pos: THREE.Vector3,
+    vel: THREE.Vector3,
+    playerPolarity: number,
+    dt: number,
+    sources: readonly BossFieldSource[],
+    bodyHeight = PLAYER_HEIGHT,
+): boolean {
+    if (sources.length === 0) return false;
+    const delta = bossFieldVelocityDelta(
+        sources,
+        pos.x,
+        pos.y + bodyHeight * 0.5,
+        pos.z,
+        vel.x,
+        vel.y,
+        vel.z,
+        playerPolarity,
+        dt,
+    );
+    if (!delta.active) return false;
+    vel.x += delta.x;
+    vel.y += delta.y;
+    vel.z += delta.z;
+    return true;
 }
