@@ -209,3 +209,88 @@ export function sampleRawMagneticField(
         negativeStrength,
     };
 }
+
+// --- Boss magnetic field -----------------------------------------------------
+// The Magnetic Warden emits a polarity field across the whole arena. With
+// controllable polarity (boots), the SAME sign as the boss repels the player
+// (pushed away) and the OPPOSITE attracts (pulled in) — so the player must keep
+// flipping polarity as the boss swaps its own. Unlike the block field this is a
+// strong, arena-scale force, so it is clamped (as an acceleration) to stay fair
+// and is applied with the player's velocity in hand so jumps are never capped.
+
+export interface BossFieldSource extends Vector3Like {
+    /** Boss polarity (+1 / -1). */
+    polarity: number;
+    /** Field reach in blocks. */
+    range: number;
+    /** Peak acceleration (blocks/s²) at point-blank, falling off linearly. */
+    force: number;
+}
+
+/** Top drift speed (blocks/s) the field pushes the player to at point-blank. */
+export const BOSS_FIELD_MAX_DRIFT = 7;
+/** Vertical component is softened so the field tugs more than it launches. */
+export const BOSS_FIELD_VERTICAL_FACTOR = 0.4;
+
+/**
+ * Net velocity change the boss field imparts this tick. Pure (no THREE / no
+ * enum) so it is unit-tested directly. The caller adds {x,y,z} to the player's
+ * velocity; `active` is false when no source is in range (so callers can skip).
+ *
+ * The field is VELOCITY-AWARE: it ramps the player toward a capped drift speed
+ * along the push direction (and never beyond it), so it is firmly felt on the
+ * ground yet can never accelerate an airborne player into a launch. The player
+ * counters by flipping polarity, which reverses the push direction.
+ *
+ * @param px,py,pz  the player's body-centre position
+ * @param vx,vy,vz  the player's current velocity
+ */
+export function bossFieldVelocityDelta(
+    sources: readonly BossFieldSource[],
+    px: number,
+    py: number,
+    pz: number,
+    vx: number,
+    vy: number,
+    vz: number,
+    playerPolarity: number,
+    dt: number,
+): { x: number; y: number; z: number; active: boolean } {
+    let dvx = 0;
+    let dvy = 0;
+    let dvz = 0;
+    let active = false;
+
+    for (const s of sources) {
+        const ex = px - s.x;
+        const ey = py - s.y;
+        const ez = pz - s.z;
+        const dist = Math.hypot(ex, ey, ez);
+        if (dist < 0.6 || dist > s.range) continue;
+        active = true;
+
+        const falloff = 1 - dist / s.range;
+        // Same polarity repels (push along boss→player), opposite attracts.
+        const sign = Math.sign(playerPolarity) === Math.sign(s.polarity) ? 1 : -1;
+        const ux = (sign * ex) / dist;
+        const uy = (sign * ey) / dist;
+        const uz = (sign * ez) / dist;
+
+        // Ramp the player's speed along the push direction up to the target
+        // drift, but never decelerate or overshoot — that is what makes it
+        // air-safe. `force` controls how fast it ramps (blocks/s²).
+        const target = BOSS_FIELD_MAX_DRIFT * falloff;
+        const along = vx * ux + vy * uy + vz * uz;
+        let add = target - along;
+        if (add <= 0) continue;
+        const ramp = s.force * dt;
+        if (add > ramp) add = ramp;
+
+        dvx += ux * add;
+        dvy += uy * add;
+        dvz += uz * add;
+    }
+
+    if (!active) return { x: 0, y: 0, z: 0, active: false };
+    return { x: dvx, y: dvy * BOSS_FIELD_VERTICAL_FACTOR, z: dvz, active: true };
+}

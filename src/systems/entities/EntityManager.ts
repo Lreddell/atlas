@@ -6,6 +6,7 @@ import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
 import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile } from './Entity';
 import { inputState } from '../player/playerInput';
+import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
 import {
     canTargetPlayer,
@@ -62,6 +63,28 @@ class EntityManager {
         return this.projectiles;
     }
 
+    /**
+     * Active boss magnetic-field emitters (one per aggro'd boss that has a field).
+     * The player physics reads this each tick and applies the clamped attract/
+     * repel force with its real velocity in hand.
+     */
+    getMagneticFieldSources(): BossFieldSource[] {
+        const out: BossFieldSource[] = [];
+        for (const e of this.entities.values()) {
+            const kind = ENTITY_KINDS[e.kind];
+            if (!kind?.magneticFieldRange || !e.aggro || e.hp <= 0) continue;
+            out.push({
+                x: e.pos.x,
+                y: e.pos.y + e.height * 0.5,
+                z: e.pos.z,
+                polarity: e.polarity,
+                range: kind.magneticFieldRange,
+                force: kind.magneticFieldForce ?? 30,
+            });
+        }
+        return out;
+    }
+
     onStructureChange(cb: () => void): () => void {
         this.structureListeners.add(cb);
         return () => { this.structureListeners.delete(cb); };
@@ -106,6 +129,7 @@ class EntityManager {
             polarity: 1,
             polarityTimer: kind.polaritySwapInterval ?? 0,
             projectileTimer: kind.projectileInterval ?? 0,
+            home: new THREE.Vector3(x, y, z),
         };
         this.entities.set(entity.id, entity);
         this.notifyStructure();
@@ -229,9 +253,21 @@ class EntityManager {
                 if (distSq < kind.aggroRange * kind.aggroRange) e.aggro = true;
                 else if (e.aggro && shouldForgetTarget(distSq, kind.aggroRange)) e.aggro = false;
                 if (e.aggro && !preserveKnockback) {
-                    const dist = Math.sqrt(distSq) || 1;
-                    e.vel.x = (dx / dist) * kind.speed;
-                    e.vel.z = (dz / dist) * kind.speed;
+                    // Steer toward the player, but if leashed and the player is
+                    // beyond the leash, steer back toward home instead so the boss
+                    // holds the arena (and lets its ranged field do the work).
+                    let tx = dx, tz = dz;
+                    if (e.home && kind.leashRadius) {
+                        const hx = pp.x - e.home.x, hz = pp.z - e.home.z;
+                        if (Math.hypot(hx, hz) > kind.leashRadius) {
+                            tx = e.home.x - e.pos.x;
+                            tz = e.home.z - e.pos.z;
+                        }
+                    }
+                    const tlen = Math.hypot(tx, tz) || 1;
+                    e.vel.x = (tx / tlen) * kind.speed;
+                    e.vel.z = (tz / tlen) * kind.speed;
+                    // Always face the player even while repositioning.
                     e.yaw = Math.atan2(dx, dz);
                 } else if (!e.aggro && !preserveKnockback) {
                     e.vel.x *= 0.6;
@@ -249,7 +285,11 @@ class EntityManager {
             // --- Gravity ---
             e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);
 
-            this.moveWithCollision(e, kind, dt);
+            // Under its own power (grounded, not mid-knockback) the entity refuses
+            // to step off ledges or onto lava; knockback can still shove it.
+            const guard = e.grounded && !preserveKnockback;
+            this.moveWithCollision(e, kind, dt, guard);
+            this.applyLeash(e, kind);
 
             // --- Contact damage to player ---
             if (e.attackCooldown > 0) e.attackCooldown -= dt;
@@ -270,46 +310,56 @@ class EntityManager {
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
     }
 
-    // Polarity swap, the magnetic field that pushes/pulls the player, and projectile
-    // volleys — all data-driven from the boss's EntityKind.
+    // Polarity swap (with a punchy shockwave to telegraph it) and projectile
+    // volleys — data-driven from the boss's EntityKind. Once the shield is gone
+    // the boss enrages: faster swaps, faster/larger volleys. The continuous
+    // attract/repel field itself is applied in the player physics (clamped with
+    // the player's velocity in hand) via getMagneticFieldSources().
     private tickBossMechanics(
         e: Entity, kind: EntityKind,
         pp: { x: number; y: number; z: number }, dt: number,
     ): void {
+        const enraged = !e.shielded;
         if (kind.polaritySwapInterval) {
             e.polarityTimer -= dt;
             if (e.polarityTimer <= 0) {
                 e.polarity *= -1;
-                e.polarityTimer = kind.polaritySwapInterval;
+                e.polarityTimer = kind.polaritySwapInterval * (enraged ? 0.6 : 1);
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
-            }
-        }
-        // Magnetic field: same polarity repels (push away), opposite attracts (pull in).
-        if (e.aggro && this.playerImpulseHandler) {
-            const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z;
-            const dist = Math.hypot(dx, dz) || 1;
-            if (dist < 22) {
-                const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
-                const sign = playerPol === e.polarity ? 1 : -1;
-                const strength = (1 - dist / 22) * 4.5 * dt;
-                this.playerImpulseHandler((dx / dist) * sign * strength, 0, (dz / dist) * sign * strength);
+                // Shockwave: a one-time shove (same polarity pushes away, opposite
+                // pulls in) plus a small lift, so each swap is felt and dangerous.
+                if (e.aggro) this.emitPolarityShockwave(e, pp);
             }
         }
         if (kind.projectileInterval && e.aggro) {
             e.projectileTimer -= dt;
             if (e.projectileTimer <= 0) {
-                e.projectileTimer = kind.projectileInterval;
-                this.fireVolley(e, kind, pp);
+                e.projectileTimer = kind.projectileInterval * (enraged ? 0.6 : 1);
+                this.fireVolley(e, kind, pp, enraged);
             }
         }
     }
 
-    private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }): void {
+    private emitPolarityShockwave(e: Entity, pp: { x: number; y: number; z: number }): void {
+        if (!this.playerImpulseHandler) return;
+        const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const SHOCK_RANGE = 26;
+        if (dist > SHOCK_RANGE) return;
+        const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
+        const sign = playerPol === e.polarity ? 1 : -1; // same repels, opposite attracts
+        const mag = 6.5 * (1 - dist / SHOCK_RANGE);
+        this.playerImpulseHandler((dx / dist) * sign * mag, 2.4, (dz / dist) * sign * mag);
+    }
+
+    private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }, enraged = false): void {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
         const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
-        const speed = 15;
-        for (const spread of [-0.2, 0, 0.2]) {
+        const speed = enraged ? 18 : 15;
+        // Wider 5-bolt fan once enraged, a tight 3-bolt fan while shielded.
+        const spreads = enraged ? [-0.34, -0.17, 0, 0.17, 0.34] : [-0.2, 0, 0.2];
+        for (const spread of spreads) {
             const ca = Math.cos(spread), sa = Math.sin(spread);
             this.projectiles.push({
                 id: this.nextProjectileId++,
@@ -353,19 +403,22 @@ class EntityManager {
         this.projectiles = survivors;
     }
 
-    private moveWithCollision(e: Entity, kind: EntityKind, dt: number): void {
+    private moveWithCollision(e: Entity, kind: EntityKind, dt: number, guard = false): void {
         const p = e.pos;
         const w = e.width, h = e.height;
 
         // X axis
         const nx = { x: p.x + e.vel.x * dt, y: p.y, z: p.z };
         if (!checkCollision(worldManager, nx, w, h)) {
-            p.x = nx.x;
+            if (guard && !this.isSafeGround(nx.x, p.y, p.z, w)) e.vel.x = 0; // ledge / lava
+            else p.x = nx.x;
         } else if (kind.canStep && e.grounded) {
             // try stepping up a single block
             const stepped = { x: nx.x, y: p.y + STEP_HEIGHT, z: p.z };
-            if (!checkCollision(worldManager, stepped, w, h)) { p.x = nx.x; p.y += STEP_HEIGHT; }
-            else e.vel.x = 0;
+            if (!checkCollision(worldManager, stepped, w, h)
+                && (!guard || this.isSafeGround(nx.x, p.y + STEP_HEIGHT, p.z, w))) {
+                p.x = nx.x; p.y += STEP_HEIGHT;
+            } else e.vel.x = 0;
         } else {
             e.vel.x = 0;
         }
@@ -373,11 +426,14 @@ class EntityManager {
         // Z axis
         const nz = { x: p.x, y: p.y, z: p.z + e.vel.z * dt };
         if (!checkCollision(worldManager, nz, w, h)) {
-            p.z = nz.z;
+            if (guard && !this.isSafeGround(p.x, p.y, nz.z, w)) e.vel.z = 0; // ledge / lava
+            else p.z = nz.z;
         } else if (kind.canStep && e.grounded) {
             const stepped = { x: p.x, y: p.y + STEP_HEIGHT, z: nz.z };
-            if (!checkCollision(worldManager, stepped, w, h)) { p.z = nz.z; p.y += STEP_HEIGHT; }
-            else e.vel.z = 0;
+            if (!checkCollision(worldManager, stepped, w, h)
+                && (!guard || this.isSafeGround(p.x, p.y + STEP_HEIGHT, nz.z, w))) {
+                p.z = nz.z; p.y += STEP_HEIGHT;
+            } else e.vel.z = 0;
         } else {
             e.vel.z = 0;
         }
@@ -395,6 +451,37 @@ class EntityManager {
             }
             e.vel.y = 0;
         }
+    }
+
+    /**
+     * Whether the entity can stand at (x,z) with feet near feetY: there is solid
+     * support within a step below (so it won't walk off a ledge into the moat),
+     * and it isn't stepping onto lava. Lava is non-solid so it yields no support,
+     * which already reads as a ledge — the explicit check guards flush lava too.
+     */
+    private isSafeGround(x: number, feetY: number, z: number, w: number): boolean {
+        if (worldManager.getBlock(Math.floor(x), Math.floor(feetY), Math.floor(z), false) === BlockType.LAVA) {
+            return false;
+        }
+        const top = getSupportTop(worldManager, { x, y: feetY, z }, w);
+        if (top === null) return false;
+        return feetY - top <= STEP_HEIGHT + 0.05;
+    }
+
+    /** Hard-contain a leashed entity within leashRadius of its spawn (home). */
+    private applyLeash(e: Entity, kind: EntityKind): void {
+        if (!e.home || !kind.leashRadius) return;
+        const dx = e.pos.x - e.home.x;
+        const dz = e.pos.z - e.home.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= kind.leashRadius) return;
+        const k = kind.leashRadius / d;
+        e.pos.x = e.home.x + dx * k;
+        e.pos.z = e.home.z + dz * k;
+        // Cancel any outward velocity so it doesn't keep fighting the leash.
+        const ox = dx / d, oz = dz / d;
+        const outward = e.vel.x * ox + e.vel.z * oz;
+        if (outward > 0) { e.vel.x -= ox * outward; e.vel.z -= oz * outward; }
     }
 
     private overlapsPlayer(e: Entity, pp: { x: number; y: number; z: number }): boolean {

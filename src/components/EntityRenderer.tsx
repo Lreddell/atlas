@@ -15,7 +15,11 @@ export const EntityRenderer: React.FC = () => {
     const [ids, setIds] = useState<number[]>([]);
     const meshRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const shieldRefs = useRef<Map<number, THREE.Mesh>>(new Map());
+    const auraRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const projRefs = useRef<(THREE.Mesh | null)[]>([]);
+    // Per-boss polarity-swap flash bookkeeping for the field aura.
+    const lastPolarity = useRef<Map<number, number>>(new Map());
+    const flashUntil = useRef<Map<number, number>>(new Map());
 
     useEffect(() => {
         const sync = () => setIds(entityManager.getEntities().map((e) => e.id));
@@ -43,6 +47,27 @@ export const EntityRenderer: React.FC = () => {
                 shield.position.set(e.pos.x, e.pos.y + e.height / 2, e.pos.z);
                 shield.rotation.y += 0.02;
             }
+            // Magnetic field aura: a flat ring at the boss's feet, coloured by
+            // polarity, gently pulsing — and flaring out on each polarity swap.
+            const aura = auraRefs.current.get(e.id);
+            if (aura) {
+                const showField = e.aggro && !!kind.magneticFieldRange;
+                aura.visible = showField;
+                if (showField) {
+                    const prev = lastPolarity.current.get(e.id);
+                    if (prev !== undefined && prev !== e.polarity) flashUntil.current.set(e.id, now + 420);
+                    lastPolarity.current.set(e.id, e.polarity);
+
+                    aura.position.set(e.pos.x, e.pos.y + 0.06, e.pos.z);
+                    aura.rotation.z += 0.01;
+                    const flashT = Math.max(0, (flashUntil.current.get(e.id) ?? 0) - now) / 420;
+                    const pulse = 1 + 0.06 * Math.sin(now * 0.005) + flashT * 0.7;
+                    aura.scale.setScalar(pulse);
+                    const am = aura.material as THREE.MeshBasicMaterial;
+                    am.color.setHex(e.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                    am.opacity = 0.22 + flashT * 0.4;
+                }
+            }
         }
         // Projectile pool.
         const projectiles = entityManager.getProjectiles();
@@ -67,6 +92,8 @@ export const EntityRenderer: React.FC = () => {
                 if (!e) return null;
                 const kind = ENTITY_KINDS[e.kind];
                 const isShieldBoss = (kind.shieldCrystals ?? 0) > 0;
+                const hasField = !!kind.magneticFieldRange;
+                const auraR = Math.max(kind.width, 1) * 1.7;
                 return (
                     <React.Fragment key={id}>
                         <mesh
@@ -80,6 +107,19 @@ export const EntityRenderer: React.FC = () => {
                             <mesh ref={(m) => { if (m) shieldRefs.current.set(id, m); else shieldRefs.current.delete(id); }}>
                                 <sphereGeometry args={[Math.max(kind.width, kind.height) * 0.62, 16, 12]} />
                                 <meshBasicMaterial color={0x9c6bff} wireframe transparent opacity={0.35} />
+                            </mesh>
+                        )}
+                        {hasField && (
+                            <mesh
+                                ref={(m) => {
+                                    if (m) { auraRefs.current.set(id, m); }
+                                    else { auraRefs.current.delete(id); lastPolarity.current.delete(id); flashUntil.current.delete(id); }
+                                }}
+                                rotation={[-Math.PI / 2, 0, 0]}
+                                visible={false}
+                            >
+                                <ringGeometry args={[auraR * 0.82, auraR, 40]} />
+                                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
                             </mesh>
                         )}
                     </React.Fragment>

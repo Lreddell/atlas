@@ -26,6 +26,8 @@ export interface Entity {
     isBoss: boolean;
     bossId?: string;
     regionId?: string;
+    /** Leash anchor (spawn point). Bosses with a leashRadius stay within it. */
+    home?: THREE.Vector3;
     // --- Magnetic Warden boss mechanics ---
     /** While true the boss takes no damage (its shield crystals are intact). */
     shielded: boolean;
@@ -85,6 +87,12 @@ export interface EntityKind {
     projectileInterval?: number;
     /** Damage per projectile hit. */
     projectileDamage?: number;
+    /** Max horizontal distance (blocks) the entity may stray from its spawn. */
+    leashRadius?: number;
+    /** Reach (blocks) of the boss's attract/repel magnetic field. */
+    magneticFieldRange?: number;
+    /** Peak acceleration (blocks/s²) the boss field applies at point-blank. */
+    magneticFieldForce?: number;
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
@@ -119,8 +127,10 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         maxHp: 240,
         width: 1.8,
         height: 2.8,
-        speed: 1.8,
-        aggroRange: 30,
+        speed: 2.2,
+        // Large enough to stay engaged with a player on the arena pillars across
+        // the lava moat (forget range is 1.5×, covering the whole arena).
+        aggroRange: 40,
         contactDamage: 8,
         attackCooldown: 1.0,
         color: 0x8e24aa,
@@ -130,5 +140,10 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         polaritySwapInterval: 6,
         projectileInterval: 2.2,
         projectileDamage: 5,
+        // Confined to the central platform so it never paths into the moat.
+        leashRadius: 19,
+        // Arena-scale attract/repel field (the signature mechanic).
+        magneticFieldRange: 30,
+        magneticFieldForce: 40,
     },
 };

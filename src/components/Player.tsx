@@ -9,7 +9,8 @@ import {
     onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge
 } from '../systems/player/playerInput';
 import { simulateStep } from '../systems/player/playerMovement';
-import { applyMagneticForce, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
+import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
+import { entityManager } from '../systems/entities/EntityManager';
 import { checkCollision, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
     createAdhesionState, findAdhesionCandidate, computeLocalBasis, projectInput, detachImpulse,
@@ -393,6 +394,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     if (gameMode === 'spectator') isFlying.current = true;
     if (gameMode === 'survival' && isFlying.current) isFlying.current = false;
 
+    // Boss magnetic field emitters (the Magnetic Warden's attract/repel aura),
+    // fetched once per frame and applied each physics substep.
+    const bossFields = entityManager.getMagneticFieldSources();
+
     let steps = 0;
     while (timeAccumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
         prevPos.current.copy(pos.current);
@@ -558,6 +563,20 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 magneticMode,
                 inputState.magneticPolarity,
                 FIXED_DT,
+                intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
+            );
+        }
+
+        // Boss magnetic field (the Magnetic Warden): a strong, clamped attract/
+        // repel force the player counters by flipping polarity. Skipped while
+        // flying so creative flight is unaffected.
+        if (bossFields.length > 0 && !isFlying.current) {
+            applyBossMagneticFields(
+                pos.current,
+                vel.current,
+                inputState.magneticPolarity,
+                FIXED_DT,
+                bossFields,
                 intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
             );
         }
