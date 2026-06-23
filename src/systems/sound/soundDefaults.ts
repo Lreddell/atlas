@@ -74,5 +74,12 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce
     "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 },
     "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 }, // Magnetic Fields biome
-    "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 } // Magnetic Warden fight
+    "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 }, // Magnetic Warden fight
+
+    // --- Magnetic Warden SFX (drop your own files at public/assets/rvx/sounds/magnetic_warden/) ---
+    "entity.magnetic_warden.polarity": { category: "blocks", sounds: ["magnetic_warden/polarity"], volume: 0.6 },   // polarity swap telegraph
+    "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },   // a hit absorbed by the shield
+    "entity.magnetic_warden.parry": { category: "blocks", sounds: ["magnetic_warden/parry"], volume: 0.7 },         // deflectable purple bolt launched
+    "entity.magnetic_warden.deflect": { category: "blocks", sounds: ["magnetic_warden/deflect"], volume: 0.8 },     // player deflected a bolt back
+    "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 }         // boss death sting / short song
 };

@@ -94,26 +94,64 @@ test('the Warden field is exposed to the player physics and applied with clampin
     assert.match(player, /applyBossMagneticFields/);
 });
 
-test('polarity swaps shockwave the player, and the boss enrages once unshielded', () => {
+test('polarity swaps shockwave the player, and the boss frenzies at low HP', () => {
     assert.match(manager, /emitPolarityShockwave/);
-    // Enrage: shorter intervals + a wider volley once the shield is gone.
-    assert.match(manager, /const enraged = !e\.shielded/);
-    assert.match(manager, /enraged \?/);
+    // Frenzy below the HP threshold speeds barrages/swaps up.
+    assert.match(manager, /const frenzy = !e\.shielded && e\.hp <= e\.maxHp \* \(kind\.frenzyThreshold/);
+    assert.match(manager, /frenzy \?/);
+    assert.match(entity, /frenzyThreshold:/);
 });
 
-test('the boss resets (shield + crystals) on death or when abandoned', () => {
-    assert.match(manager, /resetAllBosses\(\)/);
-    assert.match(manager, /private resetBoss\(/);
-    // Restores full shield + queues crystal blocks for re-placement.
-    assert.match(manager, /e\.shielded = true;/);
+test('vulnerable phase loops dodge-barrage then a deflectable parry bolt', () => {
+    // Shielded → steady barrage; vulnerable → barrage timer then a parry bolt.
+    assert.match(manager, /if \(e\.shielded\) {[\s\S]*?fireVolley/);
+    assert.match(manager, /e\.awaitingParry/);
+    assert.match(manager, /fireParryBolt/);
+    assert.match(manager, /'boss:parry'/);
+    // While a parry bolt is live, all other fire is held.
+    assert.match(manager, /filter\(\(p\) => p\.owner === 'player'\)/);
+    // The deflectable bolt is purple, slow, boss-owned.
+    assert.match(manager, /deflectable: true/);
+});
+
+test('the player can deflect a parry bolt back for ~1/12 of the boss HP', () => {
+    assert.match(manager, /deflectProjectile\(/);
+    assert.match(manager, /best\.owner = 'player'/);
+    assert.match(manager, /hitBossWithDeflected/);
+    assert.match(manager, /parryDamageFraction/);
+    assert.match(entity, /parryDamageFraction:\s*1 \/ 12/);
+    // Wired into the left-click handler ahead of mining/attacking.
+    assert.match(interaction, /deflectProjectile/);
+    assert.match(interaction, /tryDeflectBolt\(\)/);
+});
+
+test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {
+    assert.match(manager, /despawnAllBosses\(\)/);
+    assert.match(manager, /private despawnBoss\(/);
+    // Despawn restores crystals and clears the bar (boss:cleared, not defeated).
     assert.match(manager, /pendingCrystalRestores/);
-    assert.match(manager, /MAGNETIC_SHIELD_CRYSTAL/);
-    // Far-from-arena reset + death reset are wired.
-    assert.match(manager, /BOSS_RESET_RADIUS/);
-    assert.match(app, /entityManager\.resetAllBosses\(\)/);
-    // Crystal positions are computed at spawn so they can be restored.
+    assert.match(manager, /'boss:cleared'/);
+    assert.match(manager, /BOSS_DESPAWN_RADIUS/);
+    assert.match(app, /entityManager\.despawnAllBosses\(\)/);
     assert.match(app, /getShieldCrystalPositions/);
     assert.match(entity, /shieldCrystalPositions\?/);
+});
+
+test('projectiles are softened and a defeat sound cue is wired', () => {
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?projectileDamage:\s*2/);
+    // Boss SFX events exist (editable in the sounds folders).
+    const sounds = read('src/systems/sound/soundDefaults.ts');
+    for (const ev of ['parry', 'deflect', 'defeat', 'polarity', 'shielded']) {
+        assert.match(sounds, new RegExp(`entity\\.magnetic_warden\\.${ev}`));
+    }
+    assert.match(app, /entity\.magnetic_warden\.defeat/);
+});
+
+test('boss music loops immediately with no fade-in', () => {
+    const mc = read('src/systems/sound/MusicController.ts');
+    assert.match(mc, /BOSS_MAGNETIC[\s\S]*?nextPlayTime = 0/);
+    assert.match(mc, /context === 'BOSS_MAGNETIC'\) return 0/);
+    assert.match(mc, /enteringBoss/);
 });
 
 test('polarity swaps (and their sound) only happen while engaged', () => {

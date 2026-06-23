@@ -21,8 +21,8 @@ export interface SpawnOptions {
     shieldCrystalPositions?: { x: number; y: number; z: number }[];
 }
 
-/** Beyond this distance from its home a boss fully resets (fresh fight). */
-const BOSS_RESET_RADIUS = 96;
+/** Beyond this distance from its home a boss despawns (re-summon at the altar). */
+const BOSS_DESPAWN_RADIUS = 96;
 
 const MAX_FALL_SPEED = 40;
 const STEP_HEIGHT = 1.0;
@@ -138,6 +138,8 @@ class EntityManager {
             polarity: 1,
             polarityTimer: kind.polaritySwapInterval ?? 0,
             projectileTimer: kind.projectileInterval ?? 0,
+            barrageTimer: kind.barrageDuration ?? 0,
+            awaitingParry: false,
             home: new THREE.Vector3(x, y, z),
             shieldCrystalPositions: opts.shieldCrystalPositions,
             maxShieldCrystals: kind.shieldCrystals ?? 0,
@@ -217,38 +219,28 @@ class EntityManager {
     }
 
     /**
-     * Reset every boss to its fresh state (full HP, shield, polarity, position)
-     * and restore its broken shield crystals. Used when the player dies — the
-     * boss must not stay weakened/half-shielded far from the arena.
+     * Despawn every boss and clear the boss bar. Used when the player dies — the
+     * fight ends, the boss leaves, and it can be re-summoned at the altar. Its
+     * shield crystals are restored so the next attempt starts clean.
      */
-    resetAllBosses(): void {
-        for (const e of this.entities.values()) {
-            if (e.isBoss && e.hp > 0) this.resetBoss(e);
+    despawnAllBosses(): void {
+        let removed = false;
+        for (const e of [...this.entities.values()]) {
+            if (e.isBoss && e.hp > 0) { this.despawnBoss(e); removed = true; }
+        }
+        if (removed) {
+            this.projectiles = [];
+            if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
+            gameEvents.emit('boss:cleared', {});
+            this.notifyStructure();
         }
     }
 
-    private resetBoss(e: Entity): void {
-        const kind = ENTITY_KINDS[e.kind];
-        if (!kind) return;
-        e.hp = e.maxHp;
-        e.aggro = false;
-        e.vel.set(0, 0, 0);
-        e.polarity = 1;
-        e.polarityTimer = kind.polaritySwapInterval ?? 0;
-        e.projectileTimer = kind.projectileInterval ?? 0;
-        if (e.home) e.pos.copy(e.home);
-        // Restore the shield + crystal blocks.
-        const max = e.maxShieldCrystals ?? kind.shieldCrystals ?? 0;
-        if (max > 0) {
-            e.shielded = true;
-            e.shieldCrystals = max;
-            for (const c of e.shieldCrystalPositions ?? []) this.pendingCrystalRestores.push({ ...c });
-            if (e.bossId) gameEvents.emit('boss:shield', { bossId: e.bossId, entityId: e.id, crystals: max });
-        }
-        // Refresh the boss bar HP.
-        if (e.bossId) gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: e.hp, maxHp: e.maxHp });
-        // Its projectiles disperse.
-        this.projectiles = [];
+    // Remove a boss (NOT a defeat: no drops, no region cleanse) and queue its
+    // shield crystals for restoration so a re-summon is a fresh fight.
+    private despawnBoss(e: Entity): void {
+        for (const c of e.shieldCrystalPositions ?? []) this.pendingCrystalRestores.push({ ...c });
+        this.entities.delete(e.id);
     }
 
     /** Re-place any queued shield-crystal blocks whose chunk is now loaded. */
@@ -312,10 +304,17 @@ class EntityManager {
             if (!kind) continue;
 
             // A boss whose fight the player has abandoned (wandered far from the
-            // arena) resets to full so the next attempt starts clean.
-            if (e.isBoss && e.home && (e.shieldCrystals < (e.maxShieldCrystals ?? 0) || e.hp < e.maxHp)) {
-                const far = !pp || Math.hypot(pp.x - e.home.x, pp.z - e.home.z) > BOSS_RESET_RADIUS;
-                if (far) { this.resetBoss(e); continue; }
+            // arena, or died) despawns — the bar clears and it can be re-summoned.
+            if (e.isBoss && e.home) {
+                const far = !pp || Math.hypot(pp.x - e.home.x, pp.z - e.home.z) > BOSS_DESPAWN_RADIUS;
+                if (far) {
+                    this.despawnBoss(e);
+                    this.projectiles = [];
+                    if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
+                    gameEvents.emit('boss:cleared', {});
+                    this.notifyStructure();
+                    continue;
+                }
             }
 
             e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
@@ -388,34 +387,119 @@ class EntityManager {
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
     }
 
-    // Polarity swap (with a punchy shockwave to telegraph it) and projectile
-    // volleys — data-driven from the boss's EntityKind. Once the shield is gone
-    // the boss enrages: faster swaps, faster/larger volleys. The continuous
-    // attract/repel field itself is applied in the player physics (clamped with
-    // the player's velocity in hand) via getMagneticFieldSources().
+    // The Magnetic Warden's combat. Polarity keeps swapping throughout. While
+    // SHIELDED it lays down a dodge barrage (you break the pillar crystals). Once
+    // VULNERABLE it loops: a timed dodge barrage, then it stops and fires a single
+    // deflectable purple "parry" bolt — hit that back to deal ~1/12 of its HP.
+    // Below the frenzy threshold it speeds everything up but still gives parries.
     private tickBossMechanics(
         e: Entity, kind: EntityKind,
         pp: { x: number; y: number; z: number }, dt: number,
     ): void {
-        const enraged = !e.shielded;
+        const frenzy = !e.shielded && e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0);
+
+        // Polarity swaps run in every phase (telegraphed by a shockwave).
         if (kind.polaritySwapInterval) {
             e.polarityTimer -= dt;
             if (e.polarityTimer <= 0) {
                 e.polarity *= -1;
-                e.polarityTimer = kind.polaritySwapInterval * (enraged ? 0.6 : 1);
+                e.polarityTimer = kind.polaritySwapInterval * (frenzy ? 0.6 : 1);
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
-                // Shockwave: a one-time shove (same polarity pushes away, opposite
-                // pulls in) plus a small lift, so each swap is felt and dangerous.
                 if (e.aggro) this.emitPolarityShockwave(e, pp);
             }
         }
-        if (kind.projectileInterval && e.aggro) {
+
+        if (!kind.projectileInterval) return;
+
+        // Shielded: a steady dodge barrage while the player works the crystals.
+        if (e.shielded) {
             e.projectileTimer -= dt;
             if (e.projectileTimer <= 0) {
-                e.projectileTimer = kind.projectileInterval * (enraged ? 0.6 : 1);
-                this.fireVolley(e, kind, pp, enraged);
+                e.projectileTimer = kind.projectileInterval;
+                this.fireVolley(e, kind, pp, false);
             }
+            return;
         }
+
+        // Vulnerable: while a parry bolt is live, hold ALL other fire so the
+        // player can aim cleanly. Resume once it's deflected, hits, or expires.
+        if (e.awaitingParry) {
+            if (!this.projectiles.some((p) => p.deflectable && p.sourceId === e.id)) {
+                e.awaitingParry = false;
+                e.barrageTimer = (kind.barrageDuration ?? 5) * (frenzy ? 0.6 : 1);
+            }
+            return;
+        }
+
+        e.barrageTimer -= dt;
+        if (e.barrageTimer > 0) {
+            // Dodge barrage — faster and wider during the frenzy.
+            e.projectileTimer -= dt;
+            if (e.projectileTimer <= 0) {
+                e.projectileTimer = kind.projectileInterval * (frenzy ? 0.5 : 1);
+                this.fireVolley(e, kind, pp, frenzy);
+            }
+        } else {
+            // Clear the air (keep any player-deflected bolts), then launch one
+            // deflectable purple bolt for the player to parry.
+            this.projectiles = this.projectiles.filter((p) => p.owner === 'player');
+            this.fireParryBolt(e, kind, pp);
+            e.awaitingParry = true;
+            if (e.bossId) gameEvents.emit('boss:parry', { bossId: e.bossId, entityId: e.id });
+        }
+    }
+
+    // A slow, straight, purple bolt aimed at the player. Hitting it back (left
+    // click within reach) turns it into a player-owned bolt that damages the boss.
+    private fireParryBolt(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }): void {
+        const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
+        const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
+        const d = Math.hypot(dx, dy, dz) || 1;
+        const speed = 9;
+        this.projectiles.push({
+            id: this.nextProjectileId++,
+            pos: new THREE.Vector3(ox, oy, oz),
+            vel: new THREE.Vector3((dx / d) * speed, (dy / d) * speed, (dz / d) * speed),
+            ttl: 6,
+            damage: kind.projectileDamage ?? 2,
+            polarity: e.polarity,
+            deflectable: true,
+            owner: 'boss',
+            sourceId: e.id,
+        });
+    }
+
+    /**
+     * Try to deflect a parry bolt the player is aiming at (left click). Reflects
+     * the nearest deflectable boss bolt back toward its boss. Returns true on a
+     * successful deflect.
+     */
+    deflectProjectile(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): boolean {
+        let best: Projectile | null = null;
+        let bestDist = Infinity;
+        for (const p of this.projectiles) {
+            if (!p.deflectable || p.owner !== 'boss') continue;
+            const r = 0.7;
+            const t = rayAabb(origin, dir,
+                p.pos.x - r, p.pos.y - r, p.pos.z - r,
+                p.pos.x + r, p.pos.y + r, p.pos.z + r);
+            if (t !== null && t <= maxDist && t < bestDist) { best = p; bestDist = t; }
+        }
+        if (!best) return false;
+
+        const boss = best.sourceId != null ? this.entities.get(best.sourceId) : undefined;
+        const tx = boss ? boss.pos.x : best.pos.x + dir.x;
+        const ty = boss ? boss.pos.y + boss.height * 0.6 : best.pos.y + dir.y;
+        const tz = boss ? boss.pos.z : best.pos.z + dir.z;
+        const ddx = tx - best.pos.x, ddy = ty - best.pos.y, ddz = tz - best.pos.z;
+        const dd = Math.hypot(ddx, ddy, ddz) || 1;
+        const speed = 28;
+        best.vel.set((ddx / dd) * speed, (ddy / dd) * speed, (ddz / dd) * speed);
+        best.owner = 'player';
+        best.deflectable = false;
+        best.ttl = 3;
+        if (boss?.bossId) gameEvents.emit('boss:deflected', { bossId: boss.bossId, entityId: boss.id });
+        return true;
     }
 
     private emitPolarityShockwave(e: Entity, pp: { x: number; y: number; z: number }): void {
@@ -453,6 +537,7 @@ class EntityManager {
                 ttl: 4,
                 damage: kind.projectileDamage ?? 4,
                 polarity: e.polarity,
+                owner: 'boss',
             });
         }
     }
@@ -469,10 +554,16 @@ class EntityManager {
             p.pos.x += p.vel.x * dt;
             p.pos.y += p.vel.y * dt;
             p.pos.z += p.vel.z * dt;
-            p.vel.y -= GRAVITY * 0.25 * dt; // gentle arc
+            // Ordinary boss bolts arc; the slow parry bolt and deflected return
+            // bolts fly straight so they can be aimed.
+            if (p.owner !== 'player' && !p.deflectable) p.vel.y -= GRAVITY * 0.25 * dt;
             if (p.ttl <= 0) continue;
             if (worldManager.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z), false) !== BlockType.AIR) continue;
-            if (targetable && pp) {
+
+            if (p.owner === 'player') {
+                // A deflected bolt: it now hits the boss for a chunk of its HP.
+                if (this.hitBossWithDeflected(p)) continue;
+            } else if (targetable && pp) {
                 const dx = p.pos.x - pp.x, dy = p.pos.y - (pp.y + PLAYER_HEIGHT * 0.5), dz = p.pos.z - pp.z;
                 if (dx * dx + dy * dy + dz * dz < 1.2) {
                     this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
@@ -482,6 +573,23 @@ class EntityManager {
             survivors.push(p);
         }
         this.projectiles = survivors;
+    }
+
+    /** A player-deflected bolt: damages the first boss it overlaps (~1/12 HP). */
+    private hitBossWithDeflected(p: Projectile): boolean {
+        for (const e of this.entities.values()) {
+            if (!e.isBoss || e.hp <= 0) continue;
+            const hx = e.width / 2;
+            if (p.pos.x > e.pos.x - hx && p.pos.x < e.pos.x + hx &&
+                p.pos.z > e.pos.z - hx && p.pos.z < e.pos.z + hx &&
+                p.pos.y > e.pos.y && p.pos.y < e.pos.y + e.height) {
+                const kind = ENTITY_KINDS[e.kind];
+                const dmg = Math.max(1, Math.round(e.maxHp * (kind?.parryDamageFraction ?? 1 / 12)));
+                this.damageEntity(e.id, dmg, p.vel.x, p.vel.z);
+                return true;
+            }
+        }
+        return false;
     }
 
     private moveWithCollision(e: Entity, kind: EntityKind, dt: number, guard = false): void {

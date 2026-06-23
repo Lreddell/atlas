@@ -2,7 +2,6 @@ import React, { useEffect, useReducer } from 'react';
 import { gameEvents } from '../../systems/events/GameEvents';
 import { reduceBossBarState } from './bossBarState';
 import { soundManager } from '../../systems/sound/SoundManager';
-import { getPolaritySoundEvent } from '../../systems/player/polarityFeedback';
 
 // Reusable boss / objective health bar. Driven entirely by the game event bus
 // (boss:spawned / boss:damaged / boss:defeated / boss:shield / boss:polarity) so
@@ -35,9 +34,10 @@ export const BossBar: React.FC = () => {
             setShield((s) => ({ crystals, max: Math.max(s.max, crystals) })));
         const offVulnerable = gameEvents.on('boss:vulnerable', () =>
             setShield((s) => ({ ...s, crystals: 0 })));
-        // Audible telegraph each time the boss swaps polarity.
-        const offPolarity = gameEvents.on('boss:polarity', ({ polarity }) =>
-            soundManager.play(getPolaritySoundEvent(polarity > 0)));
+        // Audible telegraph each time the boss swaps polarity (editable:
+        // sounds/magnetic_warden/polarity).
+        const offPolarity = gameEvents.on('boss:polarity', () =>
+            soundManager.play('entity.magnetic_warden.polarity', { volume: 0.6 }));
         return () => {
             offSpawned(); offDamaged(); offDefeated(); offCleared();
             offShield(); offVulnerable(); offPolarity();

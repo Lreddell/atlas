@@ -362,12 +362,17 @@ class MusicController {
         const leavingDeath = previousContext === 'DEATH';
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
+        const enteringBoss = newContext === 'BOSS_MAGNETIC';
         const leavingBloodMoon = previousContext === 'BLOODMOON' && newContext !== 'BLOODMOON';
 
         let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
         let silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
 
-        if (leavingDeath) {
+        if (enteringBoss) {
+            // Quickly duck out whatever was playing; the boss track starts dry.
+            fadeOut = 0.5;
+            silence = 0;
+        } else if (leavingDeath) {
             // Death music fades out quickly before the world/menu music resumes.
             fadeOut = DEATH_FADE_OUT;
             silence = 0;
@@ -448,7 +453,9 @@ class MusicController {
     }
 
     private getFadeInForContext(context: string) {
-        return context === 'BLOODMOON' ? BLOOD_MOON_FADE_IN : STANDARD_FADE_IN;
+        if (context === 'BLOODMOON') return BLOOD_MOON_FADE_IN;
+        if (context === 'BOSS_MAGNETIC') return 0; // boss music starts instantly, no fade-in
+        return STANDARD_FADE_IN;
     }
 
     private playNextTrack(fadeTime = STANDARD_FADE_IN, fadeOutTime: number = fadeTime) {
@@ -501,6 +508,11 @@ class MusicController {
         if (this.isDeathSuspended) {
             // Death music plays once — after it ends, stay silent until respawn / menu.
             this.nextPlayTime = Number.POSITIVE_INFINITY;
+            return;
+        }
+        // Boss music restarts immediately (no delay) so the fight never falls quiet.
+        if (this.currentContext === 'BOSS_MAGNETIC') {
+            this.nextPlayTime = 0;
             return;
         }
         this.scheduleNextTrack();

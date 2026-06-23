@@ -883,6 +883,12 @@ const App: React.FC = () => {
       const offDefeated = gameEvents.on('boss:defeated', ({ bossId, regionId }) => {
           progression.markBossDefeated(bossId);
           if (regionId) progression.cleanseRegion(regionId);
+          // Victory sting (editable: sounds/magnetic_warden/defeat).
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
+      });
+      // The boss launched a deflectable parry bolt — telegraph it with a cue.
+      const offParry = gameEvents.on('boss:parry', () => {
+          soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
       });
       // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
@@ -892,7 +898,7 @@ const App: React.FC = () => {
       const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
-      return () => { offDenied(); offCleansed(); offDefeated(); offCrystal(); offPower(); };
+      return () => { offDenied(); offCleansed(); offDefeated(); offParry(); offCrystal(); offPower(); };
   }, []);
 
   // Update Chunks & Stream
@@ -1065,9 +1071,9 @@ const App: React.FC = () => {
 
       musicController.stopForDeath();
       soundManager.play("entity.player.death");
-      // The boss must not stay weakened/half-shielded across the map: reset it to
-      // a fresh fight (full HP, shield + crystals restored) when the player dies.
-      entityManager.resetAllBosses();
+      // On death the fight ends: the boss despawns (its bar clears) and can be
+      // re-summoned at the altar. Crystals are restored for the next attempt.
+      entityManager.despawnAllBosses();
       setShowDeathScreen(true);
       deathScreenActiveRef.current = true;
       setOpenContainer(null);

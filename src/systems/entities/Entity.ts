@@ -45,6 +45,10 @@ export interface Entity {
     polarityTimer: number;
     /** Seconds until the next projectile volley. */
     projectileTimer: number;
+    /** Vulnerable-phase: seconds left in the current dodge barrage before a parry. */
+    barrageTimer: number;
+    /** Vulnerable-phase: a deflectable parry bolt is currently in play. */
+    awaitingParry: boolean;
 }
 
 // A boss projectile (a magnetic bolt). Simple ballistic mover that damages the
@@ -56,6 +60,12 @@ export interface Projectile {
     ttl: number;
     damage: number;
     polarity: number;
+    /** A purple "parry" bolt the player can hit back at the boss. */
+    deflectable?: boolean;
+    /** 'boss' bolts hurt the player; 'player' bolts (deflected) hurt the boss. */
+    owner?: 'boss' | 'player';
+    /** Entity id of the boss that fired it (so a deflected bolt knows its target). */
+    sourceId?: number;
 }
 
 export interface DropSpec {
@@ -99,6 +109,12 @@ export interface EntityKind {
     magneticFieldRange?: number;
     /** Peak acceleration (blocks/s²) the boss field applies at point-blank. */
     magneticFieldForce?: number;
+    /** Vulnerable-phase dodge-barrage length (seconds) before each parry bolt. */
+    barrageDuration?: number;
+    /** Fraction of max HP a successfully deflected parry bolt deals. */
+    parryDamageFraction?: number;
+    /** HP fraction (0..1) at/under which the boss enters its frenzy phase. */
+    frenzyThreshold?: number;
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
@@ -146,13 +162,18 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         polaritySwapInterval: 6,
         // Heavy projectile pressure so climbing the pillars is a real gauntlet.
         projectileInterval: 1.5,
-        projectileDamage: 5,
+        // Bolts hit softer now (and armor mitigates them) — the threat is volume.
+        projectileDamage: 2,
         // Confined to the central platform so it never paths into the moat.
         leashRadius: 19,
         // Platform-scale attract/repel field — deliberately short of the pillars
         // (radius ~35) so it can't drag a climber off a tower.
         magneticFieldRange: 18,
         magneticFieldForce: 40,
+        // Vulnerable phase: dodge a barrage, then deflect a purple bolt for ~1/12 HP.
+        barrageDuration: 5,
+        parryDamageFraction: 1 / 12,
+        frenzyThreshold: 0.25,
         drops: [{ type: BlockType.POLARITY_BOOTS_UPGRADE, min: 1, max: 1 }],
     },
 };
