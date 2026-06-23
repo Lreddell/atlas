@@ -26,6 +26,10 @@ const BLOCK_TEXTURED_ITEMS = new Set([
     'JUNGLE_SAPLING',
     'DARK_OAK_SAPLING',
     'ACACIA_SAPLING',
+    // Reuse existing atlas art (the boots / charged-magnetite tiles) rather than
+    // dedicated item PNGs — no new pixel assets needed for the upgrade items.
+    'UPGRADED_POLARITY_BOOTS',
+    'POLARITY_BOOTS_UPGRADE',
 ]);
 
 const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];

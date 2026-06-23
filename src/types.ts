@@ -171,6 +171,12 @@ export enum BlockType {
   RED_SANDSTONE_STAIRS = 165,
   BRICK_STAIRS = 166,
 
+  // Polarity Boots upgrade (Magnetic Warden drop) + the upgraded boots. IDs in a
+  // free low range so they stay within the Uint8Array block-id limit even though
+  // they are inventory-only items.
+  POLARITY_BOOTS_UPGRADE = 167,
+  UPGRADED_POLARITY_BOOTS = 168,
+
   // Magnetism (Phase 4): magnetic field blocks + iron armor + polarity boots.
   POSITIVE_MAGNET = 190,
   NEGATIVE_MAGNET = 191,

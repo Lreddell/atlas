@@ -85,8 +85,9 @@ export const ADHESION_REATTACH_COOLDOWN_MS = 400;
 export const ADHESION_FAILSAFE_MS = 600;
 /** Walk/climb speed along the wall plane (blocks/sec). */
 export const ADHESION_CLIMB_SPEED = 4.2;
-/** Constant pull into the wall (blocks/sec) that keeps the body in contact. */
-export const ADHESION_STICK_SPEED = 2.0;
+/** Constant pull into the wall (blocks/sec) that keeps the body in contact.
+ *  Light, so you can still slide to a block's edge to crest or climb down. */
+export const ADHESION_STICK_SPEED = 1.1;
 /** Launch speed away from the wall when jumping off. */
 export const ADHESION_JUMP_OFF_SPEED = 7.5;
 /** Stronger launch when flipping polarity (the core traversal move). */

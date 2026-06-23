@@ -319,6 +319,11 @@ push(3, [NC, NC, NC, NC, FE, NC, NC, NC, NC], BlockType.NEGATIVE_MAGNET, 1);
 push(3, [null, null, null, FE, null, FE, PC, null, NC], BlockType.POLARITY_BOOTS, 1);
 push(3, [null, null, null, FE, null, FE, NC, null, PC], BlockType.POLARITY_BOOTS, 1);
 
+// Upgraded Polarity Boots: combine the boots with the Magnetic Warden's upgrade
+// drop (either order, placed side by side).
+push(2, [BlockType.POLARITY_BOOTS, BlockType.POLARITY_BOOTS_UPGRADE, null, null], BlockType.UPGRADED_POLARITY_BOOTS, 1);
+push(2, [BlockType.POLARITY_BOOTS_UPGRADE, BlockType.POLARITY_BOOTS, null, null], BlockType.UPGRADED_POLARITY_BOOTS, 1);
+
 // Magnetite building set: bricks (2x2 → 4), chiseled (2 slabs stacked → 1).
 const MAG = BlockType.MAGNETITE_BLOCK;
 push(2, [MAG, MAG, MAG, MAG], BlockType.MAGNETITE_BRICKS, 4);

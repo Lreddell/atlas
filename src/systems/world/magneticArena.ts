@@ -91,6 +91,7 @@ export function generateMagneticWardenArena(
     buildOuterRim(centerX, centerZ, baseY, ctx);
     buildCentralPlatform(centerX, centerZ, baseY, ctx);
     buildLaunchRoutes(centerX, centerZ, baseY, ctx);
+    buildPillarLandingPools(centerX, centerZ, baseY, ctx);
     buildMagneticPillarTowers(centerX, centerZ, baseY, ctx);
     buildShieldCrystalPedestals(centerX, centerZ, baseY, ctx);
     buildArenaLights(centerX, centerZ, baseY, ctx);
@@ -295,6 +296,28 @@ function buildLaunchRoutes(centerX: number, centerZ: number, baseY: number, ctx:
     }
 }
 
+// 9b. Flush water landing pools on the platform edge facing each tower, so a
+//     player descending a pillar has a safe place to drop without taking heavy
+//     fall damage. The pool sits at the arena floor (1 deep over solid
+//     foundation), so it is flush — never floating or in an inescapable hole.
+function buildPillarLandingPools(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
+    for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
+        const c = arenaPillarCenter(centerX, centerZ, i);
+        const dx = c.x - centerX, dz = c.z - centerZ;
+        const len = Math.hypot(dx, dz) || 1;
+        const px = Math.round(centerX + (dx / len) * 20);
+        const pz = Math.round(centerZ + (dz / len) * 20);
+        for (let ox = -2; ox <= 2; ox++) {
+            for (let oz = -2; oz <= 2; oz++) {
+                if (ox * ox + oz * oz > 6) continue; // ~5-wide disc
+                const wx = px + ox, wz = pz + oz;
+                if (!inChunk(ctx, wx, wz)) continue;
+                ctx.setBlock(wx, baseY, wz, BlockType.WATER);
+            }
+        }
+    }
+}
+
 // 10. Four thick polarity towers rising from the pit floor. The two centre-facing
 //     faces are an UNBROKEN magnet climb path bottom→top; the other faces are bricks
 //     with chiseled vertical CORNER borders for shape (no horizontal bands that would
@@ -348,8 +371,28 @@ function buildShieldCrystalPedestals(centerX: number, centerZ: number, baseY: nu
                 if (cheb === 2) ctx.setBlock(wx, top + 1, wz, BlockType.CHISELED_MAGNETITE); // inset rim
             }
         }
-        if (inChunk(ctx, c.x, c.z)) ctx.setBlock(c.x, top + 1, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        // Raised pedestal so the crystal stands clearly ABOVE the rim — you can
+        // always tell which towers are still shielded.
+        if (inChunk(ctx, c.x, c.z)) {
+            ctx.setBlock(c.x, top + 1, c.z, BlockType.CHISELED_MAGNETITE);
+            ctx.setBlock(c.x, top + 2, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        }
     }
+}
+
+/** World positions of the four shield crystals (raised pedestal tops). */
+export function getShieldCrystalPositions(
+    centerX: number,
+    centerZ: number,
+    baseY: number,
+): { x: number; y: number; z: number }[] {
+    const top = baseY + ARENA_PILLAR_HEIGHT;
+    const out: { x: number; y: number; z: number }[] = [];
+    for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
+        const c = arenaPillarCenter(centerX, centerZ, i);
+        out.push({ x: c.x, y: top + 2, z: c.z });
+    }
+    return out;
 }
 
 // 12. Boss summoner on the raised central dais.

@@ -465,8 +465,14 @@ export const InteractionController = ({
         if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
         const held = inventory[selectedSlot];
         const dmg = getAttackDamage(held);
-        entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
-        soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+        const result = entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
+        // A shield absorbs the blow: a metallic "clink", no hurt cry — so it is
+        // obvious the boss is invulnerable until its crystals are gone.
+        if (result === 'blocked') {
+            soundManager.play('block.stone.hit', { volume: 0.5, pitch: 1.7 });
+        } else {
+            soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+        }
         // Attacking costs the weapon 1 use (sword) or 2 (other tools); fists/non-tools none.
         if (held) damageHeldItem(selectedSlot, isSword(held.type) ? 1 : 2);
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;

@@ -21,8 +21,9 @@ import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
-import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
+import { getShieldCrystalPositions } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -280,6 +281,9 @@ const App: React.FC = () => {
   const [respawnKey, setRespawnKey] = useState(0);
   const [lastDamageTime, setLastDamageTime] = useState(0);
   const [showDeathScreen, setShowDeathScreen] = useState(false);
+  // Upgraded-boots ability toggle (N). Mirrors inputState.polarityPowerOn so the
+  // derived magneticMode re-computes when it changes.
+  const [polarityPowerOn, setPolarityPowerOn] = useState(true);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -573,8 +577,11 @@ const App: React.FC = () => {
   }, [damagePlayer]);
 
   // Magnetic susceptibility from equipment: polarity boots grant control,
-  // otherwise iron armor makes the player passively ferromagnetic.
-  const magneticMode: MagneticMode = hasPolarityBoots(equipment)
+  // otherwise iron armor makes the player passively ferromagnetic. Upgraded
+  // boots can switch the ability off entirely (the N key → polarityPowerOn).
+  const controllable = hasPolarityBoots(equipment)
+      && (!hasUpgradedPolarityBoots(equipment) || polarityPowerOn);
+  const magneticMode: MagneticMode = controllable
       ? 'controlled'
       : (isWearingIronArmor(equipment) ? 'ferro' : 'none');
 
@@ -881,7 +888,11 @@ const App: React.FC = () => {
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
       });
-      return () => { offDenied(); offCleansed(); offDefeated(); offCrystal(); };
+      // Upgraded-boots ability toggle (N) → recompute magneticMode.
+      const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {
+          if (abilityId === 'polarity-power') setPolarityPowerOn(active);
+      });
+      return () => { offDenied(); offCleansed(); offDefeated(); offCrystal(); offPower(); };
   }, []);
 
   // Update Chunks & Stream
@@ -1054,6 +1065,9 @@ const App: React.FC = () => {
 
       musicController.stopForDeath();
       soundManager.play("entity.player.death");
+      // The boss must not stay weakened/half-shielded across the map: reset it to
+      // a fresh fight (full HP, shield + crystals restored) when the player dies.
+      entityManager.resetAllBosses();
       setShowDeathScreen(true);
       deathScreenActiveRef.current = true;
       setOpenContainer(null);
@@ -2501,7 +2515,7 @@ const App: React.FC = () => {
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
-                    {!showDeathScreen && <BossBar />}
+                    <BossBar />
                     {!showDeathScreen && magneticMode === 'controlled' && <PolarityIndicator />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
@@ -2514,7 +2528,12 @@ const App: React.FC = () => {
                                 if (active) {
                                     worldManager.log('The boss is already active.', 'error');
                                 } else {
-                                    entityManager.spawn(bossId, x + 0.5, y, z + 4, { bossId, regionId: regionId ?? undefined });
+                                    // The summoner sits at (centerX, baseY+4, centerZ); derive the
+                                    // arena's shield-crystal positions so a reset can restore them.
+                                    const crystals = bossId === 'magnetic_warden'
+                                        ? getShieldCrystalPositions(x, z, y - 4)
+                                        : undefined;
+                                    entityManager.spawn(bossId, x + 0.5, y, z + 4, { bossId, regionId: regionId ?? undefined, shieldCrystalPositions: crystals });
                                 }
                                 handleInventoryContainerChange(null);
                             }}

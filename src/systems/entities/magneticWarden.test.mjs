@@ -27,8 +27,8 @@ test('magnetic_warden boss kind is registered with the shield/polarity/projectil
 });
 
 test('a shielded boss takes no damage until its crystals are gone', () => {
-    // damageEntity early-returns while shielded.
-    assert.match(manager, /damageEntity[\s\S]*?if \(e\.shielded\)\s*{[^}]*return;/);
+    // damageEntity blocks (returns 'blocked', no damage) while shielded.
+    assert.match(manager, /if \(e\.shielded\)\s*{[^}]*return 'blocked';/);
     // onShieldCrystalBroken decrements and drops the shield at 0.
     assert.match(manager, /onShieldCrystalBroken\(regionId/);
     assert.match(manager, /e\.shieldCrystals -= 1/);
@@ -99,6 +99,64 @@ test('polarity swaps shockwave the player, and the boss enrages once unshielded'
     // Enrage: shorter intervals + a wider volley once the shield is gone.
     assert.match(manager, /const enraged = !e\.shielded/);
     assert.match(manager, /enraged \?/);
+});
+
+test('the boss resets (shield + crystals) on death or when abandoned', () => {
+    assert.match(manager, /resetAllBosses\(\)/);
+    assert.match(manager, /private resetBoss\(/);
+    // Restores full shield + queues crystal blocks for re-placement.
+    assert.match(manager, /e\.shielded = true;/);
+    assert.match(manager, /pendingCrystalRestores/);
+    assert.match(manager, /MAGNETIC_SHIELD_CRYSTAL/);
+    // Far-from-arena reset + death reset are wired.
+    assert.match(manager, /BOSS_RESET_RADIUS/);
+    assert.match(app, /entityManager\.resetAllBosses\(\)/);
+    // Crystal positions are computed at spawn so they can be restored.
+    assert.match(app, /getShieldCrystalPositions/);
+    assert.match(entity, /shieldCrystalPositions\?/);
+});
+
+test('polarity swaps (and their sound) only happen while engaged', () => {
+    assert.match(manager, /polaritySwapInterval && pp && targetable && e\.aggro/);
+});
+
+test('a blocked hit is distinct: no damage, a shield shimmer, a clink', () => {
+    assert.match(manager, /'damaged' \| 'blocked' \| 'none'/);
+    assert.match(manager, /shieldHitUntil/);
+    assert.match(interaction, /result === 'blocked'/);
+    const renderer = read('src/components/EntityRenderer.tsx');
+    assert.match(renderer, /shieldHitUntil/);
+});
+
+test('the boss bar shows a recedable purple shield layer (no instructional text)', () => {
+    const bar = read('src/components/ui/BossBar.tsx');
+    assert.match(bar, /shieldPct/);
+    assert.match(bar, /boss:polarity/);
+    assert.doesNotMatch(bar, /match it to repel/);
+    // The bar is no longer hidden by the death screen.
+    assert.doesNotMatch(app, /!showDeathScreen && <BossBar/);
+});
+
+test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?drops:\s*\[\{ type: BlockType\.POLARITY_BOOTS_UPGRADE/);
+    const recipes = read('src/recipes.ts');
+    assert.match(recipes, /UPGRADED_POLARITY_BOOTS/);
+    const equip = read('src/systems/registry/equipment.ts');
+    assert.match(equip, /hasUpgradedPolarityBoots/);
+    const input = read('src/systems/player/playerInput.ts');
+    assert.match(input, /polarityPowerOn/);
+    assert.match(input, /'KeyN'/);
+    // Ctrl/Cmd+R no longer reloads the page.
+    assert.match(input, /e\.ctrlKey \|\| e\.metaKey[\s\S]*?preventDefault\(\)/);
+});
+
+test('the arena raises crystals and adds flush water landing pools', () => {
+    const arena = read('src/systems/world/magneticArena.ts');
+    assert.match(arena, /buildPillarLandingPools/);
+    assert.match(arena, /BlockType\.WATER/);
+    // Crystal sits two above the cap on a pedestal (clearly visible).
+    assert.match(arena, /top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(arena, /getShieldCrystalPositions/);
 });
 
 test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {

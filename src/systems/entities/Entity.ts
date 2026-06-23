@@ -17,6 +17,8 @@ export interface Entity {
     aggro: boolean;
     /** ms timestamp until which the entity renders a hurt flash. */
     hurtUntil: number;
+    /** ms timestamp until which a shielded boss renders a "blocked" shimmer. */
+    shieldHitUntil: number;
     /** seconds remaining before this entity can deal contact damage again. */
     attackCooldown: number;
     /** seconds remaining before AI may replace horizontal knockback velocity. */
@@ -28,6 +30,10 @@ export interface Entity {
     regionId?: string;
     /** Leash anchor (spawn point). Bosses with a leashRadius stay within it. */
     home?: THREE.Vector3;
+    /** World positions of this boss's shield crystals (restored when it resets). */
+    shieldCrystalPositions?: { x: number; y: number; z: number }[];
+    /** Crystals the boss started with (so a reset can restore the shield). */
+    maxShieldCrystals?: number;
     // --- Magnetic Warden boss mechanics ---
     /** While true the boss takes no damage (its shield crystals are intact). */
     shielded: boolean;
@@ -138,12 +144,15 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         canStep: true,
         shieldCrystals: 4,
         polaritySwapInterval: 6,
-        projectileInterval: 2.2,
+        // Heavy projectile pressure so climbing the pillars is a real gauntlet.
+        projectileInterval: 1.5,
         projectileDamage: 5,
         // Confined to the central platform so it never paths into the moat.
         leashRadius: 19,
-        // Arena-scale attract/repel field (the signature mechanic).
-        magneticFieldRange: 30,
+        // Platform-scale attract/repel field — deliberately short of the pillars
+        // (radius ~35) so it can't drag a climber off a tower.
+        magneticFieldRange: 18,
         magneticFieldForce: 40,
+        drops: [{ type: BlockType.POLARITY_BOOTS_UPGRADE, min: 1, max: 1 }],
     },
 };
