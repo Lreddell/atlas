@@ -16,7 +16,7 @@ import {
     evaluateSoftDetach, type AdhesionState, type Vec3,
     ADHESION_ATTACH_STRENGTH, ADHESION_CLIMB_SPEED, ADHESION_STICK_SPEED,
     ADHESION_JUMP_OFF_SPEED, ADHESION_POLARITY_LAUNCH_SPEED, ADHESION_TANGENT_PRESERVE,
-    ADHESION_REATTACH_COOLDOWN_MS, ADHESION_TRANSITION_RATE,
+    ADHESION_REATTACH_COOLDOWN_MS,
 } from '../systems/player/magneticAdhesion';
 import {
     EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
@@ -44,6 +44,10 @@ const _wallUp = new Vector3();
 const _wallMat = new Matrix4();
 const _wallTarget = new Quaternion();
 const _tmpEuler = new Euler(0, 0, 0, 'YXZ');
+
+/** Duration (seconds) of the camera roll onto / off the wall. */
+const ROLL_TIME = 0.22;
+const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
 /** World-space view direction for the attached camera given its look yaw/pitch. */
 function wallViewDir(a: AdhesionState, out: Vector3): Vector3 {
@@ -130,6 +134,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const prevJump = useRef(false);
   const unrolling = useRef(false);
   const unrollTarget = useRef(new Quaternion());
+  // Camera roll on/off the wall: eased only during the transition, then look is
+  // tracked 1:1 (no drag). rollT 0→1, rollFrom is the orientation at the start.
+  const rollT = useRef(1);
+  const rollFrom = useRef(new Quaternion());
 
   const timeAccumulator = useRef(0);
   const lastSimTime = useRef<number | null>(null);
@@ -248,6 +256,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       vel.current.z -= a.normal.z * vn;
       lookBridge.active = true; lookBridge.dYaw = 0; lookBridge.dPitch = 0;
       unrolling.current = false;
+      // Ease the roll from the current (world-up) orientation onto the wall.
+      rollFrom.current.copy(camera.quaternion);
+      rollT.current = 0;
   };
 
   // Leave the wall: launch out along the normal (keeping some tangent momentum),
@@ -268,6 +279,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       _tmpEuler.set(pitch, yaw, 0, 'YXZ');
       unrollTarget.current.setFromEuler(_tmpEuler);
       unrolling.current = true;
+      // Ease the roll back to world-up from the current wall orientation.
+      rollFrom.current.copy(camera.quaternion);
+      rollT.current = 0;
   };
 
   // Per-substep movement while attached: walk/climb along the wall plane (no
@@ -660,17 +674,26 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     const aCam = adhesion.current;
     if (aCam.active) {
         lookBridge.active = true;
-        aCam.lookYaw += lookBridge.dYaw;
+        // Look is 1:1 with the mouse (no smoothing) so it feels exactly like the
+        // normal FPS camera. Horizontal is negated so mouse-right turns right.
+        aCam.lookYaw -= lookBridge.dYaw;
         aCam.lookPitch += lookBridge.dPitch;
         lookBridge.dYaw = 0;
         lookBridge.dPitch = 0;
         aCam.lookPitch = Math.max(-1.45, Math.min(1.45, aCam.lookPitch));
         wallQuat(aCam, _wallTarget);
-        camera.quaternion.slerp(_wallTarget, 1 - Math.exp(-ADHESION_TRANSITION_RATE * dt));
-        aCam.transition = Math.min(1, aCam.transition + dt * ADHESION_TRANSITION_RATE * 0.25);
+        if (rollT.current < 1) {
+            // Ease only the roll onto the wall, toward the live look target.
+            rollT.current = Math.min(1, rollT.current + dt / ROLL_TIME);
+            camera.quaternion.slerpQuaternions(rollFrom.current, _wallTarget, easeOutCubic(rollT.current));
+        } else {
+            camera.quaternion.copy(_wallTarget); // tracked directly — zero drag
+        }
     } else if (unrolling.current) {
-        camera.quaternion.slerp(unrollTarget.current, 1 - Math.exp(-ADHESION_TRANSITION_RATE * dt));
-        if (camera.quaternion.angleTo(unrollTarget.current) < 0.02) {
+        // Ease the roll back to world-up, then hand look control to the FPS mouse.
+        rollT.current = Math.min(1, rollT.current + dt / ROLL_TIME);
+        camera.quaternion.slerpQuaternions(rollFrom.current, unrollTarget.current, easeOutCubic(rollT.current));
+        if (rollT.current >= 1) {
             unrolling.current = false;
             lookBridge.active = false;
             lookBridge.dYaw = 0;
@@ -682,11 +705,24 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         camera.rotation.z = damageTilt.current;
     }
 
-    camera.position.set(
-        renderPos.current.x,
-        renderPos.current.y + currentEyeHeight.current,
-        renderPos.current.z
-    );
+    if (aCam.active) {
+        // Stand the eye off the wall by the normal eye height (like walking
+        // around normally) instead of sitting at the surface: push the body
+        // centre out along the surface normal so the camera is ~one block out.
+        const half = (intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT) * 0.5;
+        const standoff = currentEyeHeight.current - aCam.contactDistance;
+        camera.position.set(
+            renderPos.current.x + aCam.normal.x * standoff,
+            renderPos.current.y + half + aCam.normal.y * standoff,
+            renderPos.current.z + aCam.normal.z * standoff,
+        );
+    } else {
+        camera.position.set(
+            renderPos.current.x,
+            renderPos.current.y + currentEyeHeight.current,
+            renderPos.current.z
+        );
+    }
   });
 
   return null;
