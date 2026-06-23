@@ -241,7 +241,22 @@ export function simulateStep(
         if (newVel.y < 0) {
             isGrounded = true;
             // Snap to the top of the actual supporting block (beds are 0.5 high).
-            const supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+            let supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+            if (supportTop === null) {
+                // Fast fall: this step overshot the floor by more than a block, so
+                // the reverted position sits in the air ABOVE it and getSupportTop
+                // (which only looks ~1 block down) misses. Sweep the feet down to
+                // the real surface, otherwise the player "lands" floating in the
+                // air — which, over a 1-deep water pool, also robs the landing of
+                // its fall-damage immunity and can be fatal.
+                let by = Math.floor(newPos.y);
+                const limit = by - Math.ceil(Math.abs(dy)) - 2;
+                while (by >= limit) {
+                    const top = getSupportTop(wm, { x: newPos.x, y: by + CONTACT_EPS, z: newPos.z }, PLAYER_WIDTH);
+                    if (top !== null) { supportTop = top; break; }
+                    by--;
+                }
+            }
             newPos.y = (supportTop !== null ? supportTop : Math.floor(newPos.y)) + CONTACT_EPS;
         } else {
             newPos.y = Math.floor(newPos.y + height + 1.0) - height - CONTACT_EPS;
