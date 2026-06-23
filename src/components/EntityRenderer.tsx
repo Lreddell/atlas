@@ -6,7 +6,9 @@ import { ENTITY_KINDS } from '../systems/entities/Entity';
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
-const PROJECTILE_POOL = 36;
+const PARRY_PURPLE = 0xb388ff;   // deflectable bolt
+const PARRY_RETURN = 0x80ffea;   // deflected, player-owned bolt
+const PROJECTILE_POOL = 48;
 
 // Renders all entities owned by the EntityManager. The React list is rebuilt only
 // on structural changes (spawn/despawn); per-frame position/flash/shield/projectile
@@ -81,7 +83,15 @@ export const EntityRenderer: React.FC = () => {
             if (p) {
                 m.visible = true;
                 m.position.set(p.pos.x, p.pos.y, p.pos.z);
-                (m.material as THREE.MeshBasicMaterial).color.setHex(p.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                // Deflectable "parry" bolts glow purple; a deflected (player-owned)
+                // bolt streaks bright cyan; ordinary bolts tint by polarity.
+                const hex = p.owner === 'player' ? PARRY_RETURN
+                    : p.deflectable ? PARRY_PURPLE
+                        : (p.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                (m.material as THREE.MeshBasicMaterial).color.setHex(hex);
+                // Parry bolts read bigger so they're easy to target.
+                const s = p.deflectable || p.owner === 'player' ? 1.8 : 1;
+                m.scale.setScalar(s);
             } else {
                 m.visible = false;
             }

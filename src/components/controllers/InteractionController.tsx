@@ -38,6 +38,7 @@ import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const MELEE_REACH = 3.2;
+const DEFLECT_REACH = 5.5;
 
 // Sealed-region edit guard: true if the player may edit (x,y,z); otherwise emits
 // the denied event (App throttles the toast) and returns false. Enforced here at
@@ -469,7 +470,7 @@ export const InteractionController = ({
         // A shield absorbs the blow: a metallic "clink", no hurt cry — so it is
         // obvious the boss is invulnerable until its crystals are gone.
         if (result === 'blocked') {
-            soundManager.play('block.stone.hit', { volume: 0.5, pitch: 1.7 });
+            soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
         } else {
             soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
         }
@@ -480,6 +481,17 @@ export const InteractionController = ({
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
+    // Hit a Magnetic Warden parry bolt back at it (a purple deflectable bolt
+    // within reach of the crosshair). Takes priority over attacking/mining.
+    const tryDeflectBolt = useCallback((): boolean => {
+        camera.getWorldPosition(_camPos);
+        camera.getWorldDirection(_camDir);
+        if (!entityManager.deflectProjectile(_camPos, _camDir, DEFLECT_REACH)) return false;
+        soundManager.play('entity.magnetic_warden.deflect', { volume: 0.9 });
+        interactionCooldown.current = 5;
+        return true;
+    }, [camera]);
+
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
             if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
@@ -487,8 +499,10 @@ export const InteractionController = ({
 
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
-                // Attacking an entity takes priority over mining a block.
-                if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+                // Deflecting a parry bolt, then attacking an entity, both take
+                // priority over mining a block.
+                if (tryDeflectBolt()) { /* deflected */ }
+                else if (!tryMeleeAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -513,7 +527,7 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
 
     useFrame((_, delta) => {
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {

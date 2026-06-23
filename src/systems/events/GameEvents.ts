@@ -24,6 +24,10 @@ export interface GameEventMap {
     'boss:shield': { bossId: string; entityId: number; crystals: number };
     'boss:vulnerable': { bossId: string; entityId: number };
     'boss:polarity': { bossId: string; entityId: number; polarity: number };
+    /** The boss launched a deflectable "parry" projectile (telegraph + sound). */
+    'boss:parry': { bossId: string; entityId: number };
+    /** A boss projectile was deflected back by the player (feedback + sound). */
+    'boss:deflected': { bossId: string; entityId: number };
     /** A magnetic shield crystal block was destroyed at a position in a region. */
     'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     'entity:died': { entityId: number; type: string };
