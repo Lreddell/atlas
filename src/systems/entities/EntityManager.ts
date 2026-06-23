@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { worldManager } from '../WorldManager';
-import { checkCollision, getSupportTop } from '../player/playerCollision';
+import { checkCollision, getSupportTop, isSolid } from '../player/playerCollision';
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
@@ -453,7 +453,7 @@ class EntityManager {
     // click within reach) turns it into a player-owned bolt that damages the boss.
     private fireParryBolt(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }): void {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
-        const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
+        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.5) - oy, dz = pp.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = 9;
         this.projectiles.push({
@@ -516,7 +516,7 @@ class EntityManager {
 
     private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }, enraged = false): void {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
-        const dx = pp.x - ox, dy = (pp.y + 1) - oy, dz = pp.z - oz;
+        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.5) - oy, dz = pp.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = enraged ? 18 : 15;
         // A dense 5-bolt fan, widening to 7 once enraged — heavy pressure on a
@@ -554,18 +554,18 @@ class EntityManager {
             p.pos.x += p.vel.x * dt;
             p.pos.y += p.vel.y * dt;
             p.pos.z += p.vel.z * dt;
-            // Ordinary boss bolts arc; the slow parry bolt and deflected return
-            // bolts fly straight so they can be aimed.
-            if (p.owner !== 'player' && !p.deflectable) p.vel.y -= GRAVITY * 0.25 * dt;
             if (p.ttl <= 0) continue;
-            if (worldManager.getBlock(Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z), false) !== BlockType.AIR) continue;
+            // Only solid blocks stop a bolt — water landing pools and foliage don't.
+            if (isSolid(worldManager, Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) continue;
 
             if (p.owner === 'player') {
                 // A deflected bolt: it now hits the boss for a chunk of its HP.
                 if (this.hitBossWithDeflected(p)) continue;
             } else if (targetable && pp) {
-                const dx = p.pos.x - pp.x, dy = p.pos.y - (pp.y + PLAYER_HEIGHT * 0.5), dz = p.pos.z - pp.z;
-                if (dx * dx + dy * dy + dz * dz < 1.2) {
+                // Hit the whole player AABB (centre ± body), not just a low point.
+                const cx = pp.x, cy = pp.y + PLAYER_HEIGHT * 0.5, cz = pp.z;
+                const dx = p.pos.x - cx, dy = p.pos.y - cy, dz = p.pos.z - cz;
+                if (Math.abs(dx) < 0.85 && Math.abs(dz) < 0.85 && Math.abs(dy) < 1.1) {
                     this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
                     continue;
                 }
