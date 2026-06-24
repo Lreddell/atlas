@@ -1,15 +1,19 @@
 // Magnetic Warden summon cutscene controller.
 //
-// A self-driven (requestAnimationFrame) cinematic sequence: fade to black, swing
-// the camera to an overhead view by the arena walls, fade back in, spawn the four
-// shield crystals one at a time with bursts + sound, grow humming beams from each
-// crystal to the altar, fly the camera back to the player, then — all at once —
-// shake the screen, explode the altar, flatten the dais and spawn the boss (its
-// music + bar come up with it). The boss then has a 1s grace before it aggros.
+// A self-driven (requestAnimationFrame) cinematic, deliberately dragged out:
+//   1. fade to black (biome music keeps playing)
+//   2. ORBIT the camera around the OUTSIDE of the arena (pivoting on the centre)
+//   3. as the camera sweeps past each tower, that shield crystal SPAWNS with an
+//      explosion + shake + sound (slow intervals)
+//   4. thick humming beams grow slowly from every crystal to the altar
+//   5. the camera pushes in slowly toward the altar as the beams arrive
+//   6. the beams collapse into an ENERGY BALL at the altar — control returns to the
+//      player here, and the ball swells (this is the grace window to run away)
+//   7. the ball explodes with a rumble and the boss spawns AGGRO — the fight is on.
 //
-// State is mutable and read each frame by the in-Canvas <BossCinematic/> (camera +
-// beams) and the DOM <CinematicOverlay/> (black fade). Block edits / particles /
-// sounds are fired as one-shot side effects at their scheduled times.
+// Per-frame state (camera / beams / ball / fade) is read by the in-Canvas
+// <BossCinematic/> and the DOM <CinematicOverlay/>. Block edits / particles /
+// sounds fire as scheduled one-shot side effects.
 
 import * as THREE from 'three';
 import { worldManager } from '../WorldManager';
@@ -23,48 +27,59 @@ export interface SummonParams {
     centerX: number;
     centerZ: number;
     baseY: number;
-    /** The player's camera transform at summon time (the cutscene flies back to it). */
+    /** The player's camera transform at summon time (the cutscene flies back through it). */
     startPos: THREE.Vector3;
     startQuat: THREE.Quaternion;
-    /** Spawn the boss entity (App-specific: knows bossId/regionId). Called at impact. */
+    /** Spawn the boss entity (App-specific: knows bossId/regionId). Called at the climax. */
     onSpawnBoss: () => void;
 }
 
-// --- Timeline (seconds) ---
-const T_FADE_OUT = 1.0;
-const T_BLACK = 0.4;          // camera repositions while black
-const T_FADE_IN = 1.0;
-const T_REVEAL = T_FADE_OUT + T_BLACK + T_FADE_IN; // 2.4 — arena visible
-const CRYSTAL_GAP = 0.85;
-const T_CRYSTAL0 = T_REVEAL + 0.3;                 // 2.7
-const T_BEAM_START = T_CRYSTAL0 + 4 * CRYSTAL_GAP + 0.4; // ~6.5
-const T_BEAM_END = T_BEAM_START + 2.2;             // ~8.7
-const T_FLY_START = T_BEAM_END;                    // fly back as beams finish
-const T_FLY_END = T_FLY_START + 1.3;               // ~10.0
-const T_IMPACT = T_FLY_END;
-const T_TOTAL = T_IMPACT + 0.25;
+// --- Timeline (seconds, cumulative) ---
+const FADE_OUT = 1.0;
+const FADE_IN = 1.6;
+const ORBIT_DUR = 13;     // crystals spawn during the orbit
+const BEAM_DUR = 4.5;     // beams grow slowly
+const PUSHIN_DUR = 3.5;   // camera moves in toward the altar
+const CHARGE_DUR = 5.5;   // energy ball swells — the run-away grace window
+
+const T_ORBIT = FADE_OUT;                 // 1.0
+const T_BEAM = T_ORBIT + ORBIT_DUR;       // 14.0
+const T_PUSH = T_BEAM + BEAM_DUR;         // 18.5
+const T_CHARGE = T_PUSH + PUSHIN_DUR;     // 22.0  (control handback + ball forms)
+const T_IMPACT = T_CHARGE + CHARGE_DUR;   // 27.5  (explosion + boss spawn)
+const T_TOTAL = T_IMPACT + 0.3;
+
+// --- Camera orbit (relative to the arena centre) ---
+const ORBIT_RADIUS = 80;   // outside the wall (outer radius ~72)
+const ORBIT_HEIGHT = 42;   // above the floor
+const START_ANGLE = Math.PI / 4;     // matches tower 0's diagonal
+const ORBIT_RATE = 0.46;             // rad/s
+const SPAWN_LEAD = 0.6;              // crystal pops once the camera is this far past the tower
+const BALL_MAX_R = 3.6;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4();
+const smooth = (t: number) => t * t * (3 - 2 * t);
 
 function quatLookAt(eye: THREE.Vector3, target: THREE.Vector3, out: THREE.Quaternion): THREE.Quaternion {
     _m.lookAt(eye, target, UP);
     return out.setFromRotationMatrix(_m);
 }
 
-const smooth = (t: number) => t * t * (3 - 2 * t); // smoothstep
-
 class BossSummon {
-    active = false;
-    fade = 0;          // 0..1 black overlay opacity
-    beamProgress = 0;  // 0..1 beam growth
-    crystalsShown = 0; // 0..4
+    active = false;     // is the cinematic CAMERA driving (vs. player control)?
+    running = false;    // is the sequence still ticking (covers the post-handback ball)?
+    fade = 0;
+    beamProgress = 0;
+    ballScale = 0;      // 0..1 energy-ball size at the altar
+    crystalsShown = 0;
     readonly camPos = new THREE.Vector3();
     readonly camQuat = new THREE.Quaternion();
-    /** The four crystal world positions (for the beam renderer). */
     crystals: { x: number; y: number; z: number }[] = [];
-    /** Altar world point the beams converge on. */
     readonly altar = new THREE.Vector3();
+    readonly ballMaxRadius = BALL_MAX_R;
+    /** The player's view orientation at summon time — restored on handback. */
+    readonly playerStartQuat = new THREE.Quaternion();
 
     private params: SummonParams | null = null;
     private t = 0;
@@ -72,17 +87,18 @@ class BossSummon {
     private rafId: number | null = null;
     private spawned = new Set<number>();
     private firedBeamHum = false;
+    private firedHandback = false;
     private firedSpawn = false;
+    private lastChargePulse = 0;
     private listeners = new Set<() => void>();
 
-    // Overhead keyframes (relative to arena centre), resolved in begin().
-    private readonly kfOverhead = new THREE.Vector3();
-    private readonly kfPushIn = new THREE.Vector3();
-    private readonly lookTarget = new THREE.Vector3();
+    private readonly _center = new THREE.Vector3();
+    private readonly _look = new THREE.Vector3();
     private readonly _eye = new THREE.Vector3();
+    private readonly _pushTarget = new THREE.Vector3();
     private readonly _q = new THREE.Quaternion();
+    private readonly _q2 = new THREE.Quaternion();
 
-    /** Subscribe to per-frame state changes (the DOM fade overlay). */
     subscribe(cb: () => void): () => void {
         this.listeners.add(cb);
         return () => { this.listeners.delete(cb); };
@@ -92,44 +108,52 @@ class BossSummon {
     isActive(): boolean { return this.active; }
 
     begin(params: SummonParams): void {
-        if (this.active) return;
+        if (this.running) return;
         this.params = params;
         this.t = 0;
         this.fade = 0;
         this.beamProgress = 0;
+        this.ballScale = 0;
         this.crystalsShown = 0;
         this.spawned.clear();
         this.firedBeamHum = false;
+        this.firedHandback = false;
         this.firedSpawn = false;
+        this.lastChargePulse = 0;
         this.active = true;
+        this.running = true;
 
         const { centerX, centerZ, baseY } = params;
+        this._center.set(centerX + 0.5, baseY, centerZ + 0.5);
         this.crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
-        // Clear any leftover crystals so we always spawn a clean set.
-        for (const c of this.crystals) worldManager.setBlock(c.x, c.y, c.z, BlockType.AIR);
-        this.altar.set(centerX + 0.5, baseY + 2, centerZ + 0.5);
+        // Clear any leftover crystals (batched) so we always spawn a clean set.
+        worldManager.setBlocks(this.crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
+        this.altar.set(centerX + 0.5, baseY + 4.5, centerZ + 0.5);
+        this._look.set(centerX + 0.5, baseY + 6, centerZ + 0.5);
 
-        this.lookTarget.set(centerX + 0.5, baseY + 6, centerZ + 0.5);
-        this.kfOverhead.set(centerX + 56, baseY + 42, centerZ + 56);
-        this.kfPushIn.set(centerX + 30, baseY + 26, centerZ + 34);
-
-        // Start the cutscene at the player's own view, then snap overhead behind
-        // the fade so the reveal lands on the arena.
         this.camPos.copy(params.startPos);
         this.camQuat.copy(params.startQuat);
+        this.playerStartQuat.copy(params.startQuat);
 
         gameEvents.emit('cinematic:start', {});
         this.lastMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         const loop = () => {
-            if (!this.active) return;
+            if (!this.running) return;
             const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
             const dt = Math.min(0.05, (now - this.lastMs) / 1000);
             this.lastMs = now;
             this.step(dt);
-            this.rafId = (typeof requestAnimationFrame !== 'undefined')
-                ? requestAnimationFrame(loop) : null;
+            this.rafId = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : null;
         };
         this.rafId = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : null;
+    }
+
+    private orbitPos(angle: number, out: THREE.Vector3): THREE.Vector3 {
+        return out.set(
+            this._center.x + ORBIT_RADIUS * Math.cos(angle),
+            (this.params?.baseY ?? 0) + ORBIT_HEIGHT,
+            this._center.z + ORBIT_RADIUS * Math.sin(angle),
+        );
     }
 
     private step(dt: number): void {
@@ -139,69 +163,81 @@ class BossSummon {
         const t = this.t;
 
         // --- Fade ---
-        if (t < T_FADE_OUT) this.fade = t / T_FADE_OUT;
-        else if (t < T_FADE_OUT + T_BLACK) this.fade = 1;
-        else if (t < T_REVEAL) this.fade = 1 - (t - T_FADE_OUT - T_BLACK) / T_FADE_IN;
+        if (t < FADE_OUT) this.fade = t / FADE_OUT;
+        else if (t < FADE_OUT + FADE_IN) this.fade = 1 - (t - FADE_OUT) / FADE_IN;
         else this.fade = 0;
 
-        // --- Camera ---
-        if (t < T_FADE_OUT) {
-            // Hold on the player while fading out.
-            this.camPos.copy(p.startPos);
-            this.camQuat.copy(p.startQuat);
-        } else if (t < T_FLY_START) {
-            // Behind the black, snap overhead; then slowly push in toward the arena.
-            const k = smooth(Math.min(1, Math.max(0, (t - T_REVEAL) / (T_FLY_START - T_REVEAL))));
-            this._eye.lerpVectors(this.kfOverhead, this.kfPushIn, k);
-            this.camPos.copy(this._eye);
-            quatLookAt(this._eye, this.lookTarget, this.camQuat);
-        } else {
-            // Fly back to the player's view.
-            const k = smooth(Math.min(1, (t - T_FLY_START) / (T_FLY_END - T_FLY_START)));
-            this._eye.copy(this.kfPushIn);
-            this.camPos.lerpVectors(this._eye, p.startPos, k);
-            quatLookAt(this.kfPushIn, this.lookTarget, this._q); // start orientation
-            this.camQuat.copy(this._q).slerp(p.startQuat, k);
+        // --- Camera (while the cinematic owns it) ---
+        if (this.active) {
+            if (t < T_ORBIT) {
+                this.camPos.copy(p.startPos);
+                this.camQuat.copy(p.startQuat);
+            } else if (t < T_PUSH) {
+                // Orbit around the centre.
+                const angle = START_ANGLE + ORBIT_RATE * (t - T_ORBIT);
+                this.orbitPos(angle, this.camPos);
+                quatLookAt(this.camPos, this._look, this.camQuat);
+            } else {
+                // Push in toward the altar from where the orbit left off.
+                const angleAtPush = START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT);
+                this.orbitPos(angleAtPush, this._eye);
+                this._pushTarget.set(this._center.x + 11, p.baseY + 9, this._center.z + 11);
+                const k = smooth(Math.min(1, (t - T_PUSH) / PUSHIN_DUR));
+                this.camPos.lerpVectors(this._eye, this._pushTarget, k);
+                quatLookAt(this._eye, this._look, this._q);          // orbit-exit look
+                quatLookAt(this._pushTarget, this.altar, this._q2);  // close altar look
+                this.camQuat.copy(this._q).slerp(this._q2, k);
+            }
         }
 
-        // --- Crystal spawns (one at a time, with a burst + sound) ---
-        for (let i = 0; i < 4; i++) {
-            const at = T_CRYSTAL0 + i * CRYSTAL_GAP;
-            if (t >= at && !this.spawned.has(i)) {
-                this.spawned.add(i);
-                this.crystalsShown = this.spawned.size;
-                const c = this.crystals[i];
-                worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
-                // Burst of light: shards + the crystal itself.
-                worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, c.x, c.y, c.z);
-                worldManager.spawnParticles(BlockType.MAGNETIC_SHIELD_CRYSTAL, c.x, c.y, c.z);
-                soundManager.play('entity.magnetic_warden.crystal_spawn', { volume: 0.8 });
-                addTrauma(0.18);
+        // --- Crystal spawns (as the camera sweeps past each tower) ---
+        if (t >= T_ORBIT && t < T_BEAM) {
+            const swept = ORBIT_RATE * (t - T_ORBIT);
+            for (let i = 0; i < 4; i++) {
+                if (!this.spawned.has(i) && swept >= i * (Math.PI / 2) + SPAWN_LEAD) {
+                    this.spawnCrystal(i);
+                }
             }
         }
 
         // --- Beams + hum ---
-        if (t >= T_BEAM_START) {
-            if (!this.firedBeamHum) {
-                this.firedBeamHum = true;
-                soundManager.play('entity.magnetic_warden.hum', { volume: 0.7 });
-            }
-            this.beamProgress = Math.min(1, (t - T_BEAM_START) / (T_BEAM_END - T_BEAM_START));
+        if (t >= T_BEAM && t < T_CHARGE) {
+            if (!this.firedBeamHum) { this.firedBeamHum = true; soundManager.play('entity.magnetic_warden.hum', { volume: 0.7 }); }
+            this.beamProgress = Math.min(1, (t - T_BEAM) / BEAM_DUR);
+        } else if (t >= T_CHARGE) {
+            this.beamProgress = 0;
         }
 
-        // --- Impact: shake, explode the altar, flatten the dais, spawn the boss ---
+        // --- Energy ball charge: hand control back, swell the orb (run-away window) ---
+        if (t >= T_CHARGE && t < T_IMPACT) {
+            if (!this.firedHandback) {
+                this.firedHandback = true;
+                this.active = false;
+                gameEvents.emit('cinematic:end', {});
+                soundManager.play('entity.magnetic_warden.charge', { volume: 0.8 });
+                addTrauma(0.3);
+            }
+            this.ballScale = (t - T_CHARGE) / CHARGE_DUR;
+            // Building rumble + crackle as it grows.
+            if (t - this.lastChargePulse > 0.45) {
+                this.lastChargePulse = t;
+                addTrauma(0.05 + 0.22 * this.ballScale);
+                const ax = Math.floor(this.altar.x), ay = Math.floor(this.altar.y), az = Math.floor(this.altar.z);
+                worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay, az);
+            }
+        }
+
+        // --- Impact: explode the orb, flatten the dais, spawn the boss (aggro) ---
         if (t >= T_IMPACT && !this.firedSpawn) {
             this.firedSpawn = true;
-            this.beamProgress = 0;
-            // Hand the camera back to the player just before the bang.
-            this.active = false;
-            gameEvents.emit('cinematic:end', {});
+            this.ballScale = 0;
             addTrauma(1.0);
+            soundManager.play('entity.magnetic_warden.summon', { volume: 1.0 });
             const ax = Math.floor(this.altar.x), ay = p.baseY, az = Math.floor(this.altar.z);
-            worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay, az);
-            worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, ax, ay + 1, az);
+            worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay + 1, az);
+            worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, ax, ay + 2, az);
             worldManager.spawnParticles(BlockType.CHISELED_MAGNETITE, ax, ay, az);
-            flattenArenaDais(p.centerX, p.centerZ, p.baseY, (x, y, z, type) => worldManager.setBlock(x, y, z, type));
+            flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             p.onSpawnBoss();
         }
 
@@ -209,18 +245,35 @@ class BossSummon {
         this.notify();
     }
 
+    private spawnCrystal(i: number): void {
+        this.spawned.add(i);
+        this.crystalsShown = this.spawned.size;
+        const c = this.crystals[i];
+        worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        // An explosion of light at the tower: several bursts + a shake + sound.
+        worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, c.x, c.y, c.z);
+        worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, c.x, c.y, c.z);
+        worldManager.spawnParticles(BlockType.MAGNETIC_SHIELD_CRYSTAL, c.x, c.y, c.z);
+        worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, c.x, c.y + 1, c.z);
+        soundManager.play('entity.magnetic_warden.crystal_spawn', { volume: 0.85 });
+        addTrauma(0.35);
+    }
+
     /** Abort the cutscene (e.g. world unload). Does NOT spawn the boss. */
     cancel(): void {
-        if (!this.active && !this.firedSpawn) return;
+        if (!this.running) return;
         this.stop();
         this.fade = 0;
         this.beamProgress = 0;
-        gameEvents.emit('cinematic:end', {});
+        this.ballScale = 0;
+        if (this.active || !this.firedHandback) gameEvents.emit('cinematic:end', {});
+        this.active = false;
         this.notify();
     }
 
     private stop(): void {
         this.active = false;
+        this.running = false;
         if (this.rafId !== null && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(this.rafId);
         this.rafId = null;
     }

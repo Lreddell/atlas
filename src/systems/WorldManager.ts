@@ -1299,6 +1299,52 @@ export class WorldManager {
     return droppedItems;
   }
 
+  /**
+   * Batch structural edits (the arena dais / shield crystals): write every block,
+   * then relight and remesh ONCE rather than per block — restoring the ~100-block
+   * dais was triggering ~100 full chunk remeshes and lighting floods, which lagged.
+   * Skips fluid / tile-entity / support cascades, so it is for solid structural
+   * blocks only, not interactive or fluid edits.
+   */
+  setBlocks(edits: Array<{ x: number; y: number; z: number; type: BlockType; rotation?: number }>): void {
+    if (edits.length === 0) return;
+    const meshChunks = new Set<string>();
+    const relit: { x: number; y: number; z: number }[] = [];
+    let changed = false;
+    for (const e of edits) {
+      if (e.y < MIN_Y || e.y > MAX_Y) continue;
+      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
+      const chunk = this.getChunkData(cx, cz, true);
+      if (!chunk) continue;
+      const index = WorldCoords.index3D(lx, e.y, lz);
+      const rot = e.rotation ?? 0;
+      const oldType = chunk[index];
+      const oldRot = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+      if (oldType === e.type && oldRot === rot) continue;
+      chunk[index] = e.type;
+      WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
+      this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+      meshChunks.add(`${cx},${cz}`);
+      if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);
+      if (lz === 0) meshChunks.add(`${cx},${cz - 1}`); else if (lz === CHUNK_SIZE - 1) meshChunks.add(`${cx},${cz + 1}`);
+      // One relight flood per ~radius-13 cluster (a flood covers radius 15, and it
+      // reads the final block state below, so clustered edits share one flood).
+      if (!relit.some((p) => Math.abs(p.x - e.x) <= 13 && Math.abs(p.y - e.y) <= 13 && Math.abs(p.z - e.z) <= 13)) {
+        relit.push({ x: e.x, y: e.y, z: e.z });
+      }
+      changed = true;
+    }
+    if (!changed) return;
+    for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
+    for (const key of meshChunks) {
+      const [cx, cz] = key.split(',').map(Number);
+      this.queueMesh(cx, cz, -1000);
+    }
+    this.markQueuesDirty();
+    this.processStreamingJobs();
+  }
+
+
   // Re-derive the corner shape (bits 3-5 of meta) of any stair at (x,y,z) and its
   // four horizontal neighbors from the current world, and store it back. Mirrors how
   // Java recomputes stair shapes on neighbor changes. Only meta bits change (never the

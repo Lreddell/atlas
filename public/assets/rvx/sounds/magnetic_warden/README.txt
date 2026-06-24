@@ -11,6 +11,8 @@ Place replacement sound effects in this folder using these exact names:
   slam.ogg       plays on the slam impact + polarity shockwave
   crystal_spawn.ogg  plays as each shield crystal materializes (summon cutscene)
   hum.ogg        plays while the crystal beams converge on the altar (cutscene)
+  charge.ogg     plays while the energy ball forms + swells at the altar (cutscene)
+  summon.ogg     plays when the energy ball explodes and the boss spawns
   defeat.ogg     plays once when the Warden is defeated (a short sting / song)
 
 Accepted formats: .ogg (preferred), .mp3, .wav. Use the exact base name above;
