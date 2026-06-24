@@ -279,10 +279,11 @@ class EntityManager {
             });
         };
         if (e.isBoss && e.home) {
-            // Loot drops a block ABOVE the altar, and only AFTER the altar finishes
-            // re-forming (BOSS_DEFEAT_ALTAR_DELAY_MS later) so it lands cleanly on
-            // top of the summoner instead of being buried by the rising dais.
-            const hx = e.home.x, hy = e.home.y + 5, hz = e.home.z;
+            // Loot drops one block ABOVE the altar (the summoner sits at home.y+3,
+            // i.e. baseY+4; home is the spawn floor baseY+1), and only AFTER the
+            // altar finishes re-forming (BOSS_DEFEAT_ALTAR_DELAY_MS later) so it
+            // lands cleanly on top of the summoner instead of being buried.
+            const hx = e.home.x, hy = e.home.y + 4, hz = e.home.z;
             window.setTimeout(() => spawnDrops(hx, hy, hz), BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
             // A huge multi-stage polarity eruption where the Warden falls.
             const cx = e.home.x, cy = e.pos.y + e.height * 0.5, cz = e.home.z;
