@@ -159,8 +159,8 @@ test('the boss health bar tints to the current polarity', () => {
 test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {
     assert.match(manager, /despawnAllBosses\(\)/);
     assert.match(manager, /private despawnBoss\(/);
-    // Despawn restores crystals and clears the bar (boss:cleared, not defeated).
-    assert.match(manager, /pendingCrystalRestores/);
+    // Despawn clears any standing crystals (set to AIR) and clears the bar.
+    assert.match(manager, /despawnBoss[\s\S]*?BlockType\.AIR/);
     assert.match(manager, /'boss:cleared'/);
     assert.match(manager, /BOSS_DESPAWN_RADIUS/);
     assert.match(app, /entityManager\.despawnAllBosses\(\)/);
@@ -219,13 +219,34 @@ test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
     assert.match(input, /e\.ctrlKey \|\| e\.metaKey[\s\S]*?preventDefault\(\)/);
 });
 
-test('the arena raises crystals and adds flush water landing pools', () => {
+test('the arena has water landing pools and a removable dais; crystals spawn later', () => {
     const arena = read('src/systems/world/magneticArena.ts');
     assert.match(arena, /buildPillarLandingPools/);
     assert.match(arena, /BlockType\.WATER/);
-    // Crystal sits two above the cap on a pedestal (clearly visible).
-    assert.match(arena, /top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL/);
+    // Crystals are NOT generated with the arena — the summon cutscene spawns them
+    // at top+2 (getShieldCrystalPositions), so the arena is empty until you fight.
     assert.match(arena, /getShieldCrystalPositions/);
+    assert.doesNotMatch(arena, /ctx\.setBlock\(c\.x, top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL\)/);
+    // The dais can be flattened (boss alive) and restored (boss gone).
+    assert.match(arena, /export function flattenArenaDais/);
+    assert.match(arena, /export function restoreArenaDais/);
+});
+
+test('the summon cutscene spawns crystals, beams, and the boss at its climax', () => {
+    const summon = read('src/systems/boss/bossSummon.ts');
+    assert.match(summon, /MAGNETIC_SHIELD_CRYSTAL/);   // crystals spawned during the cutscene
+    assert.match(summon, /spawnParticles/);            // burst effects
+    assert.match(summon, /flattenArenaDais/);          // altar removed as the boss spawns
+    assert.match(summon, /onSpawnBoss\(\)/);           // boss spawned at the climax
+    assert.match(summon, /'cinematic:start'/);
+    assert.match(summon, /beamProgress/);
+    // App plays the cutscene on summon (no instant spawn) and gives a 1s grace.
+    assert.match(app, /bossSummon\.begin\(/);
+    assert.match(app, /aggroGraceSeconds:\s*1/);
+    assert.match(entity, /aggroGrace:/);
+    // Cinematic pauses the player + disables mouse-look.
+    assert.match(app, /isPaused=\{worldPaused \|\| cinematicMode\}/);
+    assert.match(app, /disableMouseLook=\{isCapturingPanorama \|\| cinematicMode\}/);
 });
 
 test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {

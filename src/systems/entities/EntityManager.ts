@@ -18,8 +18,10 @@ import {
 export interface SpawnOptions {
     bossId?: string;
     regionId?: string;
-    /** World positions of the boss's shield crystals (so a reset can restore them). */
+    /** World positions of the boss's shield crystals (so a despawn can clear them). */
     shieldCrystalPositions?: { x: number; y: number; z: number }[];
+    /** Post-spawn grace before the boss starts attacking (e.g. after a cutscene). */
+    aggroGraceSeconds?: number;
 }
 
 /** Beyond this distance from its home a boss despawns (re-summon at the altar). */
@@ -46,9 +48,6 @@ class EntityManager {
     private nextProjectileId = 1;
     private nextShockwaveId = 1;
     private inCombat = false;
-    // Shield-crystal blocks to re-place once their chunk is loaded (a boss that
-    // reset while the player was away restores its crystals when they return).
-    private pendingCrystalRestores: { x: number; y: number; z: number }[] = [];
 
     // Injected by App so entities can chase/damage the player without importing
     // React state.
@@ -87,7 +86,7 @@ class EntityManager {
         const out: BossFieldSource[] = [];
         for (const e of this.entities.values()) {
             const kind = ENTITY_KINDS[e.kind];
-            if (!kind?.magneticFieldRange || !e.aggro || e.hp <= 0) continue;
+            if (!kind?.magneticFieldRange || !e.aggro || e.aggroGrace > 0 || e.hp <= 0) continue;
             out.push({
                 x: e.pos.x,
                 y: e.pos.y + e.height * 0.5,
@@ -151,6 +150,7 @@ class EntityManager {
             slamTimer: kind.slamInterval ?? 0,
             slamPhaseTimer: 0,
             slamGroundY: y,
+            aggroGrace: opts.aggroGraceSeconds ?? 0,
             home: new THREE.Vector3(x, y, z),
             shieldCrystalPositions: opts.shieldCrystalPositions,
             maxShieldCrystals: kind.shieldCrystals ?? 0,
@@ -249,27 +249,16 @@ class EntityManager {
         }
     }
 
-    // Remove a boss (NOT a defeat: no drops, no region cleanse) and queue its
-    // shield crystals for restoration so a re-summon is a fresh fight.
+    // Remove a boss (NOT a defeat: no drops, no region cleanse) and clear any of
+    // its still-standing shield crystals — the arena is empty until re-summoned.
     private despawnBoss(e: Entity): void {
-        for (const c of e.shieldCrystalPositions ?? []) this.pendingCrystalRestores.push({ ...c });
-        this.entities.delete(e.id);
-    }
-
-    /** Re-place any queued shield-crystal blocks whose chunk is now loaded. */
-    private processPendingCrystalRestores(): void {
-        if (this.pendingCrystalRestores.length === 0) return;
-        const still: { x: number; y: number; z: number }[] = [];
-        for (const c of this.pendingCrystalRestores) {
-            if (worldManager.hasChunk(Math.floor(c.x / 16), Math.floor(c.z / 16))) {
-                if (worldManager.getBlock(c.x, c.y, c.z, false) !== BlockType.MAGNETIC_SHIELD_CRYSTAL) {
-                    worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
-                }
-            } else {
-                still.push(c);
+        for (const c of e.shieldCrystalPositions ?? []) {
+            if (worldManager.hasChunk(Math.floor(c.x / 16), Math.floor(c.z / 16))
+                && worldManager.getBlock(c.x, c.y, c.z, false) === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
+                worldManager.setBlock(c.x, c.y, c.z, BlockType.AIR);
             }
         }
-        this.pendingCrystalRestores = still;
+        this.entities.delete(e.id);
     }
 
     private kill(e: Entity): void {
@@ -303,7 +292,6 @@ class EntityManager {
     }
 
     tick(dt: number, gameMode: GameMode): void {
-        this.processPendingCrystalRestores();
         if (this.entities.size === 0) {
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             return;
@@ -329,6 +317,17 @@ class EntityManager {
                     this.notifyStructure();
                     continue;
                 }
+            }
+
+            // --- Post-spawn grace: present (music + bar) but does not attack ---
+            if (e.aggroGrace > 0) {
+                e.aggroGrace = Math.max(0, e.aggroGrace - dt);
+                e.aggro = true; // counts as engaged so the boss music + bar are up
+                anyAggro = true;
+                e.vel.x *= 0.6; e.vel.z *= 0.6;
+                e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);
+                this.moveWithCollision(e, kind, dt, false);
+                continue;
             }
 
             e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);

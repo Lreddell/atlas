@@ -233,7 +233,9 @@ test('arena generator is a large composed structure with the required parts', ()
     // Materials/landmarks: summoner centred, crystals on towers, lava moat, magnets,
     // brick + chiseled detailing, alternating tower polarity.
     assert.match(a, /MAGNETIC_BOSS_SUMMONER/);
-    assert.match(a, /MAGNETIC_SHIELD_CRYSTAL/);
+    // Shield-crystal positions are exposed (the crystals themselves are spawned by
+    // the summon cutscene, not generated with the arena).
+    assert.match(a, /getShieldCrystalPositions/);
     assert.match(a, /BlockType\.LAVA/);
     assert.match(a, /POSITIVE_MAGNET/);
     assert.match(a, /NEGATIVE_MAGNET/);

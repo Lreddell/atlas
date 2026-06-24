@@ -35,6 +35,9 @@ export interface GameEventMap {
     'entity:died': { entityId: number; type: string };
     'combat:start': Record<string, never>;
     'combat:stop': Record<string, never>;
+    /** A scripted camera cutscene (the boss summon) started / ended. */
+    'cinematic:start': Record<string, never>;
+    'cinematic:end': Record<string, never>;
     'ability:changed': { abilityId: string; active: boolean };
 }
 

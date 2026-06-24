@@ -16,6 +16,9 @@ import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
+import { CinematicOverlay } from './components/ui/CinematicOverlay';
+import { BossCinematic } from './components/BossCinematic';
+import { bossSummon } from './systems/boss/bossSummon';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager } from './systems/entities/EntityManager';
@@ -23,7 +26,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -284,6 +287,10 @@ const App: React.FC = () => {
   // Upgraded-boots ability toggle (N). Mirrors inputState.polarityPowerOn so the
   // derived magneticMode re-computes when it changes.
   const [polarityPowerOn, setPolarityPowerOn] = useState(true);
+  // Boss summon cutscene: pauses player physics + mouse-look while the camera is
+  // scripted. The arena centre is remembered so the dais altar can be restored.
+  const [cinematicMode, setCinematicMode] = useState(false);
+  const summonArenaRef = useRef<{ cx: number; cz: number; baseY: number } | null>(null);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -860,6 +867,15 @@ const App: React.FC = () => {
       return () => { unsubscribe(); };
   }, []);
 
+  // Rebuild the raised dais + summoner altar once the boss is gone (defeated or
+  // despawned), so the arena can be re-summoned. No-op if nothing was summoned.
+  const restoreSummonAltar = useCallback(() => {
+      const a = summonArenaRef.current;
+      if (!a) return;
+      summonArenaRef.current = null;
+      restoreArenaDais(a.cx, a.cz, a.baseY, (x, y, z, t) => worldManager.setBlock(x, y, z, t));
+  }, []);
+
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
   // event can fire rapidly (holding the mouse on a sealed block), so throttle the
   // toast/sound to avoid spam.
@@ -885,7 +901,13 @@ const App: React.FC = () => {
           if (regionId) progression.cleanseRegion(regionId);
           // Victory sting (editable: sounds/magnetic_warden/defeat).
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
+          restoreSummonAltar();
       });
+      // The summon cutscene pauses player control while the camera is scripted.
+      const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
+      const offCineEnd = gameEvents.on('cinematic:end', () => setCinematicMode(false));
+      // When the boss leaves (despawn), put the raised dais + summoner altar back.
+      const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
       // The boss launched a deflectable parry bolt — telegraph it with a cue.
       const offParry = gameEvents.on('boss:parry', () => {
           soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
@@ -903,8 +925,11 @@ const App: React.FC = () => {
       const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
-      return () => { offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offCrystal(); offPower(); };
-  }, []);
+      return () => {
+          offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offCrystal(); offPower();
+          offCineStart(); offCineEnd(); offCleared();
+      };
+  }, [restoreSummonAltar]);
 
   // Update Chunks & Stream
   useEffect(() => {
@@ -2248,6 +2273,9 @@ const App: React.FC = () => {
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
       entityManager.clear();
+      bossSummon.cancel();
+      setCinematicMode(false);
+      summonArenaRef.current = null;
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
@@ -2525,9 +2553,10 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
+                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
                     <BossBar />
-                    {!showDeathScreen && magneticMode === 'controlled' && <PolarityIndicator />}
+                    <CinematicOverlay />
+                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
                     {openContainer?.type === 'boss_confirm' && (
@@ -2538,15 +2567,35 @@ const App: React.FC = () => {
                                 const active = entityManager.getEntities().some((e) => e.bossId === bossId && e.hp > 0);
                                 if (active) {
                                     worldManager.log('The boss is already active.', 'error');
-                                } else {
-                                    // The summoner sits at (centerX, baseY+4, centerZ); derive the
-                                    // arena's shield-crystal positions so a reset can restore them.
-                                    const crystals = bossId === 'magnetic_warden'
-                                        ? getShieldCrystalPositions(x, z, y - 4)
-                                        : undefined;
-                                    entityManager.spawn(bossId, x + 0.5, y, z + 4, { bossId, regionId: regionId ?? undefined, shieldCrystalPositions: crystals });
+                                    handleInventoryContainerChange(null);
+                                    return;
+                                }
+                                // The summoner sits at (centerX, baseY+4, centerZ). Derive the
+                                // arena centre + crystal positions, then play the summon cutscene;
+                                // the boss is spawned at its climax (not instantly on top of you).
+                                const centerX = x, centerZ = z, baseY = y - 4;
+                                const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
+                                summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
+
+                                const cam = controlsRef.current?.getCamera();
+                                const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
+                                const startQuat = new THREE.Quaternion();
+                                if (cam) {
+                                    const lookM = new THREE.Matrix4().lookAt(cam.pos, cam.pos.clone().add(cam.dir), new THREE.Vector3(0, 1, 0));
+                                    startQuat.setFromRotationMatrix(lookM);
                                 }
                                 handleInventoryContainerChange(null);
+                                bossSummon.begin({
+                                    centerX, centerZ, baseY, startPos, startQuat,
+                                    onSpawnBoss: () => {
+                                        // baseY is the platform floor; spawn one above so the boss
+                                        // settles on top of it (the dais is flattened by now).
+                                        entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
+                                            bossId, regionId: regionId ?? undefined,
+                                            shieldCrystalPositions: crystals, aggroGraceSeconds: 1.0,
+                                        });
+                                    },
+                                });
                             }}
                             onCancel={() => handleInventoryContainerChange(null)}
                         />
@@ -2590,6 +2639,7 @@ const App: React.FC = () => {
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
+                    <BossCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                 </Suspense>
@@ -2609,10 +2659,10 @@ const App: React.FC = () => {
                 {/* Only mount Player when game is Active to ensure physics starts with correct spawn position */}
                 {appState === 'game' && (
                     <>
-                        <Player 
-                            ref={playerRef} key={respawnKey} position={currentSpawnPos} 
-                            isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama} 
-                            isPaused={worldPaused} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
+                        <Player
+                            ref={playerRef} key={respawnKey} position={currentSpawnPos}
+                            isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode}
+                            isPaused={worldPaused || cinematicMode} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
                             forcedFov={isCapturingPanorama ? 90 : null}
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
@@ -2627,7 +2677,7 @@ const App: React.FC = () => {
                 
                 {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
-                <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama} />
+                <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>
 
             {isCapturingPanorama && (
