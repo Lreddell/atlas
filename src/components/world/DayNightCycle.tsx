@@ -9,6 +9,7 @@ import { updateCloudColor } from './cloudState';
 import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
 import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
+import { bossSummon } from '../../systems/boss/bossSummon';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 
 // Shader for the skybox gradient with Directional Sunset
@@ -663,9 +664,16 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         skyMat.uniforms.uSunDirection.value.copy(sunDir);
         
         // The Magnetic Fields biome is hazy and charged: pull the fog in close and
-        // tint it dusky purple. Damped so crossing the border eases in/out.
+        // tint it dusky purple. Damped so crossing the border eases in/out. The haze
+        // is fully suppressed during the summon cutscene (the orbit looks at the
+        // arena from far away — thick fog would hide it) and fades back in the moment
+        // the player regains control.
         const inMagnetic = (getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined)?.id === MAGNETIC_FIELDS_BIOME_ID;
-        magneticFogBlendRef.current = THREE.MathUtils.damp(magneticFogBlendRef.current, inMagnetic ? 1 : 0, 1.2, delta);
+        if (bossSummon.isActive()) {
+            magneticFogBlendRef.current = 0;
+        } else {
+            magneticFogBlendRef.current = THREE.MathUtils.damp(magneticFogBlendRef.current, inMagnetic ? 1 : 0, 1.2, delta);
+        }
         const mag = magneticFogBlendRef.current;
         if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * 0.55);
 

@@ -285,11 +285,13 @@ test('combat and cutscene use the glowing FX particle system (not block debris)'
     assert.match(summon, /particleFx\.burst/);
 });
 
-test('the Magnetic Fields biome has a thick purple haze', () => {
+test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutscene', () => {
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /MAGNETIC_FOG_TINT/);
     assert.match(dn, /magneticFogBlendRef/);
     assert.match(dn, /MAGNETIC_FIELDS_BIOME_ID/);
+    // No haze while the summon cutscene owns the camera; it fades back after.
+    assert.match(dn, /bossSummon\.isActive\(\)[\s\S]*?magneticFogBlendRef\.current = 0/);
 });
 
 test('the summon cutscene orbits, charges an energy ball, then spawns the boss aggro', () => {

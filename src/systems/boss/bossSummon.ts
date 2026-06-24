@@ -63,11 +63,6 @@ const START_ANGLE = Math.PI / 4;     // matches tower 0's diagonal
 const ORBIT_RATE = 0.40;             // rad/s (a touch slower)
 const BALL_MAX_R = 3.6;
 
-// Where the push-in settles (and the fly-back launches from): the camera holds
-// here, pulled back a bit from the altar, gazing at the swelling energy ball.
-const PUSH_OFF = 16;       // horizontal offset from centre (was 11 — pulled back)
-const PUSH_HEIGHT = 11;    // height above baseY
-
 const UP = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4();
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -108,9 +103,7 @@ class BossSummon {
     private readonly _center = new THREE.Vector3();
     private readonly _look = new THREE.Vector3();
     private readonly _eye = new THREE.Vector3();
-    private readonly _pushTarget = new THREE.Vector3();
     private readonly _q = new THREE.Quaternion();
-    private readonly _q2 = new THREE.Quaternion();
 
     subscribe(cb: () => void): () => void {
         this.listeners.add(cb);
@@ -192,23 +185,16 @@ class BossSummon {
                 const angle = START_ANGLE + ORBIT_RATE * (t - T_ORBIT);
                 this.orbitPos(angle, this.camPos);
                 quatLookAt(this.camPos, this._look, this.camQuat);
-            } else if (t < T_FLYBACK) {
-                // Push in toward the altar from where the orbit left off.
-                this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
-                this._pushTarget.set(this._center.x + PUSH_OFF, p.baseY + PUSH_HEIGHT, this._center.z + PUSH_OFF);
-                const k = smooth(Math.min(1, (t - T_PUSH) / PUSHIN_DUR));
-                this.camPos.lerpVectors(this._eye, this._pushTarget, k);
-                quatLookAt(this._eye, this._look, this._q);          // orbit-exit look
-                quatLookAt(this._pushTarget, this.altar, this._q2);  // close altar look
-                this.camQuat.copy(this._q).slerp(this._q2, k);
             } else {
-                // Fly all the way back to the player's EXACT position + angle (slowed);
-                // at k=1 the camera sits precisely where control resumes — no snap.
-                this._pushTarget.set(this._center.x + PUSH_OFF, p.baseY + PUSH_HEIGHT, this._center.z + PUSH_OFF);
-                quatLookAt(this._pushTarget, this.altar, this._q2);
-                const k = smooth(Math.min(1, (t - T_FLYBACK) / FLYBACK_DUR));
-                this.camPos.lerpVectors(this._pushTarget, p.startPos, k);
-                this.camQuat.copy(this._q2).slerp(p.startQuat, k);
+                // Fly straight back to the player's EXACT position + angle from where
+                // the orbit left off (no intermediate altar-look angle). Long + eased
+                // so it glides in; at k=1 the camera sits precisely where control
+                // resumes — no snap.
+                this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
+                quatLookAt(this._eye, this._look, this._q);          // orbit-exit look (at centre)
+                const k = smooth(Math.min(1, (t - T_PUSH) / (T_CONTROL - T_PUSH)));
+                this.camPos.lerpVectors(this._eye, p.startPos, k);
+                this.camQuat.copy(this._q).slerp(p.startQuat, k);
             }
         }
 
