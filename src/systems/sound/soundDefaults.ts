@@ -85,5 +85,7 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },           // slam impact + polarity shockwave
     "entity.magnetic_warden.crystal_spawn": { category: "blocks", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8 }, // a shield crystal materializes (cutscene)
     "entity.magnetic_warden.hum": { category: "blocks", sounds: ["magnetic_warden/hum"], volume: 0.7 },             // crystal beams converging on the altar (cutscene)
+    "entity.magnetic_warden.charge": { category: "blocks", sounds: ["magnetic_warden/charge"], volume: 0.85 },      // energy ball forming + swelling at the altar (cutscene)
+    "entity.magnetic_warden.summon": { category: "blocks", sounds: ["magnetic_warden/summon"], volume: 1.0 },       // the energy ball explodes and the boss spawns
     "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 }         // boss death sting / short song
 };

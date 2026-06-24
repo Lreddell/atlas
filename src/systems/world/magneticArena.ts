@@ -400,20 +400,22 @@ const DAIS_CELLS: { dx: number; dz: number; dy: number; type: BlockType }[] = ((
     return cells;
 })();
 
+export type ArenaEdit = { x: number; y: number; z: number; type: BlockType };
+
 /** Flatten the raised dais + remove the summoner altar (boss is active). */
 export function flattenArenaDais(
     centerX: number, centerZ: number, baseY: number,
-    setBlock: (x: number, y: number, z: number, t: BlockType) => void,
+    setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
-    for (const c of DAIS_CELLS) setBlock(centerX + c.dx, baseY + c.dy, centerZ + c.dz, BlockType.AIR);
+    setBlocks(DAIS_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: BlockType.AIR })));
 }
 
 /** Rebuild the dais + summoner altar (boss gone — re-summonable). */
 export function restoreArenaDais(
     centerX: number, centerZ: number, baseY: number,
-    setBlock: (x: number, y: number, z: number, t: BlockType) => void,
+    setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
-    for (const c of DAIS_CELLS) setBlock(centerX + c.dx, baseY + c.dy, centerZ + c.dz, c.type);
+    setBlocks(DAIS_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: c.type })));
 }
 
 /** World positions of the four shield crystals (raised pedestal tops). */

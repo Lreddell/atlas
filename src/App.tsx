@@ -876,7 +876,7 @@ const App: React.FC = () => {
       const a = summonArenaRef.current;
       if (!a) return;
       summonArenaRef.current = null;
-      restoreArenaDais(a.cx, a.cz, a.baseY, (x, y, z, t) => worldManager.setBlock(x, y, z, t));
+      restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
   }, []);
 
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
@@ -2601,10 +2601,12 @@ const App: React.FC = () => {
                                     centerX, centerZ, baseY, startPos, startQuat,
                                     onSpawnBoss: () => {
                                         // baseY is the platform floor; spawn one above so the boss
-                                        // settles on top of it (the dais is flattened by now).
+                                        // settles on top of it (the dais is flattened by now). The
+                                        // run-away grace already happened (the energy-ball charge),
+                                        // so it spawns aggro and the fight starts immediately.
                                         entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
                                             bossId, regionId: regionId ?? undefined,
-                                            shieldCrystalPositions: crystals, aggroGraceSeconds: 1.0,
+                                            shieldCrystalPositions: crystals,
                                         });
                                     },
                                 });
@@ -2687,7 +2689,7 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>

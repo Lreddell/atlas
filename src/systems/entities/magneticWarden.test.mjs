@@ -232,7 +232,7 @@ test('the arena has water landing pools and a removable dais; crystals spawn lat
     assert.match(arena, /export function restoreArenaDais/);
 });
 
-test('the summon cutscene spawns crystals, beams, and the boss at its climax', () => {
+test('the summon cutscene orbits, charges an energy ball, then spawns the boss aggro', () => {
     const summon = read('src/systems/boss/bossSummon.ts');
     assert.match(summon, /MAGNETIC_SHIELD_CRYSTAL/);   // crystals spawned during the cutscene
     assert.match(summon, /spawnParticles/);            // burst effects
@@ -240,13 +240,30 @@ test('the summon cutscene spawns crystals, beams, and the boss at its climax', (
     assert.match(summon, /onSpawnBoss\(\)/);           // boss spawned at the climax
     assert.match(summon, /'cinematic:start'/);
     assert.match(summon, /beamProgress/);
-    // App plays the cutscene on summon (no instant spawn) and gives a 1s grace.
+    // Camera orbits the arena; an energy ball charges after the beams.
+    assert.match(summon, /orbitPos/);
+    assert.match(summon, /ORBIT_RADIUS/);
+    assert.match(summon, /ballScale/);
+    // Control hands back BEFORE the boss spawns (the run-away grace is the charge).
+    assert.match(summon, /firedHandback[\s\S]*?'cinematic:end'/);
+    // Batched structural edits avoid the per-block remesh lag.
+    assert.match(summon, /worldManager\.setBlocks/);
+    // App plays the cutscene on summon (no instant spawn); the boss spawns aggro.
     assert.match(app, /bossSummon\.begin\(/);
-    assert.match(app, /aggroGraceSeconds:\s*1/);
-    assert.match(entity, /aggroGrace:/);
-    // Cinematic pauses the player + disables mouse-look.
+    assert.doesNotMatch(app, /aggroGraceSeconds/);
+    // Cinematic pauses the player, disables mouse-look, and hides the held item.
     assert.match(app, /isPaused=\{worldPaused \|\| cinematicMode\}/);
     assert.match(app, /disableMouseLook=\{isCapturingPanorama \|\| cinematicMode\}/);
+    assert.match(app, /!cinematicMode && <HeldItem/);
+});
+
+test('arena structural edits are batched (setBlocks) to avoid reset lag', () => {
+    const wm = read('src/systems/WorldManager.ts');
+    assert.match(wm, /setBlocks\(edits:/);
+    assert.match(wm, /processStreamingJobs\(\)/);
+    const arena = read('src/systems/world/magneticArena.ts');
+    assert.match(arena, /setBlocks: \(edits: ArenaEdit\[\]\) => void/);
+    assert.match(app, /restoreArenaDais\([\s\S]*?worldManager\.setBlocks\(edits\)/);
 });
 
 test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {
