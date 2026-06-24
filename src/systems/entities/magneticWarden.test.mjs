@@ -125,6 +125,37 @@ test('the player can deflect a parry bolt back for ~1/12 of the boss HP', () => 
     assert.match(interaction, /tryDeflectBolt\(\)/);
 });
 
+test('phase 2 (≤50% HP) slam creates a polarity shockwave you dodge by swapping', () => {
+    // Boss kind declares the slam + a 50% threshold; frenzy stays at 25%.
+    assert.match(entity, /slamThreshold:\s*0\.5/);
+    assert.match(entity, /frenzyThreshold:\s*0\.25/);
+    assert.match(entity, /slamRiseHeight:/);
+    assert.match(entity, /interface Shockwave/);
+    // EntityManager runs the rise→hang→drop→shockwave machine.
+    assert.match(manager, /private startSlam\(/);
+    assert.match(manager, /private tickSlam\(/);
+    assert.match(manager, /spawnShockwave/);
+    assert.match(manager, /tickShockwaves/);
+    assert.match(manager, /getShockwaves\(\)/);
+    // Same polarity launches + hurts; the impact shakes the camera.
+    assert.match(manager, /playerPol === s\.polarity/);
+    assert.match(manager, /addTrauma/);
+    // The slam is telegraphed via a boss:slam event (rise + impact).
+    assert.match(manager, /'boss:slam'/);
+    assert.match(events, /'boss:slam':/);
+    // The renderer draws expanding shockwave rings + the player shakes.
+    const renderer = read('src/components/EntityRenderer.tsx');
+    assert.match(renderer, /getShockwaves\(\)/);
+    const player = read('src/components/Player.tsx');
+    assert.match(player, /sampleShake/);
+});
+
+test('the boss health bar tints to the current polarity', () => {
+    const bar = read('src/components/ui/BossBar.tsx');
+    assert.match(bar, /polarity < 0/);
+    assert.match(bar, /boss:polarity/);
+});
+
 test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {
     assert.match(manager, /despawnAllBosses\(\)/);
     assert.match(manager, /private despawnBoss\(/);

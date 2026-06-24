@@ -49,6 +49,31 @@ export interface Entity {
     barrageTimer: number;
     /** Vulnerable-phase: a deflectable parry bolt is currently in play. */
     awaitingParry: boolean;
+    /** Slam attack state machine ('none' until phase 2). */
+    slamState: 'none' | 'rising' | 'hanging' | 'dropping';
+    /** Seconds until the next slam (phase 2+). */
+    slamTimer: number;
+    /** Seconds left in the current slam sub-phase (rise/hang). */
+    slamPhaseTimer: number;
+    /** Floor Y the boss rose from / slams back down to. */
+    slamGroundY: number;
+}
+
+// An expanding polarity shockwave ring from a slam. Same polarity as the boss;
+// the player must hold the OPPOSITE boots polarity or be launched when it passes.
+export interface Shockwave {
+    id: number;
+    x: number;
+    y: number;
+    z: number;
+    polarity: number;
+    radius: number;
+    maxRadius: number;
+    speed: number;
+    /** Damage dealt to a same-polarity player the ring catches. */
+    damage: number;
+    /** Whether it has already resolved against the player. */
+    hit: boolean;
 }
 
 // A boss projectile (a magnetic bolt). Simple ballistic mover that damages the
@@ -115,6 +140,24 @@ export interface EntityKind {
     parryDamageFraction?: number;
     /** HP fraction (0..1) at/under which the boss enters its frenzy phase. */
     frenzyThreshold?: number;
+    /** HP fraction (0..1) at/under which the boss starts its slam attacks. */
+    slamThreshold?: number;
+    /** Seconds between slams. */
+    slamInterval?: number;
+    /** How high (blocks) the boss rises before slamming. */
+    slamRiseHeight?: number;
+    /** Seconds to rise to the apex (the telegraph window). */
+    slamRiseTime?: number;
+    /** Seconds the boss hangs at the apex before dropping. */
+    slamHangTime?: number;
+    /** Drop speed (blocks/sec) on the way down. */
+    slamDropSpeed?: number;
+    /** Damage dealt if the shockwave catches a same-polarity player. */
+    slamDamage?: number;
+    /** Radius (blocks) the shockwave ring expands to. */
+    slamMaxRadius?: number;
+    /** Expansion speed (blocks/sec) of the shockwave ring. */
+    slamRingSpeed?: number;
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
@@ -173,6 +216,16 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         // Vulnerable phase: dodge a barrage, then deflect a purple bolt for ~1/12 HP.
         barrageDuration: 5,
         parryDamageFraction: 1 / 12,
+        // Phase 2 (≤50%): polarity SLAM shockwaves. Phase 3 (≤25%): frenzy.
+        slamThreshold: 0.5,
+        slamInterval: 9,
+        slamRiseHeight: 9,
+        slamRiseTime: 0.85,
+        slamHangTime: 0.45,
+        slamDropSpeed: 38,
+        slamDamage: 9,
+        slamMaxRadius: 26,
+        slamRingSpeed: 15,
         frenzyThreshold: 0.25,
         drops: [{ type: BlockType.POLARITY_BOOTS_UPGRADE, min: 1, max: 1 }],
     },
