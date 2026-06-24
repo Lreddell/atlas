@@ -11,6 +11,7 @@ import {
 import { simulateStep } from '../systems/player/playerMovement';
 import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
 import { entityManager } from '../systems/entities/EntityManager';
+import { sampleShake } from '../systems/player/cameraShake';
 import { checkCollision, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
     createAdhesionState, findAdhesionCandidate, computeLocalBasis, projectInput, detachImpulse,
@@ -45,6 +46,8 @@ const _wallUp = new Vector3();
 const _wallMat = new Matrix4();
 const _wallTarget = new Quaternion();
 const _tmpEuler = new Euler(0, 0, 0, 'YXZ');
+
+const _shakeOffset = { x: 0, y: 0, z: 0 };
 
 /** Duration (seconds) of the camera roll onto / off the wall. */
 const ROLL_TIME = 0.22;
@@ -745,6 +748,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             renderPos.current.z
         );
     }
+
+    // Global camera shake (boss slams etc.) on top of the resolved eye position.
+    sampleShake(_shakeOffset, delta);
+    camera.position.x += _shakeOffset.x;
+    camera.position.y += _shakeOffset.y;
+    camera.position.z += _shakeOffset.z;
   });
 
   return null;

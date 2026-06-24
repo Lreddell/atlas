@@ -28,6 +28,8 @@ export interface GameEventMap {
     'boss:parry': { bossId: string; entityId: number };
     /** A boss projectile was deflected back by the player (feedback + sound). */
     'boss:deflected': { bossId: string; entityId: number };
+    /** Boss slam attack phase ('rise' = telegraph windup, 'impact' = shockwave). */
+    'boss:slam': { bossId: string; entityId: number; phase: 'rise' | 'impact'; polarity: number };
     /** A magnetic shield crystal block was destroyed at a position in a region. */
     'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     'entity:died': { entityId: number; type: string };

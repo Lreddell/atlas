@@ -81,5 +81,7 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },   // a hit absorbed by the shield
     "entity.magnetic_warden.parry": { category: "blocks", sounds: ["magnetic_warden/parry"], volume: 0.7 },         // deflectable purple bolt launched
     "entity.magnetic_warden.deflect": { category: "blocks", sounds: ["magnetic_warden/deflect"], volume: 0.8 },     // player deflected a bolt back
+    "entity.magnetic_warden.slam_rise": { category: "blocks", sounds: ["magnetic_warden/slam_rise"], volume: 0.7 }, // boss rising for a slam (telegraph)
+    "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },           // slam impact + polarity shockwave
     "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 }         // boss death sting / short song
 };

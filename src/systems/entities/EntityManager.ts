@@ -4,8 +4,9 @@ import { checkCollision, getSupportTop, isSolid } from '../player/playerCollisio
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
-import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile } from './Entity';
+import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile, type Shockwave } from './Entity';
 import { inputState } from '../player/playerInput';
+import { addTrauma } from '../player/cameraShake';
 import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
 import {
@@ -40,8 +41,10 @@ const BOSS_NAMES: Record<string, string> = {
 class EntityManager {
     private entities = new Map<number, Entity>();
     private projectiles: Projectile[] = [];
+    private shockwaves: Shockwave[] = [];
     private nextId = 1;
     private nextProjectileId = 1;
+    private nextShockwaveId = 1;
     private inCombat = false;
     // Shield-crystal blocks to re-place once their chunk is loaded (a boss that
     // reset while the player was away restores its crystals when they return).
@@ -69,6 +72,10 @@ class EntityManager {
 
     getProjectiles(): Projectile[] {
         return this.projectiles;
+    }
+
+    getShockwaves(): Shockwave[] {
+        return this.shockwaves;
     }
 
     /**
@@ -140,6 +147,10 @@ class EntityManager {
             projectileTimer: kind.projectileInterval ?? 0,
             barrageTimer: kind.barrageDuration ?? 0,
             awaitingParry: false,
+            slamState: 'none',
+            slamTimer: kind.slamInterval ?? 0,
+            slamPhaseTimer: 0,
+            slamGroundY: y,
             home: new THREE.Vector3(x, y, z),
             shieldCrystalPositions: opts.shieldCrystalPositions,
             maxShieldCrystals: kind.shieldCrystals ?? 0,
@@ -186,6 +197,7 @@ class EntityManager {
         const hadEntities = this.entities.size > 0;
         this.entities.clear();
         this.projectiles = [];
+        this.shockwaves = [];
         if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
         gameEvents.emit('boss:cleared', {});
         if (hadEntities) this.notifyStructure();
@@ -230,6 +242,7 @@ class EntityManager {
         }
         if (removed) {
             this.projectiles = [];
+            this.shockwaves = [];
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             gameEvents.emit('boss:cleared', {});
             this.notifyStructure();
@@ -310,6 +323,7 @@ class EntityManager {
                 if (far) {
                     this.despawnBoss(e);
                     this.projectiles = [];
+                    this.shockwaves = [];
                     if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
                     gameEvents.emit('boss:cleared', {});
                     this.notifyStructure();
@@ -319,6 +333,13 @@ class EntityManager {
 
             e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
             const preserveKnockback = shouldPreserveKnockback(e.knockbackSeconds);
+
+            // --- Slam attack overrides everything while the boss is airborne ---
+            if (e.slamState !== 'none') {
+                this.tickSlam(e, kind, dt);
+                if (e.aggro) anyAggro = true;
+                continue;
+            }
 
             // --- AI: notice and chase the player ---
             if (pp && targetable) {
@@ -373,15 +394,23 @@ class EntityManager {
                 e.attackCooldown = kind.attackCooldown;
             }
 
+            // --- Slam attack (phase 2+): periodic rise-and-slam shockwaves ---
+            if (kind.slamThreshold && pp && targetable && e.aggro && !e.shielded
+                && e.hp <= e.maxHp * kind.slamThreshold) {
+                e.slamTimer -= dt;
+                if (e.slamTimer <= 0 && !e.awaitingParry) this.startSlam(e, kind);
+            }
+
             // --- Magnetic Warden boss mechanics (polarity swap, field, projectiles) ---
             // Only while actively engaged, so it stays silent and idle when the
             // player is dead or away (no phantom polarity-swap sounds).
-            if (kind.polaritySwapInterval && pp && targetable && e.aggro) {
+            if (e.slamState === 'none' && kind.polaritySwapInterval && pp && targetable && e.aggro) {
                 this.tickBossMechanics(e, kind, pp, dt);
             }
         }
 
         this.tickProjectiles(dt, pp, targetable);
+        this.tickShockwaves(dt, pp, targetable);
 
         if (anyAggro && !this.inCombat) { this.inCombat = true; gameEvents.emit('combat:start', {}); }
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
@@ -518,7 +547,7 @@ class EntityManager {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
         const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.5) - oy, dz = pp.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
-        const speed = enraged ? 18 : 15;
+        const speed = enraged ? 23 : 18;
         // A dense 5-bolt fan, widening to 7 once enraged — heavy pressure on a
         // player exposed on a pillar.
         const spreads = enraged
@@ -590,6 +619,90 @@ class EntityManager {
             }
         }
         return false;
+    }
+
+    // --- Slam attack: rise, hang (telegraph), drop, then a polarity shockwave ---
+    private startSlam(e: Entity, kind: EntityKind): void {
+        e.slamState = 'rising';
+        e.slamPhaseTimer = kind.slamRiseTime ?? 0.85;
+        e.slamGroundY = e.pos.y;
+        e.slamTimer = kind.slamInterval ?? 9;
+        e.vel.set(0, 0, 0);
+        if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'rise', polarity: e.polarity });
+    }
+
+    private tickSlam(e: Entity, kind: EntityKind, dt: number): void {
+        const riseTime = kind.slamRiseTime ?? 0.85;
+        const apex = e.slamGroundY + (kind.slamRiseHeight ?? 9);
+        if (e.slamState === 'rising') {
+            e.pos.y += ((kind.slamRiseHeight ?? 9) / riseTime) * dt;
+            e.slamPhaseTimer -= dt;
+            if (e.slamPhaseTimer <= 0 || e.pos.y >= apex) {
+                e.pos.y = apex;
+                e.slamState = 'hanging';
+                e.slamPhaseTimer = kind.slamHangTime ?? 0.45;
+            }
+        } else if (e.slamState === 'hanging') {
+            e.slamPhaseTimer -= dt;
+            if (e.slamPhaseTimer <= 0) e.slamState = 'dropping';
+        } else { // dropping
+            e.pos.y -= (kind.slamDropSpeed ?? 38) * dt;
+            if (e.pos.y <= e.slamGroundY) {
+                e.pos.y = e.slamGroundY;
+                e.slamState = 'none';
+                e.grounded = true;
+                this.spawnShockwave(e, kind);
+                addTrauma(0.85);
+                if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
+            }
+        }
+    }
+
+    private spawnShockwave(e: Entity, kind: EntityKind): void {
+        this.shockwaves.push({
+            id: this.nextShockwaveId++,
+            x: e.pos.x,
+            y: e.slamGroundY,
+            z: e.pos.z,
+            polarity: e.polarity,
+            radius: 0,
+            maxRadius: kind.slamMaxRadius ?? 26,
+            speed: kind.slamRingSpeed ?? 15,
+            damage: kind.slamDamage ?? 9,
+            hit: false,
+        });
+    }
+
+    // Expand each shockwave; when its leading edge reaches the player, a SAME
+    // polarity launches + hurts them, OPPOSITE is safe (they ground against it).
+    private tickShockwaves(
+        dt: number,
+        pp: { x: number; y: number; z: number } | null,
+        targetable: boolean,
+    ): void {
+        if (this.shockwaves.length === 0) return;
+        const survivors: Shockwave[] = [];
+        for (const s of this.shockwaves) {
+            s.radius += s.speed * dt;
+            if (!s.hit && targetable && pp) {
+                const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
+                // Resolve once the ring's edge sweeps over the player (and they're
+                // near the floor — a player already airborne above it is skipped).
+                if (s.radius >= dist && Math.abs(pp.y - s.y) < 3.5) {
+                    s.hit = true;
+                    const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
+                    if (playerPol === s.polarity) {
+                        // Same polarity → launched up and outward, and hurt.
+                        const d = dist || 1;
+                        const ox = (pp.x - s.x) / d, oz = (pp.z - s.z) / d;
+                        this.playerImpulseHandler?.(ox * 7, 13, oz * 7);
+                        this.playerDamageHandler?.(s.damage, ox, oz);
+                    }
+                }
+            }
+            if (s.radius <= s.maxRadius) survivors.push(s);
+        }
+        this.shockwaves = survivors;
     }
 
     private moveWithCollision(e: Entity, kind: EntityKind, dt: number, guard = false): void {

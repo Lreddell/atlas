@@ -7,6 +7,8 @@ Place replacement sound effects in this folder using these exact names:
   shielded.ogg   plays when a hit is absorbed by the Warden's shield
   parry.ogg      plays when the Warden launches a deflectable purple bolt
   deflect.ogg    plays when you successfully hit a bolt back at the Warden
+  slam_rise.ogg  plays as the Warden rises into the air to slam (telegraph)
+  slam.ogg       plays on the slam impact + polarity shockwave
   defeat.ogg     plays once when the Warden is defeated (a short sting / song)
 
 Accepted formats: .ogg (preferred), .mp3, .wav. Use the exact base name above;

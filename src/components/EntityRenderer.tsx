@@ -9,6 +9,7 @@ const POLARITY_BLUE = 0x1e88e5;
 const PARRY_PURPLE = 0xb388ff;   // deflectable bolt
 const PARRY_RETURN = 0x80ffea;   // deflected, player-owned bolt
 const PROJECTILE_POOL = 48;
+const SHOCKWAVE_POOL = 4;
 
 // Renders all entities owned by the EntityManager. The React list is rebuilt only
 // on structural changes (spawn/despawn); per-frame position/flash/shield/projectile
@@ -19,6 +20,7 @@ export const EntityRenderer: React.FC = () => {
     const shieldRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const auraRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const projRefs = useRef<(THREE.Mesh | null)[]>([]);
+    const ringRefs = useRef<(THREE.Mesh | null)[]>([]);
     // Per-boss polarity-swap flash bookkeeping for the field aura.
     const lastPolarity = useRef<Map<number, number>>(new Map());
     const flashUntil = useRef<Map<number, number>>(new Map());
@@ -96,6 +98,24 @@ export const EntityRenderer: React.FC = () => {
                 m.visible = false;
             }
         }
+        // Expanding polarity shockwave rings (boss slams).
+        const shockwaves = entityManager.getShockwaves();
+        for (let i = 0; i < SHOCKWAVE_POOL; i++) {
+            const m = ringRefs.current[i];
+            if (!m) continue;
+            const s = shockwaves[i];
+            if (s && s.radius > 0) {
+                m.visible = true;
+                m.position.set(s.x, s.y + 0.1, s.z);
+                // A unit ring (inner 0.86, outer 1.0) scaled to the current radius.
+                m.scale.set(s.radius, s.radius, s.radius);
+                const mat = m.material as THREE.MeshBasicMaterial;
+                mat.color.setHex(s.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                mat.opacity = 0.75 * (1 - s.radius / s.maxRadius);
+            } else {
+                m.visible = false;
+            }
+        }
     });
 
     return (
@@ -142,6 +162,12 @@ export const EntityRenderer: React.FC = () => {
                 <mesh key={`proj-${i}`} ref={(m) => { projRefs.current[i] = m; }} visible={false}>
                     <boxGeometry args={[0.45, 0.45, 0.45]} />
                     <meshBasicMaterial color={POLARITY_RED} />
+                </mesh>
+            ))}
+            {Array.from({ length: SHOCKWAVE_POOL }).map((_, i) => (
+                <mesh key={`ring-${i}`} ref={(m) => { ringRefs.current[i] = m; }} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+                    <ringGeometry args={[0.86, 1, 48]} />
+                    <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
                 </mesh>
             ))}
         </>

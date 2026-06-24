@@ -12,11 +12,14 @@ export const BossBar: React.FC = () => {
     // Shield crystals remaining and the starting count, so the bar can draw a
     // purple shield layer that recedes a quarter at a time as crystals break.
     const [shield, setShield] = React.useState<{ crystals: number; max: number }>({ crystals: 0, max: 0 });
+    // Boss polarity (+1 red / -1 blue / 0 unknown) — tints the health bar.
+    const [polarity, setPolarity] = React.useState(0);
 
     useEffect(() => {
         const offSpawned = gameEvents.on('boss:spawned', ({ bossId, entityId, name, maxHp }) => {
             dispatch({ type: 'spawned', bossId, entityId, name, maxHp });
             setShield({ crystals: 0, max: 0 });
+            setPolarity(0);
         });
         const offDamaged = gameEvents.on('boss:damaged', ({ bossId, entityId, hp, maxHp }) => {
             dispatch({ type: 'damaged', bossId, entityId, hp, maxHp });
@@ -34,10 +37,12 @@ export const BossBar: React.FC = () => {
             setShield((s) => ({ crystals, max: Math.max(s.max, crystals) })));
         const offVulnerable = gameEvents.on('boss:vulnerable', () =>
             setShield((s) => ({ ...s, crystals: 0 })));
-        // Audible telegraph each time the boss swaps polarity (editable:
-        // sounds/magnetic_warden/polarity).
-        const offPolarity = gameEvents.on('boss:polarity', () =>
-            soundManager.play('entity.magnetic_warden.polarity', { volume: 0.6 }));
+        // Audible telegraph + bar colour each time the boss swaps polarity
+        // (editable: sounds/magnetic_warden/polarity).
+        const offPolarity = gameEvents.on('boss:polarity', ({ polarity: p }) => {
+            setPolarity(p);
+            soundManager.play('entity.magnetic_warden.polarity', { volume: 0.6 });
+        });
         return () => {
             offSpawned(); offDamaged(); offDefeated(); offCleared();
             offShield(); offVulnerable(); offPolarity();
@@ -48,6 +53,10 @@ export const BossBar: React.FC = () => {
 
     const pct = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
     const shieldPct = shield.max > 0 ? Math.max(0, Math.min(1, shield.crystals / shield.max)) : 0;
+    // Health fill tints to the boss's current polarity (red = +, blue = −).
+    const fill = polarity < 0
+        ? 'linear-gradient(180deg, #6ab0ff 0%, #1e7ae0 55%, #0a3f8f 100%)'
+        : 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)';
 
     return (
         <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] -translate-x-1/2 flex-col items-center">
@@ -61,10 +70,7 @@ export const BossBar: React.FC = () => {
                 {/* Health underneath. */}
                 <div
                     className="absolute inset-y-0 left-0 transition-[width] duration-150"
-                    style={{
-                        width: `${pct * 100}%`,
-                        background: 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)',
-                    }}
+                    style={{ width: `${pct * 100}%`, background: fill }}
                 />
                 {/* Purple shield layer on top: full while invulnerable, receding a
                     quarter per crystal to reveal the health bar beneath. */}

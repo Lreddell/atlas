@@ -890,6 +890,11 @@ const App: React.FC = () => {
       const offParry = gameEvents.on('boss:parry', () => {
           soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
       });
+      // Slam attack: a rise telegraph, then the shockwave impact.
+      const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
+          soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
+              { volume: phase === 'rise' ? 0.7 : 0.95 });
+      });
       // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
@@ -898,7 +903,7 @@ const App: React.FC = () => {
       const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
-      return () => { offDenied(); offCleansed(); offDefeated(); offParry(); offCrystal(); offPower(); };
+      return () => { offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offCrystal(); offPower(); };
   }, []);
 
   // Update Chunks & Stream
