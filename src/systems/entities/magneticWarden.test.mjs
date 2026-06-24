@@ -108,8 +108,10 @@ test('vulnerable phase loops dodge-barrage then a deflectable parry bolt', () =>
     assert.match(manager, /e\.awaitingParry/);
     assert.match(manager, /fireParryBolt/);
     assert.match(manager, /'boss:parry'/);
-    // While a parry bolt is live, all other fire is held.
-    assert.match(manager, /filter\(\(p\) => p\.owner === 'player'\)/);
+    // While a parry bolt is live, all NEW fire is held (awaitingParry), but the
+    // barrage bolts already in flight are NOT wiped — they stay live until ttl/hit.
+    assert.match(manager, /e\.awaitingParry = true/);
+    assert.doesNotMatch(manager, /this\.projectiles = this\.projectiles\.filter\(\(p\) => p\.owner === 'player'\)/);
     // The deflectable bolt is purple, slow, boss-owned.
     assert.match(manager, /deflectable: true/);
 });
@@ -230,6 +232,38 @@ test('the arena has water landing pools and a removable dais; crystals spawn lat
     // The dais can be flattened (boss alive) and restored (boss gone).
     assert.match(arena, /export function flattenArenaDais/);
     assert.match(arena, /export function restoreArenaDais/);
+});
+
+test('the four causeways drop into the lava during the fight and return after', () => {
+    const arena = read('src/systems/world/magneticArena.ts');
+    // Bridge cells + flatten/restore helpers exist.
+    assert.match(arena, /BRIDGE_CELLS/);
+    assert.match(arena, /export function flattenArenaBridges/);
+    assert.match(arena, /export function restoreArenaBridges/);
+    // Flattened as the boss spawns (sealed in); restored when the boss is gone.
+    const summon = read('src/systems/boss/bossSummon.ts');
+    assert.match(summon, /flattenArenaBridges/);
+    assert.match(app, /restoreArenaBridges/);
+});
+
+test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
+    // Boss drops spawn from a block above the arena centre, not where it died.
+    assert.match(manager, /e\.isBoss && e\.home \? e\.home\.y \+ 4/);
+    // A defeat eruption (particles + camera trauma) at the centre.
+    assert.match(manager, /if \(e\.isBoss\) {[\s\S]*?spawnParticles[\s\S]*?addTrauma/);
+    // The altar restore is delayed on a clean defeat.
+    assert.match(app, /restoreSummonAltar\(6000\)/);
+    assert.match(app, /daisDelayMs/);
+});
+
+test('deflecting takes real aim and stray barrage bolts live ~5s', () => {
+    // Tight parry hit box (skill), not the old generous radius.
+    assert.match(manager, /const r = 0\.42/);
+    assert.doesNotMatch(manager, /const r = 0\.7;/);
+    // Volley bolts persist longer in the air (deleted on contact or after ~5s).
+    assert.match(manager, /fireVolley[\s\S]*?ttl: 5/);
+    // A successful deflect sparks + nudges the camera.
+    assert.match(manager, /deflectProjectile[\s\S]*?spawnParticles[\s\S]*?addTrauma/);
 });
 
 test('the summon cutscene orbits, charges an energy ball, then spawns the boss aggro', () => {
