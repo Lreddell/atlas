@@ -247,8 +247,9 @@ test('the four causeways drop into the lava during the fight and return after', 
 });
 
 test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
-    // Boss loot drops a block above the altar, deferred until the altar re-forms.
-    assert.match(manager, /e\.home\.y \+ 5/);
+    // Boss loot drops one block above the altar (summoner at baseY+4 = home.y+3),
+    // deferred until the altar re-forms.
+    assert.match(manager, /e\.home\.y \+ 4/);
     assert.match(manager, /setTimeout\(\(\) => spawnDrops[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
     // A defeat eruption (glowing FX bursts + camera trauma) at the centre.
     assert.match(manager, /if \(e\.isBoss && e\.home\) {[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
