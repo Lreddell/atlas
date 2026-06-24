@@ -371,13 +371,49 @@ function buildShieldCrystalPedestals(centerX: number, centerZ: number, baseY: nu
                 if (cheb === 2) ctx.setBlock(wx, top + 1, wz, BlockType.CHISELED_MAGNETITE); // inset rim
             }
         }
-        // Raised pedestal so the crystal stands clearly ABOVE the rim — you can
-        // always tell which towers are still shielded.
+        // Raised pedestal (the crystal stands ABOVE the rim). The crystal block
+        // itself is NOT generated here — it is spawned by the summon cutscene at
+        // top+2 (getShieldCrystalPositions) so the arena is empty until you fight.
         if (inChunk(ctx, c.x, c.z)) {
             ctx.setBlock(c.x, top + 1, c.z, BlockType.CHISELED_MAGNETITE);
-            ctx.setBlock(c.x, top + 2, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
         }
     }
+}
+
+// --- Dais lifecycle: removed while the boss is alive (so it can't snag on the
+//     raised centre), restored when the boss is gone (so you can re-summon). ---
+
+const DAIS_CELLS: { dx: number; dz: number; dy: number; type: BlockType }[] = (() => {
+    const cells: { dx: number; dz: number; dy: number; type: BlockType }[] = [];
+    for (let dx = -5; dx <= 5; dx++) {
+        for (let dz = -5; dz <= 5; dz++) {
+            const dist = Math.hypot(dx, dz);
+            if (dist > 5) continue;
+            cells.push({ dx, dz, dy: 1, type: BlockType.MAGNETITE_BRICKS });
+            if (dist <= 3) cells.push({ dx, dz, dy: 2, type: BlockType.CHISELED_MAGNETITE });
+            if (dx === 0 && dz === 0) {
+                cells.push({ dx, dz, dy: 3, type: BlockType.CHISELED_MAGNETITE });
+                cells.push({ dx, dz, dy: 4, type: BlockType.MAGNETIC_BOSS_SUMMONER });
+            }
+        }
+    }
+    return cells;
+})();
+
+/** Flatten the raised dais + remove the summoner altar (boss is active). */
+export function flattenArenaDais(
+    centerX: number, centerZ: number, baseY: number,
+    setBlock: (x: number, y: number, z: number, t: BlockType) => void,
+): void {
+    for (const c of DAIS_CELLS) setBlock(centerX + c.dx, baseY + c.dy, centerZ + c.dz, BlockType.AIR);
+}
+
+/** Rebuild the dais + summoner altar (boss gone — re-summonable). */
+export function restoreArenaDais(
+    centerX: number, centerZ: number, baseY: number,
+    setBlock: (x: number, y: number, z: number, t: BlockType) => void,
+): void {
+    for (const c of DAIS_CELLS) setBlock(centerX + c.dx, baseY + c.dy, centerZ + c.dz, c.type);
 }
 
 /** World positions of the four shield crystals (raised pedestal tops). */

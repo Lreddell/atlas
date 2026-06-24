@@ -57,6 +57,8 @@ export interface Entity {
     slamPhaseTimer: number;
     /** Floor Y the boss rose from / slams back down to. */
     slamGroundY: number;
+    /** Seconds of post-spawn grace: present (music/bar) but passive, no attacks. */
+    aggroGrace: number;
 }
 
 // An expanding polarity shockwave ring from a slam. Same polarity as the boss;
