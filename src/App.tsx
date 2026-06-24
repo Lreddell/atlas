@@ -291,6 +291,8 @@ const App: React.FC = () => {
   // scripted. The arena centre is remembered so the dais altar can be restored.
   const [cinematicMode, setCinematicMode] = useState(false);
   const summonArenaRef = useRef<{ cx: number; cz: number; baseY: number } | null>(null);
+  // When on, death does not drop/clear the inventory (the /keepinventory command).
+  const [keepInventory, setKeepInventory] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -816,7 +818,8 @@ const App: React.FC = () => {
             || craftingGrid2x2.some(i => i !== null)
             || craftingGrid3x3.some(i => i !== null)
             || EQUIPMENT_SLOTS.some(slot => equipment[slot] !== null);
-        if (hasItems) {
+        // /keepinventory keeps everything through death — skip the drop entirely.
+        if (hasItems && !keepInventory) {
             const extractedEquipment = extractEquipmentItems(equipment);
             setDrops(prev => {
                 const newDrops = [...prev];
@@ -855,7 +858,7 @@ const App: React.FC = () => {
             }
         }
     }
-  }, [health, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, equipment, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]);
+  }, [health, keepInventory, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, equipment, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]);
 
   useEffect(() => {
       const unsubscribe = worldManager.subscribeToMessages((msg, type, clickAction) => {
@@ -1476,6 +1479,15 @@ const App: React.FC = () => {
           else if (['survival', 's', '0'].includes(mode)) { setGameMode('survival'); logMsg("Set game mode to Survival", 'success'); } 
           else if (['spectator', 'sp', '3'].includes(mode)) { setGameMode('spectator'); logMsg("Set game mode to Spectator", 'success'); } 
           else { logMsg("Unknown gamemode. Use survival/creative/spectator", 'error'); }
+      } else if (parts[0] === '/keepinventory') {
+          const arg = parts[1]?.toLowerCase();
+          let next: boolean | null;
+          if (arg === undefined) next = !keepInventory; // toggle
+          else if (['on', 'true', '1', 'enable'].includes(arg)) next = true;
+          else if (['off', 'false', '0', 'disable'].includes(arg)) next = false;
+          else next = null;
+          if (next === null) { logMsg('Usage: /keepinventory [on|off]', 'error'); }
+          else { setKeepInventory(next); logMsg(`Keep inventory on death: ${next ? 'ON' : 'OFF'}`, 'success'); }
       } else if (parts[0] === '/music') {
           if (parts[1] === 'skip') {
               const skipped = musicController.skipTrack();
@@ -1709,7 +1721,7 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields]);
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory]);
 
   const updateAutocomplete = useCallback((input: string) => {
       const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);

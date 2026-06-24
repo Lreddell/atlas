@@ -10,6 +10,7 @@ export interface CommandAutocompleteOptions {
 
 export const COMMANDS = [
     '/gamemode',
+    '/keepinventory',
     '/time',
     '/phase',
     '/locate',
@@ -32,6 +33,7 @@ export const COMMANDS = [
 
 export const SUBCOMMANDS: Record<string, string[]> = {
     '/gamemode': ['survival', 'creative', 'spectator'],
+    '/keepinventory': ['on', 'off'],
     '/time': ['set', 'add', 'query'],
     '/phase': ['set'],
     '/locate': ['biome'],
