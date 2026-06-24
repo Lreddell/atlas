@@ -21,7 +21,7 @@ import { soundManager } from '../sound/SoundManager';
 import { gameEvents } from '../events/GameEvents';
 import { addTrauma } from '../player/cameraShake';
 import { BlockType } from '../../types';
-import { getShieldCrystalPositions, flattenArenaDais } from '../world/magneticArena';
+import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges } from '../world/magneticArena';
 
 export interface SummonParams {
     centerX: number;
@@ -37,24 +37,29 @@ export interface SummonParams {
 // --- Timeline (seconds, cumulative) ---
 const FADE_OUT = 1.0;
 const FADE_IN = 1.6;
-const ORBIT_DUR = 13;     // crystals spawn during the orbit
+const ORBIT_DUR = 9.5;    // crystals spawn during the orbit (2s apart)
 const BEAM_DUR = 4.5;     // beams grow slowly
 const PUSHIN_DUR = 3.5;   // camera moves in toward the altar
-const CHARGE_DUR = 5.5;   // energy ball swells — the run-away grace window
+const FLYBACK_DUR = 3.4;  // camera flies all the way back to the player (slowed)
+const GRACE_DUR = 4.0;    // ball keeps swelling after control returns (run-away window)
 
-const T_ORBIT = FADE_OUT;                 // 1.0
-const T_BEAM = T_ORBIT + ORBIT_DUR;       // 14.0
-const T_PUSH = T_BEAM + BEAM_DUR;         // 18.5
-const T_CHARGE = T_PUSH + PUSHIN_DUR;     // 22.0  (control handback + ball forms)
-const T_IMPACT = T_CHARGE + CHARGE_DUR;   // 27.5  (explosion + boss spawn)
+const T_ORBIT = FADE_OUT;                  // 1.0
+const T_BEAM = T_ORBIT + ORBIT_DUR;        // 10.5
+const T_PUSH = T_BEAM + BEAM_DUR;          // 15.0
+const T_FLYBACK = T_PUSH + PUSHIN_DUR;     // 18.5  (beams collapse → energy ball forms)
+const T_CONTROL = T_FLYBACK + FLYBACK_DUR; // 21.9  (camera back at the player → control returns)
+const T_IMPACT = T_FLYBACK + FLYBACK_DUR + GRACE_DUR; // 25.9  (explosion + boss spawn)
 const T_TOTAL = T_IMPACT + 0.3;
+
+// Crystals spawn on a fixed 2-second cadence, in the orbit's sweep order.
+const CRYSTAL_FIRST = 1.3;
+const CRYSTAL_GAP = 2.0;
 
 // --- Camera orbit (relative to the arena centre) ---
 const ORBIT_RADIUS = 80;   // outside the wall (outer radius ~72)
 const ORBIT_HEIGHT = 42;   // above the floor
 const START_ANGLE = Math.PI / 4;     // matches tower 0's diagonal
-const ORBIT_RATE = 0.46;             // rad/s
-const SPAWN_LEAD = 0.6;              // crystal pops once the camera is this far past the tower
+const ORBIT_RATE = 0.40;             // rad/s (a touch slower)
 const BALL_MAX_R = 3.6;
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -87,9 +92,11 @@ class BossSummon {
     private rafId: number | null = null;
     private spawned = new Set<number>();
     private firedBeamHum = false;
+    private firedBall = false;
     private firedHandback = false;
     private firedSpawn = false;
     private lastChargePulse = 0;
+    private lastAmbientPulse = 0;
     private listeners = new Set<() => void>();
 
     private readonly _center = new THREE.Vector3();
@@ -117,9 +124,11 @@ class BossSummon {
         this.crystalsShown = 0;
         this.spawned.clear();
         this.firedBeamHum = false;
+        this.firedBall = false;
         this.firedHandback = false;
         this.firedSpawn = false;
         this.lastChargePulse = 0;
+        this.lastAmbientPulse = 0;
         this.active = true;
         this.running = true;
 
@@ -177,54 +186,68 @@ class BossSummon {
                 const angle = START_ANGLE + ORBIT_RATE * (t - T_ORBIT);
                 this.orbitPos(angle, this.camPos);
                 quatLookAt(this.camPos, this._look, this.camQuat);
-            } else {
+            } else if (t < T_FLYBACK) {
                 // Push in toward the altar from where the orbit left off.
-                const angleAtPush = START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT);
-                this.orbitPos(angleAtPush, this._eye);
+                this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
                 this._pushTarget.set(this._center.x + 11, p.baseY + 9, this._center.z + 11);
                 const k = smooth(Math.min(1, (t - T_PUSH) / PUSHIN_DUR));
                 this.camPos.lerpVectors(this._eye, this._pushTarget, k);
                 quatLookAt(this._eye, this._look, this._q);          // orbit-exit look
                 quatLookAt(this._pushTarget, this.altar, this._q2);  // close altar look
                 this.camQuat.copy(this._q).slerp(this._q2, k);
+            } else {
+                // Fly all the way back to the player's EXACT position + angle (slowed);
+                // at k=1 the camera sits precisely where control resumes — no snap.
+                this._pushTarget.set(this._center.x + 11, p.baseY + 9, this._center.z + 11);
+                quatLookAt(this._pushTarget, this.altar, this._q2);
+                const k = smooth(Math.min(1, (t - T_FLYBACK) / FLYBACK_DUR));
+                this.camPos.lerpVectors(this._pushTarget, p.startPos, k);
+                this.camQuat.copy(this._q2).slerp(p.startQuat, k);
             }
         }
 
-        // --- Crystal spawns (as the camera sweeps past each tower) ---
+        // --- Crystal spawns: fixed 2s cadence, in the orbit's sweep order ---
         if (t >= T_ORBIT && t < T_BEAM) {
-            const swept = ORBIT_RATE * (t - T_ORBIT);
             for (let i = 0; i < 4; i++) {
-                if (!this.spawned.has(i) && swept >= i * (Math.PI / 2) + SPAWN_LEAD) {
+                if (!this.spawned.has(i) && t - T_ORBIT >= CRYSTAL_FIRST + i * CRYSTAL_GAP) {
                     this.spawnCrystal(i);
                 }
             }
+            // Ambient magnetic energy gathering at the centre as crystals appear.
+            this.ambientPulse(t, BlockType.MAGNETITE_SHARD);
         }
 
-        // --- Beams + hum ---
-        if (t >= T_BEAM && t < T_CHARGE) {
+        // --- Beams + hum (energy streaming to the altar) ---
+        if (t >= T_BEAM && t < T_FLYBACK) {
             if (!this.firedBeamHum) { this.firedBeamHum = true; soundManager.play('entity.magnetic_warden.hum', { volume: 0.7 }); }
             this.beamProgress = Math.min(1, (t - T_BEAM) / BEAM_DUR);
-        } else if (t >= T_CHARGE) {
-            this.beamProgress = 0;
+            this.ambientPulse(t, BlockType.CHARGED_MAGNETITE);
+        } else if (t >= T_FLYBACK) {
+            this.beamProgress = 0; // collapsed into the ball
         }
 
-        // --- Energy ball charge: hand control back, swell the orb (run-away window) ---
-        if (t >= T_CHARGE && t < T_IMPACT) {
-            if (!this.firedHandback) {
-                this.firedHandback = true;
-                this.active = false;
-                gameEvents.emit('cinematic:end', {});
-                soundManager.play('entity.magnetic_warden.charge', { volume: 0.8 });
-                addTrauma(0.3);
+        // --- Energy ball: forms when the beams collapse, swells until impact ---
+        if (t >= T_FLYBACK && t < T_IMPACT) {
+            if (!this.firedBall) {
+                this.firedBall = true;
+                soundManager.play('entity.magnetic_warden.charge', { volume: 0.85 });
             }
-            this.ballScale = (t - T_CHARGE) / CHARGE_DUR;
-            // Building rumble + crackle as it grows.
-            if (t - this.lastChargePulse > 0.45) {
+            this.ballScale = (t - T_FLYBACK) / (T_IMPACT - T_FLYBACK);
+            // Building rumble + crackle — but NOT a jolt right as control returns.
+            if (t > T_CONTROL + 0.4 && t - this.lastChargePulse > 0.4) {
                 this.lastChargePulse = t;
-                addTrauma(0.05 + 0.22 * this.ballScale);
+                addTrauma(0.04 + 0.18 * this.ballScale);
                 const ax = Math.floor(this.altar.x), ay = Math.floor(this.altar.y), az = Math.floor(this.altar.z);
                 worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay, az);
+                worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, ax, ay, az);
             }
+        }
+
+        // --- Control returns the instant the camera arrives back at the player ---
+        if (t >= T_CONTROL && !this.firedHandback) {
+            this.firedHandback = true;
+            this.active = false;
+            gameEvents.emit('cinematic:end', {}); // no shake here
         }
 
         // --- Impact: explode the orb, flatten the dais, spawn the boss (aggro) ---
@@ -234,15 +257,24 @@ class BossSummon {
             addTrauma(1.0);
             soundManager.play('entity.magnetic_warden.summon', { volume: 1.0 });
             const ax = Math.floor(this.altar.x), ay = p.baseY, az = Math.floor(this.altar.z);
-            worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay + 1, az);
-            worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, ax, ay + 2, az);
-            worldManager.spawnParticles(BlockType.CHISELED_MAGNETITE, ax, ay, az);
+            for (const [b, dy] of [[BlockType.CHARGED_MAGNETITE, 1], [BlockType.MAGNETITE_SHARD, 2], [BlockType.CHISELED_MAGNETITE, 0], [BlockType.POSITIVE_MAGNET, 1], [BlockType.NEGATIVE_MAGNET, 2]] as const) {
+                worldManager.spawnParticles(b, ax, ay + dy, az);
+            }
             flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
+            // Drop the four causeways into the lava — the player is now sealed on
+            // the central island for the duration of the fight.
+            flattenArenaBridges(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             p.onSpawnBoss();
         }
 
         if (t >= T_TOTAL) this.stop();
         this.notify();
+    }
+
+    private ambientPulse(t: number, block: BlockType): void {
+        if (t - this.lastAmbientPulse < 0.55) return;
+        this.lastAmbientPulse = t;
+        worldManager.spawnParticles(block, Math.floor(this.altar.x), Math.floor(this.altar.y), Math.floor(this.altar.z));
     }
 
     private spawnCrystal(i: number): void {

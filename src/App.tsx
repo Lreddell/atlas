@@ -26,7 +26,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -870,13 +870,19 @@ const App: React.FC = () => {
       return () => { unsubscribe(); };
   }, []);
 
-  // Rebuild the raised dais + summoner altar once the boss is gone (defeated or
-  // despawned), so the arena can be re-summoned. No-op if nothing was summoned.
-  const restoreSummonAltar = useCallback(() => {
+  // Restore the arena once the boss is gone (defeated or despawned): the four
+  // causeways across the lava come straight back so the player can leave, while
+  // the raised dais + summoner altar is rebuilt after `daisDelayMs` (on a clean
+  // defeat we let the victory effects breathe before the altar re-forms). No-op
+  // if nothing was summoned.
+  const restoreSummonAltar = useCallback((daisDelayMs = 0) => {
       const a = summonArenaRef.current;
       if (!a) return;
       summonArenaRef.current = null;
-      restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      if (daisDelayMs > 0) window.setTimeout(restoreDais, daisDelayMs);
+      else restoreDais();
   }, []);
 
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
@@ -904,7 +910,8 @@ const App: React.FC = () => {
           if (regionId) progression.cleanseRegion(regionId);
           // Victory sting (editable: sounds/magnetic_warden/defeat).
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
-          restoreSummonAltar();
+          // Let the defeat erupt and the loot settle before the altar re-forms.
+          restoreSummonAltar(6000);
       });
       // The summon cutscene pauses player control while the camera is scripted.
       const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));

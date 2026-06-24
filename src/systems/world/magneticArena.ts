@@ -418,6 +418,49 @@ export function restoreArenaDais(
     setBlocks(DAIS_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: c.type })));
 }
 
+// --- Bridge lifecycle: the four cardinal causeways across the lava moat are
+//     removed while the boss is alive (sealing the player on the central island —
+//     they must climb the towers / use polarity), and rebuilt once the boss is
+//     gone or the player leaves/dies. Only the spans OVER the moat are toggled;
+//     the inner terrace stays solid so the player never drops out of the world. ---
+
+const BRIDGE_CELLS: { dx: number; dy: number; dz: number; type: BlockType }[] = (() => {
+    const cells: { dx: number; dy: number; dz: number; type: BlockType }[] = [];
+    // Mirror buildLaunchRoutes, but only the portion crossing the moat (so the
+    // inner terrace ring under the player is left untouched).
+    const from = ARENA_LAVA_INNER_RADIUS - 1;
+    const to = ARENA_LAVA_OUTER_RADIUS + 2;
+    for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        for (let d = from; d <= to; d++) {
+            for (let w = -1; w <= 1; w++) {
+                cells.push({
+                    dx: sx * d + sz * w, dy: 0, dz: sz * d + sx * w,
+                    type: w === 0 ? BlockType.MAGNETITE_BRICKS : BlockType.CHISELED_MAGNETITE,
+                });
+            }
+            cells.push({ dx: sx * d + sz * 2, dy: 1, dz: sz * d + sx * 2, type: BlockType.MAGNETITE_BRICK_SLAB });
+            cells.push({ dx: sx * d - sz * 2, dy: 1, dz: sz * d - sx * 2, type: BlockType.MAGNETITE_BRICK_SLAB });
+        }
+    }
+    return cells;
+})();
+
+/** Drop the four causeways into the lava (boss is active — player is sealed in). */
+export function flattenArenaBridges(
+    centerX: number, centerZ: number, baseY: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+): void {
+    setBlocks(BRIDGE_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: BlockType.AIR })));
+}
+
+/** Rebuild the four causeways (boss gone / player left — arena is open again). */
+export function restoreArenaBridges(
+    centerX: number, centerZ: number, baseY: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+): void {
+    setBlocks(BRIDGE_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: c.type })));
+}
+
 /** World positions of the four shield crystals (raised pedestal tops). */
 export function getShieldCrystalPositions(
     centerX: number,

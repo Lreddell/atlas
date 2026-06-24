@@ -264,11 +264,30 @@ class EntityManager {
     private kill(e: Entity): void {
         const kind = ENTITY_KINDS[e.kind];
         // Drops
+        // Boss loot erupts from a block above the altar at the arena centre (so it
+        // lands on the dais, not wherever the boss happened to die); normal mobs
+        // drop where they fall.
+        const dropX = e.isBoss && e.home ? e.home.x : e.pos.x;
+        const dropY = e.isBoss && e.home ? e.home.y + 4 : e.pos.y + 0.3;
+        const dropZ = e.isBoss && e.home ? e.home.z : e.pos.z;
         kind?.drops?.forEach((d) => {
             if (d.chance != null && Math.random() > d.chance) return;
             const count = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
-            for (let i = 0; i < count; i++) worldManager.spawnDrop(d.type, e.pos.x, e.pos.y + 0.3, e.pos.z);
+            for (let i = 0; i < count; i++) worldManager.spawnDrop(d.type, dropX, dropY, dropZ);
         });
+        if (e.isBoss) {
+            // A big polarity eruption at the centre of the arena where the Warden
+            // falls — magnetite shards and charged dust flung in every direction.
+            const cx = dropX, cy = e.pos.y + e.height * 0.5, cz = dropZ;
+            const blocks = [BlockType.CHARGED_MAGNETITE, BlockType.MAGNETITE_SHARD,
+                BlockType.CHISELED_MAGNETITE, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET];
+            for (let i = 0; i < 14; i++) {
+                const a = (i / 14) * Math.PI * 2;
+                worldManager.spawnParticles(blocks[i % blocks.length],
+                    cx + Math.cos(a) * 1.6, cy + (i % 3), cz + Math.sin(a) * 1.6);
+            }
+            addTrauma(1.0);
+        }
         this.entities.delete(e.id);
         gameEvents.emit('entity:died', { entityId: e.id, type: e.kind });
         if (e.isBoss && e.bossId) {
@@ -468,9 +487,9 @@ class EntityManager {
                 this.fireVolley(e, kind, pp, frenzy);
             }
         } else {
-            // Clear the air (keep any player-deflected bolts), then launch one
-            // deflectable purple bolt for the player to parry.
-            this.projectiles = this.projectiles.filter((p) => p.owner === 'player');
+            // Launch one deflectable purple bolt for the player to parry. The
+            // existing barrage bolts are left in flight (they expire on their own
+            // ttl or on contact) so the arena stays busy and dangerous.
             this.fireParryBolt(e, kind, pp);
             e.awaitingParry = true;
             if (e.bossId) gameEvents.emit('boss:parry', { bossId: e.bossId, entityId: e.id });
@@ -507,7 +526,9 @@ class EntityManager {
         let bestDist = Infinity;
         for (const p of this.projectiles) {
             if (!p.deflectable || p.owner !== 'boss') continue;
-            const r = 0.7;
+            // Tight hit box: you must put the crosshair right on the bolt to parry
+            // it, so deflecting takes real aim rather than a flailing click.
+            const r = 0.42;
             const t = rayAabb(origin, dir,
                 p.pos.x - r, p.pos.y - r, p.pos.z - r,
                 p.pos.x + r, p.pos.y + r, p.pos.z + r);
@@ -526,6 +547,9 @@ class EntityManager {
         best.owner = 'player';
         best.deflectable = false;
         best.ttl = 3;
+        // A bright spark at the deflection point — feedback that the parry landed.
+        worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, best.pos.x, best.pos.y, best.pos.z);
+        addTrauma(0.25);
         if (boss?.bossId) gameEvents.emit('boss:deflected', { bossId: boss.bossId, entityId: boss.id });
         return true;
     }
@@ -562,7 +586,7 @@ class EntityManager {
                     dy / d * speed,
                     (dx * sa + dz * ca) / d * speed,
                 ),
-                ttl: 4,
+                ttl: 5,
                 damage: kind.projectileDamage ?? 4,
                 polarity: e.polarity,
                 owner: 'boss',
@@ -614,6 +638,8 @@ class EntityManager {
                 const kind = ENTITY_KINDS[e.kind];
                 const dmg = Math.max(1, Math.round(e.maxHp * (kind?.parryDamageFraction ?? 1 / 12)));
                 this.damageEntity(e.id, dmg, p.vel.x, p.vel.z);
+                worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, p.pos.x, p.pos.y, p.pos.z);
+                worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
                 return true;
             }
         }
@@ -651,7 +677,14 @@ class EntityManager {
                 e.slamState = 'none';
                 e.grounded = true;
                 this.spawnShockwave(e, kind);
-                addTrauma(0.85);
+                addTrauma(1.0);
+                // Dust kicked up in a ring from the point of impact.
+                const dustBlock = e.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+                for (let i = 0; i < 8; i++) {
+                    const a = (i / 8) * Math.PI * 2;
+                    worldManager.spawnParticles(dustBlock,
+                        e.pos.x + Math.cos(a) * 2, e.slamGroundY + 0.2, e.pos.z + Math.sin(a) * 2);
+                }
                 if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
             }
         }
