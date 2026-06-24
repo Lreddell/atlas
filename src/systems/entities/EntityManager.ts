@@ -7,6 +7,7 @@ import { gameEvents } from '../events/GameEvents';
 import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile, type Shockwave } from './Entity';
 import { inputState } from '../player/playerInput';
 import { addTrauma } from '../player/cameraShake';
+import { particleFx, polarityFxColor, FX_CHARGED } from '../fx/particleFx';
 import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
 import {
@@ -26,6 +27,13 @@ export interface SpawnOptions {
 
 /** Beyond this distance from its home a boss despawns (re-summon at the altar). */
 const BOSS_DESPAWN_RADIUS = 96;
+
+/**
+ * Delay between a boss dying and its altar re-forming. The loot is dropped in
+ * sync (just after) so it lands on the finished altar. App's altar restore uses
+ * the same value so the two stay aligned.
+ */
+export const BOSS_DEFEAT_ALTAR_DELAY_MS = 2500;
 
 const MAX_FALL_SPEED = 40;
 const STEP_HEIGHT = 1.0;
@@ -263,30 +271,27 @@ class EntityManager {
 
     private kill(e: Entity): void {
         const kind = ENTITY_KINDS[e.kind];
-        // Drops
-        // Boss loot erupts from a block above the altar at the arena centre (so it
-        // lands on the dais, not wherever the boss happened to die); normal mobs
-        // drop where they fall.
-        const dropX = e.isBoss && e.home ? e.home.x : e.pos.x;
-        const dropY = e.isBoss && e.home ? e.home.y + 4 : e.pos.y + 0.3;
-        const dropZ = e.isBoss && e.home ? e.home.z : e.pos.z;
-        kind?.drops?.forEach((d) => {
-            if (d.chance != null && Math.random() > d.chance) return;
-            const count = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
-            for (let i = 0; i < count; i++) worldManager.spawnDrop(d.type, dropX, dropY, dropZ);
-        });
-        if (e.isBoss) {
-            // A big polarity eruption at the centre of the arena where the Warden
-            // falls — magnetite shards and charged dust flung in every direction.
-            const cx = dropX, cy = e.pos.y + e.height * 0.5, cz = dropZ;
-            const blocks = [BlockType.CHARGED_MAGNETITE, BlockType.MAGNETITE_SHARD,
-                BlockType.CHISELED_MAGNETITE, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET];
-            for (let i = 0; i < 14; i++) {
-                const a = (i / 14) * Math.PI * 2;
-                worldManager.spawnParticles(blocks[i % blocks.length],
-                    cx + Math.cos(a) * 1.6, cy + (i % 3), cz + Math.sin(a) * 1.6);
-            }
+        const spawnDrops = (dx: number, dy: number, dz: number) => {
+            kind?.drops?.forEach((d) => {
+                if (d.chance != null && Math.random() > d.chance) return;
+                const count = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
+                for (let i = 0; i < count; i++) worldManager.spawnDrop(d.type, dx, dy, dz);
+            });
+        };
+        if (e.isBoss && e.home) {
+            // Loot drops a block ABOVE the altar, and only AFTER the altar finishes
+            // re-forming (BOSS_DEFEAT_ALTAR_DELAY_MS later) so it lands cleanly on
+            // top of the summoner instead of being buried by the rising dais.
+            const hx = e.home.x, hy = e.home.y + 5, hz = e.home.z;
+            window.setTimeout(() => spawnDrops(hx, hy, hz), BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
+            // A huge multi-stage polarity eruption where the Warden falls.
+            const cx = e.home.x, cy = e.pos.y + e.height * 0.5, cz = e.home.z;
+            const col = polarityFxColor(e.polarity);
+            particleFx.burst({ x: cx, y: cy, z: cz, color: col, color2: [1, 1, 1], count: 80, speed: 13, upBias: 4, spread: 1, size: 0.34, life: 1.3, gravity: 7, drag: 0.8 });
+            particleFx.burst({ x: cx, y: cy, z: cz, color: FX_CHARGED, color2: [1, 0.9, 1], count: 60, speed: 7, upBias: 6, spread: 1, size: 0.28, life: 1.6, gravity: 2, drag: 0.6 });
             addTrauma(1.0);
+        } else {
+            spawnDrops(e.pos.x, e.pos.y + 0.3, e.pos.z);
         }
         this.entities.delete(e.id);
         gameEvents.emit('entity:died', { entityId: e.id, type: e.kind });
@@ -537,18 +542,22 @@ class EntityManager {
         if (!best) return false;
 
         const boss = best.sourceId != null ? this.entities.get(best.sourceId) : undefined;
-        const tx = boss ? boss.pos.x : best.pos.x + dir.x;
-        const ty = boss ? boss.pos.y + boss.height * 0.6 : best.pos.y + dir.y;
-        const tz = boss ? boss.pos.z : best.pos.z + dir.z;
-        const ddx = tx - best.pos.x, ddy = ty - best.pos.y, ddz = tz - best.pos.z;
-        const dd = Math.hypot(ddx, ddy, ddz) || 1;
-        const speed = 28;
-        best.vel.set((ddx / dd) * speed, (ddy / dd) * speed, (ddz / dd) * speed);
+        // Ghast-fireball parry: the bolt flies straight back along the player's aim
+        // direction — NOT homing on the boss. To land a hit you must be looking
+        // through the boss at the moment you strike the bolt.
+        const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+        const speed = 30;
+        best.vel.set((dir.x / dl) * speed, (dir.y / dl) * speed, (dir.z / dl) * speed);
         best.owner = 'player';
         best.deflectable = false;
-        best.ttl = 3;
-        // A bright spark at the deflection point — feedback that the parry landed.
-        worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, best.pos.x, best.pos.y, best.pos.z);
+        best.ttl = 3.5;
+        // A bright purple spark fan blasting out along the aim line.
+        particleFx.burst({
+            x: best.pos.x, y: best.pos.y, z: best.pos.z,
+            color: FX_CHARGED, color2: [1, 1, 1],
+            count: 26, speed: 9, upBias: 0.5, spread: 0.4,
+            dir: [dir.x, dir.y, dir.z], size: 0.26, life: 0.6, gravity: 2, drag: 1.2,
+        });
         addTrauma(0.25);
         if (boss?.bossId) gameEvents.emit('boss:deflected', { bossId: boss.bossId, entityId: boss.id });
         return true;
@@ -638,8 +647,12 @@ class EntityManager {
                 const kind = ENTITY_KINDS[e.kind];
                 const dmg = Math.max(1, Math.round(e.maxHp * (kind?.parryDamageFraction ?? 1 / 12)));
                 this.damageEntity(e.id, dmg, p.vel.x, p.vel.z);
-                worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, p.pos.x, p.pos.y, p.pos.z);
-                worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, e.pos.x, e.pos.y + e.height * 0.5, e.pos.z);
+                // A burst of charged sparks where the bolt slams home on the boss.
+                particleFx.burst({
+                    x: p.pos.x, y: p.pos.y, z: p.pos.z,
+                    color: FX_CHARGED, color2: [1, 1, 1],
+                    count: 30, speed: 7, upBias: 2, spread: 1, size: 0.28, life: 0.7, gravity: 5, drag: 1,
+                });
                 return true;
             }
         }
@@ -678,12 +691,17 @@ class EntityManager {
                 e.grounded = true;
                 this.spawnShockwave(e, kind);
                 addTrauma(1.0);
-                // Dust kicked up in a ring from the point of impact.
-                const dustBlock = e.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
-                for (let i = 0; i < 8; i++) {
-                    const a = (i / 8) * Math.PI * 2;
-                    worldManager.spawnParticles(dustBlock,
-                        e.pos.x + Math.cos(a) * 2, e.slamGroundY + 0.2, e.pos.z + Math.sin(a) * 2);
+                // A bright polarity-coloured ring of sparks blasting outward along
+                // the ground from the point of impact.
+                const col = polarityFxColor(e.polarity);
+                for (let i = 0; i < 16; i++) {
+                    const a = (i / 16) * Math.PI * 2;
+                    particleFx.burst({
+                        x: e.pos.x + Math.cos(a) * 1.4, y: e.slamGroundY + 0.3, z: e.pos.z + Math.sin(a) * 1.4,
+                        color: col, color2: [1, 1, 1],
+                        count: 5, speed: 8, upBias: 1.5, spread: 0.5,
+                        dir: [Math.cos(a), 0.25, Math.sin(a)], size: 0.3, life: 0.7, gravity: 9, drag: 1.4,
+                    });
                 }
                 if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
             }

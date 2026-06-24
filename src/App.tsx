@@ -8,6 +8,7 @@ import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
+import { FxParticles } from './components/FxParticles';
 import { DayNightCycle, DayNightCycleRef } from './components/world/DayNightCycle';
 import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
@@ -21,7 +22,7 @@ import { BossCinematic } from './components/BossCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
-import { entityManager } from './systems/entities/EntityManager';
+import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
@@ -910,8 +911,9 @@ const App: React.FC = () => {
           if (regionId) progression.cleanseRegion(regionId);
           // Victory sting (editable: sounds/magnetic_warden/defeat).
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
-          // Let the defeat erupt and the loot settle before the altar re-forms.
-          restoreSummonAltar(6000);
+          // Let the defeat eruption breathe, then re-form the altar; the loot drops
+          // in sync (EntityManager uses the same delay) so it lands on top.
+          restoreSummonAltar(BOSS_DEFEAT_ALTAR_DELAY_MS);
       });
       // The summon cutscene pauses player control while the camera is scripted.
       const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
@@ -2663,6 +2665,7 @@ const App: React.FC = () => {
                     <BossCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
+                    <FxParticles isPaused={worldPaused} />
                 </Suspense>
 
                 <InteractionController
