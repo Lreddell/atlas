@@ -247,29 +247,55 @@ test('the four causeways drop into the lava during the fight and return after', 
 });
 
 test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
-    // Boss drops spawn from a block above the arena centre, not where it died.
-    assert.match(manager, /e\.isBoss && e\.home \? e\.home\.y \+ 4/);
-    // A defeat eruption (particles + camera trauma) at the centre.
-    assert.match(manager, /if \(e\.isBoss\) {[\s\S]*?spawnParticles[\s\S]*?addTrauma/);
-    // The altar restore is delayed on a clean defeat.
-    assert.match(app, /restoreSummonAltar\(6000\)/);
+    // Boss loot drops a block above the altar, deferred until the altar re-forms.
+    assert.match(manager, /e\.home\.y \+ 5/);
+    assert.match(manager, /setTimeout\(\(\) => spawnDrops[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
+    // A defeat eruption (glowing FX bursts + camera trauma) at the centre.
+    assert.match(manager, /if \(e\.isBoss && e\.home\) {[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
+    // The altar restore is delayed on a clean defeat (shared delay constant).
+    assert.match(app, /restoreSummonAltar\(BOSS_DEFEAT_ALTAR_DELAY_MS\)/);
+    assert.match(manager, /export const BOSS_DEFEAT_ALTAR_DELAY_MS/);
     assert.match(app, /daisDelayMs/);
 });
 
-test('deflecting takes real aim and stray barrage bolts live ~5s', () => {
+test('deflecting is a ghast-style parry and stray barrage bolts live ~5s', () => {
     // Tight parry hit box (skill), not the old generous radius.
     assert.match(manager, /const r = 0\.42/);
     assert.doesNotMatch(manager, /const r = 0\.7;/);
+    // The deflected bolt flies along the player's AIM (ghast fireball), not homing.
+    assert.match(manager, /best\.vel\.set\(\(dir\.x \/ dl\)/);
     // Volley bolts persist longer in the air (deleted on contact or after ~5s).
     assert.match(manager, /fireVolley[\s\S]*?ttl: 5/);
-    // A successful deflect sparks + nudges the camera.
-    assert.match(manager, /deflectProjectile[\s\S]*?spawnParticles[\s\S]*?addTrauma/);
+    // A successful deflect throws glowing sparks + nudges the camera.
+    assert.match(manager, /deflectProjectile[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
+});
+
+test('combat and cutscene use the glowing FX particle system (not block debris)', () => {
+    // Effect particles come from the dedicated additive system.
+    const fx = read('src/systems/fx/particleFx.ts');
+    assert.match(fx, /class ParticleFx/);
+    assert.match(fx, /polarityFxColor/);
+    const renderer = read('src/components/FxParticles.tsx');
+    assert.match(renderer, /AdditiveBlending/);
+    assert.match(renderer, /MAGNETIC_FIELDS_BIOME_ID/);   // ambient biome motes
+    assert.match(app, /<FxParticles/);
+    // The boss fight + cutscene fire FX bursts.
+    assert.match(manager, /particleFx\.burst/);
+    const summon = read('src/systems/boss/bossSummon.ts');
+    assert.match(summon, /particleFx\.burst/);
+});
+
+test('the Magnetic Fields biome has a thick purple haze', () => {
+    const dn = read('src/components/world/DayNightCycle.tsx');
+    assert.match(dn, /MAGNETIC_FOG_TINT/);
+    assert.match(dn, /magneticFogBlendRef/);
+    assert.match(dn, /MAGNETIC_FIELDS_BIOME_ID/);
 });
 
 test('the summon cutscene orbits, charges an energy ball, then spawns the boss aggro', () => {
     const summon = read('src/systems/boss/bossSummon.ts');
     assert.match(summon, /MAGNETIC_SHIELD_CRYSTAL/);   // crystals spawned during the cutscene
-    assert.match(summon, /spawnParticles/);            // burst effects
+    assert.match(summon, /particleFx\.burst/);         // glowing burst effects
     assert.match(summon, /flattenArenaDais/);          // altar removed as the boss spawns
     assert.match(summon, /onSpawnBoss\(\)/);           // boss spawned at the climax
     assert.match(summon, /'cinematic:start'/);

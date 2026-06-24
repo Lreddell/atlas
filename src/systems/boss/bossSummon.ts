@@ -22,6 +22,7 @@ import { gameEvents } from '../events/GameEvents';
 import { addTrauma } from '../player/cameraShake';
 import { BlockType } from '../../types';
 import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges } from '../world/magneticArena';
+import { particleFx, FX_CHARGED, FX_POSITIVE, FX_NEGATIVE } from '../fx/particleFx';
 
 export interface SummonParams {
     centerX: number;
@@ -40,7 +41,7 @@ const FADE_IN = 1.6;
 const ORBIT_DUR = 9.5;    // crystals spawn during the orbit (2s apart)
 const BEAM_DUR = 4.5;     // beams grow slowly
 const PUSHIN_DUR = 3.5;   // camera moves in toward the altar
-const FLYBACK_DUR = 3.4;  // camera flies all the way back to the player (slowed)
+const FLYBACK_DUR = 5.0;  // camera flies all the way back to the player (slow + lingering)
 const GRACE_DUR = 4.0;    // ball keeps swelling after control returns (run-away window)
 
 const T_ORBIT = FADE_OUT;                  // 1.0
@@ -61,6 +62,11 @@ const ORBIT_HEIGHT = 42;   // above the floor
 const START_ANGLE = Math.PI / 4;     // matches tower 0's diagonal
 const ORBIT_RATE = 0.40;             // rad/s (a touch slower)
 const BALL_MAX_R = 3.6;
+
+// Where the push-in settles (and the fly-back launches from): the camera holds
+// here, pulled back a bit from the altar, gazing at the swelling energy ball.
+const PUSH_OFF = 16;       // horizontal offset from centre (was 11 — pulled back)
+const PUSH_HEIGHT = 11;    // height above baseY
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4();
@@ -189,7 +195,7 @@ class BossSummon {
             } else if (t < T_FLYBACK) {
                 // Push in toward the altar from where the orbit left off.
                 this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
-                this._pushTarget.set(this._center.x + 11, p.baseY + 9, this._center.z + 11);
+                this._pushTarget.set(this._center.x + PUSH_OFF, p.baseY + PUSH_HEIGHT, this._center.z + PUSH_OFF);
                 const k = smooth(Math.min(1, (t - T_PUSH) / PUSHIN_DUR));
                 this.camPos.lerpVectors(this._eye, this._pushTarget, k);
                 quatLookAt(this._eye, this._look, this._q);          // orbit-exit look
@@ -198,7 +204,7 @@ class BossSummon {
             } else {
                 // Fly all the way back to the player's EXACT position + angle (slowed);
                 // at k=1 the camera sits precisely where control resumes — no snap.
-                this._pushTarget.set(this._center.x + 11, p.baseY + 9, this._center.z + 11);
+                this._pushTarget.set(this._center.x + PUSH_OFF, p.baseY + PUSH_HEIGHT, this._center.z + PUSH_OFF);
                 quatLookAt(this._pushTarget, this.altar, this._q2);
                 const k = smooth(Math.min(1, (t - T_FLYBACK) / FLYBACK_DUR));
                 this.camPos.lerpVectors(this._pushTarget, p.startPos, k);
@@ -214,14 +220,14 @@ class BossSummon {
                 }
             }
             // Ambient magnetic energy gathering at the centre as crystals appear.
-            this.ambientPulse(t, BlockType.MAGNETITE_SHARD);
+            this.ambientPulse(t, FX_NEGATIVE);
         }
 
         // --- Beams + hum (energy streaming to the altar) ---
         if (t >= T_BEAM && t < T_FLYBACK) {
             if (!this.firedBeamHum) { this.firedBeamHum = true; soundManager.play('entity.magnetic_warden.hum', { volume: 0.7 }); }
             this.beamProgress = Math.min(1, (t - T_BEAM) / BEAM_DUR);
-            this.ambientPulse(t, BlockType.CHARGED_MAGNETITE);
+            this.ambientPulse(t, FX_CHARGED);
         } else if (t >= T_FLYBACK) {
             this.beamProgress = 0; // collapsed into the ball
         }
@@ -237,9 +243,13 @@ class BossSummon {
             if (t > T_CONTROL + 0.4 && t - this.lastChargePulse > 0.4) {
                 this.lastChargePulse = t;
                 addTrauma(0.04 + 0.18 * this.ballScale);
-                const ax = Math.floor(this.altar.x), ay = Math.floor(this.altar.y), az = Math.floor(this.altar.z);
-                worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, ax, ay, az);
-                worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, ax, ay, az);
+                // Crackling arcs swirling into the swelling ball (inward = -gravity).
+                particleFx.burst({
+                    x: this.altar.x, y: this.altar.y, z: this.altar.z,
+                    color: FX_CHARGED, color2: [1, 1, 1],
+                    count: 8 + Math.round(10 * this.ballScale), speed: 3 + 4 * this.ballScale,
+                    upBias: 1, spread: 1, size: 0.2, life: 0.8, gravity: -3, drag: 0.4,
+                });
             }
         }
 
@@ -256,10 +266,11 @@ class BossSummon {
             this.ballScale = 0;
             addTrauma(1.0);
             soundManager.play('entity.magnetic_warden.summon', { volume: 1.0 });
-            const ax = Math.floor(this.altar.x), ay = p.baseY, az = Math.floor(this.altar.z);
-            for (const [b, dy] of [[BlockType.CHARGED_MAGNETITE, 1], [BlockType.MAGNETITE_SHARD, 2], [BlockType.CHISELED_MAGNETITE, 0], [BlockType.POSITIVE_MAGNET, 1], [BlockType.NEGATIVE_MAGNET, 2]] as const) {
-                worldManager.spawnParticles(b, ax, ay + dy, az);
-            }
+            const ax = this.altar.x, ay = this.altar.y, az = this.altar.z;
+            // A blinding two-tone shock: a fast white/purple core + slow red & blue
+            // polarity sparks raining out of the explosion.
+            particleFx.burst({ x: ax, y: ay, z: az, color: [1, 1, 1], color2: FX_CHARGED, count: 120, speed: 18, upBias: 5, spread: 1, size: 0.4, life: 1.2, gravity: 8, drag: 0.7 });
+            particleFx.burst({ x: ax, y: ay, z: az, color: FX_POSITIVE, color2: FX_NEGATIVE, count: 90, speed: 10, upBias: 7, spread: 1, size: 0.3, life: 1.8, gravity: 3, drag: 0.5 });
             flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             // Drop the four causeways into the lava — the player is now sealed on
             // the central island for the duration of the fight.
@@ -271,10 +282,15 @@ class BossSummon {
         this.notify();
     }
 
-    private ambientPulse(t: number, block: BlockType): void {
-        if (t - this.lastAmbientPulse < 0.55) return;
+    private ambientPulse(t: number, color: [number, number, number]): void {
+        if (t - this.lastAmbientPulse < 0.4) return;
         this.lastAmbientPulse = t;
-        worldManager.spawnParticles(block, Math.floor(this.altar.x), Math.floor(this.altar.y), Math.floor(this.altar.z));
+        // Energy motes drawn UP into the altar (negative gravity = they rise/gather).
+        particleFx.burst({
+            x: this.altar.x, y: this.altar.y - 1, z: this.altar.z,
+            color, color2: FX_CHARGED, count: 10, speed: 2.5, upBias: 2, spread: 1,
+            size: 0.18, life: 1.1, gravity: -2, drag: 0.5,
+        });
     }
 
     private spawnCrystal(i: number): void {
@@ -282,11 +298,12 @@ class BossSummon {
         this.crystalsShown = this.spawned.size;
         const c = this.crystals[i];
         worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
-        // An explosion of light at the tower: several bursts + a shake + sound.
-        worldManager.spawnParticles(BlockType.CHARGED_MAGNETITE, c.x, c.y, c.z);
-        worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, c.x, c.y, c.z);
-        worldManager.spawnParticles(BlockType.MAGNETIC_SHIELD_CRYSTAL, c.x, c.y, c.z);
-        worldManager.spawnParticles(BlockType.MAGNETITE_SHARD, c.x, c.y + 1, c.z);
+        // An explosion of light at the tower: a white core + violet sparks.
+        particleFx.burst({
+            x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5,
+            color: [1, 1, 1], color2: FX_CHARGED,
+            count: 50, speed: 9, upBias: 3, spread: 1, size: 0.32, life: 1.0, gravity: 6, drag: 0.8,
+        });
         soundManager.play('entity.magnetic_warden.crystal_spawn', { volume: 0.85 });
         addTrauma(0.35);
     }

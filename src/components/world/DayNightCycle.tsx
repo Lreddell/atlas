@@ -8,6 +8,7 @@ import { updateChunkMaterials } from '../chunkLightingState';
 import { updateCloudColor } from './cloudState';
 import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
+import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 
 // Shader for the skybox gradient with Directional Sunset
@@ -361,6 +362,8 @@ const COL_SUNSET_ZENITH = new THREE.Color(0x2c3e50);
 const COL_SUNSET_HORIZON_SUN = new THREE.Color(0xff6b35);
 const COL_SUNSET_HORIZON_MOON = new THREE.Color(0x0d0d26);
 const COL_WHITE = new THREE.Color(0xffffff);
+// Dusky purple-gray haze tint for the Magnetic Fields biome.
+const MAGNETIC_FOG_TINT = new THREE.Color(0x2a2238);
 
 const scratchSunDir = new THREE.Vector3();
 const scratchMoonDir = new THREE.Vector3();
@@ -415,6 +418,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const [currentDayFactor, setCurrentDayFactor] = useState(1.0);
     const daysPassedRef = useRef(0);
     const auroraBiomeBlendRef = useRef(0);
+    const magneticFogBlendRef = useRef(0);
     
     const TICK_CYCLE = 24000;
     const moonTintColor = useMemo(() => new THREE.Color(), []);
@@ -658,11 +662,23 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         skyMat.uniforms.uHorizonColorMoon.value.copy(targetHorizonMoon);
         skyMat.uniforms.uSunDirection.value.copy(sunDir);
         
+        // The Magnetic Fields biome is hazy and charged: pull the fog in close and
+        // tint it dusky purple. Damped so crossing the border eases in/out.
+        const inMagnetic = (getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined)?.id === MAGNETIC_FIELDS_BIOME_ID;
+        magneticFogBlendRef.current = THREE.MathUtils.damp(magneticFogBlendRef.current, inMagnetic ? 1 : 0, 1.2, delta);
+        const mag = magneticFogBlendRef.current;
+        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * 0.55);
+
         scene.background = targetFog;
 
         // Push fog start distance back to prevent wash-out at close range
-        const fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
-        const fogFar = renderDistance * CHUNK_SIZE - 5;
+        let fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
+        let fogFar = renderDistance * CHUNK_SIZE - 5;
+        if (mag > 0.001) {
+            // Roughly halve the visible range inside the biome for a thick haze.
+            fogNear = THREE.MathUtils.lerp(fogNear, 12, mag);
+            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(40, fogFar * 0.45), mag);
+        }
 
         if (scene.fog) {
             (scene.fog as THREE.Fog).color.copy(targetFog);
