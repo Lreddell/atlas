@@ -950,6 +950,10 @@ const App: React.FC = () => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
               { volume: phase === 'rise' ? 0.7 : 0.95 });
       });
+      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue.
+      const offPhase = gameEvents.on('boss:phase', ({ bossId }) => {
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
+      });
       // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
@@ -959,7 +963,7 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offCrystal(); offPower();
+          offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offPhase(); offCrystal(); offPower();
           offCineStart(); offCineEnd(); offCleared();
       };
   }, [restoreSummonAltar]);

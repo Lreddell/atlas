@@ -30,6 +30,8 @@ export interface GameEventMap {
     'boss:deflected': { bossId: string; entityId: number };
     /** Boss slam attack phase ('rise' = telegraph windup, 'impact' = shockwave). */
     'boss:slam': { bossId: string; entityId: number; phase: 'rise' | 'impact'; polarity: number };
+    /** Boss crossed a health threshold into a new phase (2 = slam @50%, 3 = frenzy @25%). */
+    'boss:phase': { bossId: string; entityId: number; phase: number };
     /** A magnetic shield crystal block was destroyed at a position in a region. */
     'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     'entity:died': { entityId: number; type: string };
