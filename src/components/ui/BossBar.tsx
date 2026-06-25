@@ -14,6 +14,8 @@ export const BossBar: React.FC = () => {
     const [shield, setShield] = React.useState<{ crystals: number; max: number }>({ crystals: 0, max: 0 });
     // Boss polarity (+1 red / -1 blue / 0 unknown) — tints the health bar.
     const [polarity, setPolarity] = React.useState(0);
+    // Brief white pulse when the boss crosses a phase threshold (50% / 25%).
+    const [phasePulse, setPhasePulse] = React.useState(false);
 
     useEffect(() => {
         const offSpawned = gameEvents.on('boss:spawned', ({ bossId, entityId, name, maxHp }) => {
@@ -43,9 +45,17 @@ export const BossBar: React.FC = () => {
             setPolarity(p);
             soundManager.play('entity.magnetic_warden.polarity', { volume: 0.6 });
         });
+        // Flash the bar when the boss escalates into a new phase.
+        let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+        const offPhase = gameEvents.on('boss:phase', () => {
+            setPhasePulse(true);
+            if (pulseTimer) clearTimeout(pulseTimer);
+            pulseTimer = setTimeout(() => setPhasePulse(false), 450);
+        });
         return () => {
             offSpawned(); offDamaged(); offDefeated(); offCleared();
-            offShield(); offVulnerable(); offPolarity();
+            offShield(); offVulnerable(); offPolarity(); offPhase();
+            if (pulseTimer) clearTimeout(pulseTimer);
         };
     }, []);
 
@@ -84,6 +94,14 @@ export const BossBar: React.FC = () => {
                         }}
                     />
                 )}
+                {/* Phase markers: the slam phase begins at 50% HP, frenzy at 25%. */}
+                <div className="absolute inset-y-0 w-px bg-black/70" style={{ left: '50%' }} />
+                <div className="absolute inset-y-0 w-px bg-black/70" style={{ left: '25%' }} />
+                {/* White flash when a phase threshold is crossed. */}
+                <div
+                    className="absolute inset-0 bg-white transition-opacity duration-200"
+                    style={{ opacity: phasePulse ? 0.55 : 0 }}
+                />
             </div>
         </div>
     );

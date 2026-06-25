@@ -9,6 +9,7 @@ Place replacement sound effects in this folder using these exact names:
   deflect.ogg    plays when you successfully hit a bolt back at the Warden
   slam_rise.ogg  plays as the Warden rises into the air to slam (telegraph)
   slam.ogg       plays on the slam impact + polarity shockwave
+  enrage.ogg     plays when the Warden escalates a phase (50% slam / 25% frenzy)
   crystal_spawn.ogg  plays as each shield crystal materializes (summon cutscene)
   hum.ogg        plays while the crystal beams converge on the altar (cutscene)
   charge.ogg     plays while the energy ball forms + swells at the altar (cutscene)

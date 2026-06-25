@@ -277,6 +277,24 @@ test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts
     assert.match(manager, /addTrauma\(1\.0\);[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
 });
 
+test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers', () => {
+    // EntityManager detects the threshold crossing and erupts + emits boss:phase.
+    assert.match(manager, /crossed\(kind\?\.slamThreshold \?\? 0\.5\)/);
+    assert.match(manager, /gameEvents\.emit\('boss:phase'/);
+    assert.match(events, /'boss:phase':/);
+    // App plays an enrage cue (editable sound slot).
+    assert.match(app, /entity\.magnetic_warden\.enrage/);
+    const sounds = read('src/systems/sound/soundDefaults.ts');
+    assert.match(sounds, /entity\.magnetic_warden\.enrage/);
+    // The boss bar shows 50%/25% phase markers + a pulse on transition.
+    const bar = read('src/components/ui/BossBar.tsx');
+    assert.match(bar, /left: '50%'/);
+    assert.match(bar, /left: '25%'/);
+    assert.match(bar, /boss:phase/);
+    // The slam hangs at the apex with a telegraph ring before it drops.
+    assert.match(manager, /slamState = 'hanging'[\s\S]*?Telegraph the impact zone[\s\S]*?particleFx\.burst/);
+});
+
 test('leaving the world mid-fight resets the arena before saving', () => {
     // A hard reset helper that cancels the cutscene, despawns the boss, clears
     // crystals and rebuilds the dais + bridges...

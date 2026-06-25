@@ -222,6 +222,7 @@ class EntityManager {
         // Shielded bosses are fully invulnerable until every crystal is broken:
         // no damage, no knockback, no white hurt flash — only a shield shimmer.
         if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
+        const hpBefore = e.hp;
         e.hp -= amount;
         e.hurtUntil = Date.now() + 180;
         e.aggro = true;
@@ -233,6 +234,18 @@ class EntityManager {
 
         if (e.isBoss && e.bossId) {
             gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: Math.max(0, e.hp), maxHp: e.maxHp });
+            // Phase transitions: crossing 50% (slam phase) and 25% (frenzy) erupt with
+            // a polarity shock + camera jolt so the escalation reads clearly.
+            const kind = ENTITY_KINDS[e.kind];
+            const fracBefore = hpBefore / e.maxHp, fracAfter = e.hp / e.maxHp;
+            const crossed = (t: number) => fracBefore > t && fracAfter <= t;
+            const phase = crossed(kind?.slamThreshold ?? 0.5) ? 2 : (crossed(kind?.frenzyThreshold ?? 0.25) ? 3 : 0);
+            if (phase > 0 && e.hp > 0) {
+                const col = polarityFxColor(e.polarity);
+                particleFx.burst({ x: e.pos.x, y: e.pos.y + e.height * 0.6, z: e.pos.z, color: col, color2: [1, 1, 1], count: 50, speed: 11, upBias: 5, spread: 1, size: 0.32, life: 1.1, gravity: 4, drag: 0.7 });
+                addTrauma(0.6);
+                gameEvents.emit('boss:phase', { bossId: e.bossId, entityId: e.id, phase });
+            }
         }
         if (e.hp <= 0) this.kill(e);
         return 'damaged';
@@ -684,6 +697,19 @@ class EntityManager {
                 e.pos.y = apex;
                 e.slamState = 'hanging';
                 e.slamPhaseTimer = kind.slamHangTime ?? 0.45;
+                // Telegraph the impact zone: a thin ring of motes rising from the
+                // ground under the hanging boss, so the player can pre-read the slam
+                // and ready the right polarity to dodge.
+                const col = polarityFxColor(e.polarity);
+                const radius = (kind.slamMaxRadius ?? 26) * 0.32;
+                for (let i = 0; i < 14; i++) {
+                    const a = (i / 14) * Math.PI * 2;
+                    particleFx.burst({
+                        x: e.pos.x + Math.cos(a) * radius, y: e.slamGroundY + 0.2, z: e.pos.z + Math.sin(a) * radius,
+                        color: col, count: 3, speed: 1, upBias: 4, spread: 0.3,
+                        dir: [0, 1, 0], size: 0.22, life: 0.9, gravity: -2, drag: 0.6,
+                    });
+                }
             }
         } else if (e.slamState === 'hanging') {
             e.slamPhaseTimer -= dt;
