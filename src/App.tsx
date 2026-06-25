@@ -2123,27 +2123,14 @@ const App: React.FC = () => {
   useEffect(() => {
       if (isElectron) return;
 
-      // Block browser shortcuts (Ctrl/Cmd/Alt combos like Ctrl+W close-tab) while
-      // actively in-world AND during the load screen — previously the loading state
-      // left them live, so Ctrl+W could close the game mid-load. Plain keys with no
-      // modifier (F11/F12 fullscreen/devtools) are never touched.
-      const inGameActive = appState === 'game'
-          && !openContainer
-          && !isPaused
-          && isLocked
-          && !showCommandInput
-          && !isDead
-          && !isSleeping
-          && !showAtlasViewer
-          && !isCapturingPanorama;
-      const loadingIntoWorld = appState === 'loading';
-      const shouldBlockBrowserShortcuts = inGameActive || loadingIntoWorld;
-
-      if (!shouldBlockBrowserShortcuts) return;
-
+      // Suppress browser keyboard shortcuts (Ctrl/Cmd/Alt combos: reload, find,
+      // save-page, print, bookmark, downloads, history, zoom, etc.) EVERYWHERE in
+      // the app — menu, loading, and in-world alike. The one exception is when a
+      // text field is focused, where Ctrl+A/C/V/X/Z must keep working for editing.
+      // Plain keys with no modifier (F11/F12 fullscreen/devtools) are never touched.
       const blockBrowserShortcut = (event: KeyboardEvent) => {
           if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
-
+          if (isEditableElement(event.target)) return; // keep clipboard/select in inputs
           event.preventDefault();
       };
 
@@ -2159,23 +2146,21 @@ const App: React.FC = () => {
           window.removeEventListener('keydown', blockBrowserShortcut, { capture: true } as EventListenerOptions);
           window.removeEventListener('wheel', blockZoomWheel, { capture: true } as EventListenerOptions);
       };
-  }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron]);
+  }, [isElectron]);
 
-  // Guard against accidentally closing/reloading the tab (Ctrl+W, Ctrl+R, etc.)
-  // while a world is loading or in progress. The Keyboard Lock API only blocks
-  // these in fullscreen, so beforeunload is the reliable cross-browser net: it
-  // turns an instant close into a confirm prompt. Removed in menus, so quitting to
-  // title and normal navigation are unaffected.
+  // Guard against accidentally closing/reloading the tab (Ctrl+W, Ctrl+R, browser
+  // back, etc.) — the destructive shortcuts that keydown preventDefault can't stop.
+  // Active everywhere (menu included) so a stray Ctrl+W becomes a confirm prompt
+  // instead of instantly killing the app.
   useEffect(() => {
       if (isElectron) return;
-      if (appState !== 'game' && appState !== 'loading') return;
       const onBeforeUnload = (event: BeforeUnloadEvent) => {
           event.preventDefault();
           event.returnValue = '';
       };
       window.addEventListener('beforeunload', onBeforeUnload);
       return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [appState, isElectron]);
+  }, [isElectron]);
 
   useEffect(() => {
       const shouldHoldShortcutLock = !isElectron
