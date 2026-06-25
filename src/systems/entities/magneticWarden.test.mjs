@@ -246,6 +246,16 @@ test('the four causeways drop into the lava during the fight and return after', 
     assert.match(app, /restoreArenaBridges/);
 });
 
+test('leaving the world mid-fight resets the arena before saving', () => {
+    // A hard reset helper that cancels the cutscene, despawns the boss, clears
+    // crystals and rebuilds the dais + bridges...
+    assert.match(app, /const resetSummonArena = useCallback/);
+    assert.match(app, /resetSummonArena[\s\S]*?bossSummon\.cancel\(\)/);
+    assert.match(app, /resetSummonArena[\s\S]*?despawnAllBosses\(\)/);
+    // ...invoked when quitting to the title screen, BEFORE the save runs.
+    assert.match(app, /resetSummonArena\(\);\s*\n\s*saveGame\(\)/);
+});
+
 test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
     // Boss loot drops one block above the altar (summoner at baseY+4 = home.y+3),
     // deferred until the altar re-forms.

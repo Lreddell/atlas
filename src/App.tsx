@@ -886,6 +886,27 @@ const App: React.FC = () => {
       else restoreDais();
   }, []);
 
+  // Hard-reset an in-progress encounter (used when leaving the world mid-fight, so
+  // the saved + in-memory arena is clean for the next visit). Works whether we are
+  // mid-cutscene (no boss spawned yet) or mid-fight: cancels the cutscene, despawns
+  // the boss, clears any standing crystals, and rebuilds the dais/altar + bridges
+  // synchronously (no delay — we are about to save).
+  const resetSummonArena = useCallback(() => {
+      bossSummon.cancel();
+      setCinematicMode(false);
+      // Despawns a live boss (clears its crystals + fires boss:cleared → restores
+      // the arena and nulls the ref). If there was no live boss (e.g. quit during
+      // the cutscene), the ref survives and we finish the reset by hand below.
+      entityManager.despawnAllBosses();
+      const a = summonArenaRef.current;
+      if (!a) return;
+      summonArenaRef.current = null;
+      const crystals = getShieldCrystalPositions(a.cx, a.cz, a.baseY);
+      worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
+      restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+  }, []);
+
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
   // event can fire rapidly (holding the mouse on a sealed block), so throttle the
   // toast/sound to avoid spam.
@@ -2246,6 +2267,10 @@ const App: React.FC = () => {
   };
 
   const handleQuitToTitle = useCallback(() => {
+      // Leaving mid-fight resets the arena first, so the save (and the world we'd
+      // resume) has a clean, re-summonable encounter rather than a flattened dais
+      // with the bridges gone and the boss missing.
+      resetSummonArena();
       saveGame().then(() => {
           soundManager.setGamePaused(false, 2.5);
           setAppState('menu');
@@ -2260,7 +2285,7 @@ const App: React.FC = () => {
           musicController.update(true, 'survival', 'plains');
           soundManager.play("ui.click");
       });
-  }, [saveGame, setOpenContainer]);
+  }, [saveGame, setOpenContainer, resetSummonArena]);
 
   // --- Start Game with Preloading & Restore ---
   const handleStartGame = useCallback(async (worldId: string) => {
