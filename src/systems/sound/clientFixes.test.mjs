@@ -15,11 +15,12 @@ test('a game-mode change switches music promptly (no biome debounce wait)', () =
     assert.match(mc, /isMenuSwitch \|\| isDeathSwitch \|\| isBossSwitch \|\| isCreativeSwitch/);
 });
 
-test('browser shortcuts (Ctrl+W etc.) are blocked while loading a world too', () => {
+test('browser shortcuts are suppressed everywhere (menu, loading, in-world)', () => {
     const app = read('src/App.tsx');
-    // The keydown block + the reliable beforeunload guard both cover the load screen.
-    assert.match(app, /loadingIntoWorld = appState === 'loading'/);
-    assert.match(app, /shouldBlockBrowserShortcuts = inGameActive \|\| loadingIntoWorld/);
+    // The keydown block runs app-wide; it only steps aside for editable elements so
+    // Ctrl+A/C/V/X/Z still work in text fields.
+    assert.match(app, /const blockBrowserShortcut = \(event: KeyboardEvent\) => \{[\s\S]*?isEditableElement\(event\.target\)\) return;[\s\S]*?event\.preventDefault\(\)/);
+    // The beforeunload guard (catches the unpreventable Ctrl+W/Ctrl+R) is app-wide.
     assert.match(app, /addEventListener\('beforeunload'/);
-    assert.match(app, /appState !== 'game' && appState !== 'loading'\) return/);
+    assert.doesNotMatch(app, /appState !== 'game' && appState !== 'loading'\) return/);
 });
