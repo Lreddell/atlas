@@ -265,6 +265,18 @@ test('deleting a world uses an in-app modal, not a blocking native confirm', () 
     assert.match(menu, /pendingDeleteId &&/);
 });
 
+test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts', () => {
+    const input = read('src/systems/player/playerInput.ts');
+    // KeyR no longer bails when Ctrl/Cmd is held — it suppresses reload but STILL
+    // flips polarity (you are usually holding Ctrl to sprint during the fight).
+    assert.match(input, /case 'KeyR':[\s\S]*?if \(e && \(e\.ctrlKey \|\| e\.metaKey\)\) e\.preventDefault\(\);[\s\S]*?inputState\.magneticPolarity = inputState\.magneticPolarity >= 0 \? -1 : 1/);
+    // The old early-return guard (which ate the swap while sprinting) is gone.
+    assert.doesNotMatch(input, /e\.ctrlKey \|\| e\.metaKey\)\) \{ e\.preventDefault\(\); break; \}/);
+    // On boss death, lingering bolts + shockwaves are wiped so they can't keep
+    // hitting the player during the victory moment.
+    assert.match(manager, /addTrauma\(1\.0\);[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
+});
+
 test('leaving the world mid-fight resets the arena before saving', () => {
     // A hard reset helper that cancels the cutscene, despawns the boss, clears
     // crystals and rebuilds the dais + bridges...

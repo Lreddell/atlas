@@ -291,6 +291,10 @@ class EntityManager {
             particleFx.burst({ x: cx, y: cy, z: cz, color: col, color2: [1, 1, 1], count: 80, speed: 13, upBias: 4, spread: 1, size: 0.34, life: 1.3, gravity: 7, drag: 0.8 });
             particleFx.burst({ x: cx, y: cy, z: cz, color: FX_CHARGED, color2: [1, 0.9, 1], count: 60, speed: 7, upBias: 6, spread: 1, size: 0.28, life: 1.6, gravity: 2, drag: 0.6 });
             addTrauma(1.0);
+            // The fight is over — clear every bolt and shockwave so the dead Warden's
+            // attacks can't keep hitting the player during the victory moment.
+            this.projectiles = [];
+            this.shockwaves = [];
         } else {
             spawnDrops(e.pos.x, e.pos.y + 0.3, e.pos.z);
         }

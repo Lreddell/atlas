@@ -107,10 +107,13 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             if (inputState.forward) inputState.sprintLatch = true;
             break;
         case 'KeyR':
-            // Never let Ctrl/Cmd+R reload the page mid-game.
-            if (e && (e.ctrlKey || e.metaKey)) { e.preventDefault(); break; }
-            // Flip magnetic polarity (only has an effect while wearing polarity boots).
             if (e && e.repeat) break;
+            // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity —
+            // the player is usually holding Ctrl (sprint) during a fight, and that
+            // must not eat the polarity swap. (The global shortcut block also stops
+            // reload; this is belt-and-suspenders.)
+            if (e && (e.ctrlKey || e.metaKey)) e.preventDefault();
+            // Flip magnetic polarity (only has an effect while wearing polarity boots).
             inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
             gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
             break;
