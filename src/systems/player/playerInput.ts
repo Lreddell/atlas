@@ -15,6 +15,8 @@ export interface PlayerInputState {
     magneticPolarity: number;
     /** Whether the polarity ability is switched on (toggled with N on upgraded boots). */
     polarityPowerOn: boolean;
+    /** True while a bite is actively charging (drives the held-item eat animation). */
+    eating: boolean;
 }
 
 // Internal state for double-tap detection
@@ -35,6 +37,7 @@ export const inputState: PlayerInputState = {
     flyToggleTrigger: false,
     magneticPolarity: 1,
     polarityPowerOn: true,
+    eating: false,
 };
 
 // Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
@@ -192,6 +195,7 @@ export const resetInputState = () => {
     inputState.flyToggleTrigger = false;
     inputState.magneticPolarity = 1;
     inputState.polarityPowerOn = true;
+    inputState.eating = false;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;

@@ -8,6 +8,7 @@ import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } 
 import { resolveTexture } from '../systems/world/textureResolver';
 import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
 import { worldManager } from '../systems/WorldManager';
+import { inputState } from '../systems/player/playerInput';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
@@ -279,8 +280,12 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             const bobX = Math.sin(time * 10) * 0.02 * moveSway.current;
             const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
 
-            const isAction = (isLeftMouseDown.current || isRightMouseDown.current) && isLocked;
-            const SWING_DURATION = 0.25; 
+            // Continuous swing comes from left-click (mining/attacking) or an active
+            // bite (eating). Right-click placement/use does NOT auto-swing — a swing
+            // only fires when something actually happens (the 'atlas:block-placed'
+            // event below), so a failed/no-op right-click no longer animates.
+            const isAction = (isLeftMouseDown.current || inputState.eating) && isLocked;
+            const SWING_DURATION = 0.25;
 
             if (pendingPlacementSwing.current && animState.current.swingPhase === 0) {
                 animState.current.swingStartTime = time;
