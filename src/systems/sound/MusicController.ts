@@ -309,7 +309,11 @@ class MusicController {
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
         const isCaveSwitch = targetContext === "CAVES" || this.currentContext === "CAVES";
         const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC';
-        const threshold = (isMenuSwitch || isDeathSwitch || isBossSwitch)
+        // A game-mode change (into or out of CREATIVE) is a deliberate action, not a
+        // biome wander — switch promptly instead of waiting out the biome debounce,
+        // so the right track starts even when nothing is currently playing.
+        const isCreativeSwitch = targetContext === 'CREATIVE' || this.currentContext === 'CREATIVE';
+        const threshold = (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch)
             ? 0
             : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
