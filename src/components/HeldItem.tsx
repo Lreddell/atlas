@@ -77,12 +77,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const pendingPlacementSwing = useRef(false);
     const keysPressed = useRef(new Set<string>());
     const isLeftMouseDown = useRef(false);
-    const isRightMouseDown = useRef(false);
-    const moveSway = useRef(0); 
+    const moveSway = useRef(0);
     const isLockedRef = useRef(isLocked);
-    
-    const itemStackRef = useRef(itemStack);
-    useEffect(() => { itemStackRef.current = itemStack; }, [itemStack]);
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
@@ -92,7 +88,6 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         isLockedRef.current = isLocked;
         if (!isLocked) {
             isLeftMouseDown.current = false;
-            isRightMouseDown.current = false;
         }
     }, [isLocked]);
 
@@ -140,18 +135,18 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             pendingPlacementSwing.current = true;
         };
         
-        const onMouseDown = (e: MouseEvent) => { 
+        const onMouseDown = (e: MouseEvent) => {
             if (!isLockedRef.current) {
                 isLeftMouseDown.current = false;
-                isRightMouseDown.current = false;
                 return;
             }
-            if(e.button === 0) isLeftMouseDown.current = true;
-            if(e.button === 2 && itemStackRef.current) isRightMouseDown.current = true;
+            // Left-click drives the continuous mine/attack swing. Right-click no
+            // longer animates here — placement swings come from the
+            // 'atlas:block-placed' event and eating from inputState.eating.
+            if (e.button === 0) isLeftMouseDown.current = true;
         };
-        const onMouseUp = (e: MouseEvent) => { 
-            if(e.button === 0) isLeftMouseDown.current = false;
-            if(e.button === 2) isRightMouseDown.current = false;
+        const onMouseUp = (e: MouseEvent) => {
+            if (e.button === 0) isLeftMouseDown.current = false;
         };
 
         window.addEventListener('keydown', onKeyDown);
