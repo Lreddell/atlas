@@ -18,6 +18,9 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     const [gameMode, setGameMode] = useState<GameMode>('survival');
     const [worldGenPresets, setWorldGenPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedWorldGenPresetId, setSelectedWorldGenPresetId] = useState('');
+    // Id of the world awaiting delete confirmation (drives an in-app modal instead
+    // of a blocking native confirm()).
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
     const loadWorlds = useCallback(async () => {
         const list = await WorldStorage.getAllWorlds();
@@ -63,21 +66,28 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
         }
     }, [onStart, selectedWorldId]);
 
-    const handleDeleteWorld = useCallback(async () => {
-        if (!selectedWorldId || !window.confirm('Are you sure you want to delete this world? It will be lost forever! (A long time!)')) {
-            return;
-        }
+    // Opens the confirmation modal (the actual deletion runs in confirmDeleteWorld).
+    const handleDeleteWorld = useCallback(() => {
+        if (!selectedWorldId) return;
+        setPendingDeleteId(selectedWorldId);
+    }, [selectedWorldId]);
 
+    const cancelDeleteWorld = useCallback(() => setPendingDeleteId(null), []);
+
+    const confirmDeleteWorld = useCallback(async () => {
+        const id = pendingDeleteId;
+        setPendingDeleteId(null);
+        if (!id) return;
         try {
-            await WorldStorage.deleteWorld(selectedWorldId);
-            setSelectedWorldId(null);
+            await WorldStorage.deleteWorld(id);
+            setSelectedWorldId((current) => (current === id ? null : current));
             await loadWorlds();
             soundManager.play('ui.click', { pitch: 0.6 });
         } catch (error) {
             alert('Failed to delete world. See console for details.');
             console.error(error);
         }
-    }, [loadWorlds, selectedWorldId]);
+    }, [loadWorlds, pendingDeleteId]);
 
     const handleExportWorld = useCallback(async () => {
         if (!selectedWorldId) return;
@@ -146,5 +156,9 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
         handleDeleteWorld,
         handleExportWorld,
         handleImportWorld,
+        pendingDeleteId,
+        pendingDeleteName: worlds.find((w) => w.id === pendingDeleteId)?.name ?? null,
+        confirmDeleteWorld,
+        cancelDeleteWorld,
     };
 };

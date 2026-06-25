@@ -11,6 +11,7 @@ import {
 import { simulateStep } from '../systems/player/playerMovement';
 import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
 import { entityManager } from '../systems/entities/EntityManager';
+import { bossSummon } from '../systems/boss/bossSummon';
 import { sampleShake } from '../systems/player/cameraShake';
 import { checkCollision, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
@@ -104,11 +105,19 @@ interface PlayerProps {
   magneticMode?: MagneticMode;
 }
 
-export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3> }> = ({ playerPosRef }) => {
+export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3>; cinematicMode?: boolean }> = ({ playerPosRef, cinematicMode = false }) => {
   useFrame(({ camera }) => {
+    // During the summon cutscene the camera belongs to the cinematic (it flies far
+    // out around the arena), so don't track it — that would teleport the player's
+    // saved position to wherever the camera ended up. Leave playerPosRef frozen at
+    // the spot they were standing when the cutscene began. We check BOTH the live
+    // cinematic flag (covers the moment control hands back, before the player camera
+    // is restored) and the React cinematicMode prop (covers the cutscene start), so
+    // there is no frame in which a stale cutscene camera leaks into the saved pos.
+    if (cinematicMode || bossSummon.isActive()) return;
     playerPosRef.current.copy(camera.position);
     const eyeHeight = inputState.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
-    playerPosRef.current.y -= eyeHeight; 
+    playerPosRef.current.y -= eyeHeight;
   });
   return null;
 };

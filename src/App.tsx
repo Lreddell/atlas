@@ -2720,7 +2720,7 @@ const App: React.FC = () => {
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                             magneticMode={magneticMode}
                         />
-                        <PlayerRefUpdater playerPosRef={playerPosRef} />
+                        <PlayerRefUpdater playerPosRef={playerPosRef} cinematicMode={cinematicMode} />
                     </>
                 )}
                 

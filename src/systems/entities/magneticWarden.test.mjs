@@ -246,6 +246,25 @@ test('the four causeways drop into the lava during the fight and return after', 
     assert.match(app, /restoreArenaBridges/);
 });
 
+test('the player position is not dragged by the cutscene camera (leave = stay put)', () => {
+    const player = read('src/components/Player.tsx');
+    // PlayerRefUpdater must skip copying the camera while the cinematic owns it, so
+    // quitting mid-cutscene saves the spot the player was actually standing.
+    assert.match(player, /PlayerRefUpdater[\s\S]*?if \(cinematicMode \|\| bossSummon\.isActive\(\)\) return/);
+    assert.match(app, /<PlayerRefUpdater playerPosRef=\{playerPosRef\} cinematicMode=\{cinematicMode\}/);
+});
+
+test('deleting a world uses an in-app modal, not a blocking native confirm', () => {
+    const hook = read('src/components/ui/mainMenu/useWorldMenu.ts');
+    // No native confirm() (it blocks the event loop and breaks text-input focus).
+    assert.doesNotMatch(hook, /window\.confirm/);
+    assert.match(hook, /setPendingDeleteId/);
+    assert.match(hook, /confirmDeleteWorld/);
+    const menu = read('src/components/ui/MainMenu.tsx');
+    assert.match(menu, /<ConfirmModal/);
+    assert.match(menu, /pendingDeleteId &&/);
+});
+
 test('leaving the world mid-fight resets the arena before saving', () => {
     // A hard reset helper that cancels the cutscene, despawns the boss, clears
     // crystals and rebuilds the dais + bridges...
