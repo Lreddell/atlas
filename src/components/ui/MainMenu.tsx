@@ -16,6 +16,7 @@ import { useSplashAnimation } from './mainMenu/useSplashAnimation';
 import { useWorldMenu } from './mainMenu/useWorldMenu';
 import { isEditableElement } from '../../utils/dom';
 import { WhatsNewModal } from './WhatsNewModal';
+import { ConfirmModal } from './ConfirmModal';
 import { getChangelogEntry } from '../../data/changelog';
 import { APP_VERSION } from '../../constants';
 
@@ -107,6 +108,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         handleDeleteWorld,
         handleExportWorld,
         handleImportWorld,
+        pendingDeleteId,
+        pendingDeleteName,
+        confirmDeleteWorld,
+        cancelDeleteWorld,
     } = useWorldMenu({ onStart });
     const { formattedSplash, splashFontSize } = useSplashAnimation(view === 'main');
 
@@ -350,6 +355,17 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
             {showWhatsNew && (
                 <WhatsNewModal initialVersion={APP_VERSION} onClose={handleCloseWhatsNew} />
+            )}
+
+            {pendingDeleteId && (
+                <ConfirmModal
+                    title="Delete World?"
+                    danger
+                    confirmLabel="Delete Forever"
+                    message={<>This will permanently delete <span className="text-white">{pendingDeleteName || 'this world'}</span>. It will be lost forever! (A long time!)</>}
+                    onConfirm={() => void confirmDeleteWorld()}
+                    onCancel={cancelDeleteWorld}
+                />
             )}
         </div>
     );
