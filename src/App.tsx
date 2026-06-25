@@ -2123,7 +2123,11 @@ const App: React.FC = () => {
   useEffect(() => {
       if (isElectron) return;
 
-      const shouldBlockBrowserShortcuts = appState === 'game'
+      // Block browser shortcuts (Ctrl/Cmd/Alt combos like Ctrl+W close-tab) while
+      // actively in-world AND during the load screen — previously the loading state
+      // left them live, so Ctrl+W could close the game mid-load. Plain keys with no
+      // modifier (F11/F12 fullscreen/devtools) are never touched.
+      const inGameActive = appState === 'game'
           && !openContainer
           && !isPaused
           && isLocked
@@ -2132,6 +2136,8 @@ const App: React.FC = () => {
           && !isSleeping
           && !showAtlasViewer
           && !isCapturingPanorama;
+      const loadingIntoWorld = appState === 'loading';
+      const shouldBlockBrowserShortcuts = inGameActive || loadingIntoWorld;
 
       if (!shouldBlockBrowserShortcuts) return;
 
@@ -2154,6 +2160,22 @@ const App: React.FC = () => {
           window.removeEventListener('wheel', blockZoomWheel, { capture: true } as EventListenerOptions);
       };
   }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron]);
+
+  // Guard against accidentally closing/reloading the tab (Ctrl+W, Ctrl+R, etc.)
+  // while a world is loading or in progress. The Keyboard Lock API only blocks
+  // these in fullscreen, so beforeunload is the reliable cross-browser net: it
+  // turns an instant close into a confirm prompt. Removed in menus, so quitting to
+  // title and normal navigation are unaffected.
+  useEffect(() => {
+      if (isElectron) return;
+      if (appState !== 'game' && appState !== 'loading') return;
+      const onBeforeUnload = (event: BeforeUnloadEvent) => {
+          event.preventDefault();
+          event.returnValue = '';
+      };
+      window.addEventListener('beforeunload', onBeforeUnload);
+      return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [appState, isElectron]);
 
   useEffect(() => {
       const shouldHoldShortcutLock = !isElectron
