@@ -296,6 +296,19 @@ test('combat and cutscene use the glowing FX particle system (not block debris)'
     assert.match(summon, /particleFx\.burst/);
 });
 
+test('the World Editor surfaces the Magnetic Fields boss biome + boss-field layer', () => {
+    const editor = read('src/components/ui/ChunkBase.tsx');
+    // A dedicated preview layer for the boss-biome activation noise.
+    assert.match(editor, /id: 'boss'/);
+    assert.match(editor, /getMagneticFieldColumn/);
+    assert.match(editor, /bossBiome\.noise2D/);
+    // The biome list is now driven by the full GenConfig set (not a hardcoded 10).
+    assert.match(editor, /const biomeKeys = Object\.keys\(GenConfig\.biomes\)/);
+    // The Magnetic Fields biome is documented in the BIOMES tab.
+    assert.match(editor, /BIOMES\.MAGNETIC_FIELDS\.color/);
+    assert.match(editor, /MF_FIELD_THRESHOLD/);
+});
+
 test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutscene', () => {
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /MAGNETIC_FOG_TINT/);
