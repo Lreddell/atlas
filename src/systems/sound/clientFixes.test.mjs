@@ -7,6 +7,23 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
+test('use/place animation only plays on success, and eating repeats while held', () => {
+    const held = read('src/components/HeldItem.tsx');
+    // The continuous swing is gated on left-click (mine/attack) or an active bite —
+    // NOT raw right-mouse — so a failed/no-op right-click no longer animates.
+    assert.match(held, /const isAction = \(isLeftMouseDown\.current \|\| inputState\.eating\) && isLocked/);
+    assert.doesNotMatch(held, /const isAction = \(isLeftMouseDown\.current \|\| isRightMouseDown\.current\) && isLocked/);
+
+    const ctrl = read('src/components/controllers/InteractionController.tsx');
+    // A bite no longer cancels the held button; it pauses briefly then eats again.
+    assert.match(ctrl, /eatingTimer\.current = -EAT_PAUSE_TICKS/);
+    assert.doesNotMatch(ctrl, /eatingTimer\.current = 0;\s*\n\s*isRightMouseDown\.current = false;/);
+    assert.match(ctrl, /inputState\.eating = eatingTimer\.current >= 0/);
+
+    const input = read('src/systems/player/playerInput.ts');
+    assert.match(input, /eating: boolean/);
+});
+
 test('a game-mode change switches music promptly (no biome debounce wait)', () => {
     const mc = read('src/systems/sound/MusicController.ts');
     // CREATIVE (entering or leaving) is treated as an instant switch like menu/boss,

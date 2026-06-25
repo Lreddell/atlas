@@ -39,6 +39,9 @@ const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const MELEE_REACH = 3.2;
 const DEFLECT_REACH = 5.5;
+// Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
+// so holding right-click eats repeatedly with a clear gap between bites.
+const EAT_PAUSE_TICKS = 6;
 
 // Sealed-region edit guard: true if the player may edit (x,y,z); otherwise emits
 // the denied event (App throttles the toast) and returns false. Enforced here at
@@ -517,7 +520,8 @@ export const InteractionController = ({
             }
             if(e.button === 2) {
                 isRightMouseDown.current = false;
-                eatingTimer.current = 0; 
+                eatingTimer.current = 0;
+                inputState.eating = false;
             }
         };
         
@@ -533,14 +537,17 @@ export const InteractionController = ({
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
+            eatingTimer.current = 0;
+            inputState.eating = false;
             if (highlightMeshRef.current) highlightMeshRef.current.visible = false;
             return;
         }
-        
+
         if (interactionCooldown.current > 0) {
             interactionCooldown.current--;
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
+            inputState.eating = false;
             return;
         }
 
@@ -761,27 +768,40 @@ export const InteractionController = ({
             
             if (heldItem && heldItemDef && heldItemDef.category === 'food') {
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
-                
+
                 if (canEat) {
-                    eatingTimer.current += delta * 20; 
-                    if (eatingTimer.current >= 32) { 
+                    eatingTimer.current += delta * 20;
+                    // Drive the eat animation only while a bite is actively charging
+                    // (timer >= 0). During the brief post-bite pause (timer < 0) the
+                    // hand lowers, then the next bite charges — repeating while held.
+                    inputState.eating = eatingTimer.current >= 0;
+                    if (eatingTimer.current >= 32) {
                         const def = BLOCKS[heldItem.type as BlockType];
                         if (def.nutrition) {
                             eatFood(foodStateRef.current, def.nutrition, def.saturationModifier || 0.6);
                             consumeItem(selectedSlotRef.current);
-                            eatingTimer.current = 0;
-                            isRightMouseDown.current = false; 
+                            // Keep the right button "held" for continuous eating: just
+                            // pause briefly, don't cancel, so the next bite follows.
+                            eatingTimer.current = -EAT_PAUSE_TICKS;
+                            inputState.eating = false;
                             soundManager.play("entity.item.pickup"); // Use generic burp/pickup sound for eating for now
+                        } else {
+                            eatingTimer.current = 0;
                         }
                     }
                 } else {
                     eatingTimer.current = 0;
+                    inputState.eating = false;
                 }
-            } else if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
-                performInteraction(true);
+            } else {
+                inputState.eating = false;
+                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
+                    performInteraction(true);
+                }
             }
         } else {
             eatingTimer.current = 0;
+            inputState.eating = false;
         }
     });
 
