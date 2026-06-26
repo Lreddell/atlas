@@ -679,7 +679,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // Polarity storm: the haze thickens further per boss phase (slam → frenzy),
         // closing in and tinting harder for drama as the fight escalates.
         const storm = bossSummon.isActive() ? 0 : bossPhaseState.intensity;
-        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * (0.55 + 0.35 * storm));
+        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * (0.5 + 0.5 * storm));
 
         scene.background = targetFog;
 
@@ -688,9 +688,11 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         let fogFar = renderDistance * CHUNK_SIZE - 5;
         if (mag > 0.001) {
             // Roughly halve the visible range inside the biome for a thick haze — and
-            // tighten it further during the boss storm.
-            fogNear = THREE.MathUtils.lerp(fogNear, 12 - 4 * storm, mag);
-            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(28, fogFar * (0.45 - 0.15 * storm)), mag);
+            // clamp it down hard during the boss storm: noticeably thicker once the
+            // slam phase begins (storm 0.65), and a near-blinding murk at frenzy
+            // (storm 1.0, when the music speeds up).
+            fogNear = THREE.MathUtils.lerp(fogNear, 12 - 8 * storm, mag);
+            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(16, fogFar * (0.45 - 0.3 * storm)), mag);
         }
 
         if (scene.fog) {

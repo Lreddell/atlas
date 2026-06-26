@@ -369,8 +369,21 @@ test('boss fight ambiance: polarity vignette + per-phase storm', () => {
     assert.match(phase, /get intensity/);
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /bossPhaseState\.intensity/);
+    // Fog tightens harder per phase — really thick at frenzy (storm 1.0).
+    assert.match(dn, /fogNear = THREE\.MathUtils\.lerp\(fogNear, 12 - 8 \* storm, mag\)/);
     const fx = read('src/components/FxParticles.tsx');
     assert.match(fx, /bossPhaseState\.intensity/);
+    // Frenzy: ambient motes spin into a rising spiral column.
+    assert.match(fx, /bossPhaseState\.isFrenzy/);
+    assert.match(fx, /swirl\?: number/);
+    assert.match(fx, /p\.px = p\.cx! \+ ox \* c - oz \* s/);
+});
+
+test('/setspawn sets a personal respawn point like a bed', () => {
+    assert.match(app, /parts\[0\] === '\/setspawn'/);
+    assert.match(app, /worldManager\.setSpawnPoint\(sx, sy, sz, false\)/);
+    const cmds = read('src/data/commands.ts');
+    assert.match(cmds, /'\/setspawn'/);
 });
 
 test('frenzy speeds the music up +100 cents, the exact opposite of night', () => {
