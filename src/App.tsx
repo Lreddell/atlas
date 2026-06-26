@@ -979,9 +979,11 @@ const App: React.FC = () => {
       const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
       const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
-      // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
+      // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
+      // its tracking beam dissipates — BossCinematic handles the visual).
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
+          soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
       });
       // Upgraded-boots ability toggle (N) → recompute magneticMode.
       const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {

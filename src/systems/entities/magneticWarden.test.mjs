@@ -325,12 +325,60 @@ test('cutscene beams feed the ball until detonation; return is snappier; hurt sf
     assert.match(summon, /this\.camPos\.lerpVectors\(this\._eye, this\.returnPos, k\)/);
     assert.match(summon, /quatLookAt\(this\.camPos, this\.altar, this\.camQuat\)/);
     const cine = read('src/components/BossCinematic.tsx');
-    // Beams render regardless of the camera handback, so they stay lit on the ball.
-    assert.match(cine, /const progress = bossSummon\.beamProgress/);
+    // Beams render regardless of the camera handback (driven by beamProgress).
+    assert.match(cine, /cutsceneProg = bossSummon\.beamProgress/);
     // Boss takes-damage hurt cue (e.g. a deflected bolt landing).
     assert.match(app, /entity\.magnetic_warden\.hurt/);
     const sounds = read('src/systems/sound/soundDefaults.ts');
     assert.match(sounds, /entity\.magnetic_warden\.hurt/);
+});
+
+test('shield beams track the boss (ender-dragon style) and dissipate per crystal', () => {
+    const cine = read('src/components/BossCinematic.tsx');
+    // After spawn the beams re-target the boss and track it while the crystal stands.
+    assert.match(cine, /e\.isBoss && \(e\.shieldCrystalPositions\?\.length/);
+    assert.match(cine, /MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(cine, /boss\.pos\.x, boss\.pos\.y \+ boss\.height \* 0\.5, boss\.pos\.z/);
+    // A crystal shatter erupts + the beam fades out, with a dissipate sound in App.
+    assert.match(cine, /wasStanding\.current\[i\][\s\S]*?particleFx\.burst/);
+    assert.match(app, /entity\.magnetic_warden\.crystal_break/);
+    const sounds = read('src/systems/sound/soundDefaults.ts');
+    assert.match(sounds, /entity\.magnetic_warden\.crystal_break/);
+});
+
+test('boss fight ambiance: polarity vignette + per-phase storm', () => {
+    assert.match(app, /<PolarityVignette/);
+    const vig = read('src/components/ui/PolarityVignette.tsx');
+    assert.match(vig, /boxShadow/);
+    assert.match(vig, /magneticPolarity/);
+    // Shared phase intensity drives fog + FX storms.
+    const phase = read('src/systems/boss/bossPhaseState.ts');
+    assert.match(phase, /get intensity/);
+    const dn = read('src/components/world/DayNightCycle.tsx');
+    assert.match(dn, /bossPhaseState\.intensity/);
+    const fx = read('src/components/FxParticles.tsx');
+    assert.match(fx, /bossPhaseState\.intensity/);
+});
+
+test('frenzy speeds the music up +100 cents, the exact opposite of night', () => {
+    const mc = read('src/systems/sound/MusicController.ts');
+    assert.match(mc, /FRENZY_PLAYBACK_RATE = 2 \*\* \(1 \/ 12\)/);
+    assert.match(mc, /setBossFrenzy/);
+    assert.match(mc, /this\.bossFrenzy \? FRENZY_PLAYBACK_RATE/);
+    const sm = read('src/systems/sound/SoundManager.ts');
+    assert.match(sm, /setMusicPlaybackRate/);
+    assert.match(app, /setBossFrenzy\(true\)/);
+});
+
+test('a direct boss hit hurts a lot and knockback scales with hit strength', () => {
+    assert.match(entity, /contactDamage: 16/);
+    // Player knockback scales with damage (heavy hits throw you).
+    assert.match(app, /const kb = 6 \+ amount \* 0\.8/);
+    // Wrong-polarity slam launches hard.
+    assert.match(manager, /playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
+    // Slam locks ~0.4s before impact and frenzy flips polarity as a feint.
+    assert.match(manager, /e\.slamPhaseTimer > 0\.4/);
+    assert.match(manager, /Frenzy FEINT/);
 });
 
 test('leaving the world mid-fight resets the arena before saving', () => {
