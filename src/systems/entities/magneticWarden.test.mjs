@@ -376,9 +376,26 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
     assert.match(app, /const kb = 6 \+ amount \* 0\.8/);
     // Wrong-polarity slam launches hard.
     assert.match(manager, /playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
-    // Slam locks ~0.4s before impact and frenzy flips polarity as a feint.
-    assert.match(manager, /e\.slamPhaseTimer > 0\.4/);
+    // Slam locks ~0.65s before impact and frenzy flips polarity as a feint.
+    assert.match(manager, /e\.slamPhaseTimer > 0\.65/);
     assert.match(manager, /Frenzy FEINT/);
+    // Polarity is held a few seconds after the slam (no confusing instant swap).
+    assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, 4\)/);
+});
+
+test('pillars are torn down at 50% and rebuilt on reset; all beams are purple', () => {
+    const arena = read('src/systems/world/magneticArena.ts');
+    assert.match(arena, /export function flattenArenaPillars/);
+    assert.match(arena, /export function restoreArenaPillars/);
+    // Removed when the slam phase begins (≤50%), rebuilt on reset.
+    assert.match(app, /phase >= 2 && a && !pillarsRemovedRef\.current[\s\S]*?flattenArenaPillars/);
+    assert.match(app, /restoreArenaPillars/);
+    // Slams are spread out so the parry loop gets airtime between them.
+    assert.match(entity, /slamInterval: 12/);
+    // Every beam is the one purple colour (no red/blue inconsistency).
+    const cine = read('src/components/BossCinematic.tsx');
+    assert.match(cine, /SHIELD_BEAM = 0xc060ff/);
+    assert.doesNotMatch(cine, /BEAM_RED|BEAM_BLUE/);
 });
 
 test('leaving the world mid-fight resets the arena before saving', () => {
