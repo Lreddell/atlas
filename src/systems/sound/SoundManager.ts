@@ -421,6 +421,22 @@ class SoundManager {
     }
 
     /**
+     * Live-set the playback rate of the music decks (mid-song), with pitch
+     * preservation OFF so the pitch shifts with the speed. Used for the boss
+     * frenzy speed-up (the exact opposite of the night slowdown).
+     */
+    public setMusicPlaybackRate(rate: number): void {
+        for (const deck of [this.musicDeckA, this.musicDeckB]) {
+            if (!deck) continue;
+            const d = deck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
+            d.preservesPitch = false;
+            d.mozPreservesPitch = false;
+            d.webkitPreservesPitch = false;
+            deck.playbackRate = rate;
+        }
+    }
+
+    /**
      * Plays streaming music. Use for long audio files.
      * Guaranteed not to crash on missing files or fetch errors.
      */

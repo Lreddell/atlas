@@ -40,8 +40,8 @@ const FADE_OUT = 1.0;
 const FADE_IN = 1.6;
 const ORBIT_DUR = 9.5;    // crystals spawn during the orbit (2s apart)
 const BEAM_DUR = 4.5;     // beams grow slowly
-const PUSHIN_DUR = 2.0;   // lead-in before the energy ball forms
-const FLYBACK_DUR = 3.0;  // camera flies back to the player (snappier return)
+const PUSHIN_DUR = 1.5;   // lead-in before the energy ball forms
+const FLYBACK_DUR = 2.0;  // camera flies back to the player (snappy return)
 const GRACE_DUR = 4.0;    // ball keeps swelling after control returns (run-away window)
 
 const T_ORBIT = FADE_OUT;                  // 1.0
@@ -86,6 +86,9 @@ class BossSummon {
     readonly ballMaxRadius = BALL_MAX_R;
     /** The player's view orientation at summon time — restored on handback. */
     readonly playerStartQuat = new THREE.Quaternion();
+    /** Where the player is handed back to: farther from the altar, facing the ball. */
+    readonly returnPos = new THREE.Vector3();
+    readonly returnQuat = new THREE.Quaternion();
 
     private params: SummonParams | null = null;
     private t = 0;
@@ -103,7 +106,6 @@ class BossSummon {
     private readonly _center = new THREE.Vector3();
     private readonly _look = new THREE.Vector3();
     private readonly _eye = new THREE.Vector3();
-    private readonly _q = new THREE.Quaternion();
 
     subscribe(cb: () => void): () => void {
         this.listeners.add(cb);
@@ -138,6 +140,16 @@ class BossSummon {
         worldManager.setBlocks(this.crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
         this.altar.set(centerX + 0.5, baseY + 4.5, centerZ + 0.5);
         this._look.set(centerX + 0.5, baseY + 6, centerZ + 0.5);
+
+        // Return spot: pushed ~12 blocks FARTHER from the altar than the player
+        // started (capped to stay on the platform), at the same height, and angled
+        // to look straight at the energy ball — so they hand back with room to run.
+        let dx = params.startPos.x - this.altar.x, dz = params.startPos.z - this.altar.z;
+        let hd = Math.hypot(dx, dz);
+        if (hd < 0.5) { dx = 1; dz = 0; hd = 1; } // degenerate: summoned right on the altar
+        const pushDist = Math.min(hd + 12, 18);
+        this.returnPos.set(this.altar.x + (dx / hd) * pushDist, params.startPos.y, this.altar.z + (dz / hd) * pushDist);
+        quatLookAt(this.returnPos, this.altar, this.returnQuat);
 
         this.camPos.copy(params.startPos);
         this.camQuat.copy(params.startQuat);
@@ -186,15 +198,14 @@ class BossSummon {
                 this.orbitPos(angle, this.camPos);
                 quatLookAt(this.camPos, this._look, this.camQuat);
             } else {
-                // Fly straight back to the player's EXACT position + angle from where
-                // the orbit left off (no intermediate altar-look angle). Long + eased
-                // so it glides in; at k=1 the camera sits precisely where control
-                // resumes — no snap.
+                // Fly back to the RETURN spot (farther from the altar, room to run)
+                // while keeping the camera trained on the energy ball the WHOLE time
+                // — it never snaps to the player's old angle. At k=1 the camera sits
+                // exactly where control resumes (returnPos, looking at the ball).
                 this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
-                quatLookAt(this._eye, this._look, this._q);          // orbit-exit look (at centre)
                 const k = smooth(Math.min(1, (t - T_PUSH) / (T_CONTROL - T_PUSH)));
-                this.camPos.lerpVectors(this._eye, p.startPos, k);
-                this.camQuat.copy(this._q).slerp(p.startQuat, k);
+                this.camPos.lerpVectors(this._eye, this.returnPos, k);
+                quatLookAt(this.camPos, this.altar, this.camQuat); // always look at the ball
             }
         }
 

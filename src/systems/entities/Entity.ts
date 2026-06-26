@@ -202,7 +202,7 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         // Large enough to stay engaged with a player on the arena pillars across
         // the lava moat (forget range is 1.5×, covering the whole arena).
         aggroRange: 40,
-        contactDamage: 8,
+        contactDamage: 16,   // a DIRECT hit from the Warden hurts a lot — keep your distance
         attackCooldown: 1.0,
         color: 0x8e24aa,
         isBoss: true,
@@ -226,10 +226,10 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         slamThreshold: 0.5,
         slamInterval: 8,
         slamChargeTime: 0.55,   // crouch + charge windup before launching
-        slamTrackSpeed: 12,     // homes over the player while airborne
+        slamTrackSpeed: 15,     // homes over the player a bit faster while airborne
         slamRiseHeight: 50,     // launches WAY up (50 blocks)
         slamRiseTime: 0.85,
-        slamHangTime: 0.6,
+        slamHangTime: 1.1,      // longer hang so it can reach the player, then locks
         slamDropSpeed: 78,      // fast slam down from way up high
         slamDamage: 9,
         slamMaxRadius: 26,

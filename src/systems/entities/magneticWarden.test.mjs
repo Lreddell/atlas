@@ -320,7 +320,10 @@ test('cutscene beams feed the ball until detonation; return is snappier; hurt sf
     const summon = read('src/systems/boss/bossSummon.ts');
     // Beams persist until the explosion (T_IMPACT), not collapsing when the ball forms.
     assert.match(summon, /t >= T_BEAM && t < T_IMPACT/);
-    assert.match(summon, /FLYBACK_DUR = 3\.0/);
+    assert.match(summon, /FLYBACK_DUR = 2\.0/);
+    // Flyback flies to the return spot looking at the ball (not the player's old angle).
+    assert.match(summon, /this\.camPos\.lerpVectors\(this\._eye, this\.returnPos, k\)/);
+    assert.match(summon, /quatLookAt\(this\.camPos, this\.altar, this\.camQuat\)/);
     const cine = read('src/components/BossCinematic.tsx');
     // Beams render regardless of the camera handback, so they stay lit on the ball.
     assert.match(cine, /const progress = bossSummon\.beamProgress/);

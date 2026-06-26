@@ -10,6 +10,7 @@ import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
 import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
 import { bossSummon } from '../../systems/boss/bossSummon';
+import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 
 // Shader for the skybox gradient with Directional Sunset
@@ -675,7 +676,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             magneticFogBlendRef.current = THREE.MathUtils.damp(magneticFogBlendRef.current, inMagnetic ? 1 : 0, 1.2, delta);
         }
         const mag = magneticFogBlendRef.current;
-        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * 0.55);
+        // Polarity storm: the haze thickens further per boss phase (slam → frenzy),
+        // closing in and tinting harder for drama as the fight escalates.
+        const storm = bossSummon.isActive() ? 0 : bossPhaseState.intensity;
+        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * (0.55 + 0.35 * storm));
 
         scene.background = targetFog;
 
@@ -683,9 +687,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         let fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
         let fogFar = renderDistance * CHUNK_SIZE - 5;
         if (mag > 0.001) {
-            // Roughly halve the visible range inside the biome for a thick haze.
-            fogNear = THREE.MathUtils.lerp(fogNear, 12, mag);
-            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(40, fogFar * 0.45), mag);
+            // Roughly halve the visible range inside the biome for a thick haze — and
+            // tighten it further during the boss storm.
+            fogNear = THREE.MathUtils.lerp(fogNear, 12 - 4 * storm, mag);
+            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(28, fogFar * (0.45 - 0.15 * storm)), mag);
         }
 
         if (scene.fog) {
