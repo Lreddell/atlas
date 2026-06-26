@@ -37,8 +37,10 @@ export const BossCinematic: React.FC = () => {
         }
         wasActive.current = active;
 
-        // Beams (cinematic camera phase only).
-        const progress = active ? bossSummon.beamProgress : 0;
+        // Beams: feed the altar/ball the whole time they're lit — including AFTER
+        // control hands back to the player, so the crystals are seen powering the
+        // ball until it detonates (not gated on the cinematic camera).
+        const progress = bossSummon.beamProgress;
         for (let i = 0; i < 4; i++) {
             const m = beamRefs.current[i];
             if (!m) continue;

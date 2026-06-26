@@ -84,6 +84,7 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.magnetic_warden.slam_rise": { category: "blocks", sounds: ["magnetic_warden/slam_rise"], volume: 0.7 }, // boss rising for a slam (telegraph)
     "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },           // slam impact + polarity shockwave
     "entity.magnetic_warden.enrage": { category: "blocks", sounds: ["magnetic_warden/enrage"], volume: 0.9 },       // crosses a phase threshold (50% slam / 25% frenzy)
+    "entity.magnetic_warden.hurt": { category: "blocks", sounds: ["magnetic_warden/hurt"], volume: 0.7 },           // takes damage (e.g. a deflected bolt lands)
     "entity.magnetic_warden.crystal_spawn": { category: "blocks", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8 }, // a shield crystal materializes (cutscene)
     "entity.magnetic_warden.hum": { category: "blocks", sounds: ["magnetic_warden/hum"], volume: 0.7 },             // crystal beams converging on the altar (cutscene)
     "entity.magnetic_warden.charge": { category: "blocks", sounds: ["magnetic_warden/charge"], volume: 0.85 },      // energy ball forming + swelling at the altar (cutscene)

@@ -278,8 +278,10 @@ test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts
 });
 
 test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers', () => {
-    // EntityManager detects the threshold crossing and erupts + emits boss:phase.
-    assert.match(manager, /crossed\(kind\?\.slamThreshold \?\? 0\.5\)/);
+    // EntityManager GATES the boss at 50%/25% (clamps HP to the threshold) and
+    // erupts + emits boss:phase exactly there, not below.
+    assert.match(manager, /Phase gate/);
+    assert.match(manager, /e\.hp = e\.maxHp \* thr; phase = ph/);
     assert.match(manager, /gameEvents\.emit\('boss:phase'/);
     assert.match(events, /'boss:phase':/);
     // App plays an enrage cue (editable sound slot).
@@ -298,7 +300,7 @@ test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers
 test('slam charges, launches high, homes over the player, and is telegraphed', () => {
     // Windup state + a high launch + frenzy-faster cadence.
     assert.match(entity, /slamChargeTime:/);
-    assert.match(entity, /slamRiseHeight: 24/);
+    assert.match(entity, /slamRiseHeight: 50/);
     assert.match(entity, /slamTrackSpeed:/);
     assert.match(manager, /private startSlam\(e: Entity, kind: EntityKind, frenzy: boolean\)/);
     assert.match(manager, /frenzy \? 0\.45 : 1/);
@@ -312,6 +314,20 @@ test('slam charges, launches high, homes over the player, and is telegraphed', (
     assert.match(renderer, /Slam landing indicator/);
     assert.match(renderer, /slamRefs/);
     assert.match(renderer, /e\.slamState === 'charging'/);
+});
+
+test('cutscene beams feed the ball until detonation; return is snappier; hurt sfx', () => {
+    const summon = read('src/systems/boss/bossSummon.ts');
+    // Beams persist until the explosion (T_IMPACT), not collapsing when the ball forms.
+    assert.match(summon, /t >= T_BEAM && t < T_IMPACT/);
+    assert.match(summon, /FLYBACK_DUR = 3\.0/);
+    const cine = read('src/components/BossCinematic.tsx');
+    // Beams render regardless of the camera handback, so they stay lit on the ball.
+    assert.match(cine, /const progress = bossSummon\.beamProgress/);
+    // Boss takes-damage hurt cue (e.g. a deflected bolt landing).
+    assert.match(app, /entity\.magnetic_warden\.hurt/);
+    const sounds = read('src/systems/sound/soundDefaults.ts');
+    assert.match(sounds, /entity\.magnetic_warden\.hurt/);
 });
 
 test('leaving the world mid-fight resets the arena before saving', () => {

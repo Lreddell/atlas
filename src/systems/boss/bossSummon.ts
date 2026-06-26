@@ -40,8 +40,8 @@ const FADE_OUT = 1.0;
 const FADE_IN = 1.6;
 const ORBIT_DUR = 9.5;    // crystals spawn during the orbit (2s apart)
 const BEAM_DUR = 4.5;     // beams grow slowly
-const PUSHIN_DUR = 3.5;   // camera moves in toward the altar
-const FLYBACK_DUR = 5.0;  // camera flies all the way back to the player (slow + lingering)
+const PUSHIN_DUR = 2.0;   // lead-in before the energy ball forms
+const FLYBACK_DUR = 3.0;  // camera flies back to the player (snappier return)
 const GRACE_DUR = 4.0;    // ball keeps swelling after control returns (run-away window)
 
 const T_ORBIT = FADE_OUT;                  // 1.0
@@ -209,13 +209,15 @@ class BossSummon {
             this.ambientPulse(t, FX_NEGATIVE);
         }
 
-        // --- Beams + hum (energy streaming to the altar) ---
-        if (t >= T_BEAM && t < T_FLYBACK) {
+        // --- Beams + hum (energy streaming to the altar / ball) ---
+        // The beams keep feeding the energy ball right up until it detonates, so the
+        // crystals visibly power the summon the whole time (not just pre-ball).
+        if (t >= T_BEAM && t < T_IMPACT) {
             if (!this.firedBeamHum) { this.firedBeamHum = true; soundManager.play('entity.magnetic_warden.hum', { volume: 0.7 }); }
             this.beamProgress = Math.min(1, (t - T_BEAM) / BEAM_DUR);
             this.ambientPulse(t, FX_CHARGED);
-        } else if (t >= T_FLYBACK) {
-            this.beamProgress = 0; // collapsed into the ball
+        } else if (t >= T_IMPACT) {
+            this.beamProgress = 0; // collapsed at the explosion
         }
 
         // --- Energy ball: forms when the beams collapse, swells until impact ---
