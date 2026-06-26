@@ -985,8 +985,9 @@ const App: React.FC = () => {
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
           if (phase >= 3) musicController.setBossFrenzy(true);
-          // Entering the slam phase (≤50%): tear down the climb-towers so the player
-          // can't perch above the slam. The shield is already broken by now.
+          // Entering the slam phase (≤50%): strip the towers' magnet climb faces so
+          // the player can't climb up to perch above the slam. The shield is already
+          // broken by now (the towers stay as cover, just unclimbable).
           const a = summonArenaRef.current;
           if (phase >= 2 && a && !pillarsRemovedRef.current) {
               pillarsRemovedRef.current = true;

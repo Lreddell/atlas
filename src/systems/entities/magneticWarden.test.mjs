@@ -383,11 +383,14 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
     assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, 4\)/);
 });
 
-test('pillars are torn down at 50% and rebuilt on reset; all beams are purple', () => {
+test('pillar climb faces are stripped at 50% and restored on reset; beams purple', () => {
     const arena = read('src/systems/world/magneticArena.ts');
     assert.match(arena, /export function flattenArenaPillars/);
     assert.match(arena, /export function restoreArenaPillars/);
-    // Removed when the slam phase begins (≤50%), rebuilt on reset.
+    // Only the magnet climb faces are swapped to brick (cheap, solid→solid).
+    assert.match(arena, /collectClimbFaceCells/);
+    assert.match(arena, /type: BlockType\.MAGNETITE_BRICKS/);
+    // Done when the slam phase begins (≤50%), restored on reset.
     assert.match(app, /phase >= 2 && a && !pillarsRemovedRef\.current[\s\S]*?flattenArenaPillars/);
     assert.match(app, /restoreArenaPillars/);
     // Slams are spread out so the parry loop gets airtime between them.
