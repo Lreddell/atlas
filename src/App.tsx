@@ -28,7 +28,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, flattenArenaPillars, restoreArenaPillars } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, placeArenaClimbMagnets, stripArenaClimbMagnets } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -293,9 +293,9 @@ const App: React.FC = () => {
   // scripted. The arena centre is remembered so the dais altar can be restored.
   const [cinematicMode, setCinematicMode] = useState(false);
   const summonArenaRef = useRef<{ cx: number; cz: number; baseY: number } | null>(null);
-  // True once the climb-towers have been torn down (boss past 50%), so the arena
-  // reset knows to rebuild them.
-  const pillarsRemovedRef = useRef(false);
+  // True while the towers' magnet climb faces are present (placed for a fight, until
+  // stripped at 50% or on reset) — so we never strip/place redundantly.
+  const climbMagnetsActiveRef = useRef(false);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
@@ -889,9 +889,10 @@ const App: React.FC = () => {
       if (!a) return;
       summonArenaRef.current = null;
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (pillarsRemovedRef.current) {
-          pillarsRemovedRef.current = false;
-          restoreArenaPillars(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      // Never leave the magnet climb faces on the walls after a fight.
+      if (climbMagnetsActiveRef.current) {
+          climbMagnetsActiveRef.current = false;
+          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       }
       const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       if (daisDelayMs > 0) window.setTimeout(restoreDais, daisDelayMs);
@@ -917,9 +918,9 @@ const App: React.FC = () => {
       worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
       restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (pillarsRemovedRef.current) {
-          pillarsRemovedRef.current = false;
-          restoreArenaPillars(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      if (climbMagnetsActiveRef.current) {
+          climbMagnetsActiveRef.current = false;
+          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       }
   }, []);
 
@@ -989,9 +990,9 @@ const App: React.FC = () => {
           // the player can't climb up to perch above the slam. The shield is already
           // broken by now (the towers stay as cover, just unclimbable).
           const a = summonArenaRef.current;
-          if (phase >= 2 && a && !pillarsRemovedRef.current) {
-              pillarsRemovedRef.current = true;
-              flattenArenaPillars(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+          if (phase >= 2 && a && climbMagnetsActiveRef.current) {
+              climbMagnetsActiveRef.current = false;
+              stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
           }
       });
       // Reset the frenzy music whenever a fight begins or ends.
@@ -2681,6 +2682,10 @@ const App: React.FC = () => {
                                 const centerX = x, centerZ = z, baseY = y - 4;
                                 const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
                                 summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
+                                // Light up the tower climb faces with magnets for the fight (the
+                                // walls are plain brick otherwise); stripped at 50% / on reset.
+                                climbMagnetsActiveRef.current = true;
+                                placeArenaClimbMagnets(centerX, centerZ, baseY, (edits) => worldManager.setBlocks(edits));
 
                                 const cam = controlsRef.current?.getCamera();
                                 const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);

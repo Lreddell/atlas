@@ -224,12 +224,12 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         parryDamageFraction: 1 / 12,
         // Phase 2 (≤50%): polarity SLAM shockwaves. Phase 3 (≤25%): frenzy.
         slamThreshold: 0.5,
-        slamInterval: 12,       // spread out, so the parry/barrage loop gets airtime between slams
+        slamInterval: 8,        // slams come every ~8s (frenzy is faster)
         slamChargeTime: 0.55,   // crouch + charge windup before launching
-        slamTrackSpeed: 15,     // homes over the player while airborne (gentler in phase 1)
+        slamTrackSpeed: 15,     // homes over the player while airborne (85% in phase 1)
         slamRiseHeight: 50,     // launches WAY up (50 blocks)
         slamRiseTime: 0.85,
-        slamHangTime: 1.25,     // long hang: track, then a clear locked/flashing beat before it drops
+        slamHangTime: 1.15,     // hang: track, then a locked/flashing beat before it drops
         slamDropSpeed: 78,      // fast slam down from way up high
         slamDamage: 9,
         slamMaxRadius: 26,

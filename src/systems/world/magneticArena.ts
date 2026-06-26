@@ -327,8 +327,6 @@ function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: numb
     const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         const c = arenaPillarCenter(centerX, centerZ, i);
-        const magnet = arenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
-        const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
         for (let ox = -4; ox <= 4; ox++) {
             for (let oz = -4; oz <= 4; oz++) {
                 const wx = c.x + ox, wz = c.z + oz;
@@ -340,12 +338,12 @@ function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: numb
                     ctx.setBlock(wx, baseY - 1, wz, BlockType.MAGNETITE_BRICK_SLAB);
                     continue;
                 }
+                // All-brick shaft by default (chiseled corners for shape). The two
+                // centre-facing MAGNET climb faces are NOT here — they're placed only
+                // for the duration of a fight (during the summon cutscene), so the
+                // tower is plain/unclimbable otherwise.
                 const isCorner = Math.abs(ox) === 3 && Math.abs(oz) === 3;
-                const innerFace = cheb === 3 && !isCorner && (ox === -3 * dirX || oz === -3 * dirZ);
-                const t = isCorner ? BlockType.CHISELED_MAGNETITE
-                    : innerFace ? magnet
-                        : BlockType.MAGNETITE_BRICKS;
-                fillColumn(ctx, wx, pitFloor, top, wz, t);
+                fillColumn(ctx, wx, pitFloor, top, wz, isCorner ? BlockType.CHISELED_MAGNETITE : BlockType.MAGNETITE_BRICKS);
             }
         }
     }
@@ -461,12 +459,12 @@ export function restoreArenaBridges(
     setBlocks(BRIDGE_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: c.type })));
 }
 
-// --- Pillar climb-face lifecycle: once the boss is past 50% HP (its shield is
-//     already broken, so the towers only let the player perch above the slam), the
-//     two center-facing MAGNET climb faces of each tower are swapped to plain brick
-//     so the polarity climb no longer works — the towers stay as cover, just
-//     unclimbable. Restored on arena reset. Cheap: solid→solid, so no lighting
-//     flood, only a remesh. ---
+// --- Pillar climb-face lifecycle: the towers are plain brick by default. The two
+//     centre-facing MAGNET climb faces are PLACED only for a fight (during the summon
+//     cutscene) so the player can climb to break the shield crystals, then STRIPPED
+//     back to brick once the boss is past 50% (anti-cheese) AND on any arena reset —
+//     so the magnets are never left on the walls after a fight. Cheap: solid→solid,
+//     no lighting flood, only a remesh. ---
 
 /** The climbable magnet inner-face cells of all four towers (baseY..top), each with
  *  its magnet type so a restore can put them back. */
@@ -492,22 +490,22 @@ function collectClimbFaceCells(
     return out;
 }
 
-/** Swap the magnet climb faces to brick (boss past 50% — anti-cheese). */
-export function flattenArenaPillars(
-    centerX: number, centerZ: number, baseY: number,
-    setBlocks: (edits: ArenaEdit[]) => void,
-): void {
-    setBlocks(collectClimbFaceCells(centerX, centerZ, baseY)
-        .map((e) => ({ x: e.x, y: e.y, z: e.z, type: BlockType.MAGNETITE_BRICKS })));
-}
-
-/** Restore the magnet climb faces (arena reset). */
-export function restoreArenaPillars(
+/** Place the magnet climb faces (summon cutscene — makes the towers climbable). */
+export function placeArenaClimbMagnets(
     centerX: number, centerZ: number, baseY: number,
     setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
     setBlocks(collectClimbFaceCells(centerX, centerZ, baseY)
         .map((e) => ({ x: e.x, y: e.y, z: e.z, type: e.magnet })));
+}
+
+/** Strip the magnet climb faces back to brick (boss past 50%, and on arena reset). */
+export function stripArenaClimbMagnets(
+    centerX: number, centerZ: number, baseY: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+): void {
+    setBlocks(collectClimbFaceCells(centerX, centerZ, baseY)
+        .map((e) => ({ x: e.x, y: e.y, z: e.z, type: BlockType.MAGNETITE_BRICKS })));
 }
 
 /** World positions of the four shield crystals (raised pedestal tops). */

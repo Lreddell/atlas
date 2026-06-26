@@ -376,25 +376,25 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
     assert.match(app, /const kb = 6 \+ amount \* 0\.8/);
     // Wrong-polarity slam launches hard.
     assert.match(manager, /playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
-    // Slam locks ~0.65s before impact and frenzy flips polarity as a feint.
-    assert.match(manager, /e\.slamPhaseTimer > 0\.65/);
+    // Slam locks ~0.45s before impact and frenzy flips polarity as a feint.
+    assert.match(manager, /e\.slamPhaseTimer > 0\.45/);
     assert.match(manager, /Frenzy FEINT/);
     // Polarity is held a few seconds after the slam (no confusing instant swap).
     assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, 4\)/);
 });
 
-test('pillar climb faces are stripped at 50% and restored on reset; beams purple', () => {
+test('climb magnets are placed for a fight, stripped at 50% and on reset; beams purple', () => {
     const arena = read('src/systems/world/magneticArena.ts');
-    assert.match(arena, /export function flattenArenaPillars/);
-    assert.match(arena, /export function restoreArenaPillars/);
-    // Only the magnet climb faces are swapped to brick (cheap, solid→solid).
+    assert.match(arena, /export function placeArenaClimbMagnets/);
+    assert.match(arena, /export function stripArenaClimbMagnets/);
     assert.match(arena, /collectClimbFaceCells/);
-    assert.match(arena, /type: BlockType\.MAGNETITE_BRICKS/);
-    // Done when the slam phase begins (≤50%), restored on reset.
-    assert.match(app, /phase >= 2 && a && !pillarsRemovedRef\.current[\s\S]*?flattenArenaPillars/);
-    assert.match(app, /restoreArenaPillars/);
-    // Slams are spread out so the parry loop gets airtime between them.
-    assert.match(entity, /slamInterval: 12/);
+    // Placed on summon; stripped when the slam phase begins (≤50%) and on reset.
+    assert.match(app, /placeArenaClimbMagnets/);
+    assert.match(app, /phase >= 2 && a && climbMagnetsActiveRef\.current[\s\S]*?stripArenaClimbMagnets/);
+    // Never restored — the walls stay plain brick after a fight.
+    assert.doesNotMatch(app, /restoreArenaPillars/);
+    // Slams come every ~8s (frenzy faster).
+    assert.match(entity, /slamInterval: 8/);
     // Every beam is the one purple colour (no red/blue inconsistency).
     const cine = read('src/components/BossCinematic.tsx');
     assert.match(cine, /SHIELD_BEAM = 0xc060ff/);
