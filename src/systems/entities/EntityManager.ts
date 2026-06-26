@@ -437,9 +437,14 @@ class EntityManager {
             // the Warden flies UP toward the player's height so it can shoot at them
             // mid-climb; once they drop / the shield breaks it falls back to ground.
             const shieldHover = e.shielded && e.aggro && pp && targetable;
-            const dyTarget = (shieldHover && pp) ? (pp.y + 0.5) - e.pos.y : 0;
-            if (shieldHover && dyTarget > 0.2) {
-                e.vel.y = Math.min(8, dyTarget * 3);  // fly up toward the climbing player
+            if (shieldHover && pp) {
+                // Floaty levitation while shielded: ease vertical velocity toward a
+                // gentle drift that tracks the climbing player's height, capped low
+                // so the Warden rises and settles like it's weightless — no snappy
+                // elevator. The slow approach (dt-scaled lerp) is what reads as float.
+                const dyTarget = (pp.y + 0.5) - e.pos.y;
+                const want = THREE.MathUtils.clamp(dyTarget * 1.5, -2.4, 3.2);
+                e.vel.y += (want - e.vel.y) * Math.min(1, dt * 2.2);
                 e.grounded = false;
             } else {
                 e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);  // settle / normal gravity
@@ -498,7 +503,9 @@ class EntityManager {
             e.polarityTimer -= dt;
             if (e.polarityTimer <= 0) {
                 e.polarity *= -1;
-                e.polarityTimer = kind.polaritySwapInterval * (frenzy ? 0.6 : 1);
+                // Last phase is relentless: swap polarity on a near-continuous beat
+                // instead of the slow interval (matches the original, harder feel).
+                e.polarityTimer = frenzy ? 0.5 : kind.polaritySwapInterval;
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
                 // No shove/hop on a polarity swap — it was nudging the player every
                 // few seconds anywhere in the arena and wrecking pillar jumps. The
@@ -508,6 +515,32 @@ class EntityManager {
         }
 
         if (!kind.projectileInterval) return;
+
+        // Last phase (frenzy): no barrage windows, no fire-holds — it keeps up a
+        // continuous, rapid volley while still weaving in the deflectable parry bolt
+        // (the only way to damage it) on a short cadence. Relentless, like the
+        // original implementation.
+        if (frenzy) {
+            e.projectileTimer -= dt;
+            if (e.projectileTimer <= 0) {
+                e.projectileTimer = kind.projectileInterval * 0.5;
+                this.fireVolley(e, kind, pp, true);
+            }
+            if (e.awaitingParry) {
+                if (!this.projectiles.some((p) => p.deflectable && p.sourceId === e.id)) {
+                    e.awaitingParry = false;
+                    e.barrageTimer = (kind.barrageDuration ?? 5) * 0.5;
+                }
+            } else {
+                e.barrageTimer -= dt;
+                if (e.barrageTimer <= 0) {
+                    this.fireParryBolt(e, kind, pp);
+                    e.awaitingParry = true;
+                    if (e.bossId) gameEvents.emit('boss:parry', { bossId: e.bossId, entityId: e.id });
+                }
+            }
+            return;
+        }
 
         // Shielded: a steady dodge barrage while the player works the crystals.
         if (e.shielded) {
@@ -806,12 +839,13 @@ class EntityManager {
                         dir: [Math.cos(a), 0.25, Math.sin(a)], size: 0.3, life: 0.7, gravity: 9, drag: 1.4,
                     });
                 }
-                // Hold the boss's polarity steady for a few seconds after the slam
-                // (it stays whatever it slammed with — including a feint flip), so the
-                // player isn't immediately confused by a swap, and give a short
-                // breather before it resumes firing.
-                e.polarityTimer = Math.max(e.polarityTimer, 4);
-                e.projectileTimer = Math.max(e.projectileTimer, 1);
+                // Hold the boss's polarity steady briefly after the slam (it stays
+                // whatever it slammed with — including a feint flip) and give a short
+                // breather before it resumes firing. The first slam phase recovers a
+                // touch faster than before so it gets back to swapping/shooting sooner;
+                // the relentless frenzy barely pauses at all.
+                e.polarityTimer = Math.max(e.polarityTimer, frenzy ? 0.5 : 3);
+                e.projectileTimer = Math.max(e.projectileTimer, frenzy ? 0.2 : 0.7);
                 if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
             }
         }

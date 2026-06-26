@@ -108,9 +108,11 @@ test('projectiles aim at the head, boss flies up while shielded, bolts clear on 
     // Both volleys and the parry bolt aim at the player's head, not the chest.
     assert.match(manager, /fireVolley[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
     assert.match(manager, /fireParryBolt[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
-    // While shielded the boss hovers UP toward the climbing player to shoot at them.
+    // While shielded the boss floats UP toward the climbing player to shoot at
+    // them — eased (not snapped) toward a low, weightless drift speed.
     assert.match(manager, /e\.shielded && e\.aggro && pp && targetable/);
-    assert.match(manager, /e\.vel\.y = Math\.min\(8, dyTarget \* 3\)/);
+    assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.5, -2\.4, 3\.2\)/);
+    assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 2\.2\)/);
     // A despawn/reset wipes all bolts + shockwaves.
     assert.match(manager, /private despawnBoss[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
 });
@@ -405,8 +407,18 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
     // Slam locks ~0.45s before impact and frenzy flips polarity as a feint.
     assert.match(manager, /e\.slamPhaseTimer > 0\.45/);
     assert.match(manager, /Frenzy FEINT/);
-    // Polarity is held a few seconds after the slam (no confusing instant swap).
-    assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, 4\)/);
+    // Polarity is held briefly after the slam (first phase recovers a touch faster
+    // than before; the relentless frenzy barely pauses).
+    assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, frenzy \? 0\.5 : 3\)/);
+    assert.match(manager, /e\.projectileTimer = Math\.max\(e\.projectileTimer, frenzy \? 0\.2 : 0\.7\)/);
+});
+
+test('the last phase is relentless: continuous fire + rapid polarity, parry kept', () => {
+    // Frenzy bypasses the barrage/parry-hold gating — it fires continuously and
+    // still weaves in the deflectable parry bolt so it stays damageable.
+    assert.match(manager, /if \(frenzy\) {[\s\S]*?this\.fireVolley\(e, kind, pp, true\)[\s\S]*?fireParryBolt/);
+    // Polarity swaps on a near-continuous beat during the frenzy.
+    assert.match(manager, /e\.polarityTimer = frenzy \? 0\.5 : kind\.polaritySwapInterval/);
 });
 
 test('climb magnets are placed per-pillar, stripped at 50% and on reset; beams purple', () => {
