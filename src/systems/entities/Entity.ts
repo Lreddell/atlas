@@ -50,7 +50,7 @@ export interface Entity {
     /** Vulnerable-phase: a deflectable parry bolt is currently in play. */
     awaitingParry: boolean;
     /** Slam attack state machine ('none' until phase 2). */
-    slamState: 'none' | 'rising' | 'hanging' | 'dropping';
+    slamState: 'none' | 'charging' | 'rising' | 'hanging' | 'dropping';
     /** Seconds until the next slam (phase 2+). */
     slamTimer: number;
     /** Seconds left in the current slam sub-phase (rise/hang). */
@@ -146,6 +146,10 @@ export interface EntityKind {
     slamThreshold?: number;
     /** Seconds between slams. */
     slamInterval?: number;
+    /** Seconds the boss charges/crouches on the ground before launching (windup). */
+    slamChargeTime?: number;
+    /** Horizontal tracking speed (blocks/sec) toward the player while airborne. */
+    slamTrackSpeed?: number;
     /** How high (blocks) the boss rises before slamming. */
     slamRiseHeight?: number;
     /** Seconds to rise to the apex (the telegraph window). */
@@ -220,11 +224,13 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         parryDamageFraction: 1 / 12,
         // Phase 2 (≤50%): polarity SLAM shockwaves. Phase 3 (≤25%): frenzy.
         slamThreshold: 0.5,
-        slamInterval: 9,
-        slamRiseHeight: 9,
-        slamRiseTime: 0.85,
-        slamHangTime: 0.45,
-        slamDropSpeed: 38,
+        slamInterval: 8,
+        slamChargeTime: 0.55,   // crouch + charge windup before launching
+        slamTrackSpeed: 12,     // homes over the player while airborne
+        slamRiseHeight: 24,     // launches WAY up
+        slamRiseTime: 0.7,
+        slamHangTime: 0.6,
+        slamDropSpeed: 55,      // fast slam down from high up
         slamDamage: 9,
         slamMaxRadius: 26,
         slamRingSpeed: 15,
