@@ -211,9 +211,16 @@ class MusicController {
     public setBossFrenzy(active: boolean) {
         if (this.bossFrenzy === active) return;
         this.bossFrenzy = active;
-        // Apply live to whatever is currently playing, then future tracks pick it up
-        // via the playbackRate computed in playNextTrack().
-        soundManager.setMusicPlaybackRate(active ? FRENZY_PLAYBACK_RATE : 1.0);
+        if (active) {
+            // Turning ON: apply live so the track currently playing speeds up + pitches
+            // up mid-song. Future tracks pick it up via playNextTrack().
+            soundManager.setMusicPlaybackRate(FRENZY_PLAYBACK_RATE);
+        }
+        // Turning OFF (boss defeated / player died / fight cleared): do NOT snap the
+        // playing track's rate back down — that pitch drop is clearly audible while the
+        // track is fading out and sounds like a glitch. Leave the fading track at its
+        // raised pitch; whatever plays next (death music, world music) starts fresh at
+        // 1.0 via playNextTrack(), so nothing else is left pitched.
     }
 
     public setNightSlowdownEnabled(enabled: boolean) {
