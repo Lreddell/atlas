@@ -13,9 +13,7 @@ import { particleFx, FX_CHARGED } from '../systems/fx/particleFx';
 // energy ball (which persists after the camera hands back to the player). Mounted
 // always; idle until bossSummon.running.
 
-const BEAM_RED = 0xff5a5a;
-const BEAM_BLUE = 0x5aa8ff;
-const SHIELD_BEAM = 0xc060ff;   // ender-dragon-style crystal→boss shield beam
+const SHIELD_BEAM = 0xc060ff;   // all summon/shield beams are this purple (consistent)
 const _dir = new THREE.Vector3();
 const _mid = new THREE.Vector3();
 const _crystal = new THREE.Vector3();
@@ -84,7 +82,7 @@ export const BossCinematic: React.FC = () => {
                 const c = bossSummon.crystals[i];
                 drawBeam(m, c.x + 0.5, c.y + 0.5, c.z + 0.5,
                     bossSummon.altar.x, bossSummon.altar.y, bossSummon.altar.z,
-                    cutsceneProg, i % 2 === 0 ? BEAM_RED : BEAM_BLUE, 0.4 + 0.35 * Math.sin(now * 0.02 + i));
+                    cutsceneProg, SHIELD_BEAM, 0.4 + 0.35 * Math.sin(now * 0.02 + i));
                 wasStanding.current[i] = true;
                 continue;
             }
@@ -149,7 +147,7 @@ export const BossCinematic: React.FC = () => {
                 <mesh key={`beam-${i}`} ref={(m) => { beamRefs.current[i] = m; }} visible={false}>
                     {/* Unit-height cylinder (scaled along Y to the beam length). */}
                     <cylinderGeometry args={[0.32, 0.32, 1, 10, 1, true]} />
-                    <meshBasicMaterial color={BEAM_RED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+                    <meshBasicMaterial color={SHIELD_BEAM} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
                 </mesh>
             ))}
             {/* Energy ball: a translucent outer shell + a bright pulsing core. */}

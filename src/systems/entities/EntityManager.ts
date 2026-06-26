@@ -724,7 +724,9 @@ class EntityManager {
     private tickSlam(e: Entity, kind: EntityKind, dt: number, pp: { x: number; y: number; z: number } | null): void {
         const riseTime = kind.slamRiseTime ?? 0.85;
         const apex = e.slamGroundY + (kind.slamRiseHeight ?? 9);
-        const track = kind.slamTrackSpeed ?? 12;
+        const frenzy = e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0);
+        // Air homing is gentler in the first slam phase, and ramps up in frenzy.
+        const track = (kind.slamTrackSpeed ?? 12) * (frenzy ? 1 : 0.68);
         const col = polarityFxColor(e.polarity);
 
         if (e.slamState === 'charging') {
@@ -766,16 +768,16 @@ class EntityManager {
                 e.slamPhaseTimer = kind.slamHangTime ?? 0.45;
             }
         } else if (e.slamState === 'hanging') {
-            // Track toward the player, then LOCK the target for the final ~0.4s (the
-            // indicator stops moving and flashes). AFK players get caught, but you can
-            // still sidestep the locked spot.
-            if (pp && e.slamPhaseTimer > 0.4) this.slamTrack(e, pp, track * 0.9, dt);
+            // Track toward the player, then LOCK the target (the indicator stops moving
+            // and flashes) for a good beat before it falls — AFK players get caught,
+            // but there's clearly time to read it and sidestep the locked spot.
+            if (pp && e.slamPhaseTimer > 0.65) this.slamTrack(e, pp, track * 0.9, dt);
             e.slamPhaseTimer -= dt;
             if (e.slamPhaseTimer <= 0) {
                 // Frenzy FEINT: flip polarity the instant before slamming, so a player
                 // who committed to the telegraphed colour gets caught. The ground
                 // indicator (which reads e.polarity) flips with it.
-                if (e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0)) {
+                if (frenzy) {
                     e.polarity = e.polarity > 0 ? -1 : 1;
                     if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
                 }
@@ -800,6 +802,12 @@ class EntityManager {
                         dir: [Math.cos(a), 0.25, Math.sin(a)], size: 0.3, life: 0.7, gravity: 9, drag: 1.4,
                     });
                 }
+                // Hold the boss's polarity steady for a few seconds after the slam
+                // (it stays whatever it slammed with — including a feint flip), so the
+                // player isn't immediately confused by a swap, and give a short
+                // breather before it resumes firing.
+                e.polarityTimer = Math.max(e.polarityTimer, 4);
+                e.projectileTimer = Math.max(e.projectileTimer, 1.4);
                 if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
             }
         }

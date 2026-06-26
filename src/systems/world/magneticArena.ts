@@ -461,6 +461,60 @@ export function restoreArenaBridges(
     setBlocks(BRIDGE_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: c.type })));
 }
 
+// --- Pillar lifecycle: the four climb-towers are torn down once the boss is past
+//     50% HP (the shield is already broken by then, so they only serve to let the
+//     player cheese the slam from up high), and rebuilt when the arena resets.
+//     Only the ABOVE-GROUND part is touched (baseY..top+1); the lava-founded skirt
+//     below stays so the moat foundation is undisturbed. ---
+
+/** Above-ground pillar + cap blocks as edits (mirrors the tower/pedestal builders). */
+function collectPillarEdits(centerX: number, centerZ: number, baseY: number): ArenaEdit[] {
+    const edits: ArenaEdit[] = [];
+    const top = baseY + ARENA_PILLAR_HEIGHT;
+    for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
+        const c = arenaPillarCenter(centerX, centerZ, i);
+        const magnet = arenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+        const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
+        // 7×7 shaft, baseY .. top.
+        for (let ox = -3; ox <= 3; ox++) {
+            for (let oz = -3; oz <= 3; oz++) {
+                const cheb = Math.max(Math.abs(ox), Math.abs(oz));
+                const isCorner = Math.abs(ox) === 3 && Math.abs(oz) === 3;
+                const innerFace = cheb === 3 && !isCorner && (ox === -3 * dirX || oz === -3 * dirZ);
+                const t = isCorner ? BlockType.CHISELED_MAGNETITE : innerFace ? magnet : BlockType.MAGNETITE_BRICKS;
+                for (let y = baseY; y <= top; y++) edits.push({ x: c.x + ox, y, z: c.z + oz, type: t });
+            }
+        }
+        // Cap + inset rim (overwrites the shaft's top row on non-climb faces).
+        for (let ox = -3; ox <= 3; ox++) {
+            for (let oz = -3; oz <= 3; oz++) {
+                const cheb = Math.max(Math.abs(ox), Math.abs(oz));
+                const isClimbFace = cheb === 3 && (ox === -3 * dirX || oz === -3 * dirZ);
+                if (!isClimbFace) edits.push({ x: c.x + ox, y: top, z: c.z + oz, type: BlockType.MAGNETITE_BRICKS });
+                if (cheb === 2) edits.push({ x: c.x + ox, y: top + 1, z: c.z + oz, type: BlockType.CHISELED_MAGNETITE });
+            }
+        }
+        edits.push({ x: c.x, y: top + 1, z: c.z, type: BlockType.CHISELED_MAGNETITE });
+    }
+    return edits;
+}
+
+/** Tear down the climb-towers (boss past 50% — anti-cheese). */
+export function flattenArenaPillars(
+    centerX: number, centerZ: number, baseY: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+): void {
+    setBlocks(collectPillarEdits(centerX, centerZ, baseY).map((e) => ({ ...e, type: BlockType.AIR })));
+}
+
+/** Rebuild the climb-towers (arena reset). */
+export function restoreArenaPillars(
+    centerX: number, centerZ: number, baseY: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+): void {
+    setBlocks(collectPillarEdits(centerX, centerZ, baseY));
+}
+
 /** World positions of the four shield crystals (raised pedestal tops). */
 export function getShieldCrystalPositions(
     centerX: number,
