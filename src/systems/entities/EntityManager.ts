@@ -766,11 +766,21 @@ class EntityManager {
                 e.slamPhaseTimer = kind.slamHangTime ?? 0.45;
             }
         } else if (e.slamState === 'hanging') {
-            // Keep tracking, then LOCK the target for the final ~0.25s (the indicator
-            // stops moving and flashes) so the slam is committed but still dodgeable.
-            if (pp && e.slamPhaseTimer > 0.25) this.slamTrack(e, pp, track * 0.85, dt);
+            // Track toward the player, then LOCK the target for the final ~0.4s (the
+            // indicator stops moving and flashes). AFK players get caught, but you can
+            // still sidestep the locked spot.
+            if (pp && e.slamPhaseTimer > 0.4) this.slamTrack(e, pp, track * 0.9, dt);
             e.slamPhaseTimer -= dt;
-            if (e.slamPhaseTimer <= 0) e.slamState = 'dropping';
+            if (e.slamPhaseTimer <= 0) {
+                // Frenzy FEINT: flip polarity the instant before slamming, so a player
+                // who committed to the telegraphed colour gets caught. The ground
+                // indicator (which reads e.polarity) flips with it.
+                if (e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0)) {
+                    e.polarity = e.polarity > 0 ? -1 : 1;
+                    if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
+                }
+                e.slamState = 'dropping';
+            }
         } else { // dropping
             e.pos.y -= (kind.slamDropSpeed ?? 38) * dt;
             if (e.pos.y <= e.slamGroundY) {
@@ -832,7 +842,8 @@ class EntityManager {
                         // Same polarity → launched up and outward, and hurt.
                         const d = dist || 1;
                         const ox = (pp.x - s.x) / d, oz = (pp.z - s.z) / d;
-                        this.playerImpulseHandler?.(ox * 7, 13, oz * 7);
+                        // A wrong-polarity slam launches you HARD up and away.
+                        this.playerImpulseHandler?.(ox * 13, 19, oz * 13);
                         this.playerDamageHandler?.(s.damage, ox, oz);
                     }
                 }

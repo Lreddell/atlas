@@ -17,6 +17,7 @@ import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
+import { PolarityVignette } from './components/ui/PolarityVignette';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
@@ -579,7 +580,11 @@ const App: React.FC = () => {
           (amount, knockX, knockZ) => {
               damagePlayer(amount);
               const length = Math.hypot(knockX, knockZ) || 1;
-              playerRef.current?.applyImpulse((knockX / length) * 5, 2.5, (knockZ / length) * 5);
+              // Knockback scales with hit strength, so heavy boss attacks (projectiles,
+              // slams) really throw the player around — not just a nudge.
+              const kb = 6 + amount * 0.8;
+              const up = 3 + amount * 0.25;
+              playerRef.current?.applyImpulse((knockX / length) * kb, up, (knockZ / length) * kb);
           },
           // Magnetic field impulse (the Magnetic Warden pushing/pulling the player).
           (x, y, z) => playerRef.current?.applyImpulse(x, y, z),
@@ -938,7 +943,17 @@ const App: React.FC = () => {
       });
       // The summon cutscene pauses player control while the camera is scripted.
       const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
-      const offCineEnd = gameEvents.on('cinematic:end', () => setCinematicMode(false));
+      const offCineEnd = gameEvents.on('cinematic:end', () => {
+          setCinematicMode(false);
+          // Hand the player back at the cutscene's return spot (farther from the
+          // altar) looking straight at the energy ball — room to run before it blows.
+          const rp = bossSummon.returnPos;
+          const feet = new THREE.Vector3(rp.x, playerPosRef.current.y, rp.z);
+          playerRef.current?.teleport(feet);
+          playerPosRef.current.copy(feet);
+          const euler = new THREE.Euler().setFromQuaternion(bossSummon.returnQuat, 'YXZ');
+          controlsRef.current?.setRotation(euler.x, euler.y);
+      });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
       // The boss launched a deflectable parry bolt — telegraph it with a cue.
@@ -954,10 +969,16 @@ const App: React.FC = () => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
               { volume: phase === 'rise' ? 0.7 : 0.95 });
       });
-      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue.
-      const offPhase = gameEvents.on('boss:phase', ({ bossId }) => {
+      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue. At frenzy
+      // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
+      const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
+          if (phase >= 3) musicController.setBossFrenzy(true);
       });
+      // Reset the frenzy music whenever a fight begins or ends.
+      const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
+      const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
+      const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
       // Breaking an arena shield crystal weakens the Magnetic Warden's shield.
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
@@ -969,6 +990,7 @@ const App: React.FC = () => {
       return () => {
           offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
           offCineStart(); offCineEnd(); offCleared();
+          offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
   }, [restoreSummonAltar]);
 
@@ -2618,6 +2640,7 @@ const App: React.FC = () => {
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
+                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
                     {openContainer?.type === 'boss_confirm' && (

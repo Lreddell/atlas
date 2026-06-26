@@ -31,9 +31,9 @@ export const BossCinematic: React.FC = () => {
             camera.position.copy(bossSummon.camPos);
             camera.quaternion.copy(bossSummon.camQuat);
         } else if (wasActive.current) {
-            // Handback: restore the player's original look so they resume facing
-            // the altar from their own POV (Player takes the position from here).
-            camera.quaternion.copy(bossSummon.playerStartQuat);
+            // Handback: leave the camera looking at the energy ball from the return
+            // spot (App teleports the player there + sets matching look on this edge).
+            camera.quaternion.copy(bossSummon.returnQuat);
         }
         wasActive.current = active;
 

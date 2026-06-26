@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { particleFx, type FxBurst } from '../systems/fx/particleFx';
 import { getBiome } from '../systems/world/biomes';
 import { MAGNETIC_FIELDS_BIOME_ID } from '../systems/world/magneticFields';
+import { bossPhaseState } from '../systems/boss/bossPhaseState';
 
 // Renders the glowing additive "effect" particles fired through `particleFx`
 // (combat sparks, slam rings, the summon cutscene) PLUS a steady drift of gray
@@ -132,27 +133,30 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
         const dt = Math.min(delta, 0.05);
         const arr = pool.current;
 
-        // Ambient motes while standing in the Magnetic Fields biome.
+        // Ambient motes while standing in the Magnetic Fields biome — they whip up
+        // into a denser, faster, more purple "polarity storm" per boss phase.
         ambientTimer.current -= dt;
         if (ambientTimer.current <= 0) {
-            ambientTimer.current = 0.08;
+            const storm = bossPhaseState.intensity;
+            ambientTimer.current = 0.08 - 0.05 * storm; // spawn faster during the storm
             const biome = getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined;
-            if (biome?.id === MAGNETIC_FIELDS_BIOME_ID && arr.length < MAX_FX - 8) {
-                for (let i = 0; i < 4; i++) {
+            if (biome?.id === MAGNETIC_FIELDS_BIOME_ID && arr.length < MAX_FX - 16) {
+                const count = 4 + Math.round(8 * storm);
+                for (let i = 0; i < count; i++) {
                     const ang = Math.random() * Math.PI * 2;
                     const rad = 4 + Math.random() * 18;
-                    const purple = Math.random() < 0.5;
+                    const purple = Math.random() < 0.5 + 0.4 * storm; // more purple in the storm
                     const col = purple ? AMBIENT_PURPLE : AMBIENT_GRAY;
                     arr.push({
                         px: camera.position.x + Math.cos(ang) * rad,
                         py: camera.position.y - 3 + Math.random() * 12,
                         pz: camera.position.z + Math.sin(ang) * rad,
-                        vx: (Math.random() - 0.5) * 0.3,
-                        vy: 0.25 + Math.random() * 0.5,
-                        vz: (Math.random() - 0.5) * 0.3,
+                        vx: (Math.random() - 0.5) * (0.3 + storm * 1.5),
+                        vy: (0.25 + Math.random() * 0.5) * (1 + storm),
+                        vz: (Math.random() - 0.5) * (0.3 + storm * 1.5),
                         life: 2.5 + Math.random() * 3,
                         maxLife: 5.5,
-                        size: 0.07 + Math.random() * 0.08,
+                        size: (0.07 + Math.random() * 0.08) * (1 + 0.5 * storm),
                         r: col[0], g: col[1], b: col[2],
                         gravity: -0.4, drag: 0.2,
                     });

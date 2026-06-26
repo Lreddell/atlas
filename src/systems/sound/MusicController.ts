@@ -10,7 +10,8 @@ const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
 // Subtle "night" effect: a track started at night plays a little slower, and with
 // pitch-preservation disabled (in SoundManager) that also drops its pitch slightly.
 // -1 semitone
-const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935
+const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935 (−100 cents)
+const FRENZY_PLAYBACK_RATE = 2 ** (1 / 12);  // 1.0594630943592953  (+100 cents, the exact opposite of night)
 
 // Mapping of Game States/Biomes to Music Packs
 const MUSIC_PACKS: Record<string, string[]> = {
@@ -125,6 +126,8 @@ class MusicController {
     // Night slowdown effect (player setting + latest day/night state from update()).
     private nightSlowdownEnabled: boolean = true;
     private isNight: boolean = false;
+    // Boss frenzy: the music speeds up + pitches up +100 cents, mid-song.
+    private bossFrenzy: boolean = false;
 
     // Boss-music override. The dedicated boss track plays only while the Magnetic
     // Warden is alive AND the player is actively in combat (aggro'd). So it stops
@@ -199,6 +202,18 @@ class MusicController {
 
     public getNightSlowdownEnabled() {
         return this.nightSlowdownEnabled;
+    }
+
+    /**
+     * Boss frenzy music: speeds up + pitches up +100 cents MID-SONG (the exact
+     * opposite of the night slowdown), and persists across track loops while on.
+     */
+    public setBossFrenzy(active: boolean) {
+        if (this.bossFrenzy === active) return;
+        this.bossFrenzy = active;
+        // Apply live to whatever is currently playing, then future tracks pick it up
+        // via the playbackRate computed in playNextTrack().
+        soundManager.setMusicPlaybackRate(active ? FRENZY_PLAYBACK_RATE : 1.0);
     }
 
     public setNightSlowdownEnabled(enabled: boolean) {
@@ -490,7 +505,8 @@ class MusicController {
             && this.currentContext !== 'MENU'
             && this.currentContext !== 'DEATH'
             && this.currentContext !== 'BLOODMOON';
-        const playbackRate = useNightRate ? NIGHT_PLAYBACK_RATE : 1.0;
+        // Frenzy overrides night: the fight track always drives UP +100 cents.
+        const playbackRate = this.bossFrenzy ? FRENZY_PLAYBACK_RATE : (useNightRate ? NIGHT_PLAYBACK_RATE : 1.0);
 
         // Try to play
         // We pass a callback for when it finishes
