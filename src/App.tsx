@@ -792,17 +792,30 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+      const TICK_MS = 1000;
       const interval = setInterval(() => {
           if (worldPaused) return;
-          const now = Date.now();
+          // Minecraft rule: an item entity only counts down its 5-minute despawn timer
+          // while its chunk is loaded (i.e. near the player). Drops the player has
+          // wandered away from keep their timer paused and persist, so going far away
+          // never makes them "gone forever" — they resume aging when you return.
+          const px = playerPosRef.current.x, pz = playerPosRef.current.z;
+          const loadedRange = renderDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
+          const loadedR2 = loadedRange * loadedRange;
           setDrops(currentDrops => {
-              const remaining = currentDrops.filter(d => now - d.createdAt < DROP_LIFETIME_MS);
-              if (remaining.length !== currentDrops.length) return remaining;
-              return currentDrops;
+              let anyExpired = false;
+              for (const d of currentDrops) {
+                  const dx = d.position[0] - px, dz = d.position[2] - pz;
+                  // Mutated in place — these Drop objects are already mutated by the
+                  // physics loop (DropManager), so this stays consistent and cheap.
+                  if (dx * dx + dz * dz <= loadedR2) d.age += TICK_MS;
+                  if (d.age >= DROP_LIFETIME_MS) anyExpired = true;
+              }
+              return anyExpired ? currentDrops.filter(d => d.age < DROP_LIFETIME_MS) : currentDrops;
           });
-      }, 1000);
+      }, TICK_MS);
       return () => clearInterval(interval);
-  }, [worldPaused]);
+  }, [worldPaused, renderDistance]);
 
   useEffect(() => {
       const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
@@ -811,10 +824,11 @@ const App: React.FC = () => {
                 type: stack.type,
                 count: stack.count,
                 instance: stack.instance ? structuredClone(stack.instance) : undefined,
-                position: [x+0.5, y+0.5, z+0.5], 
-                velocity: [(Math.random()-0.5)*2, 4, (Math.random()-0.5)*2], 
-                createdAt: Date.now(), 
-                pickupDelay: Date.now() + 500 
+                position: [x+0.5, y+0.5, z+0.5],
+                velocity: [(Math.random()-0.5)*2, 4, (Math.random()-0.5)*2],
+                createdAt: Date.now(),
+                pickupDelay: Date.now() + 500,
+                age: 0,
           }]);
       });
       return unsub;
@@ -843,7 +857,8 @@ const App: React.FC = () => {
                          position: [playerPosRef.current.x, playerPosRef.current.y + 1.0, playerPosRef.current.z],
                          velocity: [Math.cos(angle) * speed, 3 + Math.random() * 2, Math.sin(angle) * speed],
                          createdAt: Date.now(),
-                         pickupDelay: Date.now() + 1500 
+                         pickupDelay: Date.now() + 1500,
+                         age: 0,
                     });
                 };
                 

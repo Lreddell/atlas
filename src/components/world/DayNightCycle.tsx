@@ -421,6 +421,9 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const daysPassedRef = useRef(0);
     const auroraBiomeBlendRef = useRef(0);
     const magneticFogBlendRef = useRef(0);
+    // Smoothed boss-phase intensity so the fog thickens/thins gradually across a
+    // phase change instead of snapping to the new density in a single frame.
+    const stormBlendRef = useRef(0);
     
     const TICK_CYCLE = 24000;
     const moonTintColor = useMemo(() => new THREE.Color(), []);
@@ -678,7 +681,9 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const mag = magneticFogBlendRef.current;
         // Polarity storm: the haze thickens further per boss phase (slam → frenzy),
         // closing in and tinting harder for drama as the fight escalates.
-        const storm = bossSummon.isActive() ? 0 : bossPhaseState.intensity;
+        const stormTarget = bossSummon.isActive() ? 0 : bossPhaseState.intensity;
+        stormBlendRef.current = THREE.MathUtils.damp(stormBlendRef.current, stormTarget, 1.2, delta);
+        const storm = stormBlendRef.current;
         if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * (0.5 + 0.5 * storm));
 
         scene.background = targetFog;

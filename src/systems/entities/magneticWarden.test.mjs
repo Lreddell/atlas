@@ -111,8 +111,8 @@ test('projectiles aim at the head, boss flies up while shielded, bolts clear on 
     // While shielded the boss floats UP toward the climbing player to shoot at
     // them — eased (not snapped) toward a low, weightless drift speed.
     assert.match(manager, /e\.shielded && e\.aggro && pp && targetable/);
-    assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.5, -2\.4, 3\.2\)/);
-    assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 2\.2\)/);
+    assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.8, -3, 4\)/);
+    assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 3\.2\)/);
     // A despawn/reset wipes all bolts + shockwaves.
     assert.match(manager, /private despawnBoss[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
 });
@@ -371,14 +371,18 @@ test('boss fight ambiance: polarity vignette + per-phase storm', () => {
     assert.match(phase, /get intensity/);
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /bossPhaseState\.intensity/);
-    // Fog tightens harder per phase — really thick at frenzy (storm 1.0).
+    // Fog tightens harder per phase — really thick at frenzy (storm 1.0), and the
+    // storm intensity is damped so the change eases in gradually (no snap).
     assert.match(dn, /fogNear = THREE\.MathUtils\.lerp\(fogNear, 12 - 8 \* storm, mag\)/);
+    assert.match(dn, /stormBlendRef\.current = THREE\.MathUtils\.damp/);
     const fx = read('src/components/FxParticles.tsx');
     assert.match(fx, /bossPhaseState\.intensity/);
-    // Frenzy: ambient motes spin into a rising spiral column.
+    // Frenzy: ambient motes ease into a rising spiral column (smoothed frenzyBlend),
+    // and the whole ambient field — including existing motes — orbits the player.
     assert.match(fx, /bossPhaseState\.isFrenzy/);
-    assert.match(fx, /swirl\?: number/);
-    assert.match(fx, /p\.px = p\.cx! \+ ox \* c - oz \* s/);
+    assert.match(fx, /frenzyBlend\.current = THREE\.MathUtils\.damp/);
+    assert.match(fx, /const frenzySwirl = 2\.0 \* fb/);
+    assert.match(fx, /p\.ambient && frenzySwirl !== 0/);
 });
 
 test('/setspawn sets a personal respawn point like a bed', () => {
@@ -417,8 +421,9 @@ test('the last phase is relentless: continuous fire + rapid polarity, parry kept
     // Frenzy bypasses the barrage/parry-hold gating — it fires continuously and
     // still weaves in the deflectable parry bolt so it stays damageable.
     assert.match(manager, /if \(frenzy\) {[\s\S]*?this\.fireVolley\(e, kind, pp, true\)[\s\S]*?fireParryBolt/);
-    // Polarity swaps on a near-continuous beat during the frenzy.
-    assert.match(manager, /e\.polarityTimer = frenzy \? 0\.5 : kind\.polaritySwapInterval/);
+    // Polarity keeps the same average cadence as other phases but jitters the
+    // interval so swaps are unpredictable, not faster.
+    assert.match(manager, /e\.polarityTimer = frenzy[\s\S]*?kind\.polaritySwapInterval \* \(0\.6 \+ Math\.random\(\) \* 0\.9\)/);
 });
 
 test('climb magnets are placed per-pillar, stripped at 50% and on reset; beams purple', () => {

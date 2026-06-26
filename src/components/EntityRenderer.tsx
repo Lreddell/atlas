@@ -59,7 +59,9 @@ export const EntityRenderer: React.FC = () => {
             // polarity, gently pulsing — and flaring out on each polarity swap.
             const aura = auraRefs.current.get(e.id);
             if (aura) {
-                const showField = e.aggro && !!kind.magneticFieldRange;
+                // Hidden during the opening shielded/flying phase — the ring would
+                // otherwise float in mid-air under the levitating Warden's feet.
+                const showField = e.aggro && !!kind.magneticFieldRange && !e.shielded;
                 aura.visible = showField;
                 if (showField) {
                     const prev = lastPolarity.current.get(e.id);

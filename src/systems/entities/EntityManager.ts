@@ -443,8 +443,8 @@ class EntityManager {
                 // so the Warden rises and settles like it's weightless — no snappy
                 // elevator. The slow approach (dt-scaled lerp) is what reads as float.
                 const dyTarget = (pp.y + 0.5) - e.pos.y;
-                const want = THREE.MathUtils.clamp(dyTarget * 1.5, -2.4, 3.2);
-                e.vel.y += (want - e.vel.y) * Math.min(1, dt * 2.2);
+                const want = THREE.MathUtils.clamp(dyTarget * 1.8, -3, 4);
+                e.vel.y += (want - e.vel.y) * Math.min(1, dt * 3.2);
                 e.grounded = false;
             } else {
                 e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);  // settle / normal gravity
@@ -503,9 +503,12 @@ class EntityManager {
             e.polarityTimer -= dt;
             if (e.polarityTimer <= 0) {
                 e.polarity *= -1;
-                // Last phase is relentless: swap polarity on a near-continuous beat
-                // instead of the slow interval (matches the original, harder feel).
-                e.polarityTimer = frenzy ? 0.5 : kind.polaritySwapInterval;
+                // Last phase keeps the SAME average cadence as the other phases, but
+                // jitters the interval (0.6x–1.5x) so the player can't time the swaps —
+                // less predictable, not faster.
+                e.polarityTimer = frenzy
+                    ? kind.polaritySwapInterval * (0.6 + Math.random() * 0.9)
+                    : kind.polaritySwapInterval;
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
                 // No shove/hop on a polarity swap — it was nudging the player every
                 // few seconds anywhere in the arena and wrecking pillar jumps. The

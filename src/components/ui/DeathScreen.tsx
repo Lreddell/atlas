@@ -14,8 +14,7 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({ onRespawn }) => {
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
         >
-            <h1 className="text-6xl font-bold text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] mb-2">You Died!</h1>
-            <p className="text-white/80 text-xl mb-8 font-medium">Score: 0</p>
+            <h1 className="text-6xl font-bold text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] mb-8">You Died!</h1>
             <MenuButton label="Respawn" onClick={onRespawn} width="w-[240px]" />
         </div>
     );

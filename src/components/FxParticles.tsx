@@ -20,10 +20,10 @@ interface FxParticle {
     size: number;
     r: number; g: number; b: number;
     gravity: number; drag: number;
-    // Optional vortex: during the boss frenzy, ambient motes orbit a fixed
-    // column center (cx,cz) at `swirl` rad/s while rising, forming a spiraling
-    // updraft. Left undefined for normal free-drifting particles.
-    swirl?: number; cx?: number; cz?: number;
+    // Ambient biome motes (vs one-shot combat FX). Only these orbit the player
+    // column during the boss frenzy, so existing motes adapt into the spiral
+    // rather than the column popping in as a separate burst.
+    ambient?: boolean;
 }
 
 // A soft round sprite (radial falloff) so each point reads as a glowing mote.
@@ -51,6 +51,10 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
     const pointsRef = useRef<THREE.Points>(null);
     const pool = useRef<FxParticle[]>([]);
     const ambientTimer = useRef(0);
+    // Smoothed boss-phase intensity + frenzy factor so the storm density and the
+    // rising-column vortex ease in/out gradually instead of snapping per phase.
+    const stormBlend = useRef(0);
+    const frenzyBlend = useRef(0);
 
     const sprite = useMemo(makeSpriteTexture, []);
 
@@ -139,55 +143,48 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
 
         // Ambient motes while standing in the Magnetic Fields biome — they whip up
         // into a denser, faster, more purple "polarity storm" per boss phase.
+        // Ease the storm density + frenzy vortex in/out so phase changes don't snap.
+        stormBlend.current = THREE.MathUtils.damp(stormBlend.current, bossPhaseState.intensity, 1.5, dt);
+        frenzyBlend.current = THREE.MathUtils.damp(frenzyBlend.current, bossPhaseState.isFrenzy ? 1 : 0, 1.2, dt);
+        const storm = stormBlend.current;
+        const fb = frenzyBlend.current;
+        const camX = camera.position.x, camZ = camera.position.z;
+
         ambientTimer.current -= dt;
         if (ambientTimer.current <= 0) {
-            const storm = bossPhaseState.intensity;
-            const frenzy = bossPhaseState.isFrenzy;
             ambientTimer.current = 0.08 - 0.055 * storm; // spawn faster during the storm
-            const biome = getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined;
+            const biome = getBiome(camX, camZ) as { id?: string } | undefined;
             if (biome?.id === MAGNETIC_FIELDS_BIOME_ID && arr.length < MAX_FX - 16) {
-                const count = 4 + Math.round((frenzy ? 12 : 8) * storm);
-                const cx = camera.position.x, cz = camera.position.z;
+                const count = 4 + Math.round((8 + 4 * fb) * storm);
                 for (let i = 0; i < count; i++) {
                     const ang = Math.random() * Math.PI * 2;
                     const purple = Math.random() < 0.5 + 0.4 * storm; // more purple in the storm
                     const col = purple ? AMBIENT_PURPLE : AMBIENT_GRAY;
-                    if (frenzy) {
-                        // Frenzy: motes draw into a tight, fast-spinning column that
-                        // spirals straight up — and rise noticeably faster than the
-                        // earlier drift.
-                        const rad = 2.5 + Math.random() * 9;
-                        arr.push({
-                            px: cx + Math.cos(ang) * rad,
-                            py: camera.position.y - 6 + Math.random() * 16,
-                            pz: cz + Math.sin(ang) * rad,
-                            vx: 0, vy: (0.9 + Math.random() * 1.1) * 2.2, vz: 0,
-                            life: 2.5 + Math.random() * 3,
-                            maxLife: 5.5,
-                            size: (0.09 + Math.random() * 0.09) * 1.6,
-                            r: col[0], g: col[1], b: col[2],
-                            gravity: -0.7, drag: 0.04,
-                            swirl: 2.0 + Math.random() * 1.6, cx, cz,
-                        });
-                    } else {
-                        const rad = 4 + Math.random() * 18;
-                        arr.push({
-                            px: cx + Math.cos(ang) * rad,
-                            py: camera.position.y - 3 + Math.random() * 12,
-                            pz: cz + Math.sin(ang) * rad,
-                            vx: (Math.random() - 0.5) * (0.3 + storm * 1.5),
-                            vy: (0.25 + Math.random() * 0.5) * (1 + storm),
-                            vz: (Math.random() - 0.5) * (0.3 + storm * 1.5),
-                            life: 2.5 + Math.random() * 3,
-                            maxLife: 5.5,
-                            size: (0.07 + Math.random() * 0.08) * (1 + 0.5 * storm),
-                            r: col[0], g: col[1], b: col[2],
-                            gravity: -0.4, drag: 0.2,
-                        });
-                    }
+                    // Blend drift (wide, slow) → column (tight ring, fast rise) by the
+                    // frenzy factor. The actual spiralling is applied in the sim so even
+                    // motes spawned before the frenzy adapt into it.
+                    const rad = THREE.MathUtils.lerp(4 + Math.random() * 18, 2.5 + Math.random() * 9, fb);
+                    const up = THREE.MathUtils.lerp((0.25 + Math.random() * 0.5) * (1 + storm), (0.9 + Math.random() * 1.1) * 2.2, fb);
+                    const lateral = (1 - fb) * (0.3 + storm * 1.5);
+                    arr.push({
+                        px: camX + Math.cos(ang) * rad,
+                        py: camera.position.y - THREE.MathUtils.lerp(3, 6, fb) + Math.random() * THREE.MathUtils.lerp(12, 16, fb),
+                        pz: camZ + Math.sin(ang) * rad,
+                        vx: (Math.random() - 0.5) * lateral,
+                        vy: up,
+                        vz: (Math.random() - 0.5) * lateral,
+                        life: 2.5 + Math.random() * 3,
+                        maxLife: 5.5,
+                        size: THREE.MathUtils.lerp((0.07 + Math.random() * 0.08) * (1 + 0.5 * storm), (0.09 + Math.random() * 0.09) * 1.6, fb),
+                        r: col[0], g: col[1], b: col[2],
+                        gravity: THREE.MathUtils.lerp(-0.4, -0.7, fb),
+                        drag: THREE.MathUtils.lerp(0.2, 0.05, fb),
+                        ambient: true,
+                    });
                 }
             }
         }
+        const frenzySwirl = 2.0 * fb; // rad/s the whole ambient field orbits the player
 
         const posAttr = pointsRef.current.geometry.attributes.position as THREE.BufferAttribute;
         const colAttr = pointsRef.current.geometry.attributes.aColor as THREE.BufferAttribute;
@@ -207,14 +204,16 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
             p.vx *= damp; p.vz *= damp;
             p.vy = (p.vy - p.gravity * dt) * damp;
             p.px += p.vx * dt; p.py += p.vy * dt; p.pz += p.vz * dt;
-            // Vortex motes rotate their horizontal position around the column
-            // center each frame, so the upward velocity traces a rising spiral.
-            if (p.swirl) {
-                const ox = p.px - p.cx!, oz = p.pz - p.cz!;
-                const a = p.swirl * dt;
+            // During the frenzy the whole ambient field orbits the player column, so
+            // even motes that were drifting before the phase change rotate into the
+            // rising spiral. Ramped by frenzyBlend, so it eases in rather than popping.
+            if (p.ambient && frenzySwirl !== 0) {
+                const ox = p.px - camX, oz = p.pz - camZ;
+                const a = frenzySwirl * dt;
                 const c = Math.cos(a), s = Math.sin(a);
-                p.px = p.cx! + ox * c - oz * s;
-                p.pz = p.cz! + ox * s + oz * c;
+                p.px = camX + ox * c - oz * s;
+                p.pz = camZ + ox * s + oz * c;
+                p.vy += fb * 1.2 * dt; // extra updraft as the column tightens
             }
 
             if (n < MAX_FX) {

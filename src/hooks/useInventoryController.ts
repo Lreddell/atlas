@@ -58,8 +58,9 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             instance: item.instance ? structuredClone(item.instance) : undefined,
             position: [spawnPos.x, spawnPos.y, spawnPos.z], 
             velocity: [throwVel.x, throwVel.y, throwVel.z], 
-            createdAt: Date.now(), 
-            pickupDelay: Date.now() + 1500
+            createdAt: Date.now(),
+            pickupDelay: Date.now() + 1500,
+            age: 0,
         }]);
     }, [cameraRef, playerPosRef, setDrops]);
 
