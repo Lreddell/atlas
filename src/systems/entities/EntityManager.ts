@@ -487,7 +487,10 @@ class EntityManager {
                 e.polarity *= -1;
                 e.polarityTimer = kind.polaritySwapInterval * (frenzy ? 0.6 : 1);
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
-                if (e.aggro) this.emitPolarityShockwave(e, pp);
+                // No shove/hop on a polarity swap — it was nudging the player every
+                // few seconds anywhere in the arena and wrecking pillar jumps. The
+                // dodge mechanic is the SLAM shockwave (which still launches), and the
+                // boss's continuous field still pulls the player like a magnet block.
             }
         }
 
@@ -591,20 +594,6 @@ class EntityManager {
         addTrauma(0.25);
         if (boss?.bossId) gameEvents.emit('boss:deflected', { bossId: boss.bossId, entityId: boss.id });
         return true;
-    }
-
-    private emitPolarityShockwave(e: Entity, pp: { x: number; y: number; z: number }): void {
-        if (!this.playerImpulseHandler) return;
-        const dx = pp.x - e.pos.x, dz = pp.z - e.pos.z;
-        const dist = Math.hypot(dx, dz) || 1;
-        const SHOCK_RANGE = 26;
-        if (dist > SHOCK_RANGE) return;
-        const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
-        const sign = playerPol === e.polarity ? 1 : -1; // same repels, opposite attracts
-        const mag = 6.5 * (1 - dist / SHOCK_RANGE);
-        // Horizontal push/pull only — no vertical component, so a polarity swap no
-        // longer makes the player do a little hop.
-        this.playerImpulseHandler((dx / dist) * sign * mag, 0, (dz / dist) * sign * mag);
     }
 
     private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }, enraged = false): void {

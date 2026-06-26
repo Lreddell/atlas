@@ -94,8 +94,10 @@ test('the Warden field is exposed to the player physics and applied with clampin
     assert.match(player, /applyBossMagneticFields/);
 });
 
-test('polarity swaps shockwave the player, and the boss frenzies at low HP', () => {
-    assert.match(manager, /emitPolarityShockwave/);
+test('polarity swaps do NOT shove the player, and the boss frenzies at low HP', () => {
+    // A polarity swap no longer nudges/hops the player (no per-swap shockwave) — it
+    // was ruining pillar jumps. The dodge mechanic is the slam shockwave instead.
+    assert.doesNotMatch(manager, /emitPolarityShockwave/);
     // Frenzy below the HP threshold speeds barrages/swaps up.
     assert.match(manager, /const frenzy = !e\.shielded && e\.hp <= e\.maxHp \* \(kind\.frenzyThreshold/);
     assert.match(manager, /frenzy \?/);
