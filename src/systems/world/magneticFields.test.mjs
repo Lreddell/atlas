@@ -268,13 +268,15 @@ test('shape detection is data-driven (future-proof), not a hardcoded list', () =
     assert.match(blocksSrc, /MAGNETITE_BRICK_STAIRS\][^\n]*shape:\s*'stairs'/);
 });
 
-test('arena tweaks: continuous climb face, no platform magnets, no lava pylons', () => {
+test('arena tweaks: brick towers by default, magnets placed only for a fight', () => {
     const a = read('src/systems/world/magneticArena.ts');
-    // The climb face is pure magnet, filled in one unbroken column to the top.
+    // The towers are plain brick by default — no magnets baked into the shaft.
     const towers = a.match(/function buildMagneticPillarTowers[\s\S]*?\n}/)[0];
-    assert.match(towers, /innerFace \? magnet/);
-    assert.match(towers, /fillColumn\(ctx, wx, pitFloor, top, wz, t\)/);
-    assert.doesNotMatch(towers, /% 6 === 0/); // no horizontal trim bands breaking the climb
+    assert.doesNotMatch(towers, /POSITIVE_MAGNET|NEGATIVE_MAGNET/);
+    assert.doesNotMatch(towers, /% 6 === 0/); // no horizontal trim bands breaking the (placed) climb
+    // The magnet climb faces are placed for a fight and stripped afterwards.
+    assert.match(a, /export function placeArenaClimbMagnets/);
+    assert.match(a, /export function stripArenaClimbMagnets/);
     // The lava-pit pylon builder was removed.
     assert.doesNotMatch(a, /buildMoatPylons/);
     // The central platform floor no longer paints polarity magnets.

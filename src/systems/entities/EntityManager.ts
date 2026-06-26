@@ -602,7 +602,9 @@ class EntityManager {
         const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
         const sign = playerPol === e.polarity ? 1 : -1; // same repels, opposite attracts
         const mag = 6.5 * (1 - dist / SHOCK_RANGE);
-        this.playerImpulseHandler((dx / dist) * sign * mag, 2.4, (dz / dist) * sign * mag);
+        // Horizontal push/pull only — no vertical component, so a polarity swap no
+        // longer makes the player do a little hop.
+        this.playerImpulseHandler((dx / dist) * sign * mag, 0, (dz / dist) * sign * mag);
     }
 
     private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }, enraged = false): void {
@@ -725,8 +727,8 @@ class EntityManager {
         const riseTime = kind.slamRiseTime ?? 0.85;
         const apex = e.slamGroundY + (kind.slamRiseHeight ?? 9);
         const frenzy = e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0);
-        // Air homing is gentler in the first slam phase, and ramps up in frenzy.
-        const track = (kind.slamTrackSpeed ?? 12) * (frenzy ? 1 : 0.68);
+        // Air homing is 85% in the first slam phase, full speed in frenzy.
+        const track = (kind.slamTrackSpeed ?? 12) * (frenzy ? 1 : 0.85);
         const col = polarityFxColor(e.polarity);
 
         if (e.slamState === 'charging') {
@@ -771,7 +773,7 @@ class EntityManager {
             // Track toward the player, then LOCK the target (the indicator stops moving
             // and flashes) for a good beat before it falls — AFK players get caught,
             // but there's clearly time to read it and sidestep the locked spot.
-            if (pp && e.slamPhaseTimer > 0.65) this.slamTrack(e, pp, track * 0.9, dt);
+            if (pp && e.slamPhaseTimer > 0.45) this.slamTrack(e, pp, track * 0.9, dt);
             e.slamPhaseTimer -= dt;
             if (e.slamPhaseTimer <= 0) {
                 // Frenzy FEINT: flip polarity the instant before slamming, so a player
@@ -807,7 +809,7 @@ class EntityManager {
                 // player isn't immediately confused by a swap, and give a short
                 // breather before it resumes firing.
                 e.polarityTimer = Math.max(e.polarityTimer, 4);
-                e.projectileTimer = Math.max(e.projectileTimer, 1.4);
+                e.projectileTimer = Math.max(e.projectileTimer, 1);
                 if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'impact', polarity: e.polarity });
             }
         }
