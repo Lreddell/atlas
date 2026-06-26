@@ -21,7 +21,7 @@ import { soundManager } from '../sound/SoundManager';
 import { gameEvents } from '../events/GameEvents';
 import { addTrauma } from '../player/cameraShake';
 import { BlockType } from '../../types';
-import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges } from '../world/magneticArena';
+import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges, placePillarClimbMagnets } from '../world/magneticArena';
 import { particleFx, FX_CHARGED, FX_POSITIVE, FX_NEGATIVE } from '../fx/particleFx';
 
 export interface SummonParams {
@@ -293,10 +293,15 @@ class BossSummon {
     }
 
     private spawnCrystal(i: number): void {
+        const p = this.params;
+        if (!p) return;
         this.spawned.add(i);
         this.crystalsShown = this.spawned.size;
         const c = this.crystals[i];
         worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
+        // Light up THIS pillar's magnet climb faces as its crystal appears, so the
+        // climb route forms tower-by-tower across the cutscene.
+        placePillarClimbMagnets(p.centerX, p.centerZ, p.baseY, i, (edits) => worldManager.setBlocks(edits));
         // An explosion of light at the tower: a white core + violet sparks.
         particleFx.burst({
             x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5,

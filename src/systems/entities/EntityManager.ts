@@ -290,6 +290,9 @@ class EntityManager {
             }
         }
         this.entities.delete(e.id);
+        // Any reset wipes the boss's bolts/shockwaves so nothing lingers in the air.
+        this.projectiles = [];
+        this.shockwaves = [];
     }
 
     private kill(e: Entity): void {
@@ -429,8 +432,18 @@ class EntityManager {
             }
             if (e.aggro) anyAggro = true;
 
-            // --- Gravity ---
-            e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);
+            // --- Gravity, or a shielded-phase hover ---
+            // While shielded (the player is climbing the pillars to break crystals)
+            // the Warden flies UP toward the player's height so it can shoot at them
+            // mid-climb; once they drop / the shield breaks it falls back to ground.
+            const shieldHover = e.shielded && e.aggro && pp && targetable;
+            const dyTarget = (shieldHover && pp) ? (pp.y + 0.5) - e.pos.y : 0;
+            if (shieldHover && dyTarget > 0.2) {
+                e.vel.y = Math.min(8, dyTarget * 3);  // fly up toward the climbing player
+                e.grounded = false;
+            } else {
+                e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);  // settle / normal gravity
+            }
 
             // Under its own power (grounded, not mid-knockback) the entity refuses
             // to step off ledges or onto lava; knockback can still shove it.
@@ -538,7 +551,7 @@ class EntityManager {
     // click within reach) turns it into a player-owned bolt that damages the boss.
     private fireParryBolt(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }): void {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
-        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.5) - oy, dz = pp.z - oz;
+        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.9) - oy, dz = pp.z - oz; // aim at the head
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = 9;
         this.projectiles.push({
@@ -598,7 +611,7 @@ class EntityManager {
 
     private fireVolley(e: Entity, kind: EntityKind, pp: { x: number; y: number; z: number }, enraged = false): void {
         const ox = e.pos.x, oy = e.pos.y + e.height * 0.7, oz = e.pos.z;
-        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.5) - oy, dz = pp.z - oz;
+        const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.9) - oy, dz = pp.z - oz; // aim at the head
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = enraged ? 23 : 18;
         // A dense 5-bolt fan, widening to 7 once enraged — heavy pressure on a

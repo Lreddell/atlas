@@ -466,14 +466,15 @@ export function restoreArenaBridges(
 //     so the magnets are never left on the walls after a fight. Cheap: solid→solid,
 //     no lighting flood, only a remesh. ---
 
-/** The climbable magnet inner-face cells of all four towers (baseY..top), each with
- *  its magnet type so a restore can put them back. */
+/** The climbable magnet inner-face cells of the towers (baseY..top), each with its
+ *  magnet type. Pass `onlyPillar` to restrict to a single tower. */
 function collectClimbFaceCells(
-    centerX: number, centerZ: number, baseY: number,
+    centerX: number, centerZ: number, baseY: number, onlyPillar?: number,
 ): { x: number; y: number; z: number; magnet: BlockType }[] {
     const out: { x: number; y: number; z: number; magnet: BlockType }[] = [];
     const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
+        if (onlyPillar !== undefined && i !== onlyPillar) continue;
         const c = arenaPillarCenter(centerX, centerZ, i);
         const magnet = arenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
         const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
@@ -490,12 +491,13 @@ function collectClimbFaceCells(
     return out;
 }
 
-/** Place the magnet climb faces (summon cutscene — makes the towers climbable). */
-export function placeArenaClimbMagnets(
-    centerX: number, centerZ: number, baseY: number,
+/** Place ONE tower's magnet climb faces (called as each shield crystal spawns, so
+ *  the climb lights up pillar-by-pillar during the summon cutscene). */
+export function placePillarClimbMagnets(
+    centerX: number, centerZ: number, baseY: number, pillarIndex: number,
     setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
-    setBlocks(collectClimbFaceCells(centerX, centerZ, baseY)
+    setBlocks(collectClimbFaceCells(centerX, centerZ, baseY, pillarIndex)
         .map((e) => ({ x: e.x, y: e.y, z: e.z, type: e.magnet })));
 }
 

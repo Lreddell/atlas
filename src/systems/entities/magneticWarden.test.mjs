@@ -104,6 +104,17 @@ test('polarity swaps do NOT shove the player, and the boss frenzies at low HP', 
     assert.match(entity, /frenzyThreshold:/);
 });
 
+test('projectiles aim at the head, boss flies up while shielded, bolts clear on reset', () => {
+    // Both volleys and the parry bolt aim at the player's head, not the chest.
+    assert.match(manager, /fireVolley[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
+    assert.match(manager, /fireParryBolt[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
+    // While shielded the boss hovers UP toward the climbing player to shoot at them.
+    assert.match(manager, /e\.shielded && e\.aggro && pp && targetable/);
+    assert.match(manager, /e\.vel\.y = Math\.min\(8, dyTarget \* 3\)/);
+    // A despawn/reset wipes all bolts + shockwaves.
+    assert.match(manager, /private despawnBoss[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
+});
+
 test('vulnerable phase loops dodge-barrage then a deflectable parry bolt', () => {
     // Shielded → steady barrage; vulnerable → barrage timer then a parry bolt.
     assert.match(manager, /if \(e\.shielded\) {[\s\S]*?fireVolley/);
@@ -385,13 +396,15 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
     assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, 4\)/);
 });
 
-test('climb magnets are placed for a fight, stripped at 50% and on reset; beams purple', () => {
+test('climb magnets are placed per-pillar, stripped at 50% and on reset; beams purple', () => {
     const arena = read('src/systems/world/magneticArena.ts');
-    assert.match(arena, /export function placeArenaClimbMagnets/);
+    assert.match(arena, /export function placePillarClimbMagnets/);
     assert.match(arena, /export function stripArenaClimbMagnets/);
     assert.match(arena, /collectClimbFaceCells/);
-    // Placed on summon; stripped when the slam phase begins (≤50%) and on reset.
-    assert.match(app, /placeArenaClimbMagnets/);
+    // Placed tower-by-tower as each crystal spawns in the cutscene.
+    const summon = read('src/systems/boss/bossSummon.ts');
+    assert.match(summon, /placePillarClimbMagnets\(p\.centerX, p\.centerZ, p\.baseY, i/);
+    // Stripped when the slam phase begins (≤50%) and on reset.
     assert.match(app, /phase >= 2 && a && climbMagnetsActiveRef\.current[\s\S]*?stripArenaClimbMagnets/);
     // Never restored — the walls stay plain brick after a fight.
     assert.doesNotMatch(app, /restoreArenaPillars/);
