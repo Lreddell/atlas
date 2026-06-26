@@ -11,6 +11,7 @@ Place replacement sound effects in this folder using these exact names:
   slam.ogg       plays on the slam impact + polarity shockwave
   enrage.ogg     plays when the Warden escalates a phase (50% slam / 25% frenzy)
   hurt.ogg       plays when the Warden takes damage (e.g. a deflected bolt lands)
+  crystal_break.ogg  plays when a shield crystal shatters + its beam dissipates
   crystal_spawn.ogg  plays as each shield crystal materializes (summon cutscene)
   hum.ogg        plays while the crystal beams converge on the altar (cutscene)
   charge.ogg     plays while the energy ball forms + swells at the altar (cutscene)
