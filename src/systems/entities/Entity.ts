@@ -227,10 +227,10 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         slamInterval: 8,
         slamChargeTime: 0.55,   // crouch + charge windup before launching
         slamTrackSpeed: 12,     // homes over the player while airborne
-        slamRiseHeight: 24,     // launches WAY up
-        slamRiseTime: 0.7,
+        slamRiseHeight: 50,     // launches WAY up (50 blocks)
+        slamRiseTime: 0.85,
         slamHangTime: 0.6,
-        slamDropSpeed: 55,      // fast slam down from high up
+        slamDropSpeed: 78,      // fast slam down from way up high
         slamDamage: 9,
         slamMaxRadius: 26,
         slamRingSpeed: 15,

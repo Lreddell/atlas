@@ -224,6 +224,20 @@ class EntityManager {
         if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
         const hpBefore = e.hp;
         e.hp -= amount;
+
+        // Phase gate: a hit that would push the boss PAST 50% or 25% is clamped to
+        // land EXACTLY on that threshold, so the phase transition fires right at it
+        // (not somewhere below). The next hit then carries it past.
+        let phase = 0;
+        if (e.isBoss && e.hp > 0) {
+            const kind = ENTITY_KINDS[e.kind];
+            const fb = hpBefore / e.maxHp;
+            const gates: [number, number][] = [[kind?.slamThreshold ?? 0.5, 2], [kind?.frenzyThreshold ?? 0.25, 3]];
+            for (const [thr, ph] of gates) {
+                if (fb > thr && e.hp / e.maxHp <= thr) { e.hp = e.maxHp * thr; phase = ph; break; }
+            }
+        }
+
         e.hurtUntil = Date.now() + 180;
         e.aggro = true;
         const len = Math.hypot(knockX, knockZ) || 1;
@@ -234,13 +248,9 @@ class EntityManager {
 
         if (e.isBoss && e.bossId) {
             gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: Math.max(0, e.hp), maxHp: e.maxHp });
-            // Phase transitions: crossing 50% (slam phase) and 25% (frenzy) erupt with
-            // a polarity shock + camera jolt so the escalation reads clearly.
-            const kind = ENTITY_KINDS[e.kind];
-            const fracBefore = hpBefore / e.maxHp, fracAfter = e.hp / e.maxHp;
-            const crossed = (t: number) => fracBefore > t && fracAfter <= t;
-            const phase = crossed(kind?.slamThreshold ?? 0.5) ? 2 : (crossed(kind?.frenzyThreshold ?? 0.25) ? 3 : 0);
-            if (phase > 0 && e.hp > 0) {
+            // Phase transition (at the gated threshold): a polarity shock + camera
+            // jolt so the escalation reads clearly, and the new phase begins.
+            if (phase > 0) {
                 const col = polarityFxColor(e.polarity);
                 particleFx.burst({ x: e.pos.x, y: e.pos.y + e.height * 0.6, z: e.pos.z, color: col, color2: [1, 1, 1], count: 50, speed: 11, upBias: 5, spread: 1, size: 0.32, life: 1.1, gravity: 4, drag: 0.7 });
                 addTrauma(0.6);
@@ -768,7 +778,7 @@ class EntityManager {
                 e.slamState = 'none';
                 e.grounded = true;
                 this.spawnShockwave(e, kind);
-                addTrauma(1.0);
+                addTrauma(1.4); // a heavy ground-quake on the 50-block slam landing
                 // A bright polarity-coloured ring of sparks blasting outward along
                 // the ground from the point of impact.
                 for (let i = 0; i < 16; i++) {

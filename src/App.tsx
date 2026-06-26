@@ -945,6 +945,10 @@ const App: React.FC = () => {
       const offParry = gameEvents.on('boss:parry', () => {
           soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
       });
+      // The Warden took a hit (a deflected bolt landing, etc.) — a hurt grunt.
+      const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
+      });
       // Slam attack: a rise telegraph, then the shockwave impact.
       const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
@@ -963,7 +967,7 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offParry(); offSlam(); offPhase(); offCrystal(); offPower();
+          offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
           offCineStart(); offCineEnd(); offCleared();
       };
   }, [restoreSummonAltar]);
