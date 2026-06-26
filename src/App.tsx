@@ -1659,6 +1659,15 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /tp <x> <y> <z>", 'error');
           }
+      } else if (parts[0] === '/setspawn') {
+          // Set the player's personal respawn point to their current position,
+          // like sleeping in a bed.
+          const p = playerPosRef.current;
+          const sx = Math.floor(p.x) + 0.5;
+          const sy = Math.round(p.y);
+          const sz = Math.floor(p.z) + 0.5;
+          worldManager.setSpawnPoint(sx, sy, sz, false);
+          logMsg(`Spawn point set to ${Math.floor(p.x)}, ${sy}, ${Math.floor(p.z)}`, 'success');
       } else if (parts[0] === '/locate') {
           if (parts[1] === 'biome' && parts[2]) {
               worldManager.locateBiome(parts[2], playerPosRef.current.x, playerPosRef.current.z);
