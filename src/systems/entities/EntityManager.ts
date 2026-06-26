@@ -377,7 +377,7 @@ class EntityManager {
 
             // --- Slam attack overrides everything while the boss is airborne ---
             if (e.slamState !== 'none') {
-                this.tickSlam(e, kind, dt);
+                this.tickSlam(e, kind, dt, pp);
                 if (e.aggro) anyAggro = true;
                 continue;
             }
@@ -439,7 +439,9 @@ class EntityManager {
             if (kind.slamThreshold && pp && targetable && e.aggro && !e.shielded
                 && e.hp <= e.maxHp * kind.slamThreshold) {
                 e.slamTimer -= dt;
-                if (e.slamTimer <= 0 && !e.awaitingParry) this.startSlam(e, kind);
+                const frenzy = e.hp <= e.maxHp * (kind.frenzyThreshold ?? 0);
+                // Only launch from the ground, so slamGroundY captures the real floor.
+                if (e.slamTimer <= 0 && !e.awaitingParry && e.grounded) this.startSlam(e, kind, frenzy);
             }
 
             // --- Magnetic Warden boss mechanics (polarity swap, field, projectiles) ---
@@ -677,41 +679,86 @@ class EntityManager {
         return false;
     }
 
-    // --- Slam attack: rise, hang (telegraph), drop, then a polarity shockwave ---
-    private startSlam(e: Entity, kind: EntityKind): void {
-        e.slamState = 'rising';
-        e.slamPhaseTimer = kind.slamRiseTime ?? 0.85;
+    // --- Slam attack: charge (windup) → rise (tracks the player) → hang (locks +
+    //     flashes) → drop → polarity shockwave. The rendered ground indicator (see
+    //     EntityRenderer) follows the boss's x/z the whole time, showing where it
+    //     will land, and flashes as the drop nears. ---
+    private startSlam(e: Entity, kind: EntityKind, frenzy: boolean): void {
+        e.slamState = 'charging';
+        e.slamPhaseTimer = kind.slamChargeTime ?? 0.5;
         e.slamGroundY = e.pos.y;
-        e.slamTimer = kind.slamInterval ?? 9;
+        // Frenzy (≤25% HP) slams come much more often.
+        e.slamTimer = (kind.slamInterval ?? 9) * (frenzy ? 0.45 : 1);
         e.vel.set(0, 0, 0);
         if (e.bossId) gameEvents.emit('boss:slam', { bossId: e.bossId, entityId: e.id, phase: 'rise', polarity: e.polarity });
     }
 
-    private tickSlam(e: Entity, kind: EntityKind, dt: number): void {
+    /** Home the boss's x/z toward the player at a capped speed, clamped to its arena
+     *  leash so a retreating player can't drag the slam (and its shockwave) out. */
+    private slamTrack(e: Entity, pp: { x: number; z: number }, speed: number, dt: number): void {
+        const tdx = pp.x - e.pos.x, tdz = pp.z - e.pos.z;
+        const td = Math.hypot(tdx, tdz);
+        if (td >= 0.001) {
+            const step = Math.min(td, speed * dt);
+            e.pos.x += (tdx / td) * step;
+            e.pos.z += (tdz / td) * step;
+        }
+        const leash = ENTITY_KINDS[e.kind]?.leashRadius;
+        if (e.home && leash) {
+            const hx = e.pos.x - e.home.x, hz = e.pos.z - e.home.z;
+            const hd = Math.hypot(hx, hz);
+            if (hd > leash) { e.pos.x = e.home.x + (hx / hd) * leash; e.pos.z = e.home.z + (hz / hd) * leash; }
+        }
+    }
+
+    private tickSlam(e: Entity, kind: EntityKind, dt: number, pp: { x: number; y: number; z: number } | null): void {
         const riseTime = kind.slamRiseTime ?? 0.85;
         const apex = e.slamGroundY + (kind.slamRiseHeight ?? 9);
+        const track = kind.slamTrackSpeed ?? 12;
+        const col = polarityFxColor(e.polarity);
+
+        if (e.slamState === 'charging') {
+            // Crouch + gather: energy streams UP into the boss off the ground — the
+            // "he's about to launch" tell (effects, not UI).
+            e.slamPhaseTimer -= dt;
+            if (Math.random() < 0.6) {
+                const a = Math.random() * Math.PI * 2, r = 0.8 + Math.random() * 1.6;
+                particleFx.burst({
+                    x: e.pos.x + Math.cos(a) * r, y: e.slamGroundY, z: e.pos.z + Math.sin(a) * r,
+                    color: col, color2: [1, 1, 1], count: 2, speed: 1, upBias: 7, spread: 0.2,
+                    dir: [0, 1, 0], size: 0.26, life: 0.5, gravity: -7, drag: 0.4,
+                });
+            }
+            if (e.slamPhaseTimer <= 0) {
+                e.slamState = 'rising';
+                e.slamPhaseTimer = riseTime;
+                addTrauma(0.4);
+                // Launch dust blasted out along the ground as he rockets up.
+                for (let i = 0; i < 12; i++) {
+                    const a = (i / 12) * Math.PI * 2;
+                    particleFx.burst({
+                        x: e.pos.x + Math.cos(a) * 1.2, y: e.slamGroundY + 0.2, z: e.pos.z + Math.sin(a) * 1.2,
+                        color: col, count: 3, speed: 7, upBias: 1, spread: 0.5,
+                        dir: [Math.cos(a), 0.2, Math.sin(a)], size: 0.26, life: 0.6, gravity: 8, drag: 1.4,
+                    });
+                }
+            }
+            return;
+        }
+
         if (e.slamState === 'rising') {
             e.pos.y += ((kind.slamRiseHeight ?? 9) / riseTime) * dt;
+            if (pp) this.slamTrack(e, pp, track, dt); // home over the player on the way up
             e.slamPhaseTimer -= dt;
             if (e.slamPhaseTimer <= 0 || e.pos.y >= apex) {
                 e.pos.y = apex;
                 e.slamState = 'hanging';
                 e.slamPhaseTimer = kind.slamHangTime ?? 0.45;
-                // Telegraph the impact zone: a thin ring of motes rising from the
-                // ground under the hanging boss, so the player can pre-read the slam
-                // and ready the right polarity to dodge.
-                const col = polarityFxColor(e.polarity);
-                const radius = (kind.slamMaxRadius ?? 26) * 0.32;
-                for (let i = 0; i < 14; i++) {
-                    const a = (i / 14) * Math.PI * 2;
-                    particleFx.burst({
-                        x: e.pos.x + Math.cos(a) * radius, y: e.slamGroundY + 0.2, z: e.pos.z + Math.sin(a) * radius,
-                        color: col, count: 3, speed: 1, upBias: 4, spread: 0.3,
-                        dir: [0, 1, 0], size: 0.22, life: 0.9, gravity: -2, drag: 0.6,
-                    });
-                }
             }
         } else if (e.slamState === 'hanging') {
+            // Keep tracking, then LOCK the target for the final ~0.25s (the indicator
+            // stops moving and flashes) so the slam is committed but still dodgeable.
+            if (pp && e.slamPhaseTimer > 0.25) this.slamTrack(e, pp, track * 0.85, dt);
             e.slamPhaseTimer -= dt;
             if (e.slamPhaseTimer <= 0) e.slamState = 'dropping';
         } else { // dropping
@@ -724,7 +771,6 @@ class EntityManager {
                 addTrauma(1.0);
                 // A bright polarity-coloured ring of sparks blasting outward along
                 // the ground from the point of impact.
-                const col = polarityFxColor(e.polarity);
                 for (let i = 0; i < 16; i++) {
                     const a = (i / 16) * Math.PI * 2;
                     particleFx.burst({

@@ -291,8 +291,27 @@ test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers
     assert.match(bar, /left: '50%'/);
     assert.match(bar, /left: '25%'/);
     assert.match(bar, /boss:phase/);
-    // The slam hangs at the apex with a telegraph ring before it drops.
-    assert.match(manager, /slamState = 'hanging'[\s\S]*?Telegraph the impact zone[\s\S]*?particleFx\.burst/);
+    // The slam goes through a charge windup before launching.
+    assert.match(manager, /slamState = 'charging'/);
+});
+
+test('slam charges, launches high, homes over the player, and is telegraphed', () => {
+    // Windup state + a high launch + frenzy-faster cadence.
+    assert.match(entity, /slamChargeTime:/);
+    assert.match(entity, /slamRiseHeight: 24/);
+    assert.match(entity, /slamTrackSpeed:/);
+    assert.match(manager, /private startSlam\(e: Entity, kind: EntityKind, frenzy: boolean\)/);
+    assert.match(manager, /frenzy \? 0\.45 : 1/);
+    // Homes the boss over the player while airborne (rising + most of the hang).
+    assert.match(manager, /private slamTrack\(/);
+    assert.match(manager, /if \(pp\) this\.slamTrack\(e, pp, track, dt\)/);
+    // The shockwave spawns where the boss actually lands (its tracked x/z).
+    assert.match(manager, /spawnShockwave[\s\S]*?x: e\.pos\.x[\s\S]*?z: e\.pos\.z/);
+    // A rendered ground indicator (not UI) tracks the boss and flashes near the drop.
+    const renderer = read('src/components/EntityRenderer.tsx');
+    assert.match(renderer, /Slam landing indicator/);
+    assert.match(renderer, /slamRefs/);
+    assert.match(renderer, /e\.slamState === 'charging'/);
 });
 
 test('leaving the world mid-fight resets the arena before saving', () => {

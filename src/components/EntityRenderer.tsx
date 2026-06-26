@@ -19,6 +19,7 @@ export const EntityRenderer: React.FC = () => {
     const meshRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const shieldRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const auraRefs = useRef<Map<number, THREE.Mesh>>(new Map());
+    const slamRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const projRefs = useRef<(THREE.Mesh | null)[]>([]);
     const ringRefs = useRef<(THREE.Mesh | null)[]>([]);
     // Per-boss polarity-swap flash bookkeeping for the field aura.
@@ -75,6 +76,30 @@ export const EntityRenderer: React.FC = () => {
                     am.opacity = 0.22 + flashT * 0.4;
                 }
             }
+            // Slam landing indicator: a ground ring under the boss showing where it
+            // will slam. It tracks the boss's x/z (which homes over the player), grows
+            // in during the charge, and flashes faster/brighter as the drop nears.
+            const slam = slamRefs.current.get(e.id);
+            if (slam) {
+                const active = e.slamState !== 'none';
+                slam.visible = active;
+                if (active) {
+                    slam.position.set(e.pos.x, e.slamGroundY + 0.08, e.pos.z);
+                    const chargeT = kind.slamChargeTime ?? 0.5;
+                    const hangT = kind.slamHangTime ?? 0.45;
+                    let base = 0.45, flash = 0, grow = 1;
+                    if (e.slamState === 'charging') { const t = 1 - Math.max(0, e.slamPhaseTimer) / chargeT; base = 0.15 + 0.25 * t; grow = 0.5 + 0.5 * t; }
+                    else if (e.slamState === 'rising') base = 0.45;
+                    else if (e.slamState === 'hanging') flash = Math.min(1, 1 - e.slamPhaseTimer / hangT);
+                    else flash = 1; // dropping
+                    const freq = 0.006 + flash * 0.045;
+                    const pulse = 0.5 + 0.5 * Math.sin(now * freq);
+                    const sm = slam.material as THREE.MeshBasicMaterial;
+                    sm.color.setHex(e.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                    sm.opacity = Math.min(0.95, (base + flash * 0.5)) * (0.55 + 0.45 * pulse);
+                    slam.scale.setScalar(grow * (1 + flash * 0.12 * pulse));
+                }
+            }
         }
         // Projectile pool.
         const projectiles = entityManager.getProjectiles();
@@ -127,6 +152,8 @@ export const EntityRenderer: React.FC = () => {
                 const isShieldBoss = (kind.shieldCrystals ?? 0) > 0;
                 const hasField = !!kind.magneticFieldRange;
                 const auraR = Math.max(kind.width, 1) * 1.7;
+                const hasSlam = !!kind.slamThreshold;
+                const slamR = Math.max(kind.width, 2) * 1.7;
                 return (
                     <React.Fragment key={id}>
                         <mesh
@@ -153,6 +180,16 @@ export const EntityRenderer: React.FC = () => {
                             >
                                 <ringGeometry args={[auraR * 0.82, auraR, 40]} />
                                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
+                            </mesh>
+                        )}
+                        {hasSlam && (
+                            <mesh
+                                ref={(m) => { if (m) slamRefs.current.set(id, m); else slamRefs.current.delete(id); }}
+                                rotation={[-Math.PI / 2, 0, 0]}
+                                visible={false}
+                            >
+                                <ringGeometry args={[slamR * 0.7, slamR, 48]} />
+                                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
                             </mesh>
                         )}
                     </React.Fragment>
