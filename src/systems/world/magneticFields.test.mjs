@@ -274,8 +274,8 @@ test('arena tweaks: brick towers by default, magnets placed only for a fight', (
     const towers = a.match(/function buildMagneticPillarTowers[\s\S]*?\n}/)[0];
     assert.doesNotMatch(towers, /POSITIVE_MAGNET|NEGATIVE_MAGNET/);
     assert.doesNotMatch(towers, /% 6 === 0/); // no horizontal trim bands breaking the (placed) climb
-    // The magnet climb faces are placed for a fight and stripped afterwards.
-    assert.match(a, /export function placeArenaClimbMagnets/);
+    // The magnet climb faces are placed per-pillar for a fight and stripped afterwards.
+    assert.match(a, /export function placePillarClimbMagnets/);
     assert.match(a, /export function stripArenaClimbMagnets/);
     // The lava-pit pylon builder was removed.
     assert.doesNotMatch(a, /buildMoatPylons/);

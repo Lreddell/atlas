@@ -28,7 +28,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, placeArenaClimbMagnets, stripArenaClimbMagnets } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -2682,10 +2682,9 @@ const App: React.FC = () => {
                                 const centerX = x, centerZ = z, baseY = y - 4;
                                 const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
                                 summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
-                                // Light up the tower climb faces with magnets for the fight (the
-                                // walls are plain brick otherwise); stripped at 50% / on reset.
+                                // The climb-face magnets light up tower-by-tower as each crystal
+                                // spawns (in the cutscene); flag it so the reset strips them.
                                 climbMagnetsActiveRef.current = true;
-                                placeArenaClimbMagnets(centerX, centerZ, baseY, (edits) => worldManager.setBlocks(edits));
 
                                 const cam = controlsRef.current?.getCamera();
                                 const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
