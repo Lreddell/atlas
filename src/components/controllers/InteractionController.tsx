@@ -4,6 +4,11 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
+import { entityManager } from '../../systems/entities/EntityManager';
+import { getAttackDamage, isSword } from '../../systems/registry/itemStats';
+import { isLogBlock } from '../../systems/registry/blockFamilies';
+import { gameEvents } from '../../systems/events/GameEvents';
+import { getRegionAt } from '../../systems/world/regions';
 import { BLOCKS } from '../../data/blocks';
 import {
     type BreakingVisual,
@@ -26,10 +31,27 @@ import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../sys
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
 import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, SLAB_DOUBLE, isShaped, isSlab, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
+import { findFirstBlockedEdit } from '../../systems/world/regionEditPolicy';
+import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+const MELEE_REACH = 3.2;
+const DEFLECT_REACH = 5.5;
+// Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
+// so holding right-click eats repeatedly with a clear gap between bites.
+const EAT_PAUSE_TICKS = 6;
+
+// Sealed-region edit guard: true if the player may edit (x,y,z); otherwise emits
+// the denied event (App throttles the toast) and returns false. Enforced here at
+// the player layer so internal world simulation (which also calls setBlock) is
+// unaffected.
+function canPlayerEdit(x: number, y: number, z: number): boolean {
+    if (worldManager.canEditBlock(x, y, z)) return true;
+    gameEvents.emit('edit:denied', { x, y, z, regionId: getRegionAt(x, y, z)?.id ?? '' });
+    return false;
+}
 
 function castFromCamera(camera: THREE.Camera, maxDist: number) {
     camera.getWorldPosition(_camPos);
@@ -42,7 +64,8 @@ interface InteractionControllerProps {
     selectedSlot: number;
     inventory: (ItemStack | null)[];
     consumeItem: (slot: number) => void;
-    spawnDrop: (type: BlockType, x: number, y: number, z: number) => void;
+    damageHeldItem: (slot: number, amount: number) => void;
+    spawnDrop: (stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => void;
     setBreakingVisual: Dispatch<SetStateAction<BreakingVisual | null>>;
     setOpenContainer: (value: OpenContainerState) => void;
     openContainer: OpenContainerState;
@@ -55,7 +78,7 @@ interface InteractionControllerProps {
 }
 
 export const InteractionController = ({ 
-    isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
+    isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
 }: InteractionControllerProps) => {
     const { camera } = useThree();
@@ -187,16 +210,22 @@ export const InteractionController = ({
             if (targetType === null) return;
 
             if (!isContinuous && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                const isInteractive = targetType === BlockType.CRAFTING_TABLE || 
-                                      targetType === BlockType.FURNACE || 
-                                      targetType === BlockType.FURNACE_ACTIVE || 
+                const isInteractive = targetType === BlockType.CRAFTING_TABLE ||
+                                      targetType === BlockType.FURNACE ||
+                                      targetType === BlockType.FURNACE_ACTIVE ||
                                       targetType === BlockType.CHEST ||
-                                      targetType === BlockType.BED_FOOT || 
-                                      targetType === BlockType.BED_HEAD;
+                                      targetType === BlockType.BED_FOOT ||
+                                      targetType === BlockType.BED_HEAD ||
+                                      targetType === BlockType.MAGNETIC_BOSS_SUMMONER;
 
                 if (isInteractive && !isShiftHeld) {
                     soundManager.play("ui.open");
-                    if (targetType === BlockType.CRAFTING_TABLE) {
+                    if (targetType === BlockType.MAGNETIC_BOSS_SUMMONER) {
+                        // Resolve which boss this region summons; open a confirmation.
+                        const region = getRegionAt(bx, by, bz);
+                        setOpenContainer({ type: 'boss_confirm', x: bx, y: by, z: bz, bossId: region?.bossId ?? 'magnetic_warden', regionId: region?.id ?? null });
+                        return;
+                    } else if (targetType === BlockType.CRAFTING_TABLE) {
                         setOpenContainer({ type: 'crafting', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.FURNACE || targetType === BlockType.FURNACE_ACTIVE) {
@@ -260,6 +289,7 @@ export const InteractionController = ({
                             );
                             doubleSlabAABB.expandByScalar(-0.001);
                             if (playerAABB.intersectsBox(doubleSlabAABB)) return;
+                            if (!canPlayerEdit(bx, by, bz)) return;
 
                             worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
                             consumeItem(selectedSlotRef.current);
@@ -291,6 +321,9 @@ export const InteractionController = ({
                 }
 
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
+
+                // Sealed regions are read-only for the player.
+                if (!canPlayerEdit(px, py, pz)) return;
 
                 // Only air, fluids, and replaceable plants may be overwritten. Flowers,
                 // torches and saplings are not replaceable, so placement is cancelled.
@@ -337,7 +370,7 @@ export const InteractionController = ({
                 if (heldItem.type === BlockType.TORCH || heldItem.type === BlockType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
                     
                     let rotation = 0;
-                    if (heldItem.type === BlockType.LOG || heldItem.type === BlockType.SPRUCE_LOG || heldItem.type === BlockType.CHERRY_LOG || heldItem.type === BlockType.BIRCH_LOG) {
+                    if (isLogBlock(heldItem.type)) {
                         if (Math.abs(hit.ny) > 0.5) rotation = 0;
                         else if (Math.abs(hit.nx) > 0.5) rotation = 1;
                         else if (Math.abs(hit.nz) > 0.5) rotation = 2;
@@ -375,6 +408,15 @@ export const InteractionController = ({
                             if (dir.x > 0) { rotation = 2; hx += 1; } else { rotation = 3; hx -= 1; }
                         } else {
                             if (dir.z > 0) { rotation = 0; hz += 1; } else { rotation = 1; hz -= 1; }
+                        }
+
+                        const blockedPosition = findFirstBlockedEdit(
+                            [{ x: px, y: py, z: pz }, { x: hx, y: py, z: hz }],
+                            ({ x, y, z }) => worldManager.canEditBlock(x, y, z),
+                        );
+                        if (blockedPosition) {
+                            canPlayerEdit(blockedPosition.x, blockedPosition.y, blockedPosition.z);
+                            return;
                         }
                         
                         if (worldManager.getBlock(hx, py, hz, false) === BlockType.AIR) {
@@ -415,13 +457,56 @@ export const InteractionController = ({
         }
     }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
 
+    // Melee: if the player is looking at an entity within reach, a left click is
+    // an attack (and does not start mining). Damage is a simple weapon lookup for
+    // now; Phase 3 will source it from item-instance stats.
+    const tryMeleeAttack = useCallback((): boolean => {
+        camera.getWorldPosition(_camPos);
+        camera.getWorldDirection(_camDir);
+        const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
+        if (!hit) return false;
+        const blockHit = castFromCamera(camera, MELEE_REACH);
+        if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
+        const held = inventory[selectedSlot];
+        const dmg = getAttackDamage(held);
+        const result = entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
+        // A shield absorbs the blow: a metallic "clink", no hurt cry — so it is
+        // obvious the boss is invulnerable until its crystals are gone.
+        if (result === 'blocked') {
+            soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
+        } else {
+            soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+        }
+        // Attacking costs the weapon 1 use (sword) or 2 (other tools); fists/non-tools none.
+        if (held) damageHeldItem(selectedSlot, isSword(held.type) ? 1 : 2);
+        if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
+        interactionCooldown.current = 6;
+        return true;
+    }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
+
+    // Hit a Magnetic Warden parry bolt back at it (a purple deflectable bolt
+    // within reach of the crosshair). Takes priority over attacking/mining.
+    const tryDeflectBolt = useCallback((): boolean => {
+        camera.getWorldPosition(_camPos);
+        camera.getWorldDirection(_camDir);
+        if (!entityManager.deflectProjectile(_camPos, _camDir, DEFLECT_REACH)) return false;
+        soundManager.play('entity.magnetic_warden.deflect', { volume: 0.9 });
+        interactionCooldown.current = 5;
+        return true;
+    }, [camera]);
+
     useEffect(() => {
-        const onDown = (e: MouseEvent) => { 
-            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return; 
+        const onDown = (e: MouseEvent) => {
+            if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
-            if (e.button === 0) isLeftMouseDown.current = true;
+            if (e.button === 0) {
+                // Deflecting a parry bolt, then attacking an entity, both take
+                // priority over mining a block.
+                if (tryDeflectBolt()) { /* deflected */ }
+                else if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+            }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
                 performInteraction(false, e.shiftKey);
@@ -435,7 +520,8 @@ export const InteractionController = ({
             }
             if(e.button === 2) {
                 isRightMouseDown.current = false;
-                eatingTimer.current = 0; 
+                eatingTimer.current = 0;
+                inputState.eating = false;
             }
         };
         
@@ -445,20 +531,23 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual]); 
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
 
     useFrame((_, delta) => {
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
+            eatingTimer.current = 0;
+            inputState.eating = false;
             if (highlightMeshRef.current) highlightMeshRef.current.visible = false;
             return;
         }
-        
+
         if (interactionCooldown.current > 0) {
             interactionCooldown.current--;
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
+            inputState.eating = false;
             return;
         }
 
@@ -494,7 +583,11 @@ export const InteractionController = ({
             highlightMeshRef.current.visible = false;
         }
 
-        if (isLeftMouseDown.current && hit) {
+        if (isLeftMouseDown.current && hit && !worldManager.canEditBlock(hit.bx, hit.by, hit.bz)) {
+            // Sealed region: can't mine. Clear any in-progress break and notify (throttled by the App handler).
+            if (breakingRef.current) { breakingRef.current = null; setBreakingVisual(null); }
+            canPlayerEdit(hit.bx, hit.by, hit.bz);
+        } else if (isLeftMouseDown.current && hit) {
             const bx = hit.bx;
             const by = hit.by;
             const bz = hit.bz;
@@ -565,16 +658,11 @@ export const InteractionController = ({
                 setBreakingVisual({ pos: [bx, by, bz], progress: breakingRef.current.progress, noDrop });
 
                 if (breakingRef.current.progress >= 1.0) {
-                    // Play Break Sound
-                    const group = getBlockSoundGroup(targetType);
-                    soundManager.playAt(`block.${group}.break`, {x: bx+0.5, y: by+0.5, z: bz+0.5});
-
-                    // Trigger Particles!
-                    worldManager.spawnParticles(targetType, bx, by, bz);
-
+                    let bedCounterpart: { x: number; z: number; type: BlockType } | null = null;
                     if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
                         const meta = worldManager.getMetadata(bx, by, bz);
-                        let ox = bx, oz = bz;
+                        let ox = bx;
+                        let oz = bz;
                         if (targetType === BlockType.BED_FOOT) {
                             if (meta === 0) oz += 1;
                             else if (meta === 1) oz -= 1;
@@ -586,8 +674,29 @@ export const InteractionController = ({
                             else if (meta === 2) ox -= 1;
                             else if (meta === 3) ox += 1;
                         }
+                        const counterpartType = worldManager.getBlock(ox, by, oz, false);
+                        bedCounterpart = { x: ox, z: oz, type: counterpartType };
+                        const counterpartIsBed = counterpartType === BlockType.BED_HEAD || counterpartType === BlockType.BED_FOOT;
+                        if (counterpartIsBed && !worldManager.canEditBlock(ox, by, oz)) {
+                            canPlayerEdit(ox, by, oz);
+                            breakingRef.current = null;
+                            setBreakingVisual(null);
+                            return;
+                        }
+                    }
+
+                    // Play Break Sound
+                    const group = getBlockSoundGroup(targetType);
+                    soundManager.playAt(`block.${group}.break`, {x: bx+0.5, y: by+0.5, z: bz+0.5});
+
+                    // Trigger Particles!
+                    worldManager.spawnParticles(targetType, bx, by, bz);
+
+                    if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
+                        const ox = bedCounterpart!.x;
+                        const oz = bedCounterpart!.z;
                         
-                        const otherType = worldManager.getBlock(ox, by, oz, false);
+                        const otherType = bedCounterpart!.type;
                         const spawnPoint = worldManager.getSpawnPoint();
                         const spawnMatchesThisBed = !!spawnPoint && (
                             (spawnPoint.x === bx && spawnPoint.y === by && spawnPoint.z === bz) ||
@@ -604,6 +713,10 @@ export const InteractionController = ({
                     // A double slab is one block but yields two slabs — capture its meta
                     // before the cell is cleared.
                     const isDoubleSlab = isSlab(targetType) && (worldManager.getMetadata(bx, by, bz) & SLAB_DOUBLE) !== 0;
+                    // Breaking a Magnetic Shield Crystal weakens the Magnetic Warden's shield.
+                    if (targetType === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
+                        gameEvents.emit('crystal:broken', { x: bx, y: by, z: bz, regionId: getRegionAt(bx, by, bz)?.id ?? null });
+                    }
                     const droppedItems = worldManager.setBlock(bx, by, bz, BlockType.AIR);
                     if (gameMode === 'survival') {
                         const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
@@ -620,8 +733,14 @@ export const InteractionController = ({
                         const requiresTool = (targetDef.minHarvestTier || 0) > 0;
                         const canHarvest = !requiresTool || (isBestTool && heldTier >= (targetDef.minHarvestTier || 0));
 
+                        // Tool durability: breaking a real (hardness > 0) block costs the
+                        // held tool 1 use, or 2 for a sword (Minecraft rules).
+                        if (heldItem && (targetDef.hardness || 0) > 0) {
+                            damageHeldItem(selectedSlotRef.current, isSword(heldItem.type) ? 2 : 1);
+                        }
+
                         if (canHarvest) {
-                            droppedItems.forEach(item => { for(let i=0; i<item.count; i++) spawnDrop(item.type, bx, by, bz); });
+                            droppedItems.forEach(item => spawnDrop(item, bx, by, bz));
                             if (targetDef.drops) {
                                 targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
                             } else {
@@ -649,27 +768,40 @@ export const InteractionController = ({
             
             if (heldItem && heldItemDef && heldItemDef.category === 'food') {
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
-                
+
                 if (canEat) {
-                    eatingTimer.current += delta * 20; 
-                    if (eatingTimer.current >= 32) { 
+                    eatingTimer.current += delta * 20;
+                    // Drive the eat animation only while a bite is actively charging
+                    // (timer >= 0). During the brief post-bite pause (timer < 0) the
+                    // hand lowers, then the next bite charges — repeating while held.
+                    inputState.eating = eatingTimer.current >= 0;
+                    if (eatingTimer.current >= 32) {
                         const def = BLOCKS[heldItem.type as BlockType];
                         if (def.nutrition) {
                             eatFood(foodStateRef.current, def.nutrition, def.saturationModifier || 0.6);
                             consumeItem(selectedSlotRef.current);
-                            eatingTimer.current = 0;
-                            isRightMouseDown.current = false; 
+                            // Keep the right button "held" for continuous eating: just
+                            // pause briefly, don't cancel, so the next bite follows.
+                            eatingTimer.current = -EAT_PAUSE_TICKS;
+                            inputState.eating = false;
                             soundManager.play("entity.item.pickup"); // Use generic burp/pickup sound for eating for now
+                        } else {
+                            eatingTimer.current = 0;
                         }
                     }
                 } else {
                     eatingTimer.current = 0;
+                    inputState.eating = false;
                 }
-            } else if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
-                performInteraction(true);
+            } else {
+                inputState.eating = false;
+                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
+                    performInteraction(true);
+                }
             }
         } else {
             eatingTimer.current = 0;
+            inputState.eating = false;
         }
     });
 

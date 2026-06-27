@@ -1,24 +1,18 @@
 import { BlockType } from '../../types';
+import { BLOCKS } from '../../data/blocks';
 
 // Local-space axis-aligned box within a single voxel cell: [x0,y0,z0, x1,y1,z1]
 // with each component in [0,1]. A full cube is [0,0,0,1,1,1].
 export type ShapeBox = [number, number, number, number, number, number];
 
-const SLAB_TYPES: ReadonlySet<BlockType> = new Set([
-    BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,
-    BlockType.COBBLESTONE_SLAB, BlockType.STONE_SLAB, BlockType.SANDSTONE_SLAB,
-    BlockType.RED_SANDSTONE_SLAB, BlockType.BRICK_SLAB,
-]);
-
-const STAIR_TYPES: ReadonlySet<BlockType> = new Set([
-    BlockType.OAK_STAIRS, BlockType.SPRUCE_STAIRS, BlockType.BIRCH_STAIRS, BlockType.CHERRY_STAIRS,
-    BlockType.COBBLESTONE_STAIRS, BlockType.STONE_STAIRS, BlockType.SANDSTONE_STAIRS,
-    BlockType.RED_SANDSTONE_STAIRS, BlockType.BRICK_STAIRS,
-]);
-
-export const isSlab = (t: BlockType): boolean => SLAB_TYPES.has(t);
-export const isStairs = (t: BlockType): boolean => STAIR_TYPES.has(t);
-export const isShaped = (t: BlockType): boolean => SLAB_TYPES.has(t) || STAIR_TYPES.has(t);
+// Shape detection is data-driven from each block's `shape` field, so any new slab/
+// stair block is recognized automatically — no hardcoded list to keep in sync.
+export const isSlab = (t: BlockType): boolean => BLOCKS[t]?.shape === 'slab';
+export const isStairs = (t: BlockType): boolean => BLOCKS[t]?.shape === 'stairs';
+export const isShaped = (t: BlockType): boolean => {
+    const s = BLOCKS[t]?.shape;
+    return s === 'slab' || s === 'stairs';
+};
 
 // Metadata layout for shaped blocks (8-bit value per voxel). Backwards compatible
 // with worlds saved before double slabs / stair corners existed — the bits added
@@ -181,8 +175,12 @@ export function stairBackDir(meta: number): number {
 // a smaller, plant-sized box instead.
 const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
     BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION,
     BlockType.DEBUG_CROSS, BlockType.PINK_FLOWER,
+    // Magnetic Fields resource/objective crystals (cross-plane, slim hitbox).
+    BlockType.POSITIVE_MAGNETITE_CRYSTAL, BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL, BlockType.MAGNETITE_SHARD,
 ]);
 
 // Flowers get a slim box; leafy plants (grass, ferns, saplings, dead bush) get a

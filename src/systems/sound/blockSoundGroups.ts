@@ -12,9 +12,9 @@ export function getBlockSoundGroup(type: BlockType): SoundGroup {
 
     // Fallback logic based on name or ID
     const name = def.name.toLowerCase();
-    
-    if (name.includes('grass') || name.includes('leaves') || name.includes('sapling') || name.includes('plant') || name.includes('flower') || name.includes('rose') || name.includes('dandelion')) return 'grass';
-    if (name.includes('stone') || name.includes('rock') || name.includes('cobble') || name.includes('ore') || name.includes('brick') || name.includes('furnace') || name.includes('basalt')) return 'stone';
+
+    if (name.includes('grass') || name.includes('leaves') || name.includes('sapling') || name.includes('plant') || name.includes('flower') || name.includes('rose') || name.includes('dandelion') || name.includes('podzol') || name.includes('mud')) return 'grass';
+    if (name.includes('stone') || name.includes('rock') || name.includes('cobble') || name.includes('ore') || name.includes('brick') || name.includes('furnace') || name.includes('basalt') || name.includes('andesite') || name.includes('diorite') || name.includes('granite')) return 'stone';
     if (name.includes('wood') || name.includes('log') || name.includes('plank') || name.includes('chest') || name.includes('crafting') || name.includes('torch')) return 'wood';
     if (type === BlockType.DIRT) return 'grass'; // soft earth — must be checked before the name-based 'sand' branch below
     if (name.includes('sand') || name.includes('dirt') || name.includes('terracotta')) return 'sand';

@@ -128,6 +128,19 @@ export const CUTOUT_TILE_CONFIGS: CutoutTileConfig[] = [
     { slot: 76 },
     { slot: 86 },
     { slot: 89 },
+    // New wood family leaves + saplings (Task ID 6)
+    { slot: 193 },  // jungle leaves
+    { slot: 194 },  // jungle sapling
+    { slot: 198 },  // dark oak leaves
+    { slot: 199 },  // dark oak sapling
+    { slot: 203 },  // acacia leaves
+    { slot: 204 },  // acacia sapling
+    // Magnetic Fields cross-plane crystals + spike (transparent backgrounds)
+    { slot: 206 },  // positive magnetite crystal
+    { slot: 207 },  // negative magnetite crystal
+    { slot: 208 },  // magnetic spike
+    { slot: 210 },  // magnetic shield crystal
+    { slot: 212 },  // magnetite shard
 ];
 
 export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {

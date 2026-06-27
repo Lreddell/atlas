@@ -10,6 +10,11 @@ import {
     drawWoodFamilyTiles,
 } from './atlasTileFamilies';
 import { openAtlasDebugWindow } from './textureAtlasDebug';
+import {
+    paintPixelTile,
+    PR19_TEXTURE_ASSETS,
+    PR19_TEXTURE_TILES,
+} from '../systems/textures/pr19TexturePixels';
 
 // Constants for UV mapping
 export const ATLAS_RAW_TILE_SIZE = 16;
@@ -758,6 +763,230 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#1a237e'; 
         [[6,4],[7,4],[8,4],[9,4],[5,5],[10,5],[4,6],[11,6],[4,7],[11,7],[4,8],[11,8],[5,9],[10,9],[6,10],[7,10],[8,10],[9,10],[5,6],[5,7],[5,8],[10,6],[10,7],[10,8]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
         ctx.fillStyle = '#3949ab'; [[6,6],[7,7],[8,6]].forEach(([px,py]) => ctx.fillRect(px,py, 1, 1));
+    });
+
+    PR19_TEXTURE_ASSETS.forEach(({ slot }) => {
+        withTile(slot, () => paintPixelTile(ctx, PR19_TEXTURE_TILES[slot]));
+    });
+
+    // 169: Packed Ice — denser, more crystalline ice for the Ice Spikes biome.
+    withTile(169, () => {
+        fill('#b3e5fc');
+        ctx.fillStyle = '#81d4fa';
+        for (let i = 0; i < 24; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#4fc3f7';
+        // Diagonal crystalline streaks
+        for (let i = 0; i < 16; i++) {
+            ctx.fillRect(i, (i * 2) % 16, 1, 1);
+            ctx.fillRect((i * 3) % 16, i, 1, 1);
+        }
+        ctx.fillStyle = '#e1f5fe';
+        ctx.fillRect(2, 2, 2, 1); ctx.fillRect(9, 5, 2, 1); ctx.fillRect(4, 11, 2, 1); ctx.fillRect(12, 13, 2, 1);
+    });
+
+    // --- Biome block procedural fallbacks (Task ID 5) ---
+    // These are simple fallbacks; the real textures ship as PNG assets in
+    // public/assets/textures/blocks/ and override these at runtime.
+    const grassTopFallback = (slot: number, base: string, light: string, dark: string) => {
+        withTile(slot, () => {
+            fill(base);
+            ctx.fillStyle = light;
+            for (let i = 0; i < 30; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            ctx.fillStyle = dark;
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const grassSideFallback = (slot: number, grassCol: string) => {
+        withTile(slot, () => {
+            fill('#5d4037');
+            ctx.fillStyle = '#3e2723';
+            for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            // grass fringe top 3 rows
+            ctx.fillStyle = grassCol;
+            for (let x = 0; x < 16; x++) { ctx.fillRect(x, 0, 1, 1); ctx.fillRect(x, 1, 1, 1); if (Math.random() < 0.6) ctx.fillRect(x, 2, 1, 1); }
+        });
+    };
+    grassTopFallback(170, '#568b48', '#7ab06a', '#3a6b30'); grassSideFallback(171, '#568b48');  // Mossy Grass
+    grassTopFallback(172, '#5aaa50', '#7fc870', '#3d7a35'); grassSideFallback(173, '#5aaa50');  // Lush Grass
+    grassTopFallback(174, '#2c5230', '#3e7a42', '#1b3a1f'); grassSideFallback(175, '#2c5230');  // Dark Grass
+    grassTopFallback(176, '#78aa50', '#9ac870', '#527a35'); grassSideFallback(177, '#78aa50');  // Meadow Grass
+    grassTopFallback(178, '#b0a83c', '#c8c060', '#827a28'); grassSideFallback(179, '#b0a83c');  // Savanna Grass
+    grassTopFallback(180, '#3c8c32', '#5ab04a', '#2a6a22'); grassSideFallback(181, '#3c8c32');  // Jungle Grass
+    // Podzol
+    withTile(182, () => { fill('#6e5037'); ctx.fillStyle = '#4a3525'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<6;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(183, () => { fill('#5d4037'); ctx.fillStyle='#3e2723'; for (let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#6e5037'; for(let i=0;i<8;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Stone variants
+    withTile(184, () => { fill('#8c8a86'); ctx.fillStyle='#6e6c68'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#aeaca8'; for(let i=0;i<20;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Andesite
+    withTile(185, () => { fill('#e1e1de'); ctx.fillStyle='#555'; for (let i=0;i<32;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Diorite
+    withTile(186, () => { fill('#af6e5f'); ctx.fillStyle='#8c5040'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#d29a8a'; for(let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Granite
+    // Coarse Dirt
+    withTile(187, () => { fill('#6e5541'); ctx.fillStyle='#503c28'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#8c7050'; for(let i=0;i<12;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Mud
+    withTile(188, () => { fill('#3c3026'); ctx.fillStyle='#2a2018'; for (let i=0;i<16;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#504030'; for(let i=0;i<10;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    // Mossy Cobblestone
+    withTile(189, () => { fill('#787878'); ctx.fillStyle='#3a3a3a'; for (let x=0;x<16;x++) for (let y=0;y<16;y++) if ((x%8===0||y%8===0) && Math.random()<0.5) ctx.fillRect(x,y,1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+
+    // --- New wood family fallbacks (Task ID 6) ---
+    const shadeHex = (hex: string, amount: number): string => {
+        const v = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, Math.min(255, ((v >> 16) & 255) + amount));
+        const g = Math.max(0, Math.min(255, ((v >> 8) & 255) + amount));
+        const b = Math.max(0, Math.min(255, (v & 255) + amount));
+        return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+    };
+    const logTopFallback = (slot: number, ring: string, bark: string) => {
+        withTile(slot, () => {
+            fill(bark);
+            ctx.fillStyle = ring;
+            ctx.fillRect(2, 2, 12, 12);
+            ctx.fillStyle = shadeHex(ring, -20);
+            ctx.fillRect(4, 4, 8, 8);
+            ctx.fillStyle = shadeHex(ring, -35);
+            ctx.fillRect(7, 7, 2, 2);
+        });
+    };
+    const logSideFallback = (slot: number, bark: string) => {
+        withTile(slot, () => {
+            fill(bark);
+            ctx.fillStyle = shadeHex(bark, -25);
+            for (let x = 0; x < 16; x += 3) ctx.fillRect(x, 0, 1, 16);
+            ctx.fillStyle = shadeHex(bark, 15);
+            for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const planksFallback = (slot: number, col: string) => {
+        withTile(slot, () => {
+            fill(col);
+            ctx.fillStyle = shadeHex(col, -30);
+            ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1); ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1); ctx.fillRect(0, 15, 16, 1);
+            ctx.fillStyle = shadeHex(col, 15);
+            for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const leavesFallback = (slot: number, col: string) => {
+        withTile(slot, () => {
+            fill(col);
+            ctx.fillStyle = shadeHex(col, 25);
+            for (let i = 0; i < 28; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            ctx.fillStyle = shadeHex(col, -25);
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        });
+    };
+    const saplingFallback = (slot: number, leafCol: string, stemCol: string) => {
+        withTile(slot, () => {
+            // transparent bg — only draw stem + canopy
+            ctx.fillStyle = stemCol;
+            ctx.fillRect(7, 11, 2, 4);
+            ctx.fillStyle = leafCol;
+            ctx.fillRect(5, 5, 6, 5); ctx.fillRect(6, 4, 4, 1); ctx.fillRect(6, 10, 4, 1);
+            ctx.fillStyle = shadeHex(leafCol, 25);
+            ctx.fillRect(6, 5, 2, 1); ctx.fillRect(9, 7, 1, 1);
+        });
+    };
+    // Jungle
+    logTopFallback(190, '#8c6437', '#5f6420'); logSideFallback(191, '#5f6420'); planksFallback(192, '#8c6437'); leavesFallback(193, '#327028'); saplingFallback(194, '#327028', '#5f6420');
+    // Dark Oak
+    logTopFallback(195, '#46321f', '#302218'); logSideFallback(196, '#302218'); planksFallback(197, '#46321f'); leavesFallback(198, '#1e461e'); saplingFallback(199, '#1e461e', '#302218');
+    // Acacia
+    logTopFallback(200, '#aa8255', '#694e34'); logSideFallback(201, '#694e34'); planksFallback(202, '#aa8255'); leavesFallback(203, '#6e8c32'); saplingFallback(204, '#6e8c32', '#694e34');
+
+    // ===== Magnetic Fields biome tiles (Magnetic Warden content) =====
+    // 205: Magnetite Block — gray metallic with dark flecks + subtle purple sheen.
+    withTile(205, () => {
+        fill('#4a4a55');
+        ctx.fillStyle = '#2e2e36';
+        for (let i = 0; i < 26; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#6a6a78';
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#5b4a78';
+        for (let i = 0; i < 6; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+    });
+
+    // Crystal silhouette on a transparent background (cross-plane cutout).
+    const crystalTile = (slot: number, core: string, light: string, dark: string) => {
+        withTile(slot, () => {
+            const set = (x: number, y: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); };
+            // Vertical faceted shard, widest at the middle.
+            const spans: [number, number, number][] = [
+                [7, 1, 1], [6, 2, 3], [6, 3, 3], [5, 4, 5], [5, 5, 5],
+                [4, 6, 7], [4, 7, 7], [5, 8, 5], [5, 9, 5], [6, 10, 3], [6, 11, 3], [7, 12, 1], [7, 13, 1],
+            ];
+            for (const [x, y, w] of spans) {
+                for (let i = 0; i < w; i++) set(x + i, y, core);
+            }
+            // Left facet lighter, right facet darker for a faceted read.
+            for (const [x, y, w] of spans) {
+                set(x, y, light);
+                set(x + w - 1, y, dark);
+            }
+        });
+    };
+    crystalTile(206, '#ff4030', '#ff8a7a', '#a01810'); // Positive Magnetite Crystal (red)
+    crystalTile(207, '#3060ff', '#84a4ff', '#102aa0'); // Negative Magnetite Crystal (blue)
+    crystalTile(210, '#b388ff', '#e0ccff', '#6a3fb0'); // Magnetic Shield Crystal (violet glow)
+    crystalTile(212, '#7fe0ff', '#d6f7ff', '#3aa8d0'); // Magnetite Shard (bright cyan contrast)
+
+    // 211: Charged Magnetite — lighter emissive accent with glowing purple veins.
+    withTile(211, () => {
+        fill('#5a5470');
+        ctx.fillStyle = '#3a3550';
+        for (let i = 0; i < 22; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#b9a8ff';
+        for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#e6dcff';
+        ctx.fillRect(3, 3, 2, 1); ctx.fillRect(10, 6, 2, 1); ctx.fillRect(6, 11, 2, 1); ctx.fillRect(12, 12, 1, 2);
+    });
+
+    // 208: Magnetic Spike — dark metal spikes on transparent background.
+    withTile(208, () => {
+        const tri = (cx: number, baseY: number, h: number, color: string) => {
+            ctx.fillStyle = color;
+            for (let r = 0; r < h; r++) {
+                const half = Math.max(0, Math.floor((h - r) / 2));
+                for (let x = cx - half; x <= cx + half; x++) ctx.fillRect(x, baseY - r, 1, 1);
+            }
+        };
+        tri(3, 15, 9, '#2b2b30'); tri(8, 15, 13, '#37373d'); tri(12, 15, 8, '#2b2b30');
+        // metallic glints near the tips
+        ctx.fillStyle = '#7a7a86';
+        ctx.fillRect(8, 3, 1, 2); ctx.fillRect(3, 7, 1, 1); ctx.fillRect(12, 8, 1, 1);
+    });
+
+    // 209: Magnetic Boss Summoner — purple housing with a red/blue polarity core.
+    withTile(209, () => {
+        fill('#3a1054');
+        ctx.fillStyle = '#7b1fa2';
+        ctx.fillRect(1, 1, 14, 14);
+        ctx.fillStyle = '#2a0a3e';
+        ctx.fillRect(3, 3, 10, 10);
+        ctx.fillStyle = '#ff4030'; ctx.fillRect(4, 6, 3, 4);
+        ctx.fillStyle = '#3060ff'; ctx.fillRect(9, 6, 3, 4);
+        ctx.fillStyle = '#e0ccff'; ctx.fillRect(7, 4, 2, 8);
+    });
+
+    // 213: Magnetite Bricks — dark metallic brick courses with offset joints.
+    withTile(213, () => {
+        fill('#43434f');
+        ctx.fillStyle = '#2c2c36';
+        for (let y = 0; y < 16; y += 4) ctx.fillRect(0, y, 16, 1);                 // horizontal mortar
+        for (let y = 0; y < 16; y += 8) { ctx.fillRect(8, y, 1, 4); ctx.fillRect(0, y + 4, 1, 4); ctx.fillRect(8, y + 4, 1, 4); }
+        ctx.fillStyle = '#56566a';
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        ctx.fillStyle = '#5b4a78';
+        ctx.fillRect(3, 1, 1, 1); ctx.fillRect(11, 9, 1, 1);
+    });
+
+    // 214: Chiseled Magnetite — framed panel with an engraved polarity sigil.
+    withTile(214, () => {
+        fill('#4a4a58');
+        ctx.fillStyle = '#2c2c36';
+        ctx.fillRect(1, 1, 14, 14);
+        ctx.fillStyle = '#43434f';
+        ctx.fillRect(3, 3, 10, 10);
+        ctx.fillStyle = '#ff4030'; ctx.fillRect(6, 5, 4, 1); ctx.fillRect(7, 4, 2, 3);   // '+' (red)
+        ctx.fillStyle = '#3060ff'; ctx.fillRect(6, 10, 4, 1);                            // '-' (blue)
+        ctx.fillStyle = '#6a6a80';
+        ctx.fillRect(2, 2, 1, 1); ctx.fillRect(13, 2, 1, 1); ctx.fillRect(2, 13, 1, 1); ctx.fillRect(13, 13, 1, 1);
     });
 
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);

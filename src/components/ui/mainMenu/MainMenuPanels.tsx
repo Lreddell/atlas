@@ -113,6 +113,10 @@ interface WorldSelectPanelProps {
     onCancel: () => void;
     onExportWorld: () => void;
     onImportWorld: () => void;
+    onRenameWorld: () => void;
+    onOpenSaveFolder: () => void;
+    canOpenSaveFolder: boolean;
+    storageInfo?: string;
 }
 
 export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
@@ -126,6 +130,10 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
     onCancel,
     onExportWorld,
     onImportWorld,
+    onRenameWorld,
+    onOpenSaveFolder,
+    canOpenSaveFolder,
+    storageInfo,
 }) => (
     <div className="relative z-10 flex h-full w-full max-w-[600px] flex-col items-center px-3 py-6 sm:py-10">
         <h1 className={submenuHeadingClass}>Select World</h1>
@@ -169,13 +177,26 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                 <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[calc(100vw-2rem)] sm:w-[280px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
                 <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
                 <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
                 <MenuButton label="Import World" onClick={onImportWorld} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
+            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton
+                    label="Open Save Folder"
+                    onClick={onOpenSaveFolder}
+                    disabled={!selectedWorldId || !canOpenSaveFolder}
+                    tooltip={!canOpenSaveFolder ? 'Desktop build only' : undefined}
+                    width="w-[calc(100vw-2rem)] sm:w-[185px]"
+                />
+                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
+            </div>
+            {storageInfo && (
+                <div className="mt-1 text-center text-xs font-minecraft text-gray-400">{storageInfo}</div>
+            )}
         </div>
     </div>
 );

@@ -5,6 +5,7 @@ import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasURL, ATLAS_STRIDE, ATLAS_PADDING, getAtlasDimensions } from '../../utils/textures';
 import { resolveTexture } from '../../systems/world/textureResolver';
 import { getShapeBoxes } from '../../systems/world/blockShapes';
+import { getMaxDurability } from '../../systems/registry/itemStats';
 
 interface SlotProps {
   item: ItemStack | null;
@@ -28,6 +29,17 @@ export const Slot: React.FC<SlotProps> = ({
   const blockDef = item ? BLOCKS[item.type] : null;
   const atlasURL = getAtlasURL();
   const { width } = getAtlasDimensions(); // Real POT width of texture
+
+  // Durability bar: shown only for a damaged tool/weapon (current < max).
+  const maxDurability = item ? getMaxDurability(item.type) : undefined;
+  const curDurability = item?.instance?.durability;
+  const showDurability = maxDurability !== undefined && curDurability !== undefined && curDurability < maxDurability;
+  const durabilityFrac = showDurability ? Math.max(0, curDurability / maxDurability) : 0;
+  const durabilityBar = showDurability ? (
+      <div className="absolute bottom-0.5 left-1 right-1 h-1 bg-black/70 pointer-events-none z-20">
+          <div className="h-full" style={{ width: `${durabilityFrac * 100}%`, background: `hsl(${durabilityFrac * 120}, 90%, 45%)` }} />
+      </div>
+  ) : null;
 
   const getFaceStyle = (texIdx: number, brightness: number, displaySize: number) => {
       if (!atlasURL) return {};
@@ -116,7 +128,10 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.SPRUCE_SAPLING &&
                    item.type !== BlockType.BIRCH_SAPLING &&
                    item.type !== BlockType.CHERRY_SAPLING &&
-                   item.type !== BlockType.WATER && 
+                   item.type !== BlockType.JUNGLE_SAPLING &&
+                   item.type !== BlockType.DARK_OAK_SAPLING &&
+                   item.type !== BlockType.ACACIA_SAPLING &&
+                   item.type !== BlockType.WATER &&
                    item.type !== BlockType.LAVA &&
                    item.type !== BlockType.DEAD_BUSH &&
                    item.type !== BlockType.GRASS_PLANT &&
@@ -124,7 +139,12 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.DANDELION &&
                    item.type !== BlockType.DEBUG_CROSS &&
                    item.type !== BlockType.WHEAT_SEEDS &&
-                   item.type !== BlockType.PINK_FLOWER;
+                   item.type !== BlockType.PINK_FLOWER &&
+                   item.type !== BlockType.POSITIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.NEGATIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.MAGNETIC_SPIKE &&
+                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL &&
+                   item.type !== BlockType.MAGNETITE_SHARD;
 
       if (is3D) {
           // Top Face (dy=1)
@@ -225,6 +245,8 @@ export const Slot: React.FC<SlotProps> = ({
                 {item.count}
             </span>
         )}
+
+        {durabilityBar}
     </div>
   );
 };
