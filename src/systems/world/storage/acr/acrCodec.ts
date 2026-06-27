@@ -36,10 +36,14 @@ export interface RandomAccessFile {
     flush(): Promise<void> | void;
 }
 
-/** Optional payload compression. Omit to store raw (compression type 0). */
+/**
+ * Optional payload compression. Omit to store raw (compression type 0).
+ * compress/decompress may be sync (Node zlib) OR async (browser CompressionStream)
+ * — the codec awaits the result either way.
+ */
 export interface Compressor {
-    compress(data: Uint8Array): Uint8Array;
-    decompress(data: Uint8Array): Uint8Array;
+    compress(data: Uint8Array): Uint8Array | Promise<Uint8Array>;
+    decompress(data: Uint8Array): Uint8Array | Promise<Uint8Array>;
 }
 
 // --- Big-endian scalar helpers (Number-safe: ms timestamps stay < 2^53) ---
@@ -205,6 +209,13 @@ export class RegionFile {
         return { offset: this.offsets[slot], count: this.counts[slot] };
     }
 
+    /** Every slot index that currently holds a chunk (for export/enumeration). */
+    presentSlots(): number[] {
+        const out: number[] = [];
+        for (let s = 0; s < SLOTS_PER_REGION; s++) if (this.hasChunk(s)) out.push(s);
+        return out;
+    }
+
     /** Read a chunk by slot index, or null if absent. */
     async readChunk(slot: number): Promise<ChunkStorageData | null> {
         this.ensureOpen();
@@ -226,7 +237,7 @@ export class RegionFile {
             body = payload;
         } else if (compression === COMPRESSION_DEFLATE) {
             if (!this.compressor) throw new AcrFormatError('Compressed .acr chunk but no decompressor provided.');
-            body = this.compressor.decompress(payload);
+            body = await this.compressor.decompress(payload);
         } else {
             throw new AcrFormatError(`Unknown .acr compression type ${compression}.`);
         }
@@ -234,12 +245,12 @@ export class RegionFile {
     }
 
     /** Encode a chunk body into its slot payload (length + compression + bytes). */
-    private encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Uint8Array {
+    private async encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Promise<Uint8Array> {
         const body = encodeChunkBody(blocks, light, meta, timestampMs);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
-            const compressed = this.compressor.compress(body);
+            const compressed = await this.compressor.compress(body);
             // Only keep compression if it actually helps.
             if (compressed.length < body.length) { compType = COMPRESSION_DEFLATE; payload = compressed; }
         }
@@ -288,7 +299,7 @@ export class RegionFile {
     private async writePayloadSectors(
         slot: number, blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number,
     ): Promise<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> {
-        const payload = this.encodePayload(blocks, light, meta, timestampMs);
+        const payload = await this.encodePayload(blocks, light, meta, timestampMs);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
