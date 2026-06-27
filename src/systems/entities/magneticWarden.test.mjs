@@ -303,10 +303,11 @@ test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers
     assert.match(app, /entity\.magnetic_warden\.enrage/);
     const sounds = read('src/systems/sound/soundDefaults.ts');
     assert.match(sounds, /entity\.magnetic_warden\.enrage/);
-    // The boss bar shows 50%/25% phase markers + a pulse on transition.
+    // The boss bar shows modular phase markers (slam 50% / frenzy 25%) as
+    // Atlas-pixel diamond pips, plus a pulse on transition.
     const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /left: '50%'/);
-    assert.match(bar, /left: '25%'/);
+    assert.match(bar, /PHASE_MARKERS = \[0\.5, 0\.25\]/);
+    assert.match(bar, /PHASE_MARKERS\.map\(\(at\) => <PhaseMarker/);
     assert.match(bar, /boss:phase/);
     // The slam goes through a charge windup before launching.
     assert.match(manager, /slamState = 'charging'/);
