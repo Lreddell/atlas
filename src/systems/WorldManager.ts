@@ -171,6 +171,7 @@ export class WorldManager {
   
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
+  private saving = false; // guards processSaveQueue against overlapping runs
 
   constructor() {
     this.state = WorldTypes.createWorldState();
@@ -797,37 +798,65 @@ export class WorldManager {
       await this.processSaveQueue();
   }
 
+  /** True when there are unsaved chunk edits (lets callers skip no-op autosaves). */
+  public hasUnsavedChunks(): boolean {
+      return this.dirtyChunks.size > 0;
+  }
+
   private async processSaveQueue() {
+      // Re-entrancy guard: the 3s timer and an explicit forceSave can overlap.
+      if (this.saving) return;
       if (this.dirtyChunks.size === 0 || !this.activeWorldId) return;
 
-      const chunksToSave = Array.from(this.dirtyChunks);
-      this.dirtyChunks.clear();
-
-      for (const key of chunksToSave) {
-          const [cx, cz] = key.split(',').map(Number);
-          const blocks = WorldStore.getChunkData(this.state, cx, cz);
-          const light = WorldStore.getLightData(this.state, cx, cz);
-          const meta = WorldStore.getMetadataData(this.state, cx, cz);
-
-          if (blocks && light && meta) {
-              await WorldStorage.saveChunk(this.activeWorldId, cx, cz, { blocks, light, meta });
-              this.knownMissingStorageChunks.delete(key);
+      this.saving = true;
+      const worldId = this.activeWorldId;
+      try {
+          // Snapshot the dirty set and build ONE batch. The backend groups chunks
+          // by region and commits per region (payload-before-header). Dirty flags
+          // are cleared only AFTER the write succeeds; on failure they remain dirty
+          // so the chunks are retried on the next pass (no silent data loss).
+          const keys = Array.from(this.dirtyChunks);
+          const batch: Array<{ cx: number; cz: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array }> = [];
+          const savedKeys: string[] = [];
+          for (const key of keys) {
+              const [cx, cz] = key.split(',').map(Number);
+              const blocks = WorldStore.getChunkData(this.state, cx, cz);
+              const light = WorldStore.getLightData(this.state, cx, cz);
+              const meta = WorldStore.getMetadataData(this.state, cx, cz);
+              if (blocks && light && meta) { batch.push({ cx, cz, blocks, light, meta }); savedKeys.push(key); }
           }
+          if (batch.length === 0) return;
+
+          await WorldStorage.saveChunks(worldId, batch);
+
+          for (const key of savedKeys) {
+              this.dirtyChunks.delete(key);
+              this.knownMissingStorageChunks.delete(key); // now known to exist on disk
+          }
+      } catch (e) {
+          console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
+      } finally {
+          this.saving = false;
       }
   }
 
   private evict(cx: number, cz: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
       
-      // Force save if dirty before eviction
+      // Force save if dirty before eviction. The chunk's byte arrays are captured
+      // by reference into the write BEFORE evictChunk drops them, and the backend
+      // clones at write time, so the data stays safe even after we unload it here.
       if (this.dirtyChunks.has(key) && this.activeWorldId) {
+          const worldId = this.activeWorldId;
           const blocks = WorldStore.getChunkData(this.state, cx, cz);
           const light = WorldStore.getLightData(this.state, cx, cz);
           const meta = WorldStore.getMetadataData(this.state, cx, cz);
-          if (blocks && light && meta) {
-              void WorldStorage.saveChunk(this.activeWorldId, cx, cz, { blocks, light, meta });
-          }
           this.dirtyChunks.delete(key);
+          if (blocks && light && meta) {
+              void WorldStorage.saveChunks(worldId, [{ cx, cz, blocks, light, meta }])
+                  .then(() => { this.knownMissingStorageChunks.delete(key); })
+                  .catch((e) => console.error('[WorldManager] Failed to persist evicted chunk', key, e));
+          }
       }
 
       WorldStore.evictChunk(this.state, cx, cz);

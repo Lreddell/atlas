@@ -452,8 +452,8 @@ test('leaving the world mid-fight resets the arena before saving', () => {
     assert.match(app, /const resetSummonArena = useCallback/);
     assert.match(app, /resetSummonArena[\s\S]*?bossSummon\.cancel\(\)/);
     assert.match(app, /resetSummonArena[\s\S]*?despawnAllBosses\(\)/);
-    // ...invoked when quitting to the title screen, BEFORE the save runs.
-    assert.match(app, /resetSummonArena\(\);\s*\n\s*saveGame\(\)/);
+    // ...invoked when quitting to the title screen, BEFORE the (forced) save runs.
+    assert.match(app, /resetSummonArena\(\);[\s\S]{0,120}?saveGame\(\{ force: true \}\)/);
 });
 
 test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
