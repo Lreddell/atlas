@@ -2408,10 +2408,22 @@ const App: React.FC = () => {
 
       activeWorldIdRef.current = worldId;
 
-      // Acquire the world for writing (filesystem session lock on desktop; a no-op
-      // on IndexedDB). Best-effort: a clear warning rather than blocking entry.
-      try { await WorldStorage.openWorld(worldId); }
-      catch (lockErr) { console.warn('[Saves] Could not acquire world lock:', lockErr); }
+      // Acquire the world for writing: a filesystem session lock on desktop, a
+      // sync-access-handle lock in the OPFS worker, a no-op on IndexedDB. A locked
+      // world (already open in another window/tab) must NOT be entered as writable —
+      // two writers would corrupt the save — so abort back to the menu with a clear
+      // message. Other (non-lock) open errors are logged and entry proceeds.
+      try {
+          await WorldStorage.openWorld(worldId);
+      } catch (lockErr) {
+          if ((lockErr as { code?: string })?.code === 'LOCKED') {
+              activeWorldIdRef.current = null;
+              setAppState('menu');
+              alert('This world is already open in another window or browser tab. Close it there first, then try again.');
+              return;
+          }
+          console.warn('[Saves] Could not acquire world lock:', lockErr);
+      }
       // Entering a world is a user gesture — ask the browser to keep our storage
       // persistent so worlds aren't auto-evicted under storage pressure (no-op on
       // desktop / when already granted).

@@ -125,8 +125,28 @@ test('WorldManager batches dirty chunks and only clears them after a successful 
     assert.match(wm, /catch \(e\) \{[\s\S]*?stay dirty for retry/);
     // knownMissing updated only after a successful persist.
     assert.match(wm, /this\.knownMissingStorageChunks\.delete\(key\); \/\/ now known to exist on disk/);
-    // Eviction persists via the batched path (bytes captured before evictChunk drops them).
-    assert.match(wm, /void WorldStorage\.saveChunks\(worldId, \[\{ cx, cz, blocks, light, meta \}\]\)/);
+    // (Eviction of dirty chunks is covered by its own test below — it now DEFERS
+    // rather than fire-and-forget saving, so there is no eviction-time save here.)
+});
+
+test('eviction never unloads a dirty chunk (no lost edits on a failed save)', () => {
+    const wm = read('src/systems/WorldManager.ts');
+    // evict() bails out (unloading nothing) while the chunk is still dirty...
+    assert.match(wm, /private evict\(cx: number, cz: number\): boolean \{[\s\S]*?if \(this\.dirtyChunks\.has\(key\)\) \{\s*\n\s*return false;/);
+    // ...and the old "delete dirty flag + fire-and-forget save" path is gone.
+    assert.doesNotMatch(wm, /this\.dirtyChunks\.delete\(key\);[\s\S]{0,200}?WorldStore\.evictChunk/);
+    // the scan only counts real unloads and flushes deferred-dirty chunks for a later pass
+    assert.match(wm, /if \(this\.evict\(kcx, kcz\)\) \{[\s\S]*?evicted\+\+/);
+    assert.match(wm, /deferredDirty[\s\S]*?void this\.processSaveQueue\(\)/);
+});
+
+test('a locked world aborts entry instead of silently continuing as writable', () => {
+    const app = read('src/App.tsx');
+    // LOCKED -> clear the active world, go back to the menu, tell the user, and return.
+    assert.match(app, /code\?: string \}\)\?\.code === 'LOCKED'\) \{[\s\S]*?activeWorldIdRef\.current = null;[\s\S]*?setAppState\('menu'\);[\s\S]*?return;/);
+    // the lock errors carry a LOCKED code from both backends
+    assert.match(read('electron/saves/savesManager.cjs'), /err\.code = 'LOCKED'/);
+    assert.match(read('src/systems/world/storage/opfs/OpfsSavesCore.ts'), /err\.code = 'LOCKED'/);
 });
 
 test('App integrates the session lock, death-save, cursorStack, and clean-skip autosave', () => {

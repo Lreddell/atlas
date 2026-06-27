@@ -182,3 +182,13 @@ class WorldStorageSystem {
 }
 
 export const WorldStorage = new WorldStorageSystem();
+
+// Dev-only: expose the storage facade so end-to-end OPFS / IndexedDB behavior can
+// be driven from a real browser (e.g. Playwright) without going through the full
+// 3D game UI. Stripped from production builds (import.meta.env.DEV is false).
+try {
+    const env = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
+    if (env?.DEV && typeof window !== 'undefined') {
+        (window as unknown as { __atlasStorage?: unknown }).__atlasStorage = WorldStorage;
+    }
+} catch { /* non-vite environment (unit tests) */ }
