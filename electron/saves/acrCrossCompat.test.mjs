@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const cjs = require('./acrCore.cjs');
 
 const ts = await loadTs(`
-    export { RegionFile, encodeChunkBody, decodeChunkBody } from './src/systems/world/storage/acr/acrCodec.ts';
+    export { RegionFile, encodeChunkBody, decodeChunkBody, AcrFormatError } from './src/systems/world/storage/acr/acrCodec.ts';
     export { regionForChunk, slotForChunk, regionFileName } from './src/systems/world/storage/regionMath.ts';
 `);
 
@@ -67,6 +67,34 @@ test('an identical write sequence yields byte-identical .acr files (TS vs CJS)',
 
     assert.equal(fa.buf.length, fb.buf.length, 'file sizes differ');
     eq(fa.buf, fb.buf);
+});
+
+test('CJS codec also relocates a same-size rewrite (never overwrites committed sectors)', async () => {
+    const f = new MemFile();
+    const rf = new cjs.RegionFile(f, null); // raw => deterministic sizes
+    await rf.open();
+    await rf.writeChunk(0, { ...chunk(1, 200, 0, 0), timestamp: 1 });
+    const off0 = rf.location(0).offset;
+    await rf.writeChunk(0, { ...chunk(2, 200, 0, 0), timestamp: 2 }); // same sector count
+    const off1 = rf.location(0).offset;
+    assert.notEqual(off1, off0, 'same-size rewrite must relocate');
+    eq((await rf.readChunk(0)).blocks, chunk(2, 200, 0, 0).blocks);
+    // old run freed only after commit => a fresh same-size chunk reuses it
+    await rf.writeChunk(1, { ...chunk(3, 200, 0, 0), timestamp: 3 });
+    assert.equal(rf.location(1).offset, off0);
+    eq((await rf.readChunk(1)).blocks, chunk(3, 200, 0, 0).blocks);
+});
+
+test('CJS decodeChunkBody enforces the same strict framing as the TS codec', () => {
+    const good = cjs.encodeChunkBody(new Uint8Array([1, 2, 3]), new Uint8Array([4, 5]), new Uint8Array([6]), 1);
+    // TS and CJS accept the same good body.
+    eq(cjs.decodeChunkBody(good).blocks, ts.decodeChunkBody(good).blocks);
+    assert.throws(() => cjs.decodeChunkBody(good.subarray(0, 10)), cjs.AcrFormatError); // truncated
+    assert.throws(() => cjs.decodeChunkBody(good.subarray(0, good.length - 1)), cjs.AcrFormatError); // over-declared
+    const trailing = new Uint8Array(good.length + 2); trailing.set(good, 0);
+    assert.throws(() => cjs.decodeChunkBody(trailing), cjs.AcrFormatError); // trailing garbage
+    const bad = good.slice(); bad[0] = 42;
+    assert.throws(() => cjs.decodeChunkBody(bad), cjs.AcrFormatError); // bad schema
 });
 
 test('TS-written world is readable by CJS, and vice versa', async () => {

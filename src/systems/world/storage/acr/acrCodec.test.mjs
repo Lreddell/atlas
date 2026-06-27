@@ -13,10 +13,13 @@ const {
     DATA_START_OFFSET,
     SECTOR_SIZE,
     HEADER_SECTORS,
+    LOCATION_TABLE_OFFSET,
 } = await loadTs(`
     export { RegionFile, AcrFormatError, encodeChunkBody, decodeChunkBody } from './src/systems/world/storage/acr/acrCodec.ts';
-    export { ACR_MAGIC, DATA_START_OFFSET, SECTOR_SIZE, HEADER_SECTORS } from './src/systems/world/storage/acr/acrFormat.ts';
+    export { ACR_MAGIC, DATA_START_OFFSET, SECTOR_SIZE, HEADER_SECTORS, LOCATION_TABLE_OFFSET } from './src/systems/world/storage/acr/acrFormat.ts';
 `);
+
+function readU32(buf, off) { return (buf[off] << 24 | buf[off + 1] << 16 | buf[off + 2] << 8 | buf[off + 3]) >>> 0; }
 
 // Minimal in-memory RandomAccessFile.
 class MemFile {
@@ -174,4 +177,54 @@ test('a future chunk body schema fails safely on read', () => {
     const body = encodeChunkBody(new Uint8Array([1, 2, 3]), new Uint8Array(0), new Uint8Array(0), 1);
     body[0] = 99; // bodySchema = 99
     assert.throws(() => decodeChunkBody(body), /schema/);
+});
+
+test('rewriting a slot with the SAME sector count relocates — never overwrites the committed sectors', async () => {
+    const f = new MemFile();
+    const rf = new RegionFile(f, null); // raw => deterministic sizes
+    await rf.open();
+
+    // Fits in exactly one sector both times, so the sector COUNT is unchanged.
+    const a = chunk(1, 200, 0, 0);
+    await rf.writeChunk(0, { ...a, timestamp: 1 });
+    const loc0 = rf.location(0);
+    assert.equal(loc0.count, 1);
+
+    const b = chunk(2, 200, 0, 0); // same sizes => same sector count
+    await rf.writeChunk(0, { ...b, timestamp: 2 });
+    const loc1 = rf.location(0);
+    assert.equal(loc1.count, 1);
+    // (1) the committed offset moved — the old run was NOT overwritten in place.
+    assert.notEqual(loc1.offset, loc0.offset);
+    // committed on-disk location table agrees with the in-memory location.
+    assert.equal(readU32(f.buf, LOCATION_TABLE_OFFSET + 0 * 8), loc1.offset);
+    // (2) the chunk still reads back correctly (the NEW data).
+    eqChunk(await rf.readChunk(0), b);
+
+    // (3) the OLD run is freed only after the new header commit, so a fresh
+    // same-size chunk can now reuse exactly those sectors.
+    const c = chunk(3, 200, 0, 0);
+    await rf.writeChunk(1, { ...c, timestamp: 3 });
+    assert.equal(rf.location(1).offset, loc0.offset, 'old run should be reusable after the header commit');
+    eqChunk(await rf.readChunk(1), c);
+    eqChunk(await rf.readChunk(0), b); // slot 0 unaffected by the reuse
+});
+
+test('decodeChunkBody enforces strict framing (truncated / over-declared / trailing / bad schema)', () => {
+    const good = encodeChunkBody(new Uint8Array([1, 2, 3]), new Uint8Array([4, 5]), new Uint8Array([6]), 1);
+    eqChunk(decodeChunkBody(good), { blocks: new Uint8Array([1, 2, 3]), light: new Uint8Array([4, 5]), meta: new Uint8Array([6]) });
+
+    // shorter than the fixed header
+    assert.throws(() => decodeChunkBody(good.subarray(0, 10)), AcrFormatError);
+    assert.throws(() => decodeChunkBody(new Uint8Array(5)), AcrFormatError);
+    // declared length longer than the actual body (one byte missing)
+    assert.throws(() => decodeChunkBody(good.subarray(0, good.length - 1)), AcrFormatError);
+    // trailing garbage after the declared payload
+    const trailing = new Uint8Array(good.length + 3);
+    trailing.set(good, 0);
+    assert.throws(() => decodeChunkBody(trailing), AcrFormatError);
+    // unsupported schema
+    const badSchema = good.slice();
+    badSchema[0] = 99;
+    assert.throws(() => decodeChunkBody(badSchema), AcrFormatError);
 });

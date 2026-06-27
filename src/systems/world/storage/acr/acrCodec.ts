@@ -88,16 +88,28 @@ export function encodeChunkBody(
     return out;
 }
 
-/** Parse a chunk body back into ChunkStorageData. Throws on a future bodySchema. */
+/**
+ * Parse a chunk body back into ChunkStorageData with STRICT framing: the body
+ * must be at least the header size, carry a supported schema, and be EXACTLY the
+ * length its declared section sizes imply — no missing bytes, no trailing
+ * garbage. Anything else throws rather than silently returning wrong/short data.
+ */
 export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
+    if (body.length < BODY_HEADER_BYTES) {
+        throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
+    }
     const schema = body[0];
     if (schema !== BODY_SCHEMA_VERSION) {
-        throw new Error(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
+        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
     const blocksLen = getU32(body, 9);
     const lightLen = getU32(body, 13);
     const metaLen = getU32(body, 17);
+    const expectedLength = BODY_HEADER_BYTES + blocksLen + lightLen + metaLen;
+    if (body.length !== expectedLength) {
+        throw new AcrFormatError(`Corrupt .acr chunk body: declared ${expectedLength} bytes (header + ${blocksLen}+${lightLen}+${metaLen}) but body is ${body.length}`);
+    }
     let p = BODY_HEADER_BYTES;
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
@@ -188,6 +200,11 @@ export class RegionFile {
         return this.offsets[slot] !== 0 && this.counts[slot] !== 0;
     }
 
+    /** Committed location-table entry for a slot (mirrors the on-disk header). */
+    location(slot: number): { offset: number; count: number } {
+        return { offset: this.offsets[slot], count: this.counts[slot] };
+    }
+
     /** Read a chunk by slot index, or null if absent. */
     async readChunk(slot: number): Promise<ChunkStorageData | null> {
         this.ensureOpen();
@@ -276,15 +293,16 @@ export class RegionFile {
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
 
-        let target: number;
+        // ALWAYS allocate a fresh sector run — never overwrite the sectors the
+        // committed header currently points at, even when the sector count is
+        // unchanged. The old run is freed only AFTER the header commit (see
+        // writeChunkBatch), so a crash mid-write leaves the committed chunk fully
+        // intact and the new sectors are simply orphaned. The old run stays marked
+        // used during allocation here, guaranteeing a different offset.
+        const target = this.allocate(need);
         let freeOffset = 0;
         let freeCount = 0;
-        if (oldOffset >= HEADER_SECTORS && oldCount === need) {
-            target = oldOffset; // exact-size rewrite in place (matches Minecraft)
-        } else {
-            target = this.allocate(need); // fresh run; old run freed only after commit
-            if (oldOffset >= HEADER_SECTORS && oldCount > 0) { freeOffset = oldOffset; freeCount = oldCount; }
-        }
+        if (oldOffset >= HEADER_SECTORS && oldCount > 0) { freeOffset = oldOffset; freeCount = oldCount; }
 
         const sectorBuf = new Uint8Array(need * SECTOR_SIZE); // zero-padded tail
         sectorBuf.set(payload, 0);

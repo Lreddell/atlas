@@ -61,14 +61,23 @@ function encodeChunkBody(blocks, light, meta, timestampMs) {
 }
 
 function decodeChunkBody(body) {
+    // STRICT framing (mirror of acrCodec.ts): min length, supported schema, and an
+    // exact total length — no missing bytes, no trailing garbage.
+    if (body.length < BODY_HEADER_BYTES) {
+        throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
+    }
     const schema = body[0];
     if (schema !== BODY_SCHEMA_VERSION) {
-        throw new Error(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
+        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
     const blocksLen = getU32(body, 9);
     const lightLen = getU32(body, 13);
     const metaLen = getU32(body, 17);
+    const expectedLength = BODY_HEADER_BYTES + blocksLen + lightLen + metaLen;
+    if (body.length !== expectedLength) {
+        throw new AcrFormatError(`Corrupt .acr chunk body: declared ${expectedLength} bytes (header + ${blocksLen}+${lightLen}+${metaLen}) but body is ${body.length}`);
+    }
     let p = BODY_HEADER_BYTES;
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
@@ -147,6 +156,9 @@ class RegionFile {
 
     hasChunk(slot) { return this.offsets[slot] !== 0 && this.counts[slot] !== 0; }
 
+    /** Committed location-table entry for a slot (mirrors the on-disk header). */
+    location(slot) { return { offset: this.offsets[slot], count: this.counts[slot] }; }
+
     async readChunk(slot) {
         this._ensureOpen();
         const offset = this.offsets[slot];
@@ -212,13 +224,13 @@ class RegionFile {
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
-        let target; let freeOffset = 0; let freeCount = 0;
-        if (oldOffset >= HEADER_SECTORS && oldCount === need) {
-            target = oldOffset;
-        } else {
-            target = this._allocate(need);
-            if (oldOffset >= HEADER_SECTORS && oldCount > 0) { freeOffset = oldOffset; freeCount = oldCount; }
-        }
+        // ALWAYS allocate a fresh run — never overwrite the committed sectors, even
+        // when the sector count is unchanged. The old run is freed only after the
+        // header commit (see writeChunkBatch), so a crash mid-write keeps the
+        // committed chunk intact. (Mirror of acrCodec.ts.)
+        const target = this._allocate(need);
+        let freeOffset = 0; let freeCount = 0;
+        if (oldOffset >= HEADER_SECTORS && oldCount > 0) { freeOffset = oldOffset; freeCount = oldCount; }
         const sectorBuf = new Uint8Array(need * SECTOR_SIZE);
         sectorBuf.set(payload, 0);
         await this.file.write(sectorBuf, target * SECTOR_SIZE);
