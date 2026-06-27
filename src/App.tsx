@@ -603,40 +603,54 @@ const App: React.FC = () => {
       ? 'controlled'
       : (isWearingIronArmor(equipment) ? 'ferro' : 'none');
 
-  const saveGame = useCallback(async () => {
+  // Signature of the last persisted player/world state (excludes time, which
+  // advances every tick) so a periodic autosave can skip a redundant write when
+  // nothing meaningful changed. Forced saves (pause/quit/unload/respawn) ignore it.
+  const lastSaveSignatureRef = useRef('');
+
+  const saveGame = useCallback(async (opts?: { force?: boolean }) => {
       if (!activeWorldIdRef.current) return;
-      
+
+      const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
+      const playerData = {
+          position: { x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z },
+          rotation: { x: currentRotation.x, y: currentRotation.y },
+          inventory: inventory,
+          health: health,
+          hunger: hunger,
+          saturation: saturation,
+          breath: breath,
+          gameMode: gameMode,
+          selectedSlot: selectedSlot,
+          equipment: equipment,
+          cursorStack: cursorStack, // previously dropped on reload; now persisted
+      };
+      const spawnPoint = worldManager.getSpawnPoint();
+      const worldSpawn = worldManager.getWorldSpawn();
+      const progressionData = progression.serialize();
+
+      // Change-detection: skip the metadata write + chunk flush when an autosave
+      // tick finds nothing dirty and no player/world change since the last save.
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData });
+      if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
+          return;
+      }
+
       const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
       if (meta) {
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
-
-          const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
-          
-          // Persist the current game mode to the top-level metadata
-          // This ensures that if the user changed gamemode via commands, it persists on reload.
-          meta.gameMode = gameMode;
-
-          meta.player = {
-              position: { x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z },
-              rotation: { x: currentRotation.x, y: currentRotation.y },
-              inventory: inventory,
-              health: health,
-              hunger: hunger,
-              saturation: saturation,
-              breath: breath,
-              gameMode: gameMode,
-              selectedSlot: selectedSlot,
-              equipment: equipment
-          };
-          meta.spawnPoint = worldManager.getSpawnPoint();
-          meta.worldSpawn = worldManager.getWorldSpawn();
-          meta.progression = progression.serialize();
+          meta.gameMode = gameMode; // persist command-driven gamemode changes
+          meta.player = playerData;
+          meta.spawnPoint = spawnPoint;
+          meta.worldSpawn = worldSpawn;
+          meta.progression = progressionData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
+          lastSaveSignatureRef.current = signature;
           console.log(`[AutoSave] World ${meta.name} saved.`);
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -656,7 +670,7 @@ const App: React.FC = () => {
   // Best-effort save when the window/tab is closed or killed mid-session.
   useEffect(() => {
       if (appState !== 'game') return;
-      const onPageHide = () => { void saveGameRef.current(); };
+      const onPageHide = () => { void saveGameRef.current({ force: true }); };
       window.addEventListener('pagehide', onPageHide);
       window.addEventListener('beforeunload', onPageHide);
       return () => {
@@ -1954,8 +1968,8 @@ const App: React.FC = () => {
         if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
         // PAUSE: Save Immediately
-        saveGame();
-        
+        saveGame({ force: true });
+
         setIsPaused(true); enterUIMode(); return;
     }
     if (showCommandInput) { 
@@ -2343,9 +2357,12 @@ const App: React.FC = () => {
     }
 
     const spawnVec = new THREE.Vector3(spawn!.x, spawn!.y, spawn!.z);
-    
+
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
+    // Persist the post-death state immediately (cleared bed spawn, new position,
+    // reset health/inventory) so a crash before the next autosave can't revert it.
+    void saveGameRef.current({ force: true });
     resumeFromUserGesture('respawn');
   };
 
@@ -2354,7 +2371,10 @@ const App: React.FC = () => {
       // resume) has a clean, re-summonable encounter rather than a flattened dais
       // with the bridges gone and the boss missing.
       resetSummonArena();
-      saveGame().then(() => {
+      const quittingWorldId = activeWorldIdRef.current;
+      saveGame({ force: true }).then(() => {
+          // Release the world (drops the filesystem session lock + closes handles).
+          if (quittingWorldId) void WorldStorage.closeWorld(quittingWorldId).catch(() => {});
           soundManager.setGamePaused(false, 2.5);
           setAppState('menu');
           setOpenContainer(null);
@@ -2386,6 +2406,12 @@ const App: React.FC = () => {
       }
 
       activeWorldIdRef.current = worldId;
+
+      // Acquire the world for writing (filesystem session lock on desktop; a no-op
+      // on IndexedDB). Best-effort: a clear warning rather than blocking entry.
+      try { await WorldStorage.openWorld(worldId); }
+      catch (lockErr) { console.warn('[Saves] Could not acquire world lock:', lockErr); }
+      lastSaveSignatureRef.current = ''; // force a save on first autosave in this world
 
       resetGenConfig();
       if (meta.worldGenConfig) {
@@ -2428,6 +2454,8 @@ const App: React.FC = () => {
           setInventory(meta.player.inventory);
           setSelectedSlot(meta.player.selectedSlot);
           setEquipment({ ...createEmptyEquipment(), ...(meta.player.equipment as Partial<Equipment> | undefined) });
+          setCursorStack(meta.player.cursorStack ?? null); // restore a held-on-cursor item
+
           
           const pos = meta.player.position;
           const spawnVec = new THREE.Vector3(pos.x, pos.y, pos.z);
