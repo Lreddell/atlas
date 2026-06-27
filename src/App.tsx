@@ -57,6 +57,7 @@ import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
 import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
+import { requestPersistentStorage } from './systems/world/storage/storagePersistence';
 import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
@@ -2411,6 +2412,10 @@ const App: React.FC = () => {
       // on IndexedDB). Best-effort: a clear warning rather than blocking entry.
       try { await WorldStorage.openWorld(worldId); }
       catch (lockErr) { console.warn('[Saves] Could not acquire world lock:', lockErr); }
+      // Entering a world is a user gesture — ask the browser to keep our storage
+      // persistent so worlds aren't auto-evicted under storage pressure (no-op on
+      // desktop / when already granted).
+      void requestPersistentStorage();
       lastSaveSignatureRef.current = ''; // force a save on first autosave in this world
 
       resetGenConfig();

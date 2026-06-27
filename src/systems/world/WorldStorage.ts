@@ -70,6 +70,11 @@ class WorldStorageSystem {
         return this.backendPromise;
     }
 
+    /** Human-readable name of the active storage backend (for the save-info UI). */
+    public async getBackendKind(): Promise<'desktop-fs' | 'indexeddb' | 'opfs'> {
+        return (await this.getBackend()).kind;
+    }
+
     // --- META API (unchanged signatures) ---
 
     public async getAllWorlds(): Promise<WorldMetadata[]> {
