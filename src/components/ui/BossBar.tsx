@@ -7,6 +7,32 @@ import { soundManager } from '../../systems/sound/SoundManager';
 // (boss:spawned / boss:damaged / boss:defeated / boss:shield / boss:polarity) so
 // it has no direct dependency on the entity or combat systems.
 
+// Phase thresholds (fraction of max HP) where the boss escalates. The bar draws a
+// segment marker at each so players can read upcoming phase changes — modular:
+// extend this list (or, later, feed it per-boss from boss:spawned) for any number
+// of phases. Magnetic Warden: slam phase at 50%, frenzy at 25%.
+const PHASE_MARKERS = [0.5, 0.25];
+
+// A small Atlas-pixel diamond pip that divides the bar at a phase threshold,
+// after Minecraft Dungeons' segment markers but kept crisp (shapeRendering=
+// crispEdges) and beveled to match the chunky Atlas UI. Spans the full bar height
+// so it reads as a notch through the fill, shield, and empty track alike.
+const PhaseMarker: React.FC<{ at: number }> = ({ at }) => (
+    <div
+        className="pointer-events-none absolute top-0 h-full -translate-x-1/2"
+        style={{ left: `${at * 100}%` }}
+    >
+        <svg width="10" height="16" viewBox="0 0 10 16" shapeRendering="crispEdges" className="block h-full">
+            {/* hard near-black outline (the segment cut) */}
+            <polygon points="5,0 10,8 5,16 0,8" fill="#08080c" />
+            {/* bone-white diamond face — reads on red, blue, and purple fills */}
+            <polygon points="5,2 8,8 5,14 2,8" fill="#f3ead4" />
+            {/* top bevel highlight */}
+            <polygon points="5,2 8,8 2,8" fill="#ffffff" fillOpacity="0.5" />
+        </svg>
+    </div>
+);
+
 export const BossBar: React.FC = () => {
     const [boss, dispatch] = useReducer(reduceBossBarState, null);
     // Shield crystals remaining and the starting count, so the bar can draw a
@@ -94,9 +120,9 @@ export const BossBar: React.FC = () => {
                         }}
                     />
                 )}
-                {/* Phase markers: the slam phase begins at 50% HP, frenzy at 25%. */}
-                <div className="absolute inset-y-0 w-px bg-black/70" style={{ left: '50%' }} />
-                <div className="absolute inset-y-0 w-px bg-black/70" style={{ left: '25%' }} />
+                {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
+                    threshold — the slam phase at 50% HP, frenzy at 25%. */}
+                {PHASE_MARKERS.map((at) => <PhaseMarker key={at} at={at} />)}
                 {/* White flash when a phase threshold is crossed. */}
                 <div
                     className="absolute inset-0 bg-white transition-opacity duration-200"
