@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { MenuButton } from './mainMenu/MainMenuControls';
 
-// In-app rename dialog (matches ConfirmModal styling). Renames a world's display
-// name only — the world id (and its save folder) stay the same.
+// In-app rename dialog. Renames a world's display name only — the world id (and
+// its save folder) stay the same. Styled to match the menus (raised panel +
+// MenuButton), like WhatsNewModal.
 
 interface RenameWorldModalProps {
     currentName: string;
@@ -16,36 +18,26 @@ export const RenameWorldModal: React.FC<RenameWorldModalProps> = ({ currentName,
 
     return (
         <div
-            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-black/60"
+            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
             onClick={onCancel}
         >
             <div
-                className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 border-2 border-black/80 bg-[#1c1c22] p-6 font-minecraft text-white [text-shadow:2px_2px_0px_#000]"
+                className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col gap-4 border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6 font-minecraft text-white"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="text-2xl text-[#b388ff]">Rename World</div>
+                <h2 className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">Rename World</h2>
                 <input
                     autoFocus
+                    type="text"
                     value={value}
                     maxLength={64}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
-                    className="w-full border-2 border-black/80 bg-black/50 px-3 py-2 text-lg text-white outline-none focus:border-[#b388ff]"
+                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-minecraft text-white outline-none focus:border-blue-500"
                 />
-                <div className="mt-2 flex gap-4">
-                    <button
-                        disabled={!trimmed}
-                        className="border border-black/80 bg-[#7b1fa2] px-6 py-2 text-lg hover:brightness-110 disabled:opacity-40"
-                        onClick={submit}
-                    >
-                        Save
-                    </button>
-                    <button
-                        className="border border-black/80 bg-[#3a3a44] px-6 py-2 text-lg hover:brightness-110"
-                        onClick={onCancel}
-                    >
-                        Cancel
-                    </button>
+                <div className="flex justify-center gap-3">
+                    <MenuButton label="Save" onClick={submit} disabled={!trimmed} variant="primary" width="w-[150px]" />
+                    <MenuButton label="Cancel" onClick={onCancel} width="w-[150px]" />
                 </div>
             </div>
         </div>
