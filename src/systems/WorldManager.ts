@@ -547,6 +547,7 @@ export class WorldManager {
       const shouldRunEvictionScan = this.desiredUpdateCounter % 6 === 0;
       if (shouldRunEvictionScan && this.chunkStages.size > chunks.length) {
           let evicted = 0;
+          let deferredDirty = false;
           const maxEvictionsPerPass = 16;
           const unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
 
@@ -555,12 +556,20 @@ export class WorldManager {
                   const [kcx, kcz] = key.split(',').map(Number);
                   const dist = Math.sqrt((kcx - center.cx)**2 + (kcz - center.cz)**2);
                   if (dist > unloadRadius) {
-                      this.evict(kcx, kcz);
-                      evicted++;
-                      if (evicted >= maxEvictionsPerPass) break;
+                      // evict() returns false for a still-dirty chunk (it stays loaded);
+                      // only count real unloads toward the per-pass budget.
+                      if (this.evict(kcx, kcz)) {
+                          evicted++;
+                          if (evicted >= maxEvictionsPerPass) break;
+                      } else {
+                          deferredDirty = true;
+                      }
                   }
               }
           }
+          // Persist any chunks we couldn't evict because they were dirty, so they
+          // become evictable on a later pass instead of lingering in memory.
+          if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
       }
   }
 
@@ -840,23 +849,19 @@ export class WorldManager {
       }
   }
 
-  private evict(cx: number, cz: number) {
+  /**
+   * Unload a chunk from memory. Returns false (and unloads NOTHING) if the chunk
+   * still has unsaved edits — we never drop a dirty chunk, because a failed save
+   * would then lose those edits with no copy left in memory to retry from. The
+   * chunk stays loaded + dirty; processSaveQueue() persists it (clearing the dirty
+   * flag only on success, exactly like the normal batch path), after which a later
+   * eviction pass can safely drop it.
+   */
+  private evict(cx: number, cz: number): boolean {
       const key = WorldCoords.getChunkKey(cx, cz);
-      
-      // Force save if dirty before eviction. The chunk's byte arrays are captured
-      // by reference into the write BEFORE evictChunk drops them, and the backend
-      // clones at write time, so the data stays safe even after we unload it here.
-      if (this.dirtyChunks.has(key) && this.activeWorldId) {
-          const worldId = this.activeWorldId;
-          const blocks = WorldStore.getChunkData(this.state, cx, cz);
-          const light = WorldStore.getLightData(this.state, cx, cz);
-          const meta = WorldStore.getMetadataData(this.state, cx, cz);
-          this.dirtyChunks.delete(key);
-          if (blocks && light && meta) {
-              void WorldStorage.saveChunks(worldId, [{ cx, cz, blocks, light, meta }])
-                  .then(() => { this.knownMissingStorageChunks.delete(key); })
-                  .catch((e) => console.error('[WorldManager] Failed to persist evicted chunk', key, e));
-          }
+
+      if (this.dirtyChunks.has(key)) {
+          return false; // defer — keep the dirty key + chunk data until confirmed persisted
       }
 
       WorldStore.evictChunk(this.state, cx, cz);
@@ -874,6 +879,7 @@ export class WorldManager {
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
       // Workers are stateless — no per-chunk eviction message needed.
+      return true;
   }
 
   public async preloadSpawnArea(centerCx: number, centerCz: number, radius: number, onProgress: LoadingProgressCallback) {
