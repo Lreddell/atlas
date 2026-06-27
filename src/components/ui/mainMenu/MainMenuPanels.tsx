@@ -195,7 +195,7 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                 <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
             {storageInfo && (
-                <div className="mt-1 text-center text-[11px] font-minecraft text-gray-400">{storageInfo}</div>
+                <div className="mt-1 text-center text-xs font-minecraft text-gray-400">{storageInfo}</div>
             )}
         </div>
     </div>
