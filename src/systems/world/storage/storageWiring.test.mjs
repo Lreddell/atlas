@@ -36,6 +36,53 @@ test('backend selection is feature detection (window.atlasDesktop?.saves), not a
     assert.match(ws, /return legacy/);
 });
 
+test('selection order is desktop-fs -> OPFS -> IndexedDB, each with a graceful fallback', () => {
+    const ws = read('src/systems/world/WorldStorage.ts');
+    // OPFS is tried only when the desktop bridge is absent, and is feature-detected.
+    assert.match(ws, /opfsBackendSupported\(\)/);
+    assert.match(ws, /new OpfsBackend\(legacy\)/);
+    // both desktop and OPFS init are wrapped so a failure falls back to IndexedDB
+    assert.match(ws, /OPFS backend failed to init; falling back to IndexedDB/);
+    // OPFS backend self-tests a real round-trip and terminates the worker on failure.
+    const opfs = read('src/systems/world/storage/OpfsBackend.ts');
+    assert.match(opfs, /selfTest\(\)/);
+    assert.match(opfs, /this\.worker\.terminate\(\)/);
+    // createSyncAccessHandle IO lives in a dedicated worker (never the main thread).
+    const core = read('src/systems/world/storage/opfs/OpfsSavesCore.ts');
+    assert.match(core, /createSyncAccessHandle\(\)/);
+    const worker = read('src/systems/world/storage/opfs/saveWorker.ts');
+    assert.match(worker, /navigator.*storage.*getDirectory|getDirectory\(\)/);
+});
+
+test('both region backends share one base (routing + migration); .acr codec is pure (no Node/DOM/Electron)', () => {
+    const base = read('src/systems/world/storage/RegionBackendBase.ts');
+    assert.match(base, /migrateWorlds/);
+    assert.match(base, /level\.json = the commit point|level\.json \(via create\) LAST|create\(world\)/);
+    const desktop = read('src/systems/world/storage/DesktopFsBackend.ts');
+    const opfs = read('src/systems/world/storage/OpfsBackend.ts');
+    assert.match(desktop, /extends RegionBackendBase/);
+    assert.match(opfs, /extends RegionBackendBase/);
+    // The codec must not import Node/DOM/Electron so it can run in worker + tests + main port.
+    const codec = read('src/systems/world/storage/acr/acrCodec.ts');
+    assert.doesNotMatch(codec, /from 'fs'|require\(|window\.|document\.|navigator\./);
+});
+
+test('storage persistence + save-management UI are wired', () => {
+    const app = read('src/App.tsx');
+    // persist() is requested on world entry (a user gesture).
+    assert.match(app, /requestPersistentStorage\(\)/);
+    const persist = read('src/systems/world/storage/storagePersistence.ts');
+    assert.match(persist, /navigator\.storage\.persist\(\)/);
+    assert.match(persist, /navigator\.storage\.estimate\(\)/);
+    // Rename + open-folder go through the storage layer / desktop bridge.
+    const menu = read('src/components/ui/mainMenu/useWorldMenu.ts');
+    assert.match(menu, /WorldStorage\.renameWorld\(/);
+    assert.match(menu, /atlasDesktop\?\.saves\?\.openFolder/);
+    assert.match(menu, /WorldStorage\.getBackendKind\(\)/);
+    // Rename uses an in-app modal (not native prompt).
+    assert.match(read('src/components/ui/MainMenu.tsx'), /RenameWorldModal/);
+});
+
 test('IndexedDbBackend preserves the existing AtlasDB schema and key scheme (old saves load)', () => {
     const idb = read('src/systems/world/storage/IndexedDbBackend.ts');
     assert.match(idb, /DB_NAME = 'AtlasDB'/);

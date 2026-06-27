@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { soundManager } from '../../../systems/sound/SoundManager';
 import { ExportedWorldData, WorldMetadata, WorldStorage } from '../../../systems/world/WorldStorage';
+import { getStorageEstimate, formatBytes } from '../../../systems/world/storage/storagePersistence';
 import { getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, type WorldGenPresetEntry } from '../../../systems/world/worldGenPresets';
 import type { GameMode } from '../../../types';
+
+const BACKEND_LABELS: Record<string, string> = {
+    'desktop-fs': 'Filesystem',
+    'opfs': 'Browser filesystem',
+    'indexeddb': 'Browser database',
+};
 
 const WORLD_GAME_MODES: GameMode[] = ['survival', 'creative', 'spectator'];
 
@@ -21,11 +28,26 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     // Id of the world awaiting delete confirmation (drives an in-app modal instead
     // of a blocking native confirm()).
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    // Id of the world awaiting a rename (drives the in-app RenameWorldModal).
+    const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+    // A short "Saves: <backend> • <usage>/<quota>" line for the world menu footer.
+    const [storageInfo, setStorageInfo] = useState<string>('');
 
     const loadWorlds = useCallback(async () => {
         const list = await WorldStorage.getAllWorlds();
         list.sort((a, b) => b.lastPlayed - a.lastPlayed);
         setWorlds(list);
+    }, []);
+
+    const refreshStorageInfo = useCallback(async () => {
+        try {
+            const kind = await WorldStorage.getBackendKind();
+            const estimate = await getStorageEstimate();
+            const label = BACKEND_LABELS[kind] ?? kind;
+            setStorageInfo(estimate ? `Saves: ${label} • ${formatBytes(estimate.usage)} used` : `Saves: ${label}`);
+        } catch {
+            setStorageInfo('');
+        }
     }, []);
 
     const refreshWorldGenPresets = useCallback(async () => {
@@ -40,7 +62,8 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     useEffect(() => {
         void loadWorlds();
         void refreshWorldGenPresets();
-    }, [loadWorlds, refreshWorldGenPresets]);
+        void refreshStorageInfo();
+    }, [loadWorlds, refreshWorldGenPresets, refreshStorageInfo]);
 
     const cycleGameMode = useCallback(() => {
         setGameMode((current) => WORLD_GAME_MODES[(WORLD_GAME_MODES.indexOf(current) + 1) % WORLD_GAME_MODES.length]);
@@ -88,6 +111,39 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
             console.error(error);
         }
     }, [loadWorlds, pendingDeleteId]);
+
+    // --- Rename (in-app modal; renames the display name, keeps the save folder) ---
+    const handleRenameWorld = useCallback(() => {
+        if (selectedWorldId) setRenameTargetId(selectedWorldId);
+    }, [selectedWorldId]);
+
+    const cancelRenameWorld = useCallback(() => setRenameTargetId(null), []);
+
+    const confirmRenameWorld = useCallback(async (name: string) => {
+        const id = renameTargetId;
+        setRenameTargetId(null);
+        if (!id || !name.trim()) return;
+        try {
+            await WorldStorage.renameWorld(id, name.trim());
+            await loadWorlds();
+            soundManager.play('ui.click', { pitch: 1.05 });
+        } catch (error) {
+            console.error(error);
+            alert('Failed to rename world. See console for details.');
+        }
+    }, [loadWorlds, renameTargetId]);
+
+    // --- Open the world's save folder in the OS file explorer (desktop only) ---
+    const canOpenSaveFolder = typeof window !== 'undefined' && !!window.atlasDesktop?.saves?.openFolder;
+    const handleOpenSaveFolder = useCallback(async () => {
+        if (!selectedWorldId) return;
+        try {
+            await window.atlasDesktop?.saves?.openFolder?.(selectedWorldId);
+            soundManager.play('ui.click');
+        } catch (error) {
+            console.error(error);
+        }
+    }, [selectedWorldId]);
 
     const handleExportWorld = useCallback(async () => {
         if (!selectedWorldId) return;
@@ -160,5 +216,14 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
         pendingDeleteName: worlds.find((w) => w.id === pendingDeleteId)?.name ?? null,
         confirmDeleteWorld,
         cancelDeleteWorld,
+        // rename + save-management
+        handleRenameWorld,
+        renameTargetId,
+        renameTargetName: worlds.find((w) => w.id === renameTargetId)?.name ?? '',
+        confirmRenameWorld,
+        cancelRenameWorld,
+        handleOpenSaveFolder,
+        canOpenSaveFolder,
+        storageInfo,
     };
 };
