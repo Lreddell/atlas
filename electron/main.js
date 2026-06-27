@@ -92,7 +92,44 @@ function createWindow() {
     mainWindow.show();
     mainWindow.focus();
   });
+
+  attachQuitFlush(mainWindow);
 }
+
+// Hold the window's close until the renderer has saved (force flush), with a
+// timeout so a hung/unresponsive renderer can never block quit. The renderer
+// answers via the 'app:flush-complete' handler below.
+let pendingFlushResolve = null;
+function attachQuitFlush(win) {
+  let flushing = false;
+  win.on('close', (event) => {
+    if (flushing) return; // the post-flush destroy() path
+    flushing = true;
+    event.preventDefault();
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingFlushResolve = null;
+      if (!win.isDestroyed()) win.destroy();
+    };
+    const timer = setTimeout(finish, 3000); // never hang on an unresponsive renderer
+    pendingFlushResolve = finish;
+
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send('app:flush-request');
+    } else {
+      finish();
+    }
+  });
+}
+
+ipcMain.handle('app:flush-complete', () => {
+  if (pendingFlushResolve) pendingFlushResolve();
+  return { ok: true };
+});
 
 const sanitizeFileName = (value) => {
   const trimmed = String(value || '').trim();

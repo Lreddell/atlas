@@ -668,17 +668,34 @@ const App: React.FC = () => {
       }
   }, [appState]);
 
-  // Best-effort save when the window/tab is closed or killed mid-session.
+  // Best-effort save when the window/tab is closed, hidden, or killed mid-session.
+  // visibilitychange -> hidden fires more reliably than beforeunload (tab switch /
+  // backgrounding / mobile) and the page usually keeps running, giving the async
+  // save a real chance to finish; pagehide/beforeunload remain as last-ditch hooks.
   useEffect(() => {
       if (appState !== 'game') return;
-      const onPageHide = () => { void saveGameRef.current({ force: true }); };
-      window.addEventListener('pagehide', onPageHide);
-      window.addEventListener('beforeunload', onPageHide);
+      const flush = () => { void saveGameRef.current({ force: true }); };
+      const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+      window.addEventListener('pagehide', flush);
+      window.addEventListener('beforeunload', flush);
+      document.addEventListener('visibilitychange', onVisibility);
       return () => {
-          window.removeEventListener('pagehide', onPageHide);
-          window.removeEventListener('beforeunload', onPageHide);
+          window.removeEventListener('pagehide', flush);
+          window.removeEventListener('beforeunload', flush);
+          document.removeEventListener('visibilitychange', onVisibility);
       };
   }, [appState]);
+
+  // Desktop: the main process holds the window's close until the renderer confirms
+  // a final save (with a timeout safety net), so quitting the app never loses the
+  // last few seconds of edits the way an async beforeunload can.
+  useEffect(() => {
+      const api = window.atlasDesktop;
+      if (!api?.onFlushRequest) return;
+      api.onFlushRequest(() => {
+          void saveGameRef.current({ force: true }).finally(() => { void api.flushComplete?.(); });
+      });
+  }, []);
 
   useEffect(() => {
       const handleError = (event: ErrorEvent) => {

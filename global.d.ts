@@ -77,6 +77,9 @@ interface AtlasDesktopApi {
     openExternal?: (url: string) => Promise<OpenExternalResult>;
     /** Filesystem world saves (desktop only). Absent in the browser build. */
     saves?: AtlasDesktopSavesApi;
+    /** App-quit flush handshake: main asks the renderer to save before closing. */
+    onFlushRequest?: (callback: () => void) => void;
+    flushComplete?: () => Promise<{ ok: boolean }>;
 }
 
 declare global {
