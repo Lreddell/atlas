@@ -483,7 +483,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
             className="absolute bottom-2 left-2 text-white text-shadow-md hover:underline"
             title="See what's new"
         >
-            Atlas {APP_DISPLAY_VERSION}
+            Atlas {APP_DISPLAY_VERSION} — What's New
         </button>
         <a
             className="absolute bottom-2 right-2 text-white text-shadow-md hover:underline"
