@@ -140,6 +140,28 @@ test('eviction never unloads a dirty chunk (no lost edits on a failed save)', ()
     assert.match(wm, /deferredDirty[\s\S]*?void this\.processSaveQueue\(\)/);
 });
 
+test('the final save is reliable on quit/close (web visibilitychange + desktop flush handshake)', () => {
+    const app = read('src/App.tsx');
+    // Web: also flush when the page is hidden (more reliable than beforeunload).
+    assert.match(app, /document\.visibilityState === 'hidden'/);
+    assert.match(app, /addEventListener\('visibilitychange', onVisibility\)/);
+    // Desktop: the renderer answers the main-process flush request, then acks.
+    assert.match(app, /onFlushRequest\(\(\) => \{[\s\S]*?saveGameRef\.current\(\{ force: true \}\)[\s\S]*?flushComplete\?\.\(\)/);
+
+    const preload = read('electron/preload.js');
+    assert.match(preload, /onFlushRequest:/);
+    assert.match(preload, /flushComplete: \(\) => ipcRenderer\.invoke\('app:flush-complete'\)/);
+
+    const main = read('electron/main.js');
+    // close is held (preventDefault), the renderer is asked to flush, and a timeout
+    // guarantees quit never hangs on an unresponsive renderer.
+    assert.match(main, /event\.preventDefault\(\)/);
+    assert.match(main, /webContents\.send\('app:flush-request'\)/);
+    assert.match(main, /setTimeout\(finish, 3000\)/);
+    assert.match(main, /ipcMain\.handle\('app:flush-complete'/);
+    assert.match(main, /win\.destroy\(\)/);
+});
+
 test('a locked world aborts entry instead of silently continuing as writable', () => {
     const app = read('src/App.tsx');
     // LOCKED -> clear the active world, go back to the menu, tell the user, and return.
