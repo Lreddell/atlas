@@ -176,17 +176,17 @@ class RegionFile {
         if (compression === COMPRESSION_RAW) body = payload;
         else if (compression === COMPRESSION_DEFLATE) {
             if (!this.compressor) throw new AcrFormatError('Compressed .acr chunk but no decompressor provided.');
-            body = this.compressor.decompress(payload);
+            body = await this.compressor.decompress(payload);
         } else throw new AcrFormatError(`Unknown .acr compression type ${compression}.`);
         return decodeChunkBody(body);
     }
 
-    _encodePayload(blocks, light, meta, timestampMs) {
+    async _encodePayload(blocks, light, meta, timestampMs) {
         const body = encodeChunkBody(blocks, light, meta, timestampMs);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
-            const compressed = this.compressor.compress(body);
+            const compressed = await this.compressor.compress(body);
             if (compressed.length < body.length) { compType = COMPRESSION_DEFLATE; payload = compressed; }
         }
         const out = new Uint8Array(CHUNK_SLOT_HEADER_BYTES + payload.length);
@@ -220,7 +220,7 @@ class RegionFile {
     }
 
     async _writePayloadSectors(slot, blocks, light, meta, timestampMs) {
-        const payload = this._encodePayload(blocks, light, meta, timestampMs);
+        const payload = await this._encodePayload(blocks, light, meta, timestampMs);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];

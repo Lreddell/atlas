@@ -7,6 +7,7 @@
 
 import { DesktopFsBackend } from './storage/DesktopFsBackend';
 import { IndexedDbBackend } from './storage/IndexedDbBackend';
+import { OpfsBackend, opfsBackendSupported } from './storage/OpfsBackend';
 import type { StorageBackend } from './storage/StorageBackend';
 import type {
     ChunkBatchEntry,
@@ -36,6 +37,7 @@ class WorldStorageSystem {
         this.backendPromise = (async () => {
             const legacy = new IndexedDbBackend();
             await legacy.init();
+            // 1. Electron desktop: real filesystem saves.
             const savesApi = (typeof window !== 'undefined') ? window.atlasDesktop?.saves : undefined;
             if (savesApi) {
                 try {
@@ -48,6 +50,20 @@ class WorldStorageSystem {
                     return legacy;
                 }
             }
+            // 2. Web: the Origin Private File System (a real per-origin filesystem, no
+            //    database). Self-tests a round-trip on init; any failure falls back.
+            if (opfsBackendSupported()) {
+                try {
+                    const opfs = new OpfsBackend(legacy);
+                    await opfs.init();
+                    console.log('[WorldStorage] Using OPFS (browser filesystem) backend.');
+                    return opfs;
+                } catch (e) {
+                    console.error('[WorldStorage] OPFS backend failed to init; falling back to IndexedDB.', e);
+                    return legacy;
+                }
+            }
+            // 3. Fallback: IndexedDB.
             console.log('[WorldStorage] Using IndexedDB backend.');
             return legacy;
         })();
