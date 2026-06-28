@@ -250,7 +250,7 @@ function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceS
         ctx.drawImage(source, cellX * faceSize, cellY * faceSize, faceSize, faceSize);
     };
 
-    // Minecraft-like panorama layout:
+    // Main-menu panorama layout:
     // row 0:      [ ][4][ ][ ]
     // row 1:      [0][1][2][3]
     // row 2:      [ ][5][ ][ ]
@@ -558,7 +558,7 @@ const App: React.FC = () => {
   // Unified player damage entry point (fall/fire/drown via Player, plus entity
   // contact damage routed through the EntityManager hooks below).
   // Raw damage that bypasses armor — for environmental sources (fall, fire,
-  // drowning), matching Minecraft where armor does not reduce those.
+  // drowning), which armor does not reduce.
   const applyRawDamage = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
       setHealth(h => {
@@ -608,6 +608,9 @@ const App: React.FC = () => {
   // advances every tick) so a periodic autosave can skip a redundant write when
   // nothing meaningful changed. Forced saves (pause/quit/unload/respawn) ignore it.
   const lastSaveSignatureRef = useRef('');
+  // True once the player has been warned about a failing save, reset on the next
+  // success, so a recurring problem surfaces once instead of every autosave tick.
+  const saveErrorNotifiedRef = useRef(false);
 
   const saveGame = useCallback(async (opts?: { force?: boolean }) => {
       if (!activeWorldIdRef.current) return;
@@ -637,8 +640,14 @@ const App: React.FC = () => {
           return;
       }
 
-      const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
-      if (meta) {
+      // A save failure must never crash the session: every caller fires this
+      // forget-style, so a thrown error would become an unhandled rejection and
+      // trip the fatal-error overlay — forcing a reload that loses more progress
+      // than the failed save did. Catch here, warn the player once (until a save
+      // succeeds again), and resolve normally so quit/respawn flows still proceed.
+      try {
+          const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
+          if (!meta) return;
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
           meta.gameMode = gameMode; // persist command-driven gamemode changes
@@ -649,7 +658,15 @@ const App: React.FC = () => {
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
+          saveErrorNotifiedRef.current = false; // a good save re-arms the warning
           console.log(`[AutoSave] World ${meta.name} saved.`);
+      } catch (e) {
+          console.error('[AutoSave] save failed:', e);
+          if (!saveErrorNotifiedRef.current) {
+              saveErrorNotifiedRef.current = true;
+              const msg = e instanceof Error ? e.message : String(e);
+              worldManager.log(`World save failed — your latest progress may not be saved. (${msg})`, 'error');
+          }
       }
   }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
 
@@ -827,7 +844,7 @@ const App: React.FC = () => {
       const TICK_MS = 1000;
       const interval = setInterval(() => {
           if (worldPaused) return;
-          // Minecraft rule: an item entity only counts down its 5-minute despawn timer
+          // Drop-aging rule: an item entity only counts down its 5-minute despawn timer
           // while its chunk is loaded (i.e. near the player). Drops the player has
           // wandered away from keep their timer paused and persist, so going far away
           // never makes them "gone forever" — they resume aging when you return.
@@ -2880,7 +2897,7 @@ const App: React.FC = () => {
 
             {isCapturingPanorama && (
                 <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">
-                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-minecraft text-sm">
+                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-pixel text-sm">
                         Capturing panorama… input locked
                     </div>
                 </div>

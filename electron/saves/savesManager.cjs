@@ -28,6 +28,25 @@ function isAlive(pid) {
     try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; }
 }
 
+// Windows intermittently fails rename/copy/unlink with EPERM/EACCES/EBUSY when an
+// antivirus scanner, the search indexer, or a cloud-sync agent (OneDrive) holds a
+// brief handle on the file. These are transient — retry a few times with a short
+// backoff before giving up. (This is what surfaced as the crash:
+// `writeMeta failed: EPERM ... rename level.json -> level.json.bak`.)
+const TRANSIENT_FS_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY']);
+
+async function withFsRetry(op, tries = 10) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await op();
+        } catch (e) {
+            if (attempt >= tries - 1 || !TRANSIENT_FS_CODES.has(e && e.code)) throw e;
+            const delay = Math.min(10 * (attempt + 1), 100); // 10,20,…,100ms (≈0.5s worst case)
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+    }
+}
+
 class SavesManager {
     constructor(rootDir) {
         this.rootDir = rootDir;
@@ -55,7 +74,13 @@ class SavesManager {
         return s;
     }
 
-    // --- atomic metadata write (write tmp -> fsync -> rotate .bak -> rename -> fsync dir) ---
+    // --- atomic metadata write (write tmp -> fsync -> copy live aside as .bak -> rename -> fsync dir) ---
+    // The previous metadata is copied (not renamed) to level.json.bak so the live
+    // level.json is never momentarily absent and the backup never collides on a
+    // pre-existing target — Windows fails rename-to-existing with EPERM, which was
+    // the source of the crash. The copy and the commit rename are both retried to
+    // ride out transient antivirus / indexer / cloud-sync locks. If the commit
+    // ultimately fails, level.json is left intact (still the prior good copy).
     async _writeJsonAtomic(filePath, obj) {
         const dir = path.dirname(filePath);
         await fsp.mkdir(dir, { recursive: true });
@@ -64,10 +89,16 @@ class SavesManager {
         const fh = await fsp.open(tmp, 'w');
         try { await fh.write(data, 0, data.length, 0); await fh.sync(); } finally { await fh.close(); }
 
-        const backup = `${filePath}.bak`;
-        try { await fsp.rename(filePath, backup); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-        await fsp.rename(tmp, filePath);
-        // fsync the directory so the renames survive power loss.
+        try {
+            const backup = `${filePath}.bak`;
+            try { await withFsRetry(() => fsp.copyFile(filePath, backup)); }
+            catch (e) { if (e.code !== 'ENOENT') throw e; } // nothing to back up on the first write
+            await withFsRetry(() => fsp.rename(tmp, filePath));
+        } catch (e) {
+            await fsp.rm(tmp, { force: true }).catch(() => {}); // don't leak the temp on failure
+            throw e;
+        }
+        // fsync the directory so the rename survives power loss (best effort; fails on Windows).
         try { const dh = await fsp.open(dir, 'r'); try { await dh.sync(); } finally { await dh.close(); } } catch { /* best effort */ }
     }
 
@@ -187,4 +218,4 @@ class SavesManager {
     }
 }
 
-module.exports = { SavesManager, assertSafeId, isAlive };
+module.exports = { SavesManager, assertSafeId, isAlive, withFsRetry, TRANSIENT_FS_CODES };
