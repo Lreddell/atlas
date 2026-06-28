@@ -5,6 +5,14 @@ implementation-ready work. The audit is useful historical context, but several o
 its render-distance recommendations have already been completed in the current
 codebase.
 
+For the deeper clean-room comparison of `minecraft.zip` with current Atlas,
+including stable content IDs, chunk sections, block-entity persistence,
+deterministic simulation, AI, runtime packs, tooling, UX, and a dependency-ordered
+delivery plan, see
+[`docs/minecraft-source-study/README.md`](../minecraft-source-study/README.md).
+That study extends this roadmap and identifies which older proposals are now
+partially implemented or need to be rebased on newer storage/entity code.
+
 ## Current Baseline
 
 The following work from the original audit is already present:
