@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { SavesManager } = require('./savesManager.cjs');
+const { SavesManager, withFsRetry } = require('./savesManager.cjs');
 
 async function tmpRoot() {
     return fs.mkdtemp(path.join(os.tmpdir(), 'atlas-saves-'));
@@ -39,6 +39,50 @@ test('writeMeta preserves the previous metadata as level.json.bak', async () => 
     assert.equal(bak.name, 'First');
     assert.equal(live.name, 'Second');
     await fs.rm(root, { recursive: true, force: true });
+});
+
+test('repeated writeMeta keeps a valid level.json + .bak (no rename-to-existing failure)', async () => {
+    // Regression for the Windows EPERM crash: every save after the first now has a
+    // pre-existing level.json.bak. The atomic write must keep working and always
+    // leave the live metadata current with the immediately-previous copy in .bak.
+    const root = await tmpRoot();
+    const sm = new SavesManager(root);
+    await sm.create(meta('w1', 'v0'));
+    for (let i = 1; i <= 4; i++) await sm.writeMeta({ ...meta('w1', `v${i}`), time: 1000 + i });
+    assert.equal((await sm.readMeta('w1')).name, 'v4');
+    const bak = JSON.parse(await fs.readFile(path.join(root, 'w1', 'level.json.bak'), 'utf8'));
+    assert.equal(bak.name, 'v3'); // backup holds the immediately-previous version
+    // No stray temp files left behind.
+    const files = await fs.readdir(path.join(root, 'w1'));
+    assert.ok(!files.some((f) => f.endsWith('.tmp')), `unexpected temp files: ${files.join(', ')}`);
+    await fs.rm(root, { recursive: true, force: true });
+});
+
+test('withFsRetry rides out transient EPERM/EBUSY and rethrows other errors', async () => {
+    // Transient Windows-style failures (AV/indexer/cloud-sync holding a handle)
+    // succeed once the handle releases.
+    let calls = 0;
+    const flaky = async () => {
+        calls++;
+        if (calls < 3) { const e = new Error('locked'); e.code = calls === 1 ? 'EPERM' : 'EBUSY'; throw e; }
+        return 'ok';
+    };
+    assert.equal(await withFsRetry(flaky), 'ok');
+    assert.equal(calls, 3);
+
+    // A persistent transient error eventually gives up (and surfaces the code).
+    await assert.rejects(
+        () => withFsRetry(async () => { const e = new Error('still locked'); e.code = 'EPERM'; throw e; }, 3),
+        (e) => e.code === 'EPERM',
+    );
+
+    // A non-transient error is rethrown immediately without retrying.
+    let enoentCalls = 0;
+    await assert.rejects(
+        () => withFsRetry(async () => { enoentCalls++; const e = new Error('missing'); e.code = 'ENOENT'; throw e; }),
+        (e) => e.code === 'ENOENT',
+    );
+    assert.equal(enoentCalls, 1);
 });
 
 test('a corrupt level.json recovers from level.json.bak', async () => {
