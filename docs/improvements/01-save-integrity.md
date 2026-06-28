@@ -1,7 +1,17 @@
 # Save Integrity and Batched Persistence
 
-Status: Proposed  
+Status: In progress
 Priority: Critical
+
+Progress note, 2026-06-28:
+
+- Atlas now batches chunk writes, retains dirty chunks after a failed write,
+  refuses to evict dirty chunks, supports `.acr` OPFS/desktop backends, and performs
+  a best-effort final save on quit/close.
+- Remaining correctness work includes per-chunk revisions/immutable save snapshots
+  so an edit made during an active async save cannot be marked clean by the older
+  write. The versioned chunk/block-entity plan is documented in
+  [`../minecraft-source-study/02-chunk-storage-and-persistence.md`](../minecraft-source-study/02-chunk-storage-and-persistence.md).
 
 ## Problem
 

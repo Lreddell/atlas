@@ -1,7 +1,15 @@
 # Automated Tests and Continuous Integration
 
-Status: Proposed  
+Status: In progress
 Priority: High
+
+Progress note, 2026-06-28:
+
+- The source tree now contains focused Node test files for storage, recipes,
+  registries, magnetic gameplay, and other systems.
+- `package.json` still has no aggregate `npm test`/coverage/CI script, and no
+  repository CI workflow is documented here. The problem statement below should
+  be read as the original baseline, not a claim that no automated tests exist.
 
 ## Problem
 

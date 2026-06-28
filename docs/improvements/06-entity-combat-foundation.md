@@ -1,7 +1,17 @@
 # Entity and Combat Foundation
 
-Status: Proposed  
+Status: In progress
 Priority: Medium
+
+Progress note, 2026-06-28:
+
+- Atlas now has a central fixed-step `EntityManager`, an entity renderer, health,
+  movement/collision, damage, drops, projectiles, boss state, and typed combat
+  events. Those foundations should be preserved rather than recreated.
+- The remaining plan is to separate Three.js/render state, add a spatial index,
+  extract boss-specific data, generalize combat/effects/persistence, and add
+  goals/navigation/spawning. See
+  [`../minecraft-source-study/05-entities-ai-and-gameplay.md`](../minecraft-source-study/05-entities-ai-and-gameplay.md).
 
 ## Problem
 
@@ -83,11 +93,11 @@ Model combat as explicit events:
 
 ```ts
 interface DamageEvent {
-  sourceId: EntityId | null;
-  targetId: EntityId;
-  amount: number;
-  kind: DamageKind;
-  knockback?: Vec3;
+  sourceId: EntityId | null
+  targetId: EntityId
+  amount: number
+  kind: DamageKind
+  knockback?: Vec3
 }
 ```
 
