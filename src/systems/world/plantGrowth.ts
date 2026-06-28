@@ -10,7 +10,7 @@ const GROWTH_TICK_INTERVAL = 60; // ~3 seconds at 20 tps
 // roughly half an hour regardless of how many chunks are loaded.
 const PROBES_PER_CHUNK = 3;
 const GROWTH_THRESHOLD = 7; // metadata stage threshold to trigger tree growth attempt
-// Only tick chunks near the player (Minecraft-style random-tick range). At render
+// Only tick chunks near the player (a bounded random-tick range). At render
 // distance 48 there are ~7,200 loaded chunks; scanning them all every growth tick
 // is wasted work — saplings more than this far away can grow when you come back.
 const GROWTH_TICK_RADIUS = 8;

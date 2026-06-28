@@ -2,10 +2,10 @@
 // Atlas Chunk Region (.acr) file format — v1   (THE authoritative layout)
 // =============================================================================
 //
-// An .acr file packs a 32x32 = 1024-chunk grid into one file, using the proven
-// Minecraft-Anvil architecture (fixed header tables + 4096-byte sectors) but
-// WIDENED so there is no 255-sector (~1 MiB) per-chunk cap and therefore no
-// ".mcc" overflow sidecar files. Both the pure-TS codec (this folder) and the
+// An .acr file packs a 32x32 = 1024-chunk grid into one file, using a classic
+// region-file architecture (fixed header tables + 4096-byte sectors) but WIDENED
+// so there is no 255-sector (~1 MiB) per-chunk cap and therefore no overflow
+// sidecar files. Both the pure-TS codec (this folder) and the
 // Electron main-process port (electron/saves/acrCore.cjs) implement EXACTLY this
 // layout; acrCrossCompat.test.mjs asserts they are byte-identical.
 //

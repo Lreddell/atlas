@@ -264,8 +264,8 @@ export function hasSupportBelow(type: BlockType, belowType: BlockType): boolean 
     return isValidSoil(belowType);
 }
 
-// Blocks a placed block may overwrite. Grass and dead bushes pop off like in
-// Minecraft; flowers, torches and saplings are NOT replaceable (place beside them).
+// Blocks a placed block may overwrite. Grass and dead bushes pop off when built
+// over; flowers, torches and saplings are NOT replaceable (place beside them).
 const PLACEMENT_REPLACEABLE = new Set<BlockType>([
     BlockType.GRASS_PLANT, BlockType.DEAD_BUSH,
 ]);

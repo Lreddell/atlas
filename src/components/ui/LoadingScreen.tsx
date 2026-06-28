@@ -198,7 +198,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     </div>
 
                     {/* Phase title */}
-                    <h1 className="text-white font-minecraft text-xl text-shadow-md">
+                    <h1 className="text-white font-pixel text-xl text-shadow-md">
                         {phase || 'Loading World...'}
                     </h1>
 
@@ -208,17 +208,17 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                             className="h-full bg-[#2e7d32] transition-all duration-100 ease-linear"
                             style={{ width: `${clampedPercent}%` }}
                         />
-                        <div className="absolute inset-0 flex items-center justify-center text-white font-minecraft text-xs text-shadow-md pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-white font-pixel text-xs text-shadow-md pointer-events-none">
                             {clampedPercent}%
                         </div>
                     </div>
 
                     {/* Tips section */}
                     <div className="w-full bg-black/40 border-2 border-white/20 px-4 py-3 min-h-[76px] flex flex-col gap-1">
-                        <span className="text-yellow-300 font-minecraft text-xs text-shadow-md tracking-wide">
+                        <span className="text-yellow-300 font-pixel text-xs text-shadow-md tracking-wide">
                             DID YOU KNOW...
                         </span>
-                        <p className="text-gray-200 font-minecraft text-sm leading-relaxed text-shadow-md">
+                        <p className="text-gray-200 font-pixel text-sm leading-relaxed text-shadow-md">
                             {LOADING_TIPS[tipIndex]}
                         </p>
                     </div>

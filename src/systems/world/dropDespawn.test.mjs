@@ -7,7 +7,7 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
-test('drops only age toward despawn while loaded near the player (Minecraft rule)', () => {
+test('drops only age toward despawn while loaded near the player (drop-aging rule)', () => {
     const app = read('src/App.tsx');
     // The despawn timer advances only while the drop is within the loaded range of
     // the player, so wandering far pauses it instead of deleting the drop.

@@ -13,10 +13,10 @@ import { soundManager } from '../../systems/sound/SoundManager';
 // of phases. Magnetic Warden: slam phase at 50%, frenzy at 25%.
 const PHASE_MARKERS = [0.5, 0.25];
 
-// A small Atlas-pixel diamond pip that divides the bar at a phase threshold,
-// after Minecraft Dungeons' segment markers but kept crisp (shapeRendering=
-// crispEdges) and beveled to match the chunky Atlas UI. Spans the full bar height
-// so it reads as a notch through the fill, shield, and empty track alike.
+// A small Atlas-pixel diamond pip that divides the bar at a phase threshold —
+// a segmented health-bar marker, kept crisp (shapeRendering=crispEdges) and
+// beveled to match the chunky Atlas UI. Spans the full bar height so it reads as
+// a notch through the fill, shield, and empty track alike.
 const PhaseMarker: React.FC<{ at: number }> = ({ at }) => (
     <div
         className="pointer-events-none absolute top-0 h-full -translate-x-1/2"
@@ -96,7 +96,7 @@ export const BossBar: React.FC = () => {
 
     return (
         <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] -translate-x-1/2 flex-col items-center">
-            <div className="mb-1 font-minecraft text-lg text-white [text-shadow:2px_2px_0px_#000]">
+            <div className="mb-1 font-pixel text-lg text-white [text-shadow:2px_2px_0px_#000]">
                 {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
             </div>
             <div

@@ -7,8 +7,8 @@ import { BlockType, type ItemStats, type ItemStack } from '../../types';
 
 const FIST_ATTACK = 1;
 
-// Tool material tiers. Durability and attack use exact Minecraft values; COPPER
-// is not a vanilla tier, so it sits between stone and iron (user-confirmed).
+// Tool material tiers. Durability and attack use the genre-standard reference
+// values; COPPER is not a standard tier, so it sits between stone and iron.
 type Tier = 'wood' | 'stone' | 'copper' | 'iron' | 'gold' | 'diamond';
 const DURABILITY: Record<Tier, number> = {
     wood: 59, stone: 131, copper: 190, iron: 250, gold: 32, diamond: 1561,
@@ -16,7 +16,7 @@ const DURABILITY: Record<Tier, number> = {
 
 const tool = (attack: number, tier: Tier): ItemStats => ({ attack, maxDurability: DURABILITY[tier] });
 
-// Exact Minecraft attack values (copper = between stone and iron).
+// Reference attack values (copper = between stone and iron).
 // Sword: 4/5/6/7 (gold 4) · Axe: 7/9/9/9 (gold 7) · Pickaxe: 2/3/4/5 (gold 2)
 // Shovel: 2.5/3.5/4.5/5.5 (gold 2.5) · Hoe: 1 across all tiers.
 export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
@@ -56,8 +56,8 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.GOLD_HOE]: tool(1, 'gold'),
     [BlockType.DIAMOND_HOE]: tool(1, 'diamond'),
 
-    // Armor — Minecraft defense points + per-piece durability (factor × 11/16/15/13
-    // for helmet/chestplate/leggings/boots). Copper is non-vanilla: between gold
+    // Armor — reference defense points + per-piece durability (factor × 11/16/15/13
+    // for helmet/chestplate/leggings/boots). Copper is non-standard: between gold
     // and iron. Polarity boots are unbreakable (key traversal item).
     // Iron (factor 15)
     [BlockType.IRON_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 165 },

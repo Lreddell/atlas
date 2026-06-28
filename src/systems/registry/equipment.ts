@@ -22,7 +22,7 @@ export function slotForItem(type: BlockType): EquipmentSlot | undefined {
     return getItemStats({ type, count: 1 })?.slot;
 }
 
-/** Total Minecraft-style armor points from all equipped pieces. */
+/** Total armor points from all equipped pieces. */
 export function totalDefense(eq: Equipment): number {
     let d = 0;
     for (const slot of EQUIPMENT_SLOTS) {
@@ -58,7 +58,7 @@ export function hasUpgradedPolarityBoots(eq: Equipment): boolean {
 }
 
 /**
- * Wear down equipped armor from an incoming hit. Minecraft: each piece loses
+ * Wear down equipped armor from an incoming hit. Each piece loses
  * max(1, floor(incomingDamage / 4)) durability; unbreakable pieces (no max) are
  * skipped; a piece that hits 0 breaks (removed). Returns new equipment if any
  * piece changed, otherwise the same reference. Durability lazy-inits from the

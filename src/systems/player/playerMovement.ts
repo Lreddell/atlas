@@ -81,8 +81,8 @@ export function simulateStep(
         // Increased speeds for better creative mode traversal
         const flySpeed = intent.sprint ? 50.0 : 24.0;
 
-        // Minecraft creative flight: per-tick drag (0.91, same as air) + input
-        // injection sized so the equilibrium equals flySpeed. This gives the
+        // Creative flight: per-tick drag (0.91, same as air) + input injection
+        // sized so the equilibrium equals flySpeed. This gives the
         // gliding, momentum-carrying flight where you coast after releasing keys.
         const flyAccel = 1 - AIR_FRICTION; // injection factor -> terminal == flySpeed
         newVel.x *= AIR_FRICTION;
@@ -121,12 +121,12 @@ export function simulateStep(
     // --- Ground Detection ---
     const wasGrounded = checkCollision(wm, {x: pos.x, y: pos.y - GROUND_EPS, z: pos.z}, PLAYER_WIDTH, height);
     
-    // --- Horizontal Movement (Minecraft friction model) ---
+    // --- Horizontal Movement (per-tick friction model) ---
     // Per tick: decay velocity by a friction factor, then add a fixed input
     // acceleration. The equilibrium of the two equals targetSpeed, so momentum
     // (gradual ramp-up, glide-to-stop, and direction reversals that carry your
     // old velocity) emerges naturally instead of being lerped toward a target.
-    // FIXED_DT == one Minecraft tick, so these per-tick factors apply directly.
+    // FIXED_DT == one simulation tick, so these per-tick factors apply directly.
     const horizFriction = inFluid
         ? FLUID_FRICTION
         : (wasGrounded ? GROUND_FRICTION : AIR_FRICTION);
@@ -280,7 +280,7 @@ export function simulateStep(
     }
 
     // --- Lenient Sprint Stop Check ---
-    // Only evaluated while grounded. In Minecraft a jump never cancels your sprint —
+    // Only evaluated while grounded. A jump never cancels your sprint —
     // sprint-jumping is a core movement tech — so airborne ticks neither cancel nor
     // accumulate toward a cancel. On the ground, a genuine wall bump (sustained low
     // speed) still ends the sprint after the grace window; a momentum direction flip

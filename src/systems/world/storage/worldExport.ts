@@ -1,4 +1,4 @@
-// Portable Atlas world export/import format (NOT Minecraft / external-game). This
+// Portable Atlas world export/import format (NOT an external-game format). This
 // is the existing `atlas-world-export` JSON representation, factored out so every
 // backend produces and consumes byte-for-byte the same thing — so a world
 // exported from the web (IndexedDB) imports on desktop (filesystem) and vice
