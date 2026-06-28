@@ -24,7 +24,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         onClick={onCancel}
     >
         <div
-            className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6 font-minecraft text-white"
+            className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6 font-pixel text-white"
             onClick={(e) => e.stopPropagation()}
         >
             <h2 className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">{title}</h2>

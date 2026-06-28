@@ -49,7 +49,7 @@ export const PolarityIndicator: React.FC = () => {
                     style={{ imageRendering: 'pixelated' }}
                 />
             </div>
-            <div className="mt-1 whitespace-nowrap font-minecraft text-xs text-white [text-shadow:1px_1px_0_#000,-1px_-1px_0_#000]">
+            <div className="mt-1 whitespace-nowrap font-pixel text-xs text-white [text-shadow:1px_1px_0_#000,-1px_-1px_0_#000]">
                 {positive ? 'Positive (R)' : 'Negative (R)'}
             </div>
         </div>

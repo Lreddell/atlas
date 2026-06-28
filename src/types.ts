@@ -355,8 +355,8 @@ export interface Drop {
     velocity: [number, number, number];
     createdAt: number;
     pickupDelay: number; // Timestamp when it can be picked up
-    // Despawn clock (ms). Like Minecraft item entities, this only advances while the
-    // drop is in a loaded chunk near the player; it pauses when the player wanders
+    // Despawn clock (ms). Like dropped-item entities generally, this only advances while
+    // the drop is in a loaded chunk near the player; it pauses when the player wanders
     // far, so leaving the area never deletes a drop. Despawns at DROP_LIFETIME_MS.
     age: number;
 }

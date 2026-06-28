@@ -252,7 +252,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     debugFlyMode
                 />
-                <div className="pointer-events-none absolute left-3 top-3 border border-white/30 bg-black/55 px-2 py-1 text-xs font-minecraft text-white">
+                <div className="pointer-events-none absolute left-3 top-3 border border-white/30 bg-black/55 px-2 py-1 text-xs font-pixel text-white">
                     Panorama Debug Fly {'\u2022'} F5 toggle {'\u2022'} WASD/Space/Shift {'\u2022'} Mouse look {'\u2022'} Esc to exit
                 </div>
             </div>

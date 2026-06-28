@@ -70,7 +70,7 @@ Replace the current smooth circular polarity badge with an Atlas-style pixel-art
 - Render it as a square magnetic plate with hard pixel edges, an Atlas-style dark border, and no rounded glossy treatment.
 - Keep a large centered plus or minus symbol with enough contrast to read over bright terrain, water, caves, and night scenes.
 - Label the states `Positive (R)` and `Negative (R)`.
-- Use pixelated image rendering and the existing Minecraft-style font.
+- Use pixelated image rendering and the existing pixel-style UI font.
 - Play a short scale-and-flash animation when polarity changes, without moving or resizing the hotbar.
 
 Add two replaceable sound-effect slots:

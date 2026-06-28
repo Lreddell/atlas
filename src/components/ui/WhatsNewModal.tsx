@@ -26,14 +26,14 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
                 {/* Header */}
                 <div className="flex items-baseline justify-between border-b border-[#373737] px-6 py-4">
                     <h2 className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">What&apos;s New</h2>
-                    <span className="font-minecraft text-sm text-yellow-300">
+                    <span className="font-pixel text-sm text-yellow-300">
                         {entry.displayVersion}
                         {entry.date ? ` • ${entry.date}` : ' • Unreleased'}
                     </span>
                 </div>
 
                 {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 font-minecraft text-sm leading-relaxed text-gray-200">
+                <div className="flex-1 overflow-y-auto px-6 py-4 font-pixel text-sm leading-relaxed text-gray-200">
                     {entry.tagline && <p className="mb-4 text-gray-300">{entry.tagline}</p>}
 
                     {entry.highlights.length > 0 && (
@@ -68,7 +68,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
                                 <button
                                     key={option.version}
                                     onClick={() => setActiveVersion(option.version)}
-                                    className={`border px-2 py-1 font-minecraft text-xs ${
+                                    className={`border px-2 py-1 font-pixel text-xs ${
                                         active
                                             ? 'border-white bg-[#8b8b8b] text-white'
                                             : 'border-[#373737] text-gray-400 hover:text-white'

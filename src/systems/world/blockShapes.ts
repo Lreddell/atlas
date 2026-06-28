@@ -121,8 +121,8 @@ export function getShapeBoxes(type: BlockType, meta: number): ShapeBox[] {
 export interface StairNeighbor { back: number; upside: boolean; }
 
 /**
- * Resolve a stair's corner shape from its neighbors, mirroring Minecraft Java's
- * StairBlock.getStairsShape conceptually. A perpendicular stair sharing the same
+ * Resolve a stair's corner shape from its neighbors, following the classic
+ * voxel stair-corner logic. A perpendicular stair sharing the same
  * half on the tall side makes an OUTER corner; one on the low/open side makes an
  * INNER corner; left/right is decided by counter-clockwise orientation.
  *

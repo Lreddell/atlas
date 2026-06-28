@@ -40,7 +40,7 @@ export interface StorageBackend {
     /** Persist a batch of chunks. Backends group by region and commit per region. */
     writeChunks(worldId: string, chunks: ChunkBatchEntry[]): Promise<void>;
 
-    // --- Portable Atlas export/import (NOT Minecraft / external-game format) ---
+    // --- Portable Atlas export/import (NOT an external-game format) ---
     exportWorld(worldId: string): Promise<ExportedWorldData>;
     importWorld(data: ExportedWorldData): Promise<WorldMetadata>;
 }

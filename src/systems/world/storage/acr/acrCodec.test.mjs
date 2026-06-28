@@ -105,7 +105,7 @@ test('rewriting a chunk with a bigger payload relocates and frees the old run', 
     assert.ok(f.size() <= before + SECTOR_SIZE * 3, 'reused freed sectors instead of always growing');
 });
 
-test('widened sector count handles payloads far beyond Minecraft 255-sector / ~1MiB cap', async () => {
+test('widened sector count handles payloads far beyond the legacy 255-sector / ~1MiB cap', async () => {
     const f = new MemFile();
     const rf = new RegionFile(f, null);
     await rf.open();

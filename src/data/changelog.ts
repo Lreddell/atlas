@@ -113,7 +113,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         tagline: 'A large stability, performance, and content update.',
         highlights: [
             'Chunk streaming moved to a unified Web Worker pool — no more severe frame drops at high render distance.',
-            'Minecraft-style movement rebuild with real momentum, sprint-jumping, and auto-step.',
+            'Physics-based movement rebuild with real momentum, sprint-jumping, and auto-step.',
             'First slabs & stairs for 9 material families, with full placement control.',
             'New tools, sandstone crafting, and recipes for every new block.',
         ],

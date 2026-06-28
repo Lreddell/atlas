@@ -262,7 +262,7 @@ export const InteractionController = ({
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
 
                 // Double-slab: placing a matching slab onto the open face of an existing
-                // (single) slab fuses them into a double slab in place, like Minecraft.
+                // (single) slab fuses them into a double slab in place.
                 // The double slab stays the same block type with the SLAB_DOUBLE meta bit,
                 // so it drops two slabs and keeps its identity (vs. becoming the parent).
                 if (heldItemDef.shape === 'slab' && targetType === heldItem.type) {
@@ -734,7 +734,7 @@ export const InteractionController = ({
                         const canHarvest = !requiresTool || (isBestTool && heldTier >= (targetDef.minHarvestTier || 0));
 
                         // Tool durability: breaking a real (hardness > 0) block costs the
-                        // held tool 1 use, or 2 for a sword (Minecraft rules).
+                        // held tool 1 use, or 2 for a sword (standard tool-wear rules).
                         if (heldItem && (targetDef.hardness || 0) > 0) {
                             damageHeldItem(selectedSlotRef.current, isSword(heldItem.type) ? 2 : 1);
                         }
