@@ -349,7 +349,7 @@ test('cutscene beams feed the ball until detonation; return is snappier; hurt sf
     assert.match(sounds, /entity\.magnetic_warden\.hurt/);
 });
 
-test('shield beams track the boss (ender-dragon style) and dissipate per crystal', () => {
+test('shield beams track the boss (crystal-tethered) and dissipate per crystal', () => {
     const cine = read('src/components/BossCinematic.tsx');
     // After spawn the beams re-target the boss and track it while the crystal stands.
     assert.match(cine, /e\.isBoss && \(e\.shieldCrystalPositions\?\.length/);
@@ -470,11 +470,11 @@ test('boss loot erupts above the altar and the altar re-forms after a delay', ()
     assert.match(app, /daisDelayMs/);
 });
 
-test('deflecting is a ghast-style parry and stray barrage bolts live ~5s', () => {
+test('deflecting is a precise aim-back parry and stray barrage bolts live ~5s', () => {
     // Tight parry hit box (skill), not the old generous radius.
     assert.match(manager, /const r = 0\.42/);
     assert.doesNotMatch(manager, /const r = 0\.7;/);
-    // The deflected bolt flies along the player's AIM (ghast fireball), not homing.
+    // The deflected bolt flies along the player's AIM (straight back), not homing.
     assert.match(manager, /best\.vel\.set\(\(dir\.x \/ dl\)/);
     // Volley bolts persist longer in the air (deleted on contact or after ~5s).
     assert.match(manager, /fireVolley[\s\S]*?ttl: 5/);

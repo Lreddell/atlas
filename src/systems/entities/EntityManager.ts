@@ -624,7 +624,7 @@ class EntityManager {
         if (!best) return false;
 
         const boss = best.sourceId != null ? this.entities.get(best.sourceId) : undefined;
-        // Ghast-fireball parry: the bolt flies straight back along the player's aim
+        // Deflect parry: the bolt flies straight back along the player's aim
         // direction — NOT homing on the boss. To land a hit you must be looking
         // through the boss at the moment you strike the bolt.
         const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
