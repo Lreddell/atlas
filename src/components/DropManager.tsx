@@ -2,7 +2,7 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Drop, BlockType } from '../types';
+import { Drop, BlockType, type ItemStack } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
@@ -10,11 +10,19 @@ import { resolveTexture } from '../systems/world/textureResolver';
 import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { isMagneticMetalItem } from '../systems/registry/metalItems';
+import {
+    MAGNET_RANGE,
+    collectMagnetSources,
+    sampleRawMagneticField,
+    type MagnetSource,
+} from '../systems/player/magneticField';
+import { applyMagneticFieldToVelocity } from '../systems/player/dropMagnetism';
 
 interface DropManagerProps {
     drops: Drop[];
     playerPos: THREE.Vector3;
-    onCollect: (id: string, type: BlockType, count: number) => void;
+    onCollect: (id: string, stack: ItemStack) => void;
     onDestroy: (id: string) => void;
     isPaused: boolean;
     brightness: number;
@@ -110,9 +118,18 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.DEBUG_CROSS ||
                      type === BlockType.WHEAT_SEEDS ||
                      type === BlockType.PINK_FLOWER ||
+                     type === BlockType.SAPLING ||
                      type === BlockType.SPRUCE_SAPLING ||
                      type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING;
+                     type === BlockType.CHERRY_SAPLING ||
+                     type === BlockType.JUNGLE_SAPLING ||
+                     type === BlockType.DARK_OAK_SAPLING ||
+                     type === BlockType.ACACIA_SAPLING ||
+                     type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                     type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                     type === BlockType.MAGNETIC_SPIKE ||
+                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     type === BlockType.MAGNETITE_SHARD;
 
         if (is2D) {
             const geo = new THREE.PlaneGeometry(0.4, 0.4);
@@ -235,9 +252,18 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
                      type === BlockType.DEBUG_CROSS ||
                      type === BlockType.WHEAT_SEEDS ||
                      type === BlockType.PINK_FLOWER ||
+                     type === BlockType.SAPLING ||
                      type === BlockType.SPRUCE_SAPLING ||
                      type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING;
+                     type === BlockType.CHERRY_SAPLING ||
+                     type === BlockType.JUNGLE_SAPLING ||
+                     type === BlockType.DARK_OAK_SAPLING ||
+                     type === BlockType.ACACIA_SAPLING ||
+                     type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                     type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                     type === BlockType.MAGNETIC_SPIKE ||
+                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     type === BlockType.MAGNETITE_SHARD;
 
              if (!is2D) {
                  dummy.rotation.x = Math.sin(time) * 0.5;
@@ -285,10 +311,25 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
 const _dropOldPos = new THREE.Vector3();
 const _dropNewPos = new THREE.Vector3();
 const _dropPullDir = new THREE.Vector3();
+const MAGNET_SOURCE_CACHE_MS = 250;
+const MAGNET_SOURCE_CACHE_PRUNE_MS = 2000;
+const MAGNET_BLOCK_IDS = {
+    positiveMagnet: BlockType.POSITIVE_MAGNET,
+    negativeMagnet: BlockType.NEGATIVE_MAGNET,
+    ironBlock: BlockType.IRON_BLOCK,
+};
+const getWorldBlock = (x: number, y: number, z: number) => worldManager.getBlock(x, y, z, false);
+
+interface MagnetSourceCacheEntry {
+    expiresAt: number;
+    sources: MagnetSource[];
+}
 
 export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, isPaused, brightness }) => {
     // Map of ID -> Timestamp when burning started
     const burningDrops = useRef<Map<string, number>>(new Map());
+    const magnetSourceCache = useRef<Map<string, MagnetSourceCacheEntry>>(new Map());
+    const nextMagnetCachePrune = useRef(0);
     const accumulator = useRef(0);
 
     useFrame((_, delta) => {
@@ -303,6 +344,12 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
         let steps = 0;
 
         const now = Date.now();
+        if (now >= nextMagnetCachePrune.current) {
+            magnetSourceCache.current.forEach((entry, key) => {
+                if (entry.expiresAt < now) magnetSourceCache.current.delete(key);
+            });
+            nextMagnetCachePrune.current = now + MAGNET_SOURCE_CACHE_PRUNE_MS;
+        }
 
         // Process Burning Queues (Time check only, cheap)
         burningDrops.current.forEach((deathTime, id) => {
@@ -319,6 +366,44 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
             drops.forEach(drop => {
                 // If already marked for death, skip physics
                 if (burningDrops.current.has(drop.id)) return;
+
+                if (isMagneticMetalItem(drop.type)) {
+                    const centerX = Math.floor(drop.position[0]);
+                    const centerY = Math.floor(drop.position[1]);
+                    const centerZ = Math.floor(drop.position[2]);
+                    const cacheKey = `${centerX},${centerY},${centerZ}`;
+                    let cached = magnetSourceCache.current.get(cacheKey);
+
+                    if (!cached || cached.expiresAt <= now) {
+                        cached = {
+                            expiresAt: now + MAGNET_SOURCE_CACHE_MS,
+                            sources: collectMagnetSources(
+                                getWorldBlock,
+                                centerX,
+                                centerY,
+                                centerZ,
+                                MAGNET_RANGE,
+                                MAGNET_BLOCK_IDS,
+                            ),
+                        };
+                        magnetSourceCache.current.set(cacheKey, cached);
+                    }
+
+                    if (cached.sources.length > 0) {
+                        const field = sampleRawMagneticField(
+                            cached.sources,
+                            drop.position[0],
+                            drop.position[1],
+                            drop.position[2],
+                        );
+                        applyMagneticFieldToVelocity(
+                            drop.velocity,
+                            field,
+                            dt,
+                            drop.type === BlockType.NEGATIVE_MAGNET ? -1 : 1,
+                        );
+                    }
+                }
 
                 // Physics update
                 drop.velocity[1] -= 20.0 * dt; 
@@ -374,7 +459,11 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                 
                 if (canPickup && !burningDrops.current.has(drop.id)) {
                     if (dist < 1.4) {
-                        onCollect(drop.id, drop.type, drop.count);
+                        onCollect(drop.id, {
+                            type: drop.type,
+                            count: drop.count,
+                            instance: drop.instance ? structuredClone(drop.instance) : undefined,
+                        });
                         newPos.set(0, -5000, 0); 
                     } else if (dist < 5.0) {
                         const dir = _dropPullDir.copy(playerPos).sub(newPos).normalize();

@@ -47,7 +47,7 @@ interface PauseMenuProps {
 
 type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
 
-// Minecraft Slider Component
+// Menu Slider Component
 const MenuSlider: React.FC<{
     label: string;
     value: number; // 0 to 1 usually, or range
@@ -93,7 +93,7 @@ const MenuSlider: React.FC<{
             </div>
 
             {/* Text Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-white font-minecraft text-shadow-md">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-white font-pixel text-shadow-md">
                 {label}: {formatValue ? formatValue(value) : Math.round(percentage) + '%'}
             </div>
         </div>
@@ -315,7 +315,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <div className="flex flex-col gap-2 items-center w-[820px]">
                 <h1 className="text-white text-xl mb-2 font-bold text-shadow-lg">Tutorial</h1>
 
-                <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-minecraft">
+                <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-pixel">
                     Tutorial wiki. You can always return here through Options &gt; Tutorial.
                 </div>
 
@@ -332,19 +332,19 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
                 <div className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4">
                     <h2 className="text-white text-lg font-bold text-shadow-md mb-1">{activeSection.title}</h2>
-                    <p className="text-blue-200 text-sm font-minecraft mb-3">{activeSection.subtitle}</p>
+                    <p className="text-blue-200 text-sm font-pixel mb-3">{activeSection.subtitle}</p>
 
                     <div className="space-y-3 mb-4">
                         {activeSection.paragraphs.map((paragraph) => (
-                            <p key={paragraph} className="text-gray-100 text-sm leading-relaxed font-minecraft">{paragraph}</p>
+                            <p key={paragraph} className="text-gray-100 text-sm leading-relaxed font-pixel">{paragraph}</p>
                         ))}
                     </div>
 
                     <div className="border-t border-white/15 pt-3">
-                        <h3 className="text-white text-sm font-bold mb-2 font-minecraft">Highlights</h3>
+                        <h3 className="text-white text-sm font-bold mb-2 font-pixel">Highlights</h3>
                         <ul className="space-y-1 pl-4 list-disc">
                             {activeSection.bullets.map((bullet) => (
-                                <li key={bullet} className="text-gray-200 text-sm font-minecraft">{bullet}</li>
+                                <li key={bullet} className="text-gray-200 text-sm font-pixel">{bullet}</li>
                             ))}
                         </ul>
                     </div>

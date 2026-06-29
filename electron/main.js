@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fsSync = require('fs');
 const fs = require('fs/promises');
+const { SavesManager } = require('./saves/savesManager.cjs');
 
 // ✅ Add this BEFORE app.whenReady() and before any BrowserWindow is created
 // Increase memory limit for voxel processing
@@ -91,7 +92,44 @@ function createWindow() {
     mainWindow.show();
     mainWindow.focus();
   });
+
+  attachQuitFlush(mainWindow);
 }
+
+// Hold the window's close until the renderer has saved (force flush), with a
+// timeout so a hung/unresponsive renderer can never block quit. The renderer
+// answers via the 'app:flush-complete' handler below.
+let pendingFlushResolve = null;
+function attachQuitFlush(win) {
+  let flushing = false;
+  win.on('close', (event) => {
+    if (flushing) return; // the post-flush destroy() path
+    flushing = true;
+    event.preventDefault();
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingFlushResolve = null;
+      if (!win.isDestroyed()) win.destroy();
+    };
+    const timer = setTimeout(finish, 3000); // never hang on an unresponsive renderer
+    pendingFlushResolve = finish;
+
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send('app:flush-request');
+    } else {
+      finish();
+    }
+  });
+}
+
+ipcMain.handle('app:flush-complete', () => {
+  if (pendingFlushResolve) pendingFlushResolve();
+  return { ok: true };
+});
 
 const sanitizeFileName = (value) => {
   const trimmed = String(value || '').trim();
@@ -412,12 +450,75 @@ ipcMain.handle('music:scanFolders', async () => {
   }
 });
 
+// --- World saves (filesystem backend) ---------------------------------------
+// Folder layout: <savesDir>/<worldId>/{level.json, level.json.bak, session.lock,
+// region/r.<rx>.<rz>.acr}. Dev mirrors the panorama/world-preset convention
+// (process.cwd()/data); packaged uses userData.
+const getSavesDir = () => {
+  if (!app.isPackaged) {
+    return path.join(process.cwd(), 'data', 'saves');
+  }
+  return path.join(app.getPath('userData'), 'saves');
+};
+
+let savesManager = null;
+const getSaves = () => {
+  if (!savesManager) savesManager = new SavesManager(getSavesDir());
+  return savesManager;
+};
+
+const savesOk = (extra) => Object.assign({ ok: true }, extra);
+const savesFail = (error) => ({ ok: false, error: String(error?.message || error), code: error?.code });
+
+ipcMain.handle('saves:list', async () => {
+  try { return savesOk({ worlds: await getSaves().list() }); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:readMeta', async (_event, payload) => {
+  try { return savesOk({ meta: await getSaves().readMeta(payload?.worldId) }); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:writeMeta', async (_event, payload) => {
+  try { await getSaves().writeMeta(payload?.meta); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:create', async (_event, payload) => {
+  try { await getSaves().create(payload?.meta); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:delete', async (_event, payload) => {
+  try { await getSaves().deleteWorld(payload?.worldId); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:rename', async (_event, payload) => {
+  try { await getSaves().rename(payload?.worldId, payload?.name); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:readChunk', async (_event, payload) => {
+  try { return savesOk({ chunk: await getSaves().readChunk(payload?.worldId, payload?.cx, payload?.cz) }); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:writeChunks', async (_event, payload) => {
+  try { await getSaves().writeChunks(payload?.worldId, payload?.chunks || []); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:readChunksAll', async (_event, payload) => {
+  try { return savesOk({ chunks: await getSaves().listAllChunks(payload?.worldId) }); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:open', async (_event, payload) => {
+  try { await getSaves().open(payload?.worldId); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:close', async (_event, payload) => {
+  try { await getSaves().close(payload?.worldId); return savesOk(); } catch (e) { return savesFail(e); }
+});
+ipcMain.handle('saves:openFolder', async (_event, payload) => {
+  try {
+    const dir = getSaves().worldDir(payload?.worldId);
+    await fs.mkdir(dir, { recursive: true });
+    await shell.openPath(dir);
+    return savesOk();
+  } catch (e) { return savesFail(e); }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  const finish = () => { if (process.platform !== 'darwin') app.quit(); };
+  // Release session locks + flush region handles before quitting.
+  if (savesManager) savesManager.closeAll().then(finish, finish);
+  else finish();
 });
 
 app.on('activate', () => {

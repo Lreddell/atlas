@@ -15,6 +15,9 @@ import { Slot } from './Slot';
 import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
+import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/registry/equipment';
+import { cloneItemStack } from '../../systems/inventory/itemStackPolicy';
+import type { EquipmentSlot } from '../../types';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
@@ -27,6 +30,8 @@ interface InventoryUIProps {
     cursorStack: ItemStack | null;
     setCursorStack: (stack: ItemStack | null) => void;
     handleInventoryAction: InventoryActionHandler;
+    equipment: Equipment;
+    setEquipment: (eq: Equipment) => void;
 }
 
 type SlotCollection = DragTargetSlot['collection'];
@@ -58,21 +63,30 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
     BlockType.SANDSTONE, BlockType.RED_SANDSTONE, BlockType.BASALT, BlockType.OBSIDIAN,
     BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS,
-    BlockType.GLASS, BlockType.WOOL,
+    BlockType.JUNGLE_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.ACACIA_PLANKS,
+    BlockType.GLASS, BlockType.WOOL, BlockType.IRON_BLOCK,
+    BlockType.ANDESITE, BlockType.DIORITE, BlockType.GRANITE, BlockType.MOSSY_COBBLESTONE,
     // Slabs
     BlockType.STONE_SLAB, BlockType.COBBLESTONE_SLAB, BlockType.BRICK_SLAB, BlockType.SANDSTONE_SLAB, BlockType.RED_SANDSTONE_SLAB,
     BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,
+    BlockType.JUNGLE_SLAB, BlockType.DARK_OAK_SLAB, BlockType.ACACIA_SLAB,
     // Stairs
     BlockType.STONE_STAIRS, BlockType.COBBLESTONE_STAIRS, BlockType.BRICK_STAIRS, BlockType.SANDSTONE_STAIRS, BlockType.RED_SANDSTONE_STAIRS,
     BlockType.OAK_STAIRS, BlockType.SPRUCE_STAIRS, BlockType.BIRCH_STAIRS, BlockType.CHERRY_STAIRS,
+    BlockType.JUNGLE_STAIRS, BlockType.DARK_OAK_STAIRS, BlockType.ACACIA_STAIRS,
     BlockType.TERRACOTTA, BlockType.TERRACOTTA_WHITE, BlockType.TERRACOTTA_LIGHT_GRAY, BlockType.TERRACOTTA_BROWN, BlockType.TERRACOTTA_RED, BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_YELLOW, BlockType.TERRACOTTA_MAGENTA,
 
     // --- NATURAL ---
-    BlockType.GRASS, BlockType.DIRT, BlockType.SAND, BlockType.RED_SAND, BlockType.SNOWY_GRASS, BlockType.SNOW_BLOCK, BlockType.ICE,
+    BlockType.GRASS, BlockType.DIRT, BlockType.COARSE_DIRT, BlockType.MUD, BlockType.SAND, BlockType.RED_SAND, BlockType.SNOWY_GRASS, BlockType.SNOW_BLOCK, BlockType.ICE, BlockType.PACKED_ICE,
+    BlockType.MOSSY_GRASS, BlockType.LUSH_GRASS, BlockType.DARK_GRASS, BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS, BlockType.PODZOL,
     BlockType.LOG, BlockType.SPRUCE_LOG, BlockType.BIRCH_LOG, BlockType.CHERRY_LOG,
+    BlockType.JUNGLE_LOG, BlockType.DARK_OAK_LOG, BlockType.ACACIA_LOG,
     BlockType.LEAVES, BlockType.SPRUCE_LEAVES, BlockType.BIRCH_LEAVES, BlockType.CHERRY_LEAVES,
+    BlockType.JUNGLE_LEAVES, BlockType.DARK_OAK_LEAVES, BlockType.ACACIA_LEAVES,
     BlockType.CACTUS, BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER, BlockType.WHEAT_SEEDS,
-    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING, BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
+    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
+    BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
     BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.COPPER_ORE, BlockType.GOLD_ORE, BlockType.LAPIS_ORE, BlockType.DIAMOND_ORE, BlockType.EMERALD_ORE,
 
     // --- TOOLS (Tiered) ---
@@ -88,6 +102,9 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.DIAMOND_SWORD, BlockType.DIAMOND_PICKAXE, BlockType.DIAMOND_AXE, BlockType.DIAMOND_SHOVEL, BlockType.DIAMOND_HOE,
     // Copper (Custom)
     BlockType.COPPER_SWORD, BlockType.COPPER_PICKAXE, BlockType.COPPER_AXE, BlockType.COPPER_SHOVEL, BlockType.COPPER_HOE,
+    // Equipment and magnetic tools
+    BlockType.IRON_HELMET, BlockType.IRON_CHESTPLATE, BlockType.IRON_LEGGINGS, BlockType.IRON_BOOTS,
+    BlockType.POLARITY_BOOTS, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET,
 
     // --- INGREDIENTS ---
     BlockType.COAL, BlockType.CHARCOAL, 
@@ -104,7 +121,8 @@ const ITEM_SORT_ORDER: BlockType[] = [
 export const InventoryUI: React.FC<InventoryUIProps> = ({ 
     inventory, openContainer, setOpenContainer,
     craftingGrid2x2, craftingGrid3x3, craftingOutput,
-    cursorStack, handleInventoryAction
+    cursorStack, setCursorStack, handleInventoryAction,
+    equipment, setEquipment
 }) => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, x: number, y: number} | null>(null);
@@ -356,6 +374,34 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         setHoverInfo(null);
     };
 
+    // Equipment slots interact only with the cursor + equipment state (both lifted
+    // to App), so they reuse the existing inventory<->cursor pickup without touching
+    // the inventory controller. Click to swap the cursor item with the slot, if the
+    // item belongs in that slot; click an empty cursor on a filled slot to pick it up.
+    const handleEquipMouseDown = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const current = equipment[slot] ?? null;
+        if (cursorStack) {
+            if (slotForItem(cursorStack.type) !== slot) return; // wrong gear for this slot
+            if (cursorStack.count === 1) {
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
+                setCursorStack(current);
+            } else if (!current) {
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
+                setCursorStack({ ...cursorStack, count: cursorStack.count - 1 });
+            }
+        } else if (current) {
+            setEquipment({ ...equipment, [slot]: null });
+            setCursorStack(current);
+        }
+    };
+
+    const handleEquipEnter = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        const it = equipment[slot];
+        if (it) setHoverInfo({ name: BLOCKS[it.type]?.name || 'Unknown', x: e.clientX, y: e.clientY });
+    };
+
     const handleMouseMove = (e: React.MouseEvent) => {
         setMousePos({x: e.clientX, y: e.clientY});
         if (hoverInfo) {
@@ -517,6 +563,31 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
 
                     <div className="flex gap-6 justify-center">
+                        {(openContainer.type === 'inventory' || openContainer.type === 'creative') && (
+                            <div className="flex flex-col gap-1 justify-center mr-1">
+                                <div className="text-[#333] text-[10px] font-bold uppercase text-center mb-1">Armor</div>
+                                {EQUIPMENT_SLOTS.map((slot) => {
+                                    const it = equipment[slot] ?? null;
+                                    return (
+                                        <div
+                                            key={slot}
+                                            className="relative"
+                                            onMouseDown={(e) => handleEquipMouseDown(slot, e)}
+                                            onMouseEnter={(e) => handleEquipEnter(slot, e)}
+                                            onMouseLeave={onSlotLeave}
+                                            title={slot}
+                                        >
+                                            <Slot item={it} size="large" />
+                                            {!it && (
+                                                <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
+                                                    {slot}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                         <div className="flex flex-col gap-2">
                             <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
                                 {inventory.slice(9).map((it, i) => renderSlot(it, 'inventory', i + 9))}

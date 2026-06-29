@@ -81,8 +81,8 @@ export function simulateStep(
         // Increased speeds for better creative mode traversal
         const flySpeed = intent.sprint ? 50.0 : 24.0;
 
-        // Minecraft creative flight: per-tick drag (0.91, same as air) + input
-        // injection sized so the equilibrium equals flySpeed. This gives the
+        // Creative flight: per-tick drag (0.91, same as air) + input injection
+        // sized so the equilibrium equals flySpeed. This gives the
         // gliding, momentum-carrying flight where you coast after releasing keys.
         const flyAccel = 1 - AIR_FRICTION; // injection factor -> terminal == flySpeed
         newVel.x *= AIR_FRICTION;
@@ -121,12 +121,12 @@ export function simulateStep(
     // --- Ground Detection ---
     const wasGrounded = checkCollision(wm, {x: pos.x, y: pos.y - GROUND_EPS, z: pos.z}, PLAYER_WIDTH, height);
     
-    // --- Horizontal Movement (Minecraft friction model) ---
+    // --- Horizontal Movement (per-tick friction model) ---
     // Per tick: decay velocity by a friction factor, then add a fixed input
     // acceleration. The equilibrium of the two equals targetSpeed, so momentum
     // (gradual ramp-up, glide-to-stop, and direction reversals that carry your
     // old velocity) emerges naturally instead of being lerped toward a target.
-    // FIXED_DT == one Minecraft tick, so these per-tick factors apply directly.
+    // FIXED_DT == one simulation tick, so these per-tick factors apply directly.
     const horizFriction = inFluid
         ? FLUID_FRICTION
         : (wasGrounded ? GROUND_FRICTION : AIR_FRICTION);
@@ -241,7 +241,22 @@ export function simulateStep(
         if (newVel.y < 0) {
             isGrounded = true;
             // Snap to the top of the actual supporting block (beds are 0.5 high).
-            const supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+            let supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+            if (supportTop === null) {
+                // Fast fall: this step overshot the floor by more than a block, so
+                // the reverted position sits in the air ABOVE it and getSupportTop
+                // (which only looks ~1 block down) misses. Sweep the feet down to
+                // the real surface, otherwise the player "lands" floating in the
+                // air — which, over a 1-deep water pool, also robs the landing of
+                // its fall-damage immunity and can be fatal.
+                let by = Math.floor(newPos.y);
+                const limit = by - Math.ceil(Math.abs(dy)) - 2;
+                while (by >= limit) {
+                    const top = getSupportTop(wm, { x: newPos.x, y: by + CONTACT_EPS, z: newPos.z }, PLAYER_WIDTH);
+                    if (top !== null) { supportTop = top; break; }
+                    by--;
+                }
+            }
             newPos.y = (supportTop !== null ? supportTop : Math.floor(newPos.y)) + CONTACT_EPS;
         } else {
             newPos.y = Math.floor(newPos.y + height + 1.0) - height - CONTACT_EPS;
@@ -265,7 +280,7 @@ export function simulateStep(
     }
 
     // --- Lenient Sprint Stop Check ---
-    // Only evaluated while grounded. In Minecraft a jump never cancels your sprint —
+    // Only evaluated while grounded. A jump never cancels your sprint —
     // sprint-jumping is a core movement tech — so airborne ticks neither cancel nor
     // accumulate toward a cancel. On the ground, a genuine wall bump (sustained low
     // speed) still ends the sprint after the grace window; a momentum direction flip

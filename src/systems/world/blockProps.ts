@@ -8,7 +8,10 @@ const LEAF_TYPES = new Set<BlockType>([
     BlockType.LEAVES,
     BlockType.SPRUCE_LEAVES,
     BlockType.BIRCH_LEAVES,
-    BlockType.CHERRY_LEAVES
+    BlockType.CHERRY_LEAVES,
+    BlockType.JUNGLE_LEAVES,
+    BlockType.DARK_OAK_LEAVES,
+    BlockType.ACACIA_LEAVES
 ]);
 
 // getOpacity is called per voxel in the lighting BFS and the mesher AO loops —
@@ -243,6 +246,7 @@ const SUPPORT_DEPENDENT = new Set<BlockType>([
     BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER,
     BlockType.DEAD_BUSH, BlockType.DEBUG_CROSS,
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
 ]);
 
 export function needsSupport(type: BlockType): boolean {
@@ -260,8 +264,8 @@ export function hasSupportBelow(type: BlockType, belowType: BlockType): boolean 
     return isValidSoil(belowType);
 }
 
-// Blocks a placed block may overwrite. Grass and dead bushes pop off like in
-// Minecraft; flowers, torches and saplings are NOT replaceable (place beside them).
+// Blocks a placed block may overwrite. Grass and dead bushes pop off when built
+// over; flowers, torches and saplings are NOT replaceable (place beside them).
 const PLACEMENT_REPLACEABLE = new Set<BlockType>([
     BlockType.GRASS_PLANT, BlockType.DEAD_BUSH,
 ]);

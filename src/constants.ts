@@ -11,7 +11,7 @@ export const JUMP_FORCE = 10.0;
 
 export const WORKERS_ENABLED = true; 
 
-// Minecraft-accurate speeds (blocks per second)
+// Movement speeds (blocks per second)
 export const WALK_SPEED = 4.317;
 export const SPRINT_SPEED = 5.612;
 export const SNEAK_SPEED = 1.3;

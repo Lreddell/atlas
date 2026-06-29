@@ -8,6 +8,9 @@ import { updateChunkMaterials } from '../chunkLightingState';
 import { updateCloudColor } from './cloudState';
 import { worldManager } from '../../systems/WorldManager';
 import { getBiome } from '../../systems/world/biomes';
+import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
+import { bossSummon } from '../../systems/boss/bossSummon';
+import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 
 // Shader for the skybox gradient with Directional Sunset
@@ -361,6 +364,8 @@ const COL_SUNSET_ZENITH = new THREE.Color(0x2c3e50);
 const COL_SUNSET_HORIZON_SUN = new THREE.Color(0xff6b35);
 const COL_SUNSET_HORIZON_MOON = new THREE.Color(0x0d0d26);
 const COL_WHITE = new THREE.Color(0xffffff);
+// Dusky purple-gray haze tint for the Magnetic Fields biome.
+const MAGNETIC_FOG_TINT = new THREE.Color(0x2a2238);
 
 const scratchSunDir = new THREE.Vector3();
 const scratchMoonDir = new THREE.Vector3();
@@ -415,6 +420,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const [currentDayFactor, setCurrentDayFactor] = useState(1.0);
     const daysPassedRef = useRef(0);
     const auroraBiomeBlendRef = useRef(0);
+    const magneticFogBlendRef = useRef(0);
+    // Smoothed boss-phase intensity so the fog thickens/thins gradually across a
+    // phase change instead of snapping to the new density in a single frame.
+    const stormBlendRef = useRef(0);
     
     const TICK_CYCLE = 24000;
     const moonTintColor = useMemo(() => new THREE.Color(), []);
@@ -658,11 +667,38 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         skyMat.uniforms.uHorizonColorMoon.value.copy(targetHorizonMoon);
         skyMat.uniforms.uSunDirection.value.copy(sunDir);
         
+        // The Magnetic Fields biome is hazy and charged: pull the fog in close and
+        // tint it dusky purple. Damped so crossing the border eases in/out. The haze
+        // is fully suppressed during the summon cutscene (the orbit looks at the
+        // arena from far away — thick fog would hide it) and fades back in the moment
+        // the player regains control.
+        const inMagnetic = (getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined)?.id === MAGNETIC_FIELDS_BIOME_ID;
+        if (bossSummon.isActive()) {
+            magneticFogBlendRef.current = 0;
+        } else {
+            magneticFogBlendRef.current = THREE.MathUtils.damp(magneticFogBlendRef.current, inMagnetic ? 1 : 0, 1.2, delta);
+        }
+        const mag = magneticFogBlendRef.current;
+        // Polarity storm: the haze thickens further per boss phase (slam → frenzy),
+        // closing in and tinting harder for drama as the fight escalates.
+        const stormTarget = bossSummon.isActive() ? 0 : bossPhaseState.intensity;
+        stormBlendRef.current = THREE.MathUtils.damp(stormBlendRef.current, stormTarget, 1.2, delta);
+        const storm = stormBlendRef.current;
+        if (mag > 0.001) targetFog.lerp(MAGNETIC_FOG_TINT, mag * (0.5 + 0.5 * storm));
+
         scene.background = targetFog;
 
         // Push fog start distance back to prevent wash-out at close range
-        const fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
-        const fogFar = renderDistance * CHUNK_SIZE - 5;
+        let fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
+        let fogFar = renderDistance * CHUNK_SIZE - 5;
+        if (mag > 0.001) {
+            // Roughly halve the visible range inside the biome for a thick haze — and
+            // clamp it down hard during the boss storm: noticeably thicker once the
+            // slam phase begins (storm 0.65), and a near-blinding murk at frenzy
+            // (storm 1.0, when the music speeds up).
+            fogNear = THREE.MathUtils.lerp(fogNear, 12 - 8 * storm, mag);
+            fogFar = THREE.MathUtils.lerp(fogFar, Math.max(16, fogFar * (0.45 - 0.3 * storm)), mag);
+        }
 
         if (scene.fog) {
             (scene.fog as THREE.Fog).color.copy(targetFog);

@@ -8,6 +8,7 @@ import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } 
 import { resolveTexture } from '../systems/world/textureResolver';
 import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
 import { worldManager } from '../systems/WorldManager';
+import { inputState } from '../systems/player/playerInput';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
@@ -76,12 +77,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const pendingPlacementSwing = useRef(false);
     const keysPressed = useRef(new Set<string>());
     const isLeftMouseDown = useRef(false);
-    const isRightMouseDown = useRef(false);
-    const moveSway = useRef(0); 
+    const moveSway = useRef(0);
     const isLockedRef = useRef(isLocked);
-    
-    const itemStackRef = useRef(itemStack);
-    useEffect(() => { itemStackRef.current = itemStack; }, [itemStack]);
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
@@ -91,7 +88,6 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         isLockedRef.current = isLocked;
         if (!isLocked) {
             isLeftMouseDown.current = false;
-            isRightMouseDown.current = false;
         }
     }, [isLocked]);
 
@@ -139,18 +135,18 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             pendingPlacementSwing.current = true;
         };
         
-        const onMouseDown = (e: MouseEvent) => { 
+        const onMouseDown = (e: MouseEvent) => {
             if (!isLockedRef.current) {
                 isLeftMouseDown.current = false;
-                isRightMouseDown.current = false;
                 return;
             }
-            if(e.button === 0) isLeftMouseDown.current = true;
-            if(e.button === 2 && itemStackRef.current) isRightMouseDown.current = true;
+            // Left-click drives the continuous mine/attack swing. Right-click no
+            // longer animates here — placement swings come from the
+            // 'atlas:block-placed' event and eating from inputState.eating.
+            if (e.button === 0) isLeftMouseDown.current = true;
         };
-        const onMouseUp = (e: MouseEvent) => { 
-            if(e.button === 0) isLeftMouseDown.current = false;
-            if(e.button === 2) isRightMouseDown.current = false;
+        const onMouseUp = (e: MouseEvent) => {
+            if (e.button === 0) isLeftMouseDown.current = false;
         };
 
         window.addEventListener('keydown', onKeyDown);
@@ -188,9 +184,18 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                      itemType === BlockType.DEBUG_CROSS ||
                      itemType === BlockType.WHEAT_SEEDS ||
                      itemType === BlockType.PINK_FLOWER ||
+                     itemType === BlockType.SAPLING ||
                      itemType === BlockType.SPRUCE_SAPLING ||
                      itemType === BlockType.BIRCH_SAPLING ||
-                     itemType === BlockType.CHERRY_SAPLING;
+                     itemType === BlockType.CHERRY_SAPLING ||
+                     itemType === BlockType.JUNGLE_SAPLING ||
+                     itemType === BlockType.DARK_OAK_SAPLING ||
+                     itemType === BlockType.ACACIA_SAPLING ||
+                     itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                     itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                     itemType === BlockType.MAGNETIC_SPIKE ||
+                     itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                     itemType === BlockType.MAGNETITE_SHARD;
 
         if (!is2D) {
             const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
@@ -270,8 +275,12 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             const bobX = Math.sin(time * 10) * 0.02 * moveSway.current;
             const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
 
-            const isAction = (isLeftMouseDown.current || isRightMouseDown.current) && isLocked;
-            const SWING_DURATION = 0.25; 
+            // Continuous swing comes from left-click (mining/attacking) or an active
+            // bite (eating). Right-click placement/use does NOT auto-swing — a swing
+            // only fires when something actually happens (the 'atlas:block-placed'
+            // event below), so a failed/no-op right-click no longer animates.
+            const isAction = (isLeftMouseDown.current || inputState.eating) && isLocked;
+            const SWING_DURATION = 0.25;
 
             if (pendingPlacementSwing.current && animState.current.swingPhase === 0) {
                 animState.current.swingStartTime = time;
@@ -317,9 +326,18 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 itemType === BlockType.DEBUG_CROSS ||
                 itemType === BlockType.WHEAT_SEEDS ||
                 itemType === BlockType.PINK_FLOWER ||
+                itemType === BlockType.SAPLING ||
                 itemType === BlockType.SPRUCE_SAPLING ||
                 itemType === BlockType.BIRCH_SAPLING ||
-                itemType === BlockType.CHERRY_SAPLING
+                itemType === BlockType.CHERRY_SAPLING ||
+                itemType === BlockType.JUNGLE_SAPLING ||
+                itemType === BlockType.DARK_OAK_SAPLING ||
+                itemType === BlockType.ACACIA_SAPLING ||
+                itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
+                itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
+                itemType === BlockType.MAGNETIC_SPIKE ||
+                itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
+                itemType === BlockType.MAGNETITE_SHARD
             );
 
             if (itemType && !is2D) {

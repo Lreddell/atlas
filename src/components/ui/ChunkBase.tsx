@@ -1,5 +1,9 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { getBiome, getGenerationParams, BIOMES } from '../../systems/world/biomes';
+import {
+    getMagneticFieldColumn,
+    MF_CELL, MF_RADIUS, MF_FIELD_FREQ, MF_FIELD_THRESHOLD, MF_ARENA_FLOOR_Y, MF_TIER_COUNT,
+} from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
 import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
 import { CHUNK_SIZE } from '../../constants';
@@ -67,6 +71,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
     const [layers, setLayers] = useState<LayerConfig[]>([
         { id: 'biome', name: 'Biomes', enabled: true, opacity: 1.0, color: '#4CAF50' },
+        { id: 'boss', name: 'Boss Field (Magnetic)', enabled: false, opacity: 0.9, color: '#b388ff' },
         { id: 'height', name: 'Heightmap', enabled: false, opacity: 0.8, color: '#FFFFFF' },
         { id: 'river', name: 'Humidity / Rivers', enabled: false, opacity: 0.6, color: '#2196F3' },
         { id: 'temp', name: 'Temperature', enabled: false, opacity: 0.5, color: '#F44336' },
@@ -146,6 +151,8 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
         const invScale = 1 / scale;
         const activeLayers = layers.filter(l => l.enabled && l.opacity > 0);
+        // Boss-biome activation noise sampler (same channel worldgen uses).
+        const bossNoise2D = (px: number, pz: number) => previewNoiseSet.bossBiome.noise2D(px, pz);
         const startWX = center.x - (width / 2) * invScale;
         const startWZ = center.z - (height / 2) * invScale;
         const stepWorld = PIXEL_STEP * invScale;
@@ -172,7 +179,27 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                         lr = (hex >> 16) & 255;
                         lg = (hex >> 8) & 255;
                         lb = hex & 255;
-                    } 
+                    }
+                    else if (layer.id === 'boss') {
+                        // Visualize the rare Magnetic Fields "boss biome": where an
+                        // instance actually lands, shaded outer→inner by tier (the
+                        // golden core is the boss arena plateau); elsewhere a faint
+                        // heatmap of the activation noise so you can spot near-misses.
+                        const bossSeed = previewNoiseSet.seed | 0;
+                        const col = getMagneticFieldColumn(wx, wz, bossSeed, bossNoise2D);
+                        if (col) {
+                            if (col.isArena) {
+                                lr = 255; lg = 224; lb = 130;          // arena plateau
+                            } else {
+                                const tierT = col.tier / Math.max(1, MF_TIER_COUNT - 1); // 0 outer → 1 inner
+                                lr = 110 + tierT * 130; lg = 40 + tierT * 30; lb = 200;   // purple → magenta
+                            }
+                        } else {
+                            const f = bossNoise2D(wx * MF_FIELD_FREQ, wz * MF_FIELD_FREQ);
+                            const hot = Math.max(0, (f - (MF_FIELD_THRESHOLD - 0.3)) / 0.3); // ramps toward threshold
+                            lr = hot * 70; lg = 0; lb = hot * 95;
+                        }
+                    }
                     else if (layer.id === 'height') {
                         const h = getTerrainHeight(wx, wz, previewNoiseSet);
                         if (h <= GenConfig.height.seaLevel) {
@@ -461,23 +488,36 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
     const toggleBiomeExpand = (key: string) => setExpandedBiomes(prev => ({ ...prev, [key]: !prev[key] }));
 
-    const getBiomeMeta = (key: string) => {
-        switch(key) {
-            case 'volcanic': return { name: 'Volcanic', color: BIOMES.VOLCANIC.color };
-            case 'mesaBryce': return { name: 'Mesa Bryce', color: BIOMES.MESA_BRYCE.color };
-            case 'mesa': return { name: 'Red Mesa', color: BIOMES.RED_MESA.color };
-            case 'desert': return { name: 'Desert', color: BIOMES.DESERT.color };
-            case 'plains': return { name: 'Plains', color: BIOMES.PLAINS.color };
-            case 'forest': return { name: 'Forest', color: BIOMES.FOREST.color };
-            case 'cherry': return { name: 'Cherry Grove', color: BIOMES.CHERRY_GROVE.color };
-            case 'tundra': return { name: 'Tundra', color: BIOMES.TUNDRA.color };
-            case 'ocean': return { name: 'Ocean', color: BIOMES.OCEAN.color };
-            case 'river': return { name: 'River', color: BIOMES.RIVER.color };
-            default: return { name: key, color: '#888' };
-        }
+    // Map every editable GenConfig biome key to its registry name + map colour, so
+    // the editor lists ALL biomes (including the later-added forests/mountains/etc.),
+    // not just the original ten.
+    const BIOME_META: Record<string, { name: string; color: string }> = {
+        ocean: { name: 'Ocean', color: BIOMES.OCEAN.color },
+        tundra: { name: 'Tundra', color: BIOMES.TUNDRA.color },
+        river: { name: 'River', color: BIOMES.RIVER.color },
+        volcanic: { name: 'Volcanic', color: BIOMES.VOLCANIC.color },
+        mesaBryce: { name: 'Mesa Bryce', color: BIOMES.MESA_BRYCE.color },
+        mesa: { name: 'Red Mesa', color: BIOMES.RED_MESA.color },
+        desert: { name: 'Desert', color: BIOMES.DESERT.color },
+        plains: { name: 'Plains', color: BIOMES.PLAINS.color },
+        forest: { name: 'Forest', color: BIOMES.FOREST.color },
+        cherry: { name: 'Cherry Grove', color: BIOMES.CHERRY_GROVE.color },
+        birchForest: { name: 'Birch Forest', color: BIOMES.BIRCH_FOREST.color },
+        flowerForest: { name: 'Flower Forest', color: BIOMES.FLOWER_FOREST.color },
+        darkForest: { name: 'Dark Forest', color: BIOMES.DARK_FOREST.color },
+        meadow: { name: 'Meadow', color: BIOMES.MEADOW.color },
+        savanna: { name: 'Savanna', color: BIOMES.SAVANNA.color },
+        jungle: { name: 'Jungle', color: BIOMES.JUNGLE.color },
+        taiga: { name: 'Taiga', color: BIOMES.TAIGA.color },
+        iceSpikes: { name: 'Ice Spikes', color: BIOMES.ICE_SPIKES.color },
+        mountains: { name: 'Mountains', color: BIOMES.MOUNTAINS.color },
+        swamp: { name: 'Swamp', color: BIOMES.SWAMP.color },
+        stoneShore: { name: 'Stone Shore', color: BIOMES.STONE_SHORE.color },
     };
 
-    const biomeKeys = ['volcanic', 'mesaBryce', 'mesa', 'desert', 'plains', 'forest', 'cherry', 'tundra', 'ocean', 'river'] as const;
+    const getBiomeMeta = (key: string) => BIOME_META[key] ?? { name: key, color: '#888' };
+
+    const biomeKeys = Object.keys(GenConfig.biomes);
 
     return (
         <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden">
@@ -557,6 +597,24 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     {/* --- BIOMES SECTION --- */}
                     {activeSection === 'biomes' && (
                         <div className="border-t border-white/10 pt-2 flex flex-col gap-3">
+                            {/* Boss biome — procedurally placed, not noise-band tunable. */}
+                            <div className="border border-purple-500/40 rounded bg-[#1c1726] p-3">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: BIOMES.MAGNETIC_FIELDS.color }} />
+                                    <span className="text-sm font-bold text-purple-300 flex-1">Magnetic Fields <span className="text-[10px] text-purple-400/70">BOSS</span></span>
+                                </div>
+                                <div className="text-[11px] text-gray-400 leading-relaxed mb-2">
+                                    Rare tiered convergence biome housing the Magnetic Warden arena. It is placed deterministically by the dedicated <span className="text-purple-300">Boss Field</span> noise channel (not the temperature/weirdness bands) — enable the <span className="text-purple-300">Boss Field (Magnetic)</span> map layer to preview where instances spawn.
+                                </div>
+                                <div className="space-y-1 text-[11px]">
+                                    <div className="flex justify-between"><span className="text-gray-400">Avg spacing</span><span className="font-mono text-gray-300">~{MF_CELL.toLocaleString()} blk</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Radius</span><span className="font-mono text-gray-300">~{MF_RADIUS} blk</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Activation threshold</span><span className="font-mono text-gray-300">{MF_FIELD_THRESHOLD}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Field frequency</span><span className="font-mono text-gray-300">{MF_FIELD_FREQ}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-400">Arena floor Y</span><span className="font-mono text-gray-300">{MF_ARENA_FLOOR_Y}</span></div>
+                                </div>
+                            </div>
+                            <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider pt-1">Standard Biomes</div>
                             {biomeKeys.map(bKey => {
                                 const meta = getBiomeMeta(bKey);
                                 const isExpanded = expandedBiomes[bKey];
@@ -603,7 +661,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 type="text" 
                                 value={localSeedInput} 
                                 onChange={e => setLocalSeedInput(e.target.value)}
-                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-minecraft focus:border-blue-500 outline-none placeholder:text-gray-800"
+                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-pixel focus:border-blue-500 outline-none placeholder:text-gray-800"
                                 placeholder="Seed..."
                             />
                             {localSeedInput !== worldManager.getSeed().toString() && (

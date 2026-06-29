@@ -1,4 +1,6 @@
 
+import { gameEvents } from '../events/GameEvents';
+
 export interface PlayerInputState {
     forward: boolean;
     backward: boolean;
@@ -7,8 +9,14 @@ export interface PlayerInputState {
     jump: boolean;
     sneak: boolean;
     sprint: boolean;
-    sprintLatch: boolean; 
+    sprintLatch: boolean;
     flyToggleTrigger: boolean;
+    /** Player's chosen magnetic polarity (+1 / -1); only effective with polarity boots. */
+    magneticPolarity: number;
+    /** Whether the polarity ability is switched on (toggled with N on upgraded boots). */
+    polarityPowerOn: boolean;
+    /** True while a bite is actively charging (drives the held-item eat animation). */
+    eating: boolean;
 }
 
 // Internal state for double-tap detection
@@ -26,7 +34,21 @@ export const inputState: PlayerInputState = {
     sneak: false,
     sprint: false,
     sprintLatch: false,
-    flyToggleTrigger: false
+    flyToggleTrigger: false,
+    magneticPolarity: 1,
+    polarityPowerOn: true,
+    eating: false,
+};
+
+// Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
+// camera (Player). While `active`, the pointer-lock handler stops driving the
+// world-up Euler camera and instead accumulates raw deltas here, which Player
+// consumes as look around the wall normal. When inactive this is untouched, so
+// normal first-person look is completely unaffected.
+export const lookBridge = {
+    active: false,
+    dYaw: 0,
+    dPitch: 0,
 };
 
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
@@ -80,12 +102,29 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             doubleTapSprintActive = false;
             inputState.sprintLatch = false; // Sneak cancels sprint
             break;
-        case 'ControlLeft': 
+        case 'ControlLeft':
         case 'ControlRight':
             if (e && e.repeat) break;
-            inputState.sprint = true; 
+            inputState.sprint = true;
             // If W is already held when CTRL is pressed, latch sprint
             if (inputState.forward) inputState.sprintLatch = true;
+            break;
+        case 'KeyR':
+            if (e && e.repeat) break;
+            // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity —
+            // the player is usually holding Ctrl (sprint) during a fight, and that
+            // must not eat the polarity swap. (The global shortcut block also stops
+            // reload; this is belt-and-suspenders.)
+            if (e && (e.ctrlKey || e.metaKey)) e.preventDefault();
+            // Flip magnetic polarity (only has an effect while wearing polarity boots).
+            inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
+            break;
+        case 'KeyN':
+            // Toggle the polarity ability on/off (only effective with upgraded boots).
+            if (e && e.repeat) break;
+            inputState.polarityPowerOn = !inputState.polarityPowerOn;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
             break;
     }
 };
@@ -154,6 +193,9 @@ export const resetInputState = () => {
     inputState.sprint = false;
     inputState.sprintLatch = false;
     inputState.flyToggleTrigger = false;
+    inputState.magneticPolarity = 1;
+    inputState.polarityPowerOn = true;
+    inputState.eating = false;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;

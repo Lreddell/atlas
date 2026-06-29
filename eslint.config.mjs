@@ -10,6 +10,20 @@ export default [
   },
   js.configs.recommended,
   {
+    // Electron main-process / preload CommonJS modules (Node runtime).
+    files: ['electron/**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      'no-empty': 'off',
+    },
+  },
+  {
     files: ['**/*.{ts,tsx,js}'],
     languageOptions: {
       parser: tsParser,

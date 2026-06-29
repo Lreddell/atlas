@@ -42,35 +42,35 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
         <h1 className={submenuHeadingClass}>Create New World</h1>
         <div className="flex w-[400px] flex-col gap-6">
             <div className="space-y-1">
-                <label className="pl-1 text-xs font-minecraft uppercase text-gray-400">World Name</label>
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Name</label>
                 <input
                     autoFocus
                     type="text"
                     value={worldName}
                     onChange={(event) => onWorldNameChange(event.target.value)}
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-minecraft text-white outline-none focus:border-blue-500"
+                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
                 />
             </div>
 
             <div className="space-y-1">
-                <label className="pl-1 text-xs font-minecraft uppercase text-gray-400">World Seed (Leave blank for random)</label>
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Seed (Leave blank for random)</label>
                 <input
                     type="text"
                     value={seed}
                     onChange={(event) => onSeedChange(event.target.value)}
                     placeholder="e.g. atlas"
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-minecraft text-white outline-none focus:border-blue-500"
+                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
                 />
             </div>
 
             <div className="space-y-1">
-                <label className="pl-1 text-xs font-minecraft uppercase text-gray-400">Game Mode</label>
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">Game Mode</label>
                 <MenuButton
                     label={`Game Mode: ${gameMode.charAt(0).toUpperCase() + gameMode.slice(1)}`}
                     onClick={onCycleGameMode}
                     width="w-full"
                 />
-                <p className="pl-1 text-[10px] font-minecraft italic leading-tight text-gray-500">
+                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
                     {gameMode === 'survival' && 'Search for resources, craft, gain levels, health and hunger.'}
                     {gameMode === 'creative' && 'Unlimited resources, free flying and destroy blocks instantly.'}
                     {gameMode === 'spectator' && "You can look but don't touch."}
@@ -78,18 +78,18 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
             </div>
 
             <div className="space-y-1">
-                <label className="pl-1 text-xs font-minecraft uppercase text-gray-400">World Edit Preset (.json)</label>
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Edit Preset (.json)</label>
                 <select
                     value={selectedWorldGenPresetId}
                     onChange={(event) => onSelectedWorldGenPresetIdChange(event.target.value)}
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-minecraft text-white outline-none focus:border-blue-500"
+                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
                 >
                     <option value="">Default Terrain</option>
                     {worldGenPresets.map((preset) => (
                         <option key={preset.id} value={preset.id}>{preset.name}</option>
                     ))}
                 </select>
-                <p className="pl-1 text-[10px] font-minecraft italic leading-tight text-gray-500">
+                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
                     Presets are saved from Editor Features {'\u2192'} World Editor.
                 </p>
             </div>
@@ -113,6 +113,10 @@ interface WorldSelectPanelProps {
     onCancel: () => void;
     onExportWorld: () => void;
     onImportWorld: () => void;
+    onRenameWorld: () => void;
+    onOpenSaveFolder: () => void;
+    canOpenSaveFolder: boolean;
+    storageInfo?: string;
 }
 
 export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
@@ -126,6 +130,10 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
     onCancel,
     onExportWorld,
     onImportWorld,
+    onRenameWorld,
+    onOpenSaveFolder,
+    canOpenSaveFolder,
+    storageInfo,
 }) => (
     <div className="relative z-10 flex h-full w-full max-w-[600px] flex-col items-center px-3 py-6 sm:py-10">
         <h1 className={submenuHeadingClass}>Select World</h1>
@@ -148,11 +156,11 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                     <div>
                         <div className="flex items-center gap-2 text-lg font-bold text-[#eee]">
                             <span>{world.name}</span>
-                            <span className="rounded border border-white/20 bg-black/35 px-2 py-0.5 text-[10px] font-minecraft text-blue-200">
+                            <span className="rounded border border-white/20 bg-black/35 px-2 py-0.5 text-[10px] font-pixel text-blue-200">
                                 Preset: {world.worldGenPresetName || 'Default Terrain'}
                             </span>
                         </div>
-                        <div className="text-xs font-minecraft text-gray-400">
+                        <div className="text-xs font-pixel text-gray-400">
                             {world.id.split('-')[0]} {'\u2022'} {world.gameMode} {'\u2022'} {new Date(world.lastPlayed).toLocaleDateString()} {new Date(world.lastPlayed).toLocaleTimeString()}
                         </div>
                     </div>
@@ -169,13 +177,26 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                 <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[calc(100vw-2rem)] sm:w-[280px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
                 <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
                 <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
                 <MenuButton label="Import World" onClick={onImportWorld} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
+            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
+                <MenuButton
+                    label="Open Save Folder"
+                    onClick={onOpenSaveFolder}
+                    disabled={!selectedWorldId || !canOpenSaveFolder}
+                    tooltip={!canOpenSaveFolder ? 'Desktop build only' : undefined}
+                    width="w-[calc(100vw-2rem)] sm:w-[185px]"
+                />
+                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
+            </div>
+            {storageInfo && (
+                <div className="mt-1 text-center text-xs font-pixel text-gray-400">{storageInfo}</div>
+            )}
         </div>
     </div>
 );
@@ -242,7 +263,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
 
         {panoramaSubmenu === 'manager' && (
             <>
-                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-minecraft text-gray-300">
+                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-pixel text-gray-300">
                     Capture from in-game using {panoramaCaptureHotkey}, import an existing panorama PNG, and open Settings for panorama tuning.
                 </div>
 
@@ -307,7 +328,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
 
         {panoramaSubmenu === 'settings' && (
             <>
-                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-minecraft text-gray-300">
+                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-pixel text-gray-300">
                     Panorama appearance settings apply to menu and loading backgrounds.
                 </div>
 
@@ -462,7 +483,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
             className="absolute bottom-2 left-2 text-white text-shadow-md hover:underline"
             title="See what's new"
         >
-            Atlas {APP_DISPLAY_VERSION}
+            Atlas {APP_DISPLAY_VERSION} — What's New
         </button>
         <a
             className="absolute bottom-2 right-2 text-white text-shadow-md hover:underline"
@@ -485,7 +506,7 @@ export const TutorialPromptModal: React.FC<TutorialPromptModalProps> = ({ onAcce
     <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70">
         <div className="w-[560px] border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6">
             <h2 className="mb-2 text-2xl font-bold text-white text-shadow-md">First Time Here?</h2>
-            <p className="mb-6 text-sm font-minecraft leading-relaxed text-gray-200">
+            <p className="mb-6 text-sm font-pixel leading-relaxed text-gray-200">
                 Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
                 Open it now?
             </p>
