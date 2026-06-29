@@ -9,7 +9,7 @@ import { bossPhaseState } from '../systems/boss/bossPhaseState';
 // Renders the glowing additive "effect" particles fired through `particleFx`
 // (combat sparks, slam rings, the summon cutscene) PLUS a steady drift of gray
 // and purple ambient motes while the player stands in the Magnetic Fields biome
-// — the nether-style "this place is charged" atmosphere.
+// — the charged, "this place is humming with energy" atmosphere.
 
 const MAX_FX = 2600;
 

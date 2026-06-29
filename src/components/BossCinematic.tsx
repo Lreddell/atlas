@@ -46,7 +46,7 @@ export const BossCinematic: React.FC = () => {
     const ballRef = useRef<THREE.Mesh | null>(null);
     const coreRef = useRef<THREE.Mesh | null>(null);
     const wasActive = useRef(false);
-    // Per-crystal beam bookkeeping for the fight phase (ender-dragon shield beams).
+    // Per-crystal beam bookkeeping for the fight phase (crystal-tethered shield beams).
     const wasStanding = useRef<boolean[]>([false, false, false, false]);
     const brokenAt = useRef<number[]>([0, 0, 0, 0]);
 
@@ -65,8 +65,8 @@ export const BossCinematic: React.FC = () => {
         wasActive.current = active;
 
         // Beams: during the cutscene they feed the energy ball (crystal → altar).
-        // Once the boss spawns they re-target the BOSS and track it — ender-dragon
-        // style — each beam lasting until its crystal is destroyed, then dissipating
+        // Once the boss spawns they re-target the BOSS and track it — each beam
+        // a tether lasting until its crystal is destroyed, then dissipating
         // with a burst (and a sound, played in App on crystal:broken).
         const cutsceneProg = bossSummon.beamProgress;
         const boss = cutsceneProg <= 0
