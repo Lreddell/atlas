@@ -75,11 +75,13 @@ interface InteractionControllerProps {
     foodStateRef: MutableRefObject<FoodState>;
     setIsSleeping: Dispatch<SetStateAction<boolean>>;
     onSleepInBed?: (x: number, y: number, z: number) => void;
+    /** Use a held Boat on water: board it at the targeted water cell. */
+    onEnterBoat?: (x: number, y: number, z: number) => void;
 }
 
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
-    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
+    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onEnterBoat
 }: InteractionControllerProps) => {
     const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
@@ -254,7 +256,15 @@ export const InteractionController = ({
                 }
             }
 
-            if (targetType === BlockType.WATER || targetType === BlockType.LAVA) return; 
+            if (targetType === BlockType.WATER || targetType === BlockType.LAVA) {
+                // Boarding: using a held Boat on a water cell climbs in there.
+                const held = inventoryRef.current[selectedSlotRef.current] as { type: BlockType } | null;
+                if (!isContinuous && targetType === BlockType.WATER && held?.type === BlockType.BOAT && onEnterBoat) {
+                    soundManager.play('ui.click');
+                    onEnterBoat(bx, by, bz);
+                }
+                return;
+            }
 
             const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
             const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
@@ -458,7 +468,7 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, onEnterBoat, setOpenContainer, setIsSleeping]);
 
     // Melee: if the player is looking at an entity within reach, a left click is
     // an attack (and does not start mining). Damage is a simple weapon lookup for

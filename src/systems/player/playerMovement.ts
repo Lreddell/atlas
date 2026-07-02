@@ -3,14 +3,16 @@ import * as THREE from 'three';
 import { WorldManager } from '../WorldManager';
 import { checkCollision, hasGroundSupport, getSupportTop } from './playerCollision';
 import { BlockType } from '../../types';
-import { 
-    PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, 
+import {
+    PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK,
     WALK_SPEED, SPRINT_MULTIPLIER, SNEAK_MULTIPLIER,
     GRAVITY, JUMP_VELOCITY, TERMINAL_VELOCITY, SPRINT_JUMP_BOOST,
     GROUND_FRICTION, AIR_FRICTION, FLUID_FRICTION, AIR_CONTROL, SPRINT_STOP_GRACE_TICKS,
     SAFE_WALK_STEP, CONTACT_EPS, GROUND_EPS,
     SWIM_SPEED, SWIM_SUBMERGED_SPEED, LAVA_HORIZONTAL_REDUCTION,
-    FLUID_GRAVITY, FLUID_TERMINAL_VEL, FLUID_JUMP_ACCEL, FLUID_JUMP_MAX
+    FLUID_GRAVITY, FLUID_TERMINAL_VEL, FLUID_JUMP_ACCEL, FLUID_JUMP_MAX,
+    BOAT_SPEED, BOAT_FRICTION, BOAT_LAND_SPEED, BOAT_LAND_FRICTION,
+    BOAT_BUOYANCY, BOAT_VERTICAL_DAMP
 } from './playerConstants';
 
 const SAFE_WALK_WIDTH = PLAYER_WIDTH; 
@@ -36,21 +38,28 @@ export function simulateStep(
     cameraYaw: number,
     dt: number,
     isFlying: boolean,
-    noClip: boolean = false
+    noClip: boolean = false,
+    /** Riding a boat: glide fast on the water surface, buoyed by the hull. */
+    boat: boolean = false
 ): SimulationResult {
     const newPos = pos.clone();
     const newVel = vel.clone();
-    
+
     const height = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
 
     // Check Fluids
     const blockFeet = wm.getBlock(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z), false);
     const blockHead = wm.getBlock(Math.floor(pos.x), Math.floor(pos.y + 1.5), Math.floor(pos.z), false);
-    
+
     const inWater = blockFeet === BlockType.WATER;
     const inLava = blockFeet === BlockType.LAVA;
     const inFluid = inWater || inLava;
     const submerged = blockHead === BlockType.WATER || blockHead === BlockType.LAVA;
+    // The hull is "afloat" while the feet cell is water OR water sits directly
+    // under near-flush feet (the equilibrium bobbing point at the surface).
+    const boatAfloat = boat && (inWater
+        || (pos.y - Math.floor(pos.y) < 0.25
+            && wm.getBlock(Math.floor(pos.x), Math.floor(pos.y) - 1, Math.floor(pos.z), false) === BlockType.WATER));
 
     // 1. Calculate Target Speed
     let targetSpeed = WALK_SPEED;
@@ -58,9 +67,12 @@ export function simulateStep(
     if (intent.sneak) targetSpeed *= SNEAK_MULTIPLIER;
 
     // Apply Fluid Speed Modifiers
-    if (inWater) {
+    if (boat) {
+        // Boat overrides swimming: fast surface glide afloat, a slow scrape beached.
+        targetSpeed = boatAfloat ? BOAT_SPEED : BOAT_LAND_SPEED;
+    } else if (inWater) {
         targetSpeed = submerged ? SWIM_SUBMERGED_SPEED : SWIM_SPEED;
-        if (intent.sprint && submerged) targetSpeed *= 1.5; 
+        if (intent.sprint && submerged) targetSpeed *= 1.5;
     } else if (inLava) {
         targetSpeed *= LAVA_HORIZONTAL_REDUCTION;
     }
@@ -127,16 +139,21 @@ export function simulateStep(
     // (gradual ramp-up, glide-to-stop, and direction reversals that carry your
     // old velocity) emerges naturally instead of being lerped toward a target.
     // FIXED_DT == one simulation tick, so these per-tick factors apply directly.
-    const horizFriction = inFluid
-        ? FLUID_FRICTION
-        : (wasGrounded ? GROUND_FRICTION : AIR_FRICTION);
+    const horizFriction = boat
+        ? (boatAfloat ? BOAT_FRICTION : BOAT_LAND_FRICTION)
+        : inFluid
+            ? FLUID_FRICTION
+            : (wasGrounded ? GROUND_FRICTION : AIR_FRICTION);
 
     newVel.x *= horizFriction;
     newVel.z *= horizFriction;
 
     if (_inputVec.lengthSq() > 0) {
         let accel;
-        if (!wasGrounded && !inFluid) {
+        if (boat) {
+            // Boat: equilibrium at the boat speed with its own glidey friction.
+            accel = targetSpeed * (1 - horizFriction);
+        } else if (!wasGrounded && !inFluid) {
             // Airborne: acceleration is a fixed fraction of the GROUND amplitude
             // (target·(1−GROUND_FRICTION)), NOT of (1−AIR_FRICTION). Paired with the
             // high 0.91 air retention this puts the air terminal speed at ~your ground
@@ -153,7 +170,15 @@ export function simulateStep(
     }
 
     // --- Vertical Movement (Gravity & Jumping) ---
-    if (inFluid) {
+    if (boat && boatAfloat) {
+        // Hull buoyancy: while the feet cell is submerged, push up hard with
+        // heavy damping so the boat settles into calm bobbing at the surface.
+        // At the surface (water just below the feet) it simply rests.
+        newVel.y *= BOAT_VERTICAL_DAMP;
+        if (inWater) newVel.y += BOAT_BUOYANCY * dt;
+        else if (newVel.y < 0) newVel.y = Math.max(newVel.y, -0.5);
+        // No jumping out of the hull — sneak is the dismount.
+    } else if (inFluid) {
         newVel.y *= inLava ? 0.8 : 0.9;
         
         newVel.y -= FLUID_GRAVITY * dt; 
@@ -171,7 +196,7 @@ export function simulateStep(
             if (newVel.y < 0) newVel.y = 0;
         }
 
-        if (intent.jump && wasGrounded) {
+        if (intent.jump && wasGrounded && !boat) {
             newVel.y = JUMP_VELOCITY;
             if (intent.sprint) {
                  newVel.x -= Math.sin(cameraYaw) * SPRINT_JUMP_BOOST;
