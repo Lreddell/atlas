@@ -74,7 +74,7 @@ import {
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
-import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
+import { loadGenConfig, normalizeGenConfigSnapshot, resetGenConfig, type WorldGenConfigSnapshot } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
@@ -82,7 +82,6 @@ import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
 import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
-import type { WorldGenConfigSnapshot } from './systems/world/worldGenPresets';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type RenderedChunk = { cx: number; cz: number };
@@ -672,6 +671,13 @@ const App: React.FC = () => {
           meta.spawnPoint = spawnPoint;
           meta.worldSpawn = worldSpawn;
           meta.progression = progressionData;
+          if (activeWorldGenConfigRef.current) {
+              const worldGenConfigSnapshot = normalizeGenConfigSnapshot(activeWorldGenConfigRef.current);
+              if (worldGenConfigSnapshot) {
+                  meta.worldGenConfig = worldGenConfigSnapshot;
+                  activeWorldGenConfigRef.current = worldGenConfigSnapshot;
+              }
+          }
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -2542,16 +2548,18 @@ const App: React.FC = () => {
       void requestPersistentStorage();
       lastSaveSignatureRef.current = ''; // force a save on first autosave in this world
 
+      const worldGenConfigSnapshot = meta.worldGenConfig == null
+          ? null
+          : normalizeGenConfigSnapshot(meta.worldGenConfig);
       resetGenConfig();
-      if (meta.worldGenConfig) {
-          const loaded = loadGenConfig(meta.worldGenConfig);
-          if (!loaded) {
+      if (meta.worldGenConfig != null) {
+          if (!worldGenConfigSnapshot || !loadGenConfig(worldGenConfigSnapshot)) {
               console.warn('[WorldGen] Failed to load world generation config preset; using defaults.');
           }
       }
       
       // Store the world's GenConfig so it can be restored after World Editor visits
-      activeWorldGenConfigRef.current = meta.worldGenConfig ? JSON.parse(JSON.stringify(meta.worldGenConfig)) : null;
+      activeWorldGenConfigRef.current = worldGenConfigSnapshot;
       
       // 2. Configure World Manager
       worldManager.reset();

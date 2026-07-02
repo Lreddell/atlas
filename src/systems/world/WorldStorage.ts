@@ -6,6 +6,7 @@
 // WorldManager / App.tsx / the world menu keep working untouched.
 
 import { DesktopFsBackend } from './storage/DesktopFsBackend';
+import { normalizeGenConfigSnapshot } from './genConfig';
 import { IndexedDbBackend } from './storage/IndexedDbBackend';
 import { OpfsBackend, opfsBackendSupported } from './storage/OpfsBackend';
 import type { StorageBackend } from './storage/StorageBackend';
@@ -113,7 +114,9 @@ class WorldStorageSystem {
             seedNum = Math.abs(seedNum);
         }
 
-        const worldGenConfigSnapshot = worldGenConfig == null ? undefined : JSON.parse(JSON.stringify(worldGenConfig));
+        const worldGenConfigSnapshot = worldGenConfig == null
+            ? undefined
+            : normalizeGenConfigSnapshot(worldGenConfig) ?? undefined;
 
         const meta: WorldMetadata = {
             id,
