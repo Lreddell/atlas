@@ -6,12 +6,14 @@ import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
 import {
+    type Boat,
     type BreakingVisual,
     type GameMode,
     type OpenContainerState,
     BlockType,
     ItemStack,
 } from '../../types';
+import { BOAT_WIDTH, BOAT_HEIGHT } from '../../systems/boat/boatPhysics';
 import { eatFood, EXHAUSTION_COSTS, type FoodState } from '../../systems/player/playerFood';
 import { inputState } from '../../systems/player/playerInput';
 import { 
@@ -37,6 +39,45 @@ function castFromCamera(camera: THREE.Camera, maxDist: number) {
     return voxelRaycast(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, maxDist);
 }
 
+// Boats aren't blocks, so the voxel raycast can't see them — intersect the view
+// ray with each boat's AABB instead. Returns the nearest boat within reach that
+// isn't occluded by a block.
+const _boatRay = new THREE.Ray();
+const _boatBox = new THREE.Box3();
+const _boatHitPoint = new THREE.Vector3();
+
+function rayHitBoat(
+    camera: THREE.Camera,
+    boats: Boat[],
+    maxDist: number,
+    excludeId: string | null
+): { id: string; distance: number } | null {
+    camera.getWorldPosition(_camPos);
+    camera.getWorldDirection(_camDir);
+    _boatRay.set(_camPos, _camDir);
+
+    let best: { id: string; distance: number } | null = null;
+    const half = BOAT_WIDTH / 2 + 0.15; // slightly generous pick box
+    for (const b of boats) {
+        if (b.id === excludeId) continue;
+        _boatBox.min.set(b.position[0] - half, b.position[1], b.position[2] - half);
+        _boatBox.max.set(b.position[0] + half, b.position[1] + BOAT_HEIGHT + 0.15, b.position[2] + half);
+        const p = _boatRay.intersectBox(_boatBox, _boatHitPoint);
+        if (!p) continue;
+        const d = p.distanceTo(_camPos);
+        if (d <= maxDist && (!best || d < best.distance)) best = { id: b.id, distance: d };
+    }
+    if (!best) return null;
+
+    const blockHit = voxelRaycast(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, best.distance);
+    if (blockHit && blockHit.distance < best.distance) {
+        // Water/lava don't occlude — the hull floats right at the waterline.
+        const t = worldManager.tryGetBlock(blockHit.bx, blockHit.by, blockHit.bz);
+        if (t !== BlockType.WATER && t !== BlockType.LAVA) return null;
+    }
+    return best;
+}
+
 interface InteractionControllerProps {
     isLocked: boolean;
     selectedSlot: number;
@@ -52,11 +93,17 @@ interface InteractionControllerProps {
     foodStateRef: MutableRefObject<FoodState>;
     setIsSleeping: Dispatch<SetStateAction<boolean>>;
     onSleepInBed?: (x: number, y: number, z: number) => void;
+    boatsRef: MutableRefObject<Boat[]>;
+    ridingBoatIdRef: MutableRefObject<string | null>;
+    onEnterBoat: (id: string) => void;
+    onBreakBoat: (id: string) => void;
+    onPlaceBoat: (x: number, y: number, z: number, yaw: number) => boolean;
 }
 
-export const InteractionController = ({ 
+export const InteractionController = ({
     isLocked, selectedSlot, inventory, consumeItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
-    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed
+    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed,
+    boatsRef, ridingBoatIdRef, onEnterBoat, onBreakBoat, onPlaceBoat
 }: InteractionControllerProps) => {
     const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
@@ -222,7 +269,26 @@ export const InteractionController = ({
                 }
             }
 
-            if (targetType === BlockType.WATER || targetType === BlockType.LAVA) return; 
+            // Boat placement: use a held boat on a water surface. The boat spawns
+            // floating at the top of the water column under the crosshair.
+            if (targetType === BlockType.WATER && !isContinuous) {
+                const heldBoat = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+                if (heldBoat && heldBoat.type === BlockType.BOAT) {
+                    let topY = by;
+                    for (let i = 0; i < 4 && worldManager.getBlock(bx, topY + 1, bz, false) === BlockType.WATER; i++) topY++;
+                    if (worldManager.getBlock(bx, topY + 1, bz, false) === BlockType.AIR) {
+                        camera.getWorldDirection(_camDir);
+                        const yaw = Math.atan2(-_camDir.x, -_camDir.z); // hull faces away from the player
+                        if (onPlaceBoat(bx + 0.5, topY + 0.7, bz + 0.5, yaw)) {
+                            consumeItem(selectedSlotRef.current);
+                            soundManager.playAt("block.wood.place", { x: bx + 0.5, y: topY + 1, z: bz + 0.5 });
+                        }
+                    }
+                    return;
+                }
+            }
+
+            if (targetType === BlockType.WATER || targetType === BlockType.LAVA) return;
 
             const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
             const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
@@ -413,7 +479,7 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, setOpenContainer, setIsSleeping, onPlaceBoat]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => { 
@@ -421,8 +487,26 @@ export const InteractionController = ({
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
-            if (e.button === 0) isLeftMouseDown.current = true;
+            if (e.button === 0) {
+                // Punching a boat breaks it back into its item (blocks behind it
+                // are protected — the click is consumed by the boat).
+                const reach = gameMode === 'creative' ? 5.2 : 4.5;
+                const boatHit = rayHitBoat(camera, boatsRef.current, reach, ridingBoatIdRef.current);
+                if (boatHit) {
+                    onBreakBoat(boatHit.id);
+                    return;
+                }
+                isLeftMouseDown.current = true;
+            }
             if (e.button === 2) {
+                // Right-clicking a boat boards it.
+                if (!ridingBoatIdRef.current) {
+                    const boatHit = rayHitBoat(camera, boatsRef.current, 3.5, null);
+                    if (boatHit) {
+                        onEnterBoat(boatHit.id);
+                        return;
+                    }
+                }
                 isRightMouseDown.current = true;
                 performInteraction(false, e.shiftKey);
             }
@@ -441,11 +525,11 @@ export const InteractionController = ({
         
         window.addEventListener('mousedown', onDown);
         window.addEventListener('mouseup', onUp);
-        return () => { 
+        return () => {
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual]); 
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, camera, boatsRef, ridingBoatIdRef, onEnterBoat, onBreakBoat]);
 
     useFrame((_, delta) => {
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {

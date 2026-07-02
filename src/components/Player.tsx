@@ -4,15 +4,18 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, MathUtils, PerspectiveCamera } from 'three';
 import { CHUNK_SIZE } from '../constants';
 import { worldManager } from '../systems/WorldManager';
-import { BlockType, type GameMode } from '../types';
-import { 
+import { BlockType, type Boat, type GameMode } from '../types';
+import {
     onKeyDown, onKeyUp, getMovementIntent, inputState
 } from '../systems/player/playerInput';
 import { simulateStep } from '../systems/player/playerMovement';
-import { 
-    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING, 
-    FIXED_DT, MAX_SUBSTEPS, MAX_BREATH 
+import { checkCollision } from '../systems/player/playerCollision';
+import {
+    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
+    FIXED_DT, MAX_SUBSTEPS, MAX_BREATH,
+    PLAYER_WIDTH, PLAYER_HEIGHT
 } from '../systems/player/playerConstants';
+import { simulateBoatStep, BOAT_RIDER_FEET_OFFSET, BOAT_SEAT_EYE_HEIGHT } from '../systems/boat/boatPhysics';
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
@@ -36,6 +39,9 @@ interface PlayerProps {
   foodStateRef: React.MutableRefObject<FoodState>;
   isDead: boolean;
     forcedFov?: number | null;
+  boatsRef: React.MutableRefObject<Boat[]>;
+  ridingBoatId: string | null;
+  onExitBoat: () => void;
 }
 
 export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3> }> = ({ playerPosRef }) => {
@@ -47,10 +53,10 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
   return null;
 };
 
-export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
-    position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, 
+export const Player = forwardRef<PlayerHandle, PlayerProps>(({
+    position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode,
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
-    isDead, forcedFov = null
+    isDead, forcedFov = null, boatsRef, ridingBoatId, onExitBoat
 }, ref) => {
   const { camera } = useThree();
   
@@ -77,6 +83,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
   // Sound Accumulator for footsteps
   const stepAccumulator = useRef(0);
+
+  // Boat riding: sneak-edge detection for dismount, and mount snapping.
+  const prevSneakRef = useRef(false);
+  const prevRidingIdRef = useRef<string | null>(null);
 
   useImperativeHandle(ref, () => ({
       teleport: (newPos: Vector3) => {
@@ -198,6 +208,27 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     if (gameMode === 'spectator') isFlying.current = true;
     if (gameMode === 'survival' && isFlying.current) isFlying.current = false;
 
+    // --- Boat riding ---
+    let ridingBoat = (ridingBoatId && gameMode !== 'spectator' && !isFlying.current)
+        ? boatsRef.current.find(b => b.id === ridingBoatId) ?? null
+        : null;
+
+    // On mount, snap physics/render state to the seat so the camera doesn't
+    // interpolate across the gap between where the player stood and the boat.
+    if (ridingBoat && prevRidingIdRef.current !== ridingBoatId) {
+        pos.current.set(
+            ridingBoat.position[0],
+            ridingBoat.position[1] + BOAT_RIDER_FEET_OFFSET,
+            ridingBoat.position[2]
+        );
+        prevPos.current.copy(pos.current);
+        renderPos.current.copy(pos.current);
+        vel.current.set(0, 0, 0);
+        fallDistance.current = 0;
+        prevSneakRef.current = intent.sneak; // holding sneak at mount must not insta-dismount
+    }
+    prevRidingIdRef.current = ridingBoat ? ridingBoatId : null;
+
     let steps = 0;
     while (timeAccumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
         prevPos.current.copy(pos.current);
@@ -205,6 +236,58 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         if (spawnImmunityTicks.current > 0) spawnImmunityTicks.current--;
         if (invulnerabilityTimer.current > 0) invulnerabilityTimer.current--;
         if (invulnerabilityTimer.current <= 0) lastDamageTaken.current = 0;
+
+        if (ridingBoat) {
+            const sneakPressed = intent.sneak && !prevSneakRef.current;
+            prevSneakRef.current = intent.sneak;
+
+            if (sneakPressed) {
+                // Dismount: prefer a spot beside the boat the player fits in,
+                // otherwise stand up right above the hull.
+                const [bx, by, bz] = ridingBoat.position;
+                let exited = false;
+                for (const [dx, dz] of [[1.3, 0], [-1.3, 0], [0, 1.3], [0, -1.3]] as const) {
+                    const cand = { x: bx + dx, y: by + 0.1, z: bz + dz };
+                    if (!checkCollision(worldManager, cand, PLAYER_WIDTH, PLAYER_HEIGHT)) {
+                        pos.current.set(cand.x, cand.y, cand.z);
+                        exited = true;
+                        break;
+                    }
+                }
+                if (!exited) pos.current.set(bx, by + 0.62, bz);
+                prevPos.current.copy(pos.current);
+                vel.current.set(0, 0, 0);
+                fallDistance.current = 0;
+                onExitBoat();
+                ridingBoat = null; // stop riding for the remaining substeps this frame
+            } else {
+                simulateBoatStep(worldManager, ridingBoat, intent, camera.rotation.y, FIXED_DT);
+                pos.current.set(
+                    ridingBoat.position[0],
+                    ridingBoat.position[1] + BOAT_RIDER_FEET_OFFSET,
+                    ridingBoat.position[2]
+                );
+                vel.current.set(ridingBoat.velocity[0], ridingBoat.velocity[1], ridingBoat.velocity[2]);
+                grounded.current = false;
+                fallDistance.current = 0;
+                breathRef.current = Math.min(MAX_BREATH, breathRef.current + 5);
+                drowningCooldown.current = 0;
+            }
+
+            const rcx = Math.floor(pos.current.x / CHUNK_SIZE);
+            const rcz = Math.floor(pos.current.z / CHUNK_SIZE);
+            if (!lastChunk.current || lastChunk.current.cx !== rcx || lastChunk.current.cz !== rcz) {
+                if (Number.isFinite(rcx) && Number.isFinite(rcz)) {
+                    lastChunk.current = { cx: rcx, cz: rcz };
+                    if (onChunkChange) onChunkChange(rcx, rcz);
+                }
+            }
+
+            timeAccumulator.current -= FIXED_DT;
+            steps++;
+            continue;
+        }
+        prevSneakRef.current = intent.sneak;
 
         const startingJump = intent.jump && grounded.current && !isFlying.current;
         
@@ -404,7 +487,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     setBreath(breathRef.current);
     setIsOnFire(fireTicks.current > 0);
 
-    const targetHeight = intent.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
+    const targetHeight = ridingBoat
+        ? BOAT_SEAT_EYE_HEIGHT
+        : (intent.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING);
     const smoothing = 1 - Math.exp(-15 * dt);
     currentEyeHeight.current = MathUtils.lerp(currentEyeHeight.current, targetHeight, smoothing);
 

@@ -216,6 +216,11 @@ for (const t of HEAVY) {
 push(2, [BlockType.SAND, BlockType.SAND, BlockType.SAND, BlockType.SAND], BlockType.SANDSTONE, 1);
 push(2, [BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND], BlockType.RED_SANDSTONE, 1);
 
+// Boat: U-shape of 5 planks (any plank family)
+for (const p of [BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS]) {
+    push(3, [p, null, p, p, p, p, null, null, null], BlockType.BOAT, 1);
+}
+
 interface TrimmedGrid {
     cells: (BlockType | null)[];
     w: number;
