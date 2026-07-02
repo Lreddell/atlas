@@ -12,15 +12,15 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         title: 'Game Concept',
         subtitle: 'What Atlas is about',
         paragraphs: [
-            'Atlas is a voxel sandbox focused on exploration, building, and editing your own worlds.',
-            'You can play in survival, creative, or spectator mode, then switch workflows with tools like World Editor and Feature Editor.',
-            'Every world is procedurally generated and can be saved, imported, and exported from the main menu.'
+            'Atlas is a voxel action-adventure about exploring procedurally generated worlds, gearing up, and breaking the seal on corrupted regions.',
+            'Somewhere out there lie the rare Magnetic Fields — sealed against mining and building until you defeat their guardian, the Magnetic Warden.',
+            'You can play in survival, creative, or spectator mode, and shape terrain with the built-in World Editor when you want to author worlds instead of adventuring in them. Every world can be saved, renamed, imported, and exported from the main menu.'
         ],
         bullets: [
-            'Explore infinite-style terrain with biome variety.',
-            'Gather resources, build structures, and shape terrain.',
-            'Customize generation presets for unique world seeds.',
-            'Use editor tools to iterate on content quickly.'
+            'Explore infinite-style terrain across a dozen-plus biomes.',
+            'Gather resources, craft weapons and armor, build, and fight.',
+            'Find the Magnetic Fields and defeat the Warden to cleanse them.',
+            'Customize generation presets for unique world seeds.'
         ]
     },
     {
@@ -49,13 +49,17 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         ],
         bullets: [
             'W A S D: Move',
-            'Space: Jump',
+            'Space: Jump (double-tap in Creative to toggle flight)',
+            'Ctrl (hold) or double-tap W: Sprint',
             'Left Shift: Sneak / descend in flight contexts',
             'Mouse: Look around',
             'Left Click: Break / attack',
-            'Right Click: Place / use',
+            'Right Click: Place / use / eat',
             'E: Open inventory',
-            '/: Open command input',
+            'Q: Drop held item (Ctrl+Q drops the whole stack)',
+            'R: Flip magnetic polarity (needs Polarity Boots)',
+            'N: Toggle polarity power on/off (upgraded boots)',
+            '/ or T: Open command input',
             'Esc: Pause / menu back',
             'F3: Toggle debug screen',
             'F4: Toggle texture atlas viewer',
@@ -68,15 +72,32 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'How progression and world systems work',
         paragraphs: [
             'The world runs a full day-night cycle, biome-dependent ambience, and moon-phase variation.',
-            'In Survival, health, hunger, and breath matter. Inventory management and positioning are key.',
+            'In Survival, health, hunger, and breath matter. Weapons deal real damage and wear out with use; armor pieces absorb hits until their durability runs out.',
             'Lighting, weather ambience, and music context react to where you are and what state you are in.'
         ],
         bullets: [
             'Day/night affects visibility and atmosphere.',
-            'Moon phase changes nighttime brightness and ambience.',
-            'Health and hunger shape survival pacing.',
-            'Inventory slots determine what you can place or use quickly.',
+            'Health and hunger shape survival pacing; armor reduces combat damage (not falls, fire, or drowning).',
+            'Tools and weapons show durability bars and break at zero — tiers (wood to diamond) differ in damage and lifespan.',
+            'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen.',
             'Biome context influences visuals and soundscape.'
+        ]
+    },
+    {
+        id: 'magnetism',
+        title: 'Magnetism & The Warden',
+        subtitle: 'Polarity traversal and the sealed Magnetic Fields',
+        paragraphs: [
+            'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
+            'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones — enough to launch across gaps and climb magnetic walls.',
+            'Summon the Magnetic Warden at the central altar. Break its four shield crystals, strike its deflectable bolts back at it, and survive the slam and frenzy phases to cleanse the region.'
+        ],
+        bullets: [
+            'Press R to flip your polarity; press N to switch the ability off entirely (upgraded boots).',
+            'Same polarity repels, opposite attracts — use repulsion to launch and attraction to stick.',
+            'Iron armor is ferromagnetic: without boots it drags you toward every magnet, with no control.',
+            'The Warden drops a boot upgrade, and defeating it permanently unlocks the region.',
+            'Dying or leaving the arena resets an unfinished fight so it can be summoned again.'
         ]
     },
     {
@@ -89,13 +110,14 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         ],
         bullets: [
             '/gamemode <survival|creative|spectator>',
+            '/setspawn — set your respawn point where you stand',
+            '/keepinventory <on|off> — keep items on death',
+            '/giveitem <id> [count] and /equip <armor id>',
             '/time set <day|night|value> and /time add <value>',
-            '/phase set <0-7>',
             '/tp <x> <y> <z>',
             '/locate biome <name>',
-            '/playsound <id> [x y z]',
-            '/sound reload and /sound volume <value>',
-            '/music skip',
+            '/boss <spawn|kill> and /magfields <on|off|toggle> — encounter testing',
+            '/playsound <id>, /sound volume <value>, /music skip',
             'Tip: use Options and Panorama Settings to tune visuals and menu presentation.'
         ]
     }
