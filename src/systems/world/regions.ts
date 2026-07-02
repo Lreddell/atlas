@@ -25,14 +25,13 @@ export interface RegionDef {
 
 // Keyed by biome id (see getBiome().id). Biomes without an entry are ordinary,
 // freely-editable terrain (getRegionAt returns null for them).
+//
+// NOTE: Volcanic Crags is deliberately NOT a region. It used to be declared as a
+// sealed "Cinder Reach" boss region, but no Cinder boss or summoner altar ever
+// generated there, which left the biome permanently unmineable. It is now an
+// ordinary climate/terrain biome; a future volcanic boss can re-add an entry
+// here (old worlds that carry a stale 'volcanic' progression key simply ignore it).
 const REGION_DEFS: Record<string, RegionDef> = {
-    volcanic: {
-        id: 'volcanic',
-        bossId: 'cinder_warden',
-        displayName: 'Cinder Reach',
-        tintColor: 0xff5530,
-        sealedByDefault: true,
-    },
     magnetic_fields: {
         id: 'magnetic_fields',
         bossId: 'magnetic_warden',

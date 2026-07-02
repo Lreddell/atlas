@@ -21,7 +21,7 @@ export interface NoiseParams {
 export const DEFAULTS = {
     noise: {
         temperature: { scale: 0.0006, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.5 },
-        weirdness: { scale: 0.0012, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.0 },
+        weirdness: { scale: 0.0012, type: 'perlin' as NoiseType, octaves: 2, lacunarity: 2.0, gain: 0.4, amplification: 1.45 },
         continentalness: { scale: 0.001, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, offset: -0.15 },
         river: { scale: 0.004, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, jitter: 0.5 },
         // Terrain uses manual octaves in chunkGeneration, but we expose base params here
@@ -29,18 +29,21 @@ export const DEFAULTS = {
     },
     // Blending and Coastline Shapes
     terrainShape: {
-        coastPower: 2.2,       // Curve sharpness for ocean-to-land slope
-        landOffset: 0.12,      // How much continentalness past "coast" is required for full land height
+        coastPower: 1.8,       // Curve sharpness for ocean-to-land slope
+        landOffset: 0.14,      // How much continentalness past "coast" is required for full land height
         oceanBaseDepth: 38,    // Shallow ocean floor base Y
         oceanDeepBase: 26,     // Deep ocean floor base Y
         oceanScale: 8,         // Terrain noise scale underwater
     },
     biomes: {
         ocean: { continentalnessMax: -0.30, base: 38, scale: 8 },
+        // Beach — the sandy coastal band bridging ocean and inland terrain. Its
+        // base/scale also flatten the coast strip so dry beaches are wide.
+        beach: { continentalnessMax: -0.25, base: 66, scale: 5 },
         tundra: { maxTemp: -0.7, base: 75, scale: 35 }, // Tundra Land Settings & Water Freezing Threshold
         river: { width: 0.012, base: 58, scale: 5 },
 
-        volcanic: { minTemp: 0.80, minWeird: 0.50, base: 80, scale: 85 },
+        volcanic: { minTemp: 0.72, minWeird: 0.45, base: 80, scale: 85 },
         mesaBryce: { minTemp: 0.65, minWeird: 0.30, maxWeird: 0.45, base: 72, scale: 10 },
         mesa: { minTemp: 0.6, base: 72, scale: 10 },
         desert: { minTemp: 0.35, base: 72, scale: 15 },
@@ -48,30 +51,39 @@ export const DEFAULTS = {
         forest: { minTemp: -0.4, base: 72, scale: 25 },
         cherry: { minTemp: -0.7, base: 85, scale: 45 },
 
-        // --- New biomes (Task ID 4) ---
-        // Weirdness sub-bands within each temperature band. minWeird/maxWeird
-        // select the variant; base/scale shape terrain height blending.
-        // Bands are widened (Task ID 5) so small biomes spawn at a healthy size.
+        // --- Weirdness sub-bands within each temperature band ---
+        // minWeird/maxWeird select the variant; base/scale shape terrain height
+        // blending. The bands are disjoint from the mountains threshold below so
+        // no temperate variant is shadowed by the mountain rule (the old 0.40
+        // mountain threshold silently swallowed every weirdness > 0.40 biome:
+        // swamps, jungles, and dark forests never generated).
         birchForest: { minTemp: -0.4, minWeird: -0.55, maxWeird: -0.25, base: 73, scale: 22 },
-        flowerForest: { minTemp: -0.4, minWeird: 0.30, maxWeird: 0.55, base: 73, scale: 24 },
-        darkForest: { minTemp: -0.4, minWeird: 0.55, maxWeird: 1.0, base: 74, scale: 28 },
-        meadow: { minTemp: -0.7, minWeird: -0.30, maxWeird: 0.40, base: 80, scale: 14 },
+        flowerForest: { minTemp: -0.4, minWeird: 0.25, maxWeird: 0.42, base: 73, scale: 24 },
+        darkForest: { minTemp: -0.4, minWeird: 0.50, maxWeird: 0.58, base: 74, scale: 28 },
+        meadow: { minTemp: -0.7, minWeird: -0.30, maxWeird: 0.25, base: 80, scale: 14 },
         savanna: { minTemp: 0.0, minWeird: -1.0, maxWeird: -0.30, base: 71, scale: 12 },
-        jungle: { minTemp: 0.0, minWeird: 0.45, maxWeird: 1.0, base: 74, scale: 30 },
-        taiga: { maxTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 74, scale: 30 },
-        iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.60, base: 72, scale: 8 },
-        mountains: { minWeird: 0.40, base: 145, scale: 120 },
-        swamp: { minTemp: -0.7, minWeird: 0.45, maxWeird: 1.0, base: 64, scale: 8 },
+        jungle: { minTemp: 0.0, minWeird: 0.42, maxWeird: 0.58, base: 74, scale: 30 },
+        taiga: { maxTemp: -0.7, minWeird: 0.35, maxWeird: 1.0, base: 74, scale: 30 },
+        iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.50, base: 72, scale: 8 },
+        mountains: { minWeird: 0.58, base: 145, scale: 120 },
+        // Swamp — warm/wet lowland marsh. Spans the cherry+forest temp bands in
+        // the 0.42..0.58 weirdness slot (capped by darkForest.minWeird in the
+        // forest band), flattened to hover right at sea level for water pools.
+        swamp: { minTemp: -0.7, maxTemp: 0.0, minWeird: 0.42, maxWeird: 0.58, base: 63, scale: 5 },
         stoneShore: { continentalnessMax: -0.18, base: 62, scale: 10 },
     },
     height: {
         globalScale: 1.0,
         seaLevel: 63
     },
+    // Domain warp applied to every climate channel's sample coordinates. Enabled
+    // by default so biome borders and coastlines read as organic, fractal edges
+    // instead of smooth single-octave blobs. Old exported presets carry their own
+    // climateWarp block, so loading them restores their original look.
     climateWarp: {
-        enabled: false,
-        frequency: 0.0005,
-        amplitude: 80
+        enabled: true,
+        frequency: 0.004,
+        amplitude: 18
     },
     spawn: {
         searchRadius: 1024,

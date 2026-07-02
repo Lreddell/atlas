@@ -145,6 +145,11 @@ export const BIOMES: Record<string, Biome> = {
         id: 'swamp', name: 'Swamp', surfaceBlock: BlockType.MUD, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 8, terrainBase: 64, treeChance: 0.014, treeType: 'oak', vegetationChance: 0.3, color: '#4e6e58', vegetationType: 'swamp'
     },
+    // Beach — sandy coastal band bridging ocean and inland terrain.
+    BEACH: {
+        id: 'beach', name: 'Beach', surfaceBlock: BlockType.SAND, subBlock: BlockType.SANDSTONE, waterBlock: BlockType.WATER,
+        terrainScale: 5, terrainBase: 66, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#efe0a5', vegetationType: 'none'
+    },
     // Stone Shore — barren rocky coast, no vegetation.
     STONE_SHORE: {
         id: 'stone_shore', name: 'Stone Shore', surfaceBlock: BlockType.MOSSY_COBBLESTONE, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
@@ -315,6 +320,14 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
     const b = GenConfig.biomes;
     const ts = GenConfig.terrainShape;
 
+    // Land mask, computed up front so biome-specific shaping (mountains, mesa,
+    // volcanic) can be constrained to land and blend out toward the ocean —
+    // oceans must never inherit mountain/mesa terrain artifacts.
+    const OCEAN_START = b.ocean.continentalnessMax;
+    const LAND_FULL   = OCEAN_START + ts.landOffset;
+    let landFactor = THREE.MathUtils.smoothstep(cont, OCEAN_START, LAND_FULL);
+    landFactor = Math.pow(landFactor, ts.coastPower);
+
     // Default: Plains Settings
     let targetBase = b.plains.base;
     let targetScale = b.plains.scale;
@@ -369,27 +382,28 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
     // Mountains — very high weirdness raises the land into soaring peaks. This
     // factor mirrors the biome-selection rule so MOUNTAINS columns actually get
     // mountainous terrain instead of their temp band's default height.
-    // The ramp starts BELOW the biome threshold (minWeird-0.12) and reaches
-    // full strength well above it (minWeird+0.18), creating a wide gradual
-    // foothills transition: terrain begins rising gently before the biome is
-    // officially "mountains", then steepens into full peaks at the core. This
-    // avoids the abrupt cliff-edge transition that made small mountain biomes
-    // look cramped and unnatural.
+    // The ramp starts just below the biome threshold for a foothills transition
+    // and steepens into full peaks at the core. It is scaled by landFactor so
+    // mountain height never leaks into oceans, beaches, or stone shores.
     if (b.mountains && typeof b.mountains.minWeird === 'number') {
-        const mountainWeird = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird - 0.12, b.mountains.minWeird + 0.18);
+        const mountainWeird = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird - 0.04, b.mountains.minWeird + 0.12);
         // Suppress mountains where volcanic already dominates (volcanic is hotter/higher-weirdness band).
-        const mountainFactor = mountainWeird * (1.0 - volcanicFactor);
+        const mountainFactor = mountainWeird * (1.0 - volcanicFactor) * landFactor;
         if (mountainFactor > 0) {
             targetBase = THREE.MathUtils.lerp(targetBase, b.mountains.base, mountainFactor);
             targetScale = THREE.MathUtils.lerp(targetScale, b.mountains.scale, mountainFactor);
         }
     }
 
-    // Swamp — cool band + high weirdness flattens and lowers the land into a
-    // waterlogged marsh. Kept gentle so it blends with surrounding cherry/meadow.
-    if (b.swamp && typeof b.swamp.minWeird === 'number') {
-        const swampTemp = Math.max(0, 1.0 - Math.abs(temp - (b.cherry.minTemp + 0.15)) / 0.25);
-        const swampWeird = THREE.MathUtils.smoothstep(weirdness, b.swamp.minWeird - 0.08, b.swamp.minWeird + 0.15);
+    // Swamp — warm/wet band flattened and lowered into a waterlogged marsh that
+    // hovers right at sea level. Mirrors the selection band (minTemp..maxTemp ×
+    // minWeird..maxWeird) with soft edges so it blends into its neighbours.
+    if (b.swamp && typeof b.swamp.minWeird === 'number' && typeof b.swamp.maxWeird === 'number') {
+        const swampMaxTemp = b.swamp.maxTemp ?? 0.0;
+        const swampTemp = THREE.MathUtils.smoothstep(temp, b.swamp.minTemp - 0.08, b.swamp.minTemp + 0.05)
+            * (1.0 - THREE.MathUtils.smoothstep(temp, swampMaxTemp - 0.05, swampMaxTemp + 0.08));
+        const swampWeird = THREE.MathUtils.smoothstep(weirdness, b.swamp.minWeird - 0.05, b.swamp.minWeird + 0.04)
+            * (1.0 - THREE.MathUtils.smoothstep(weirdness, b.swamp.maxWeird - 0.04, b.swamp.maxWeird + 0.05));
         const swampFactor = swampTemp * swampWeird * (1.0 - volcanicFactor);
         if (swampFactor > 0) {
             targetBase = THREE.MathUtils.lerp(targetBase, b.swamp.base, swampFactor);
@@ -397,14 +411,18 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
         }
     }
 
-    // 2. Continentalness Blending (Ocean Slope)
-    const OCEAN_START = b.ocean.continentalnessMax; 
-    const LAND_FULL   = OCEAN_START + ts.landOffset; 
+    // Coastal flattening — pull the coast strip toward the beach profile so dry
+    // beaches are wide and mountain/mesa shaping fades out before the waterline.
+    if (b.beach) {
+        const beachFactor = (1.0 - THREE.MathUtils.smoothstep(cont, OCEAN_START + 0.05, LAND_FULL + 0.04))
+            * THREE.MathUtils.smoothstep(cont, OCEAN_START - 0.04, OCEAN_START + 0.02);
+        if (beachFactor > 0) {
+            targetBase = THREE.MathUtils.lerp(targetBase, b.beach.base, beachFactor * 0.85);
+            targetScale = THREE.MathUtils.lerp(targetScale, b.beach.scale, beachFactor * 0.85);
+        }
+    }
 
-    // landFactor: 0 = Ocean, 1 = Full Land
-    let landFactor = THREE.MathUtils.smoothstep(cont, OCEAN_START, LAND_FULL);
-    // Apply curvature to make the coast steeper or gentler
-    landFactor = Math.pow(landFactor, ts.coastPower);
+    // 2. Continentalness Blending (Ocean Slope)
 
     // Deep Ocean blending (cont < -0.60)
     const deepFactor = 1.0 - THREE.MathUtils.smoothstep(cont, -0.60, OCEAN_START); 
@@ -461,11 +479,21 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
         return BIOMES.STONE_SHORE;
     }
 
+    // Beach — the sandy coastal band bridging ocean and inland terrain (rocky
+    // high-weirdness coasts became Stone Shore above; frozen coasts stay tundra).
+    if (b.beach && typeof b.beach.continentalnessMax === 'number'
+        && continentalness < b.beach.continentalnessMax
+        && temp > b.tundra.maxTemp) {
+        return BIOMES.BEACH;
+    }
+
     // Rare & Special Biomes first
     if (temp > b.volcanic.minTemp && weirdness > b.volcanic.minWeird) return BIOMES.VOLCANIC;
     if (temp > b.mesaBryce.minTemp && weirdness > b.mesaBryce.minWeird && weirdness <= b.mesaBryce.maxWeird) return BIOMES.MESA_BRYCE;
 
     // Mountains — very high weirdness across temperate bands raises soaring peaks.
+    // The threshold sits ABOVE every temperate sub-band (swamp/jungle/dark forest
+    // all end at or below it), so those biomes are never shadowed by mountains.
     if (b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird && temp > b.tundra.maxTemp) {
         return BIOMES.MOUNTAINS;
     }
@@ -513,9 +541,15 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Forest band (temperate) =====
     if (temp > b.forest.minTemp) {
-        // Dark Forest — high weirdness
-        if (b.darkForest && typeof b.darkForest.minWeird === 'number' && weirdness > b.darkForest.minWeird) {
+        // Dark Forest — the upper high-weirdness slot (below mountains)
+        if (b.darkForest && typeof b.darkForest.minWeird === 'number' && typeof b.darkForest.maxWeird === 'number'
+            && weirdness > b.darkForest.minWeird && weirdness <= b.darkForest.maxWeird) {
             return BIOMES.DARK_FOREST;
+        }
+        // Swamp — warm/wet lowland marsh in the slot under dark forest
+        if (b.swamp && typeof b.swamp.minWeird === 'number' && typeof b.darkForest?.minWeird === 'number'
+            && weirdness > b.swamp.minWeird && weirdness <= Math.min(b.swamp.maxWeird ?? 1, b.darkForest.minWeird)) {
+            return BIOMES.SWAMP;
         }
         // Flower Forest — mid weirdness
         if (b.flowerForest && typeof b.flowerForest.minWeird === 'number' && typeof b.flowerForest.maxWeird === 'number'
@@ -532,8 +566,9 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Cherry band (cool temperate) =====
     if (temp > b.cherry.minTemp) {
-        // Swamp — high weirdness (lowland marsh)
-        if (b.swamp && typeof b.swamp.minWeird === 'number' && weirdness > b.swamp.minWeird) {
+        // Swamp — the full high-weirdness slot below mountains (lowland marsh)
+        if (b.swamp && typeof b.swamp.minWeird === 'number'
+            && weirdness > b.swamp.minWeird && weirdness <= (b.swamp.maxWeird ?? 1)) {
             return BIOMES.SWAMP;
         }
         // Meadow — low weirdness (flat open grassland)
