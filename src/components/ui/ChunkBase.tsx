@@ -493,6 +493,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     // not just the original ten.
     const BIOME_META: Record<string, { name: string; color: string }> = {
         ocean: { name: 'Ocean', color: BIOMES.OCEAN.color },
+        beach: { name: 'Beach', color: BIOMES.BEACH.color },
         tundra: { name: 'Tundra', color: BIOMES.TUNDRA.color },
         river: { name: 'River', color: BIOMES.RIVER.color },
         volcanic: { name: 'Volcanic', color: BIOMES.VOLCANIC.color },

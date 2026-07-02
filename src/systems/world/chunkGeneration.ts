@@ -106,14 +106,24 @@ function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { 
 
     const params = getGenerationParams(x, z, noiseSet);
     const { temp, weirdness, jitter } = params;
-    
+
     const b = GenConfig.biomes;
+    const ts = GenConfig.terrainShape;
+
+    // Land mask (mirrors getBiomeHeightInfo): the additive biome modifiers below
+    // (volcanic jitter, mountain ridges, mesa plateaus) are land shaping and must
+    // fade to zero over oceans and coasts, or high-weirdness/hot oceans grow
+    // mountain and plateau artifacts rising from the sea floor.
+    const landFactor = Math.pow(
+        THREE.MathUtils.smoothstep(params.continentalness, b.ocean.continentalnessMax, b.ocean.continentalnessMax + ts.landOffset),
+        ts.coastPower,
+    );
 
     // --- VOLCANIC JITTER ---
-    if (temp > b.volcanic.minTemp - 0.1 && weirdness > b.volcanic.minWeird - 0.05) {
+    if (landFactor > 0 && temp > b.volcanic.minTemp - 0.1 && weirdness > b.volcanic.minWeird - 0.05) {
         const tFactor = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const wFactor = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
-        const volcanicFactor = tFactor * wFactor;
+        const volcanicFactor = tFactor * wFactor * landFactor;
 
         const jagged = Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.15, (z + toz) * 0.15));
         const jaggedLow = noiseSet.weirdness.noise2D((x + tox) * 0.03, (z + toz) * 0.03);
@@ -126,12 +136,12 @@ function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { 
     // rather than smooth rounded hills. Only applied at the mountain CORE (high
     // weirdness), NOT in the foothills transition zone — so the gradual climb
     // stays smooth while the summit is jagged and dramatic.
-    if (b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird) {
+    if (landFactor > 0 && b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird) {
         const peakBlend = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird, b.mountains.minWeird + 0.20);
         // Suppress where volcanic dominates
         const volTemp = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const volWeird = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
-        const mtnFactor = peakBlend * (1.0 - volTemp * volWeird);
+        const mtnFactor = peakBlend * (1.0 - volTemp * volWeird) * landFactor;
         if (mtnFactor > 0) {
             // Ridge noise: sharp peaks at noise zero-crossings
             const ridge = 1.0 - Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.08, (z + toz) * 0.08));
@@ -142,8 +152,8 @@ function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { 
     }
 
     // --- MESA & BRYCE PLATEAU LOGIC ---
-    if (temp > b.mesa.minTemp - 0.1) {
-        const edgeFactor = THREE.MathUtils.smoothstep(temp, b.mesa.minTemp - 0.1, b.mesa.minTemp);
+    if (landFactor > 0 && temp > b.mesa.minTemp - 0.1) {
+        const edgeFactor = THREE.MathUtils.smoothstep(temp, b.mesa.minTemp - 0.1, b.mesa.minTemp) * landFactor;
         
         const volcanicTemp = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const volcanicWeird = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
