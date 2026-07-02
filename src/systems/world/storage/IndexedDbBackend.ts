@@ -180,8 +180,10 @@ export class IndexedDbBackend implements StorageBackend {
             created: now,
             lastPlayed: now,
         };
-        await this.createWorld(meta);
+        // Chunks first, metadata last as the commit point (matches the region
+        // backends): a failure mid-import leaves no visible half-imported world.
         await this.writeChunks(meta.id, chunks);
+        await this.createWorld(meta);
         return meta;
     }
 

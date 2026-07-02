@@ -294,6 +294,11 @@ const App: React.FC = () => {
   // scripted. The arena centre is remembered so the dais altar can be restored.
   const [cinematicMode, setCinematicMode] = useState(false);
   const summonArenaRef = useRef<{ cx: number; cz: number; baseY: number } | null>(null);
+  // A defeat's delayed dais/altar rebuild (timer id + the restore closure), so
+  // leaving the world can flush it into the old world instead of the next one.
+  const daisRestoreRef = useRef<{ id: number; run: () => void } | null>(null);
+  // True while handleStartGame is running (guards against double-click double-open).
+  const startingWorldRef = useRef(false);
   // True while the towers' magnet climb faces are present (placed for a fight, until
   // stripped at 50% or on reset) — so we never strip/place redundantly.
   const climbMagnetsActiveRef = useRef(false);
@@ -612,7 +617,14 @@ const App: React.FC = () => {
   // success, so a recurring problem surfaces once instead of every autosave tick.
   const saveErrorNotifiedRef = useRef(false);
 
-  const saveGame = useCallback(async (opts?: { force?: boolean }) => {
+  const saveGame = useCallback(async (opts?: {
+      force?: boolean;
+      // Explicit values for state that was JUST set in the same event handler
+      // (React state commits after this closure was captured). Respawn uses this:
+      // without it, the forced save persisted the death-render's health of 0 and
+      // a crash before the next autosave reloaded the player dead.
+      playerOverrides?: { health?: number; hunger?: number; saturation?: number; breath?: number };
+  }) => {
       if (!activeWorldIdRef.current) return;
 
       const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
@@ -628,6 +640,7 @@ const App: React.FC = () => {
           selectedSlot: selectedSlot,
           equipment: equipment,
           cursorStack: cursorStack, // previously dropped on reload; now persisted
+          ...opts?.playerOverrides,
       };
       const spawnPoint = worldManager.getSpawnPoint();
       const worldSpawn = worldManager.getWorldSpawn();
@@ -959,8 +972,23 @@ const App: React.FC = () => {
           stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       }
       const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (daisDelayMs > 0) window.setTimeout(restoreDais, daisDelayMs);
-      else restoreDais();
+      if (daisDelayMs > 0) {
+          // Tracked (id + the restore itself) so quitting the world inside the
+          // delay can flush it synchronously into the OLD world before the final
+          // save — a stale timer firing later would setBlocks into whatever world
+          // is loaded next, and cancelling without flushing would save an arena
+          // with no dais/altar to re-summon at.
+          if (daisRestoreRef.current) clearTimeout(daisRestoreRef.current.id);
+          daisRestoreRef.current = {
+              id: window.setTimeout(() => {
+                  daisRestoreRef.current = null;
+                  restoreDais();
+              }, daisDelayMs),
+              run: restoreDais,
+          };
+      } else {
+          restoreDais();
+      }
   }, []);
 
   // Hard-reset an in-progress encounter (used when leaving the world mid-fight, so
@@ -969,6 +997,15 @@ const App: React.FC = () => {
   // the boss, clears any standing crystals, and rebuilds the dais/altar + bridges
   // synchronously (no delay — we are about to save).
   const resetSummonArena = useCallback(() => {
+      // A defeat's delayed dais rebuild may still be pending: flush it into the
+      // current world NOW (we are about to save/leave) instead of letting the
+      // timer fire after the next world loads.
+      if (daisRestoreRef.current) {
+          clearTimeout(daisRestoreRef.current.id);
+          const flush = daisRestoreRef.current.run;
+          daisRestoreRef.current = null;
+          flush();
+      }
       bossSummon.cancel();
       setCinematicMode(false);
       // Despawns a live boss (clears its crystals + fires boss:cleared → restores
@@ -1655,7 +1692,11 @@ const App: React.FC = () => {
               if (!isNaN(v)) {
                   soundManager.setVolume('master', v);
                   logMsg(`Set master volume to ${v}`, 'success');
+              } else {
+                  logMsg('Usage: /sound volume <0-1>', 'error');
               }
+          } else {
+              logMsg('Usage: /sound reload or /sound volume <0-1>', 'error');
           }
       } else if (parts[0] === '/playsound' && parts[1]) {
           const id = parts[1];
@@ -1711,6 +1752,8 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /phase set <0-7>", 'error');
           }
+      } else if (parts[0] === '/tp' && parts.length !== 4) {
+          logMsg("Usage: /tp <x> <y> <z>", 'error');
       } else if (parts[0] === '/tp' && parts.length === 4) {
           const x = parseFloat(parts[1]);
           const y = parseFloat(parts[2]);
@@ -2397,7 +2440,12 @@ const App: React.FC = () => {
     playerPosRef.current.copy(spawnVec);
     // Persist the post-death state immediately (cleared bed spawn, new position,
     // reset health/inventory) so a crash before the next autosave can't revert it.
-    void saveGameRef.current({ force: true });
+    // The vitals reset above hasn't committed yet, so pass it explicitly — the
+    // captured closure would otherwise save the death-render's health of 0.
+    void saveGameRef.current({
+        force: true,
+        playerOverrides: { health: 20, hunger: 20, saturation: 5, breath: MAX_BREATH },
+    });
     resumeFromUserGesture('respawn');
   };
 
@@ -2427,8 +2475,14 @@ const App: React.FC = () => {
 
   // --- Start Game with Preloading & Restore ---
   const handleStartGame = useCallback(async (worldId: string) => {
+      // Re-entrancy guard: a fast double-click on "Play" fired two overlapping
+      // opens; the second then hit its OWN session lock and popped the confusing
+      // "already open in another window" alert.
+      if (startingWorldRef.current) return;
+      startingWorldRef.current = true;
+      try {
       soundManager.play("ui.click");
-      
+
       setAppState('loading');
       setLoadingState({ phase: 'Loading Metadata...', percent: 0, details: '' });
 
@@ -2482,6 +2536,11 @@ const App: React.FC = () => {
       bossSummon.cancel();
       setCinematicMode(false);
       summonArenaRef.current = null;
+      // Per-world React state: item entities and chat/log lines belong to the
+      // previous session — without this, World A's ground drops render (and are
+      // collectible) at their old coordinates inside World B.
+      setDrops([]);
+      setMessages([]);
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
@@ -2565,6 +2624,9 @@ const App: React.FC = () => {
       relockWantedRef.current = true;
       suppressAutoPauseFor(500);
       requestPointerLockBurst('start-game', { force: true });
+      } finally {
+          startingWorldRef.current = false;
+      }
     }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory]);
 
   useEffect(() => {
