@@ -91,6 +91,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const [showSavesMenu, setShowSavesMenu] = useState(false);
     const [savedPresets, setSavedPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+    const [presetSaveStatus, setPresetSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     
     // Seed State (Independent from Game)
     const [localSeedInput, setLocalSeedInput] = useState(() => worldManager.getSeed().toString());
@@ -528,15 +529,21 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const handleImportClick = () => fileInputRef.current?.click();
 
     const handleSavePreset = async () => {
-        const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
-        if (!saved) {
-            alert('Enter a preset name first.');
-            return;
+        setPresetSaveStatus(null);
+        try {
+            const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
+            if (!saved) {
+                setPresetSaveStatus({ type: 'error', message: 'Enter a preset name first.' });
+                return;
+            }
+            await refreshPresetList();
+            setSelectedPresetId(saved.id);
+            setPresetNameInput(saved.name);
+            setPresetSaveStatus({ type: 'success', message: `Saved preset: ${saved.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to save preset:', error);
+            setPresetSaveStatus({ type: 'error', message: 'Failed to save preset.' });
         }
-        await refreshPresetList();
-        setSelectedPresetId(saved.id);
-        setPresetNameInput(saved.name);
-        alert(`Saved preset: ${saved.name}`);
     };
 
     const handleLoadSelectedPreset = async () => {
@@ -965,13 +972,22 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <input
                                         type="text"
                                         value={presetNameInput}
-                                        onChange={(e) => setPresetNameInput(e.target.value)}
+                                        onChange={(e) => { setPresetNameInput(e.target.value); setPresetSaveStatus(null); }}
                                         className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
                                         placeholder="Preset name"
                                     />
                                     <button onClick={() => void handleSavePreset()} className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Save</button>
                                 </div>
                                 <div className="text-[10px] text-gray-500">Duplicate names auto-increment to avoid overwrites.</div>
+                                {presetSaveStatus && (
+                                    <div
+                                        role="status"
+                                        aria-live="polite"
+                                        className={`text-[10px] ${presetSaveStatus.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
+                                    >
+                                        {presetSaveStatus.message}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-2 border border-white/10 rounded bg-[#222] p-2">
