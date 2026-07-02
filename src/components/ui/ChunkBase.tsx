@@ -2,7 +2,9 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { getBiome, getGenerationParams, BIOMES } from '../../systems/world/biomes';
 import {
     getMagneticFieldColumn,
-    MF_CELL, MF_RADIUS, MF_FIELD_FREQ, MF_FIELD_THRESHOLD, MF_ARENA_FLOOR_Y, MF_TIER_COUNT,
+    getMagneticFieldsConfig,
+    getActiveCenters,
+    findNearestMagneticField,
 } from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
 import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
@@ -22,6 +24,37 @@ interface LayerConfig {
     opacity: number;
     color: string;
 }
+
+// Compact labeled number field for the Magnetic Fields config: tooltip on the
+// label, immediate preview on change, history commit on blur, double-click the
+// R button to restore the default.
+const MfNum = ({ label, title, value, step, onChange, onReset }: {
+    label: string;
+    title: string;
+    value: number;
+    step: number;
+    onChange: (v: number) => void;
+    onReset: () => void;
+}) => (
+    <div title={title}>
+        <div className="text-[10px] text-gray-400 mb-0.5 truncate">{label}</div>
+        <div className="flex">
+            <input
+                type="number"
+                step={step}
+                value={value}
+                onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
+                className="w-full min-w-0 bg-black border border-gray-600 text-[11px] px-1.5 py-0.5 rounded"
+            />
+            <button
+                onClick={onReset}
+                className="ml-1 w-5 flex-shrink-0 flex items-center justify-center bg-[#444] hover:bg-[#555] text-[10px] rounded text-gray-200 border border-gray-600"
+                title="Reset to default"
+                aria-label={`Reset ${label}`}
+            >R</button>
+        </div>
+    </div>
+);
 
 const ResetBtn = ({ onClick }: { onClick: () => void }) => (
     <button 
@@ -68,6 +101,10 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
     // Force re-render token to update canvas when mutable config changes
     const [configVersion, setConfigVersion] = useState(0);
+
+    // Nearest Magnetic Fields arena found via "Find Nearest Field".
+    const [nearestMf, setNearestMf] = useState<{ centerX: number; centerZ: number; distance: number } | null>(null);
+    const [copiedMfTp, setCopiedMfTp] = useState(false);
 
     const [layers, setLayers] = useState<LayerConfig[]>([
         { id: 'biome', name: 'Biomes', enabled: true, opacity: 1.0, color: '#4CAF50' },
@@ -186,17 +223,18 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                         // golden core is the boss arena plateau); elsewhere a faint
                         // heatmap of the activation noise so you can spot near-misses.
                         const bossSeed = previewNoiseSet.seed | 0;
+                        const mfc = getMagneticFieldsConfig();
                         const col = getMagneticFieldColumn(wx, wz, bossSeed, bossNoise2D);
                         if (col) {
                             if (col.isArena) {
                                 lr = 255; lg = 224; lb = 130;          // arena plateau
                             } else {
-                                const tierT = col.tier / Math.max(1, MF_TIER_COUNT - 1); // 0 outer → 1 inner
+                                const tierT = col.tier / Math.max(1, mfc.tierCount - 1); // 0 outer → 1 inner
                                 lr = 110 + tierT * 130; lg = 40 + tierT * 30; lb = 200;   // purple → magenta
                             }
                         } else {
-                            const f = bossNoise2D(wx * MF_FIELD_FREQ, wz * MF_FIELD_FREQ);
-                            const hot = Math.max(0, (f - (MF_FIELD_THRESHOLD - 0.3)) / 0.3); // ramps toward threshold
+                            const f = bossNoise2D(wx * mfc.fieldFreq, wz * mfc.fieldFreq);
+                            const hot = Math.max(0, (f - (mfc.fieldThreshold - 0.3)) / 0.3); // ramps toward threshold
                             lr = hot * 70; lg = 0; lb = hot * 95;
                         }
                     }
@@ -268,10 +306,36 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         const tempCtx = tempCanvas.getContext('2d');
         if (tempCtx) {
             tempCtx.putImageData(imageData, 0, 0);
-            ctx.imageSmoothingEnabled = false; 
+            ctx.imageSmoothingEnabled = false;
             ctx.drawImage(tempCanvas, 0, 0, width, height);
         }
-        
+
+        // --- Active Magnetic Fields centers (boss layer): crosshair + label ---
+        if (layers.some(l => l.id === 'boss' && l.enabled)) {
+            const endWX = startWX + width * invScale;
+            const endWZ = startWZ + height * invScale;
+            const centers = getActiveCenters(startWX, startWZ, endWX, endWZ, previewNoiseSet.seed | 0, bossNoise2D, getMagneticFieldsConfig().radius);
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            for (const c of centers) {
+                const sx = (c.centerX - center.x) * scale + width / 2;
+                const sz = (c.centerZ - center.z) * scale + height / 2;
+                ctx.strokeStyle = '#ffe082';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(sx - 8, sz); ctx.lineTo(sx + 8, sz);
+                ctx.moveTo(sx, sz - 8); ctx.lineTo(sx, sz + 8);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                const label = `${c.centerX}, ${c.centerZ}`;
+                const w = ctx.measureText(label).width;
+                ctx.fillRect(sx + 10, sz - 16, w + 8, 15);
+                ctx.fillStyle = '#ffe082';
+                ctx.fillText(label, sx + 14, sz - 3);
+            }
+        }
+
         // --- Render Chunk Grid ---
         if (showGrid) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -371,7 +435,13 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         const biome = getBiome(wx, wz, previewNoiseSet);
         const heightVal = getTerrainHeight(wx, wz, previewNoiseSet);
         const params = getGenerationParams(wx, wz, previewNoiseSet);
-        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params });
+        // Magnetic Fields readout: tier / arena / center / distance when inside
+        // an instance, plus the raw boss-field noise value at this position.
+        const bossSeed = previewNoiseSet.seed | 0;
+        const mfc = getMagneticFieldsConfig();
+        const mfCol = getMagneticFieldColumn(wx, wz, bossSeed, (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz));
+        const mfFieldVal = previewNoiseSet.bossBiome.noise2D(wx * mfc.fieldFreq, wz * mfc.fieldFreq);
+        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params, mfCol, mfFieldVal });
         if (e.buttons === 1) { 
             setCenter({
                 x: center.x - e.movementX * invScale,
@@ -409,6 +479,35 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const handleRandomSeed = () => {
         const rnd = Math.floor(Math.random() * 2147483647).toString();
         setLocalSeedInput(rnd);
+    };
+
+    // Find the nearest active Magnetic Fields instance to the current map
+    // center, jump the view to its Warden arena, and turn the boss layer on.
+    const handleFindNearestMf = () => {
+        const found = findNearestMagneticField(
+            center.x, center.z, previewNoiseSet.seed | 0,
+            (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz),
+        );
+        if (!found) {
+            alert('No Magnetic Field found within 50,000 blocks of the view center (is the domain enabled / threshold too high?).');
+            return;
+        }
+        setNearestMf(found);
+        setCopiedMfTp(false);
+        setCenter({ x: found.centerX, z: found.centerZ });
+        setInputX(String(found.centerX));
+        setInputZ(String(found.centerZ));
+        setLayers(prev => prev.map(l => l.id === 'boss' ? { ...l, enabled: true } : l));
+    };
+
+    const handleCopyMfTp = () => {
+        if (!nearestMf) return;
+        const y = GenConfig.bossDomains.magneticFields.arenaFloorY + 1;
+        const cmd = `/tp ${nearestMf.centerX} ${y} ${nearestMf.centerZ}`;
+        void navigator.clipboard?.writeText(cmd).then(() => {
+            setCopiedMfTp(true);
+            setTimeout(() => setCopiedMfTp(false), 1500);
+        }).catch(() => prompt('Copy the teleport command:', cmd));
     };
 
     const downloadConfig = () => {
@@ -598,22 +697,111 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     {/* --- BIOMES SECTION --- */}
                     {activeSection === 'biomes' && (
                         <div className="border-t border-white/10 pt-2 flex flex-col gap-3">
-                            {/* Boss biome — procedurally placed, not noise-band tunable. */}
+                            {/* Magnetic Fields — an editable boss-domain, placed by the
+                                dedicated Boss Field noise channel instead of the
+                                temperature/weirdness bands. */}
                             <div className="border border-purple-500/40 rounded bg-[#1c1726] p-3">
                                 <div className="flex items-center gap-3 mb-2">
                                     <div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: BIOMES.MAGNETIC_FIELDS.color }} />
                                     <span className="text-sm font-bold text-purple-300 flex-1">Magnetic Fields <span className="text-[10px] text-purple-400/70">BOSS</span></span>
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Generate Magnetic Fields instances at all">
+                                        <input
+                                            type="checkbox"
+                                            checked={GenConfig.bossDomains.magneticFields.enabled}
+                                            onChange={(e) => { GenConfig.bossDomains.magneticFields.enabled = e.target.checked; commitChange(); }}
+                                            className="w-3.5 h-3.5 accent-purple-500"
+                                        />
+                                        <span className="text-[10px] text-gray-300">Enabled</span>
+                                    </label>
                                 </div>
-                                <div className="text-[11px] text-gray-400 leading-relaxed mb-2">
-                                    Rare tiered convergence biome housing the Magnetic Warden arena. It is placed deterministically by the dedicated <span className="text-purple-300">Boss Field</span> noise channel (not the temperature/weirdness bands) — enable the <span className="text-purple-300">Boss Field (Magnetic)</span> map layer to preview where instances spawn.
+                                <div className="text-[10px] text-gray-500 leading-relaxed mb-2" title="Cell / Field Freq / Threshold decide WHERE instances land — changing them relocates every field (and arena) in the world. The rest reshape terrain around the same centers.">
+                                    Placed by the dedicated <span className="text-purple-300">Boss Field</span> noise — enable that map layer to preview instances. Hover the map for tier/arena/center readouts.
                                 </div>
-                                <div className="space-y-1 text-[11px]">
-                                    <div className="flex justify-between"><span className="text-gray-400">Avg spacing</span><span className="font-mono text-gray-300">~{MF_CELL.toLocaleString()} blk</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Radius</span><span className="font-mono text-gray-300">~{MF_RADIUS} blk</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Activation threshold</span><span className="font-mono text-gray-300">{MF_FIELD_THRESHOLD}</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Field frequency</span><span className="font-mono text-gray-300">{MF_FIELD_FREQ}</span></div>
-                                    <div className="flex justify-between"><span className="text-gray-400">Arena floor Y</span><span className="font-mono text-gray-300">{MF_ARENA_FLOOR_Y}</span></div>
+                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                    <button
+                                        onClick={handleFindNearestMf}
+                                        className="py-1.5 bg-purple-800 hover:bg-purple-700 text-white font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                        title="Search up to 50,000 blocks from the current map center and center the map on the nearest Warden arena"
+                                    >Find Nearest Field</button>
+                                    <button
+                                        onClick={handleCopyMfTp}
+                                        disabled={!nearestMf}
+                                        className={`py-1.5 font-bold text-[10px] rounded uppercase tracking-wider transition-colors ${nearestMf ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-gray-700 opacity-40 cursor-not-allowed text-gray-300'}`}
+                                        title="Copy a /tp command to the found arena center"
+                                    >{copiedMfTp ? 'Copied!' : 'Copy /tp'}</button>
                                 </div>
+                                {nearestMf && (
+                                    <div className="text-[10px] text-purple-300/90 font-mono mb-2">
+                                        Arena @ {nearestMf.centerX}, {GenConfig.bossDomains.magneticFields.arenaFloorY + 1}, {nearestMf.centerZ} ({Math.round(nearestMf.distance).toLocaleString()} blk away)
+                                    </div>
+                                )}
+                                {(() => {
+                                    const mf = GenConfig.bossDomains.magneticFields;
+                                    const dmf = DEFAULTS.bossDomains.magneticFields;
+                                    const set = <K extends keyof typeof mf>(key: K) => (v: number) => { (mf[key] as number) = v; forceUpdate(); };
+                                    const reset = <K extends keyof typeof mf>(key: K) => () => { (mf[key] as typeof mf[K]) = dmf[key]; commitChange(); };
+                                    const groups: { title: string; fields: { key: keyof typeof mf; label: string; step: number; tip: string }[] }[] = [
+                                        {
+                                            title: 'Placement (moves centers!)',
+                                            fields: [
+                                                { key: 'cell', label: 'Cell Spacing', step: 128, tip: 'Grid spacing between candidate centers (blocks). Larger = rarer.' },
+                                                { key: 'fieldFreq', label: 'Field Freq', step: 0.0001, tip: 'Boss-field noise frequency used to activate candidate centers.' },
+                                                { key: 'fieldThreshold', label: 'Threshold', step: 0.01, tip: 'Noise value a center must exceed to activate. Higher = rarer.' },
+                                            ],
+                                        },
+                                        {
+                                            title: 'Shape',
+                                            fields: [
+                                                { key: 'radius', label: 'Radius', step: 16, tip: 'Base biome radius in blocks (warped per-edge).' },
+                                                { key: 'edgeFreq', label: 'Edge Warp Freq', step: 0.001, tip: 'Boundary wobble frequency.' },
+                                                { key: 'edgeAmp', label: 'Edge Warp Amp', step: 0.02, tip: 'Boundary radius variation (0.28 = ±28%).' },
+                                                { key: 'tierWarpFreq', label: 'Tier Warp Freq', step: 0.005, tip: 'Cliff-ring wobble frequency.' },
+                                                { key: 'tierWarpAmp', label: 'Tier Warp Amp', step: 1, tip: 'How far cliff rings shift in/out (blocks).' },
+                                                { key: 'shelfJitterFreq', label: 'Shelf Jitter Freq', step: 0.005, tip: 'Per-column shelf bumpiness frequency.' },
+                                                { key: 'shelfJitterAmp', label: 'Shelf Jitter Amp', step: 0.2, tip: 'Shelf bumpiness amplitude (blocks).' },
+                                            ],
+                                        },
+                                        {
+                                            title: 'Tiers',
+                                            fields: [
+                                                { key: 'tierCount', label: 'Tier Count', step: 1, tip: 'Number of shelves from the rim to the arena plateau.' },
+                                                { key: 'tierHeight', label: 'Tier Height', step: 1, tip: 'Vertical rise of each magnetite wall (blocks).' },
+                                                { key: 'baseHeight', label: 'Base Height Y', step: 1, tip: 'Surface Y of the outermost shelf (tier 0).' },
+                                            ],
+                                        },
+                                        {
+                                            title: 'Arena & Blend',
+                                            fields: [
+                                                { key: 'arenaRadius', label: 'Arena Radius', step: 4, tip: 'Flat plateau radius the Warden arena sits on.' },
+                                                { key: 'arenaFloorY', label: 'Arena Floor Y', step: 1, tip: 'World Y of the arena plateau / boss floor.' },
+                                                { key: 'apron', label: 'Apron Size', step: 4, tip: 'Edge band (blocks) that ramps down into ambient terrain.' },
+                                                { key: 'apronMinY', label: 'Apron Min Y', step: 1, tip: 'The apron never ramps below this Y (soft shore over oceans).' },
+                                            ],
+                                        },
+                                    ];
+                                    return groups.map((g) => (
+                                        <div key={g.title} className="mb-2">
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-purple-400/70 mb-1">{g.title}</div>
+                                            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                                {g.fields.map((f) => (
+                                                    <MfNum
+                                                        key={String(f.key)}
+                                                        label={f.label}
+                                                        title={f.tip}
+                                                        value={mf[f.key] as number}
+                                                        step={f.step}
+                                                        onChange={set(f.key)}
+                                                        onReset={reset(f.key)}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ));
+                                })()}
+                                <button
+                                    onClick={() => { GenConfig.bossDomains.magneticFields = JSON.parse(JSON.stringify(DEFAULTS.bossDomains.magneticFields)); commitChange(); }}
+                                    className="w-full py-1 bg-[#3a2f4f] hover:bg-[#4a3d63] text-purple-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                >Reset Magnetic Fields</button>
                             </div>
                             <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider pt-1">Standard Biomes</div>
                             {biomeKeys.map(bKey => {
@@ -736,6 +924,17 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <span className="text-gray-400">Rain:</span> <span>{hoverInfo.riverVal.toFixed(3)}</span>
                                     <span className="text-gray-400">Cont:</span> <span>{hoverInfo.continentalness.toFixed(3)}</span>
                                     <span className="text-gray-400">Weird:</span> <span>{hoverInfo.weirdness.toFixed(3)}</span>
+                                    <span className="text-gray-400">Boss Field:</span> <span className="text-purple-300">{hoverInfo.mfFieldVal?.toFixed(3)}</span>
+                                    {hoverInfo.mfCol && (
+                                        <>
+                                            <span className="text-gray-400">MF Tier:</span>
+                                            <span className="text-purple-300">{hoverInfo.mfCol.isArena ? 'Arena' : `${hoverInfo.mfCol.tier} / ${getMagneticFieldsConfig().tierCount - 1}`}</span>
+                                            <span className="text-gray-400">MF Center:</span>
+                                            <span className="text-purple-300">{hoverInfo.mfCol.instance.centerX}, {hoverInfo.mfCol.instance.centerZ}</span>
+                                            <span className="text-gray-400">MF Dist:</span>
+                                            <span className="text-purple-300">{Math.round(hoverInfo.mfCol.distance)} blk</span>
+                                        </>
+                                    )}
                                 </div>
                             </>
                         ) : (
