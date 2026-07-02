@@ -12,6 +12,7 @@ import { CHUNK_SIZE } from '../../constants';
 import { worldManager } from '../../systems/WorldManager';
 import { createNoiseSet, hashSeed } from '../../utils/noise';
 import { deleteWorldGenPresetAsync, getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, saveWorldGenPresetAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ChunkBaseProps {
     onBack: () => void;
@@ -91,7 +92,9 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const [showSavesMenu, setShowSavesMenu] = useState(false);
     const [savedPresets, setSavedPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedPresetId, setSelectedPresetId] = useState<string>('');
-    const [presetSaveStatus, setPresetSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [editorStatus, setEditorStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+    const [pendingDeletePreset, setPendingDeletePreset] = useState<WorldGenPresetEntry | null>(null);
     
     // Seed State (Independent from Game)
     const [localSeedInput, setLocalSeedInput] = useState(() => worldManager.getSeed().toString());
@@ -140,23 +143,32 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         };
     }, []);
 
-    // Init History
-    useEffect(() => {
-        initHistory();
-        setHistoryState(getHistoryState());
-        void refreshPresetList();
-    }, []);
-
     const forceUpdate = () => {
         setConfigVersion(v => v + 1);
         setHistoryState(getHistoryState());
     };
 
-    const refreshPresetList = async () => {
+    const refreshPresetList = useCallback(async () => {
         const presets = await listWorldGenPresetsAsync();
         setSavedPresets(presets);
         setSelectedPresetId((prev) => (prev && presets.some((preset) => preset.id === prev) ? prev : presets[0]?.id ?? ''));
-    };
+    }, []);
+
+    const handleRefreshPresetList = useCallback(async () => {
+        try {
+            await refreshPresetList();
+        } catch (error) {
+            console.error('[WorldEditor] Failed to refresh presets:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to refresh presets.' });
+        }
+    }, [refreshPresetList]);
+
+    // Init History
+    useEffect(() => {
+        initHistory();
+        setHistoryState(getHistoryState());
+        void handleRefreshPresetList();
+    }, [handleRefreshPresetList]);
 
     const commitChange = () => {
         pushHistory();
@@ -472,9 +484,14 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     };
 
     const handleReset = () => {
-        if (!confirm('Reset all world generation settings to defaults?')) return;
+        setShowResetConfirmation(true);
+    };
+
+    const confirmReset = () => {
+        setShowResetConfirmation(false);
         resetGenConfig();
         commitChange();
+        setEditorStatus({ type: 'success', message: 'World generation settings reset to defaults.' });
     };
 
     const handleRandomSeed = () => {
@@ -490,7 +507,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
             (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz),
         );
         if (!found) {
-            alert('No Magnetic Field found within 50,000 blocks of the view center (is the domain enabled / threshold too high?).');
+            setEditorStatus({ type: 'error', message: 'No Magnetic Field found within 50,000 blocks. Check the domain settings.' });
             return;
         }
         setNearestMf(found);
@@ -499,22 +516,31 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         setInputX(String(found.centerX));
         setInputZ(String(found.centerZ));
         setLayers(prev => prev.map(l => l.id === 'boss' ? { ...l, enabled: true } : l));
+        setEditorStatus({ type: 'success', message: `Found Magnetic Field at ${found.centerX}, ${found.centerZ}.` });
     };
 
-    const handleCopyMfTp = () => {
+    const handleCopyMfTp = async () => {
         if (!nearestMf) return;
         const y = GenConfig.bossDomains.magneticFields.arenaFloorY + 1;
         const cmd = `/tp ${nearestMf.centerX} ${y} ${nearestMf.centerZ}`;
-        void navigator.clipboard?.writeText(cmd).then(() => {
+        if (!navigator.clipboard?.writeText) {
+            setEditorStatus({ type: 'error', message: `Clipboard unavailable. Teleport command: ${cmd}` });
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(cmd);
             setCopiedMfTp(true);
             setTimeout(() => setCopiedMfTp(false), 1500);
-        }).catch(() => prompt('Copy the teleport command:', cmd));
+            setEditorStatus({ type: 'success', message: 'Teleport command copied.' });
+        } catch {
+            setEditorStatus({ type: 'error', message: `Copy failed. Teleport command: ${cmd}` });
+        }
     };
 
     const downloadConfig = () => {
         const snapshot = normalizeGenConfigSnapshot(GenConfig);
         if (!snapshot) {
-            alert('Failed to export world generation configuration.');
+            setEditorStatus({ type: 'error', message: 'Failed to export world generation configuration.' });
             return;
         }
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snapshot, null, 2));
@@ -524,51 +550,76 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
+        setEditorStatus({ type: 'success', message: 'World generation JSON exported.' });
     };
 
     const handleImportClick = () => fileInputRef.current?.click();
 
     const handleSavePreset = async () => {
-        setPresetSaveStatus(null);
+        setEditorStatus(null);
         try {
             const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
             if (!saved) {
-                setPresetSaveStatus({ type: 'error', message: 'Enter a preset name first.' });
+                setEditorStatus({ type: 'error', message: 'Enter a preset name first.' });
                 return;
             }
             await refreshPresetList();
             setSelectedPresetId(saved.id);
             setPresetNameInput(saved.name);
-            setPresetSaveStatus({ type: 'success', message: `Saved preset: ${saved.name}` });
+            setEditorStatus({ type: 'success', message: `Saved preset: ${saved.name}` });
         } catch (error) {
             console.error('[WorldEditor] Failed to save preset:', error);
-            setPresetSaveStatus({ type: 'error', message: 'Failed to save preset.' });
+            setEditorStatus({ type: 'error', message: 'Failed to save preset.' });
         }
     };
 
     const handleLoadSelectedPreset = async () => {
         if (!selectedPresetId) return;
-        const preset = await getWorldGenPresetByIdAsync(selectedPresetId);
-        if (!preset) {
-            alert('Preset not found.');
-            await refreshPresetList();
-            return;
-        }
-        if (loadGenConfig(preset.config)) {
+        setEditorStatus(null);
+        try {
+            const preset = await getWorldGenPresetByIdAsync(selectedPresetId);
+            if (!preset) {
+                setEditorStatus({ type: 'error', message: 'Preset not found.' });
+                await refreshPresetList();
+                return;
+            }
+            if (!loadGenConfig(preset.config)) {
+                setEditorStatus({ type: 'error', message: 'Failed to load preset JSON.' });
+                return;
+            }
             commitChange();
             setPresetNameInput(preset.name);
-        } else {
-            alert('Failed to load preset JSON.');
+            setEditorStatus({ type: 'success', message: `Loaded preset: ${preset.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to load preset:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to load preset.' });
         }
     };
 
-    const handleDeleteSelectedPreset = async () => {
+    const handleDeleteSelectedPreset = () => {
         if (!selectedPresetId) return;
         const preset = savedPresets.find((item) => item.id === selectedPresetId);
         if (!preset) return;
-        if (!confirm(`Delete preset "${preset.name}"?`)) return;
-        await deleteWorldGenPresetAsync(selectedPresetId);
-        await refreshPresetList();
+        setPendingDeletePreset(preset);
+    };
+
+    const confirmDeleteSelectedPreset = async () => {
+        const preset = pendingDeletePreset;
+        setPendingDeletePreset(null);
+        if (!preset) return;
+        try {
+            const deleted = await deleteWorldGenPresetAsync(preset.id);
+            if (!deleted) {
+                setEditorStatus({ type: 'error', message: `Preset not found: ${preset.name}` });
+                await refreshPresetList();
+                return;
+            }
+            await refreshPresetList();
+            setEditorStatus({ type: 'success', message: `Deleted preset: ${preset.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to delete preset:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to delete preset.' });
+        }
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -576,23 +627,35 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (event) => {
-            try {
-                const json = JSON.parse(event.target?.result as string);
-                if (loadGenConfig(json)) {
+            void (async () => {
+                try {
+                    const json = JSON.parse(event.target?.result as string);
+                    if (!loadGenConfig(json)) {
+                        setEditorStatus({ type: 'error', message: 'Failed to load configuration.' });
+                        return;
+                    }
                     commitChange();
                     const inferredName = file.name.replace(/\.json$/i, '').trim() || 'Imported Preset';
-                    void (async () => {
+                    try {
                         const saved = await saveWorldGenPresetAsync(inferredName, GenConfig);
                         await refreshPresetList();
                         if (saved) {
                             setSelectedPresetId(saved.id);
                             setPresetNameInput(saved.name);
+                            setEditorStatus({ type: 'success', message: `Imported preset: ${saved.name}` });
+                        } else {
+                            setEditorStatus({ type: 'error', message: 'Configuration loaded, but the preset could not be saved.' });
                         }
-                    })();
+                    } catch (error) {
+                        console.error('[WorldEditor] Failed to save imported preset:', error);
+                        setEditorStatus({ type: 'error', message: 'Configuration loaded, but the preset could not be saved.' });
+                    }
+                } catch {
+                    setEditorStatus({ type: 'error', message: 'Invalid JSON file.' });
                 }
-                else alert("Failed to load configuration. Check console.");
-            } catch { alert("Invalid JSON file"); }
+            })();
         };
+        reader.onerror = () => setEditorStatus({ type: 'error', message: 'Failed to read JSON file.' });
         reader.readAsText(file);
         e.target.value = ''; 
     };
@@ -634,6 +697,15 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     return (
         <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden">
             <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
+            {editorStatus && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className={`pointer-events-none absolute left-1/2 top-4 z-[260] max-w-[560px] -translate-x-1/2 rounded border px-4 py-2 text-center text-xs font-bold shadow-xl ${editorStatus.type === 'success' ? 'border-green-500/50 bg-green-950/95 text-green-300' : 'border-red-500/50 bg-red-950/95 text-red-300'}`}
+                >
+                    {editorStatus.message}
+                </div>
+            )}
             
             <div className="bg-[#2a2a2a] border-r border-black flex flex-col shadow-xl z-20 relative flex-shrink-0" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
                 <div className="absolute top-0 right-[-4px] w-3 h-full cursor-col-resize z-50 group flex justify-center" onMouseDown={(e) => { e.preventDefault(); isResizingRef.current = true; document.body.style.cursor = 'col-resize'; }}>
@@ -736,7 +808,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                         title="Search up to 50,000 blocks from the current map center and center the map on the nearest Warden arena"
                                     >Find Nearest Field</button>
                                     <button
-                                        onClick={handleCopyMfTp}
+                                        onClick={() => void handleCopyMfTp()}
                                         disabled={!nearestMf}
                                         className={`py-1.5 font-bold text-[10px] rounded uppercase tracking-wider transition-colors ${nearestMf ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-gray-700 opacity-40 cursor-not-allowed text-gray-300'}`}
                                         title="Copy a /tp command to the found arena center"
@@ -909,7 +981,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     <input className="w-20 bg-gray-800 border border-gray-600 px-2 py-1 rounded text-right text-sm" value={inputZ} onChange={e => setInputZ(e.target.value)} placeholder="Z" />
                     <button onClick={goToCoords} className="px-4 py-1 bg-blue-700 hover:bg-blue-600 rounded font-bold text-sm">Go</button>
                     <div className="flex-1" />
-                    <button onClick={() => { setShowSavesMenu((prev) => !prev); if (!showSavesMenu) void refreshPresetList(); }} className={`px-4 py-1 rounded font-bold text-sm border border-gray-900 ${showSavesMenu ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'}`}>Saves</button>
+                    <button onClick={() => { setShowSavesMenu((prev) => !prev); if (!showSavesMenu) void handleRefreshPresetList(); }} className={`px-4 py-1 rounded font-bold text-sm border border-gray-900 ${showSavesMenu ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'}`}>Saves</button>
                     <div className="text-xs text-gray-400 font-mono">Scale: {scale.toFixed(2)} | Res: 1/2</div>
                 </div>
 
@@ -972,28 +1044,19 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <input
                                         type="text"
                                         value={presetNameInput}
-                                        onChange={(e) => { setPresetNameInput(e.target.value); setPresetSaveStatus(null); }}
+                                        onChange={(e) => { setPresetNameInput(e.target.value); setEditorStatus(null); }}
                                         className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
                                         placeholder="Preset name"
                                     />
                                     <button onClick={() => void handleSavePreset()} className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs rounded uppercase tracking-wider transition-colors">Save</button>
                                 </div>
                                 <div className="text-[10px] text-gray-500">Duplicate names auto-increment to avoid overwrites.</div>
-                                {presetSaveStatus && (
-                                    <div
-                                        role="status"
-                                        aria-live="polite"
-                                        className={`text-[10px] ${presetSaveStatus.type === 'success' ? 'text-green-400' : 'text-red-400'}`}
-                                    >
-                                        {presetSaveStatus.message}
-                                    </div>
-                                )}
                             </div>
 
                             <div className="space-y-2 border border-white/10 rounded bg-[#222] p-2">
                                 <div className="flex items-center justify-between">
                                     <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">Saved Presets</div>
-                                    <button onClick={() => void refreshPresetList()} className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded uppercase">Refresh</button>
+                                    <button onClick={() => void handleRefreshPresetList()} className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded uppercase">Refresh</button>
                                 </div>
                                 <div className="max-h-40 overflow-y-auto border border-white/10 bg-black/40 rounded">
                                     {savedPresets.length === 0 && <div className="px-2 py-2 text-xs text-gray-500">No presets found.</div>}
@@ -1011,13 +1074,35 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button onClick={() => void handleLoadSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-blue-700 hover:bg-blue-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Load</button>
-                                    <button onClick={() => void handleDeleteSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-red-700 hover:bg-red-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Delete</button>
+                                    <button onClick={handleDeleteSelectedPreset} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-red-700 hover:bg-red-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Delete</button>
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
             </div>
+
+            {showResetConfirmation && (
+                <ConfirmModal
+                    title="Reset World Generation?"
+                    message="Reset every World Editor setting to its default value?"
+                    confirmLabel="Reset All"
+                    danger
+                    onConfirm={confirmReset}
+                    onCancel={() => setShowResetConfirmation(false)}
+                />
+            )}
+
+            {pendingDeletePreset && (
+                <ConfirmModal
+                    title="Delete Preset?"
+                    message={<>Delete <span className="text-white">{pendingDeletePreset.name}</span>? This cannot be undone.</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={() => void confirmDeleteSelectedPreset()}
+                    onCancel={() => setPendingDeletePreset(null)}
+                />
+            )}
         </div>
     );
 };
