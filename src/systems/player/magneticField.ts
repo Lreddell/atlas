@@ -25,6 +25,24 @@ export type BlockSampler = (x: number, y: number, z: number) => number;
 export const MAGNET_RANGE = 5;
 export const MAGNET_FORCE = 70;
 export const MAGNET_MAX_SPEED = 20;
+/**
+ * The inverse-square law is clamped at this distance: pressed right against a
+ * magnet, 70/d² exploded past 700 b/s² (over 2,800 with the directional peak),
+ * which read as uncontrollable acceleration spikes on launch/stick. Clamping
+ * caps the point-blank pull at ~125 b/s² while leaving mid-range forces intact.
+ */
+export const MAGNET_MIN_DISTANCE = 0.75;
+/** Outer fraction of the range over which the field feathers to zero (no hard
+ *  pop when crossing the range boundary). */
+export const MAGNET_EDGE_FEATHER = 0.2;
+
+/** Field strength at `distance`, with the point-blank clamp + edge feather. */
+export function magnetFieldStrength(distance: number, range = MAGNET_RANGE): number {
+    if (distance > range) return 0;
+    const clamped = Math.max(distance, MAGNET_MIN_DISTANCE);
+    const feather = Math.min(1, (range - distance) / (range * MAGNET_EDGE_FEATHER));
+    return (MAGNET_FORCE / (clamped * clamped)) * Math.max(0, feather);
+}
 export const DIRECTIONAL_PEAK_MULTIPLIER = 4;
 export const DIRECTIONAL_LEAK_MULTIPLIER = 0.01;
 export const DIRECTIONAL_CONE_HALF_ANGLE = Math.PI / 6;
@@ -191,7 +209,7 @@ export function sampleRawMagneticField(
             directionY,
             directionZ,
         );
-        const strength = (MAGNET_FORCE / distanceSquared) * directionalMultiplier;
+        const strength = magnetFieldStrength(distance, range) * directionalMultiplier;
         const signedStrength = strength * source.polarity;
 
         fieldX += (directionX / distance) * signedStrength;

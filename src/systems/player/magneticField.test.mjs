@@ -175,3 +175,19 @@ test('magnetic sampling can use the closest point on the full player AABB', () =
     assert.deepEqual(point, { x: 0.5, y: 1.8, z: 0.5 });
     assert.ok(Math.hypot(point.x - 0.5, point.y - 6.5, point.z - 0.5) < 5);
 });
+
+test('field strength is clamped point-blank and feathers to zero at the range edge', () => {
+    const { magnetFieldStrength, MAGNET_FORCE, MAGNET_MIN_DISTANCE, MAGNET_RANGE } = magneticFieldModule;
+    // Point-blank clamp: no acceleration spike as distance -> 0.
+    const peak = MAGNET_FORCE / (MAGNET_MIN_DISTANCE * MAGNET_MIN_DISTANCE);
+    assert.equal(magnetFieldStrength(0.01), magnetFieldStrength(MAGNET_MIN_DISTANCE));
+    assert.ok(magnetFieldStrength(0.01) <= peak + 1e-9);
+    // Mid-range keeps the plain inverse-square profile.
+    assert.ok(Math.abs(magnetFieldStrength(2) - MAGNET_FORCE / 4) < 1e-9);
+    // The edge feathers smoothly to zero instead of popping at the boundary.
+    assert.equal(magnetFieldStrength(MAGNET_RANGE), 0);
+    assert.ok(magnetFieldStrength(MAGNET_RANGE - 0.1) > 0);
+    assert.ok(magnetFieldStrength(MAGNET_RANGE - 0.1) < magnetFieldStrength(MAGNET_RANGE - 0.5));
+    // Beyond the range there is no force at all.
+    assert.equal(magnetFieldStrength(MAGNET_RANGE + 1), 0);
+});
