@@ -15,6 +15,7 @@ import {
     getMagnetiteWallPolarity,
     getMagneticFeature,
     getMagneticCacheLoot,
+    findNearestMagneticField,
     magneticFieldsTouchBox,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
@@ -242,6 +243,18 @@ test('cache loot is deterministic and always yields magnetite materials', () => 
     // Different caches roll different loot (not one global table).
     const c = getMagneticCacheLoot(-4000, 82, 900, SEED, ids);
     assert.notDeepEqual(a.map((e) => `${e.itemId}:${e.count}:${e.slot}`), c.map((e) => `${e.itemId}:${e.count}:${e.slot}`));
+});
+
+test('findNearestMagneticField locates the closest active center', () => {
+    const inst = findInstance();
+    // Searching from right next to a known instance finds exactly that center.
+    const found = findNearestMagneticField(inst.centerX + 500, inst.centerZ - 300, SEED, noise2D);
+    assert.ok(found, 'expected to find a field');
+    assert.equal(found.centerX, inst.centerX);
+    assert.equal(found.centerZ, inst.centerZ);
+    assert.ok(Math.abs(found.distance - Math.hypot(500, 300)) < 1);
+    // A dead noise stub (never activates) finds nothing.
+    assert.equal(findNearestMagneticField(0, 0, SEED, () => -1, 20000), null);
 });
 
 test('getActiveCenters finds the instance near it and nothing in an empty stub', () => {
