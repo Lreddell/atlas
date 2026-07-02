@@ -126,7 +126,8 @@ export const DEFAULTS = {
     }
 };
 
-type GenConfigState = typeof DEFAULTS;
+export type WorldGenConfigSnapshot = typeof DEFAULTS;
+type GenConfigState = WorldGenConfigSnapshot;
 type NoiseKey = keyof GenConfigState['noise'];
 type BiomeKey = keyof GenConfigState['biomes'];
 
@@ -154,38 +155,50 @@ function clone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
 }
 
+const mergeKnownShape = (base: unknown, incoming: unknown): unknown => {
+    if (!isRecord(base) || !isRecord(incoming)) return clone(base);
+
+    const result = clone(base) as Record<string, unknown>;
+    Object.keys(result).forEach((key) => {
+        const incomingValue = incoming[key];
+        if (incomingValue === undefined) return;
+
+        const currentValue = result[key];
+        if (isRecord(currentValue)) {
+            if (isRecord(incomingValue)) {
+                result[key] = mergeKnownShape(currentValue, incomingValue);
+            }
+            return;
+        }
+
+        if (!isRecord(incomingValue)) {
+            result[key] = clone(incomingValue);
+        }
+    });
+    return result;
+};
+
+export const normalizeGenConfigSnapshot = (
+    data: unknown,
+    base: WorldGenConfigSnapshot = DEFAULTS,
+): WorldGenConfigSnapshot | null => {
+    if (!isRecord(data)) return null;
+
+    const normalized = mergeKnownShape(base, data) as WorldGenConfigSnapshot;
+    const incomingNoise = isRecord(data.noise) ? data.noise : {};
+    (Object.keys(normalized.noise) as NoiseKey[]).forEach((key) => {
+        const incoming = incomingNoise[key];
+        if (!isRecord(incoming) || !('type' in incoming)) return;
+        normalized.noise[key].type = normalizeNoiseType(incoming.type) ?? base.noise[key].type;
+    });
+    return normalized;
+};
+
 export const GenConfig = clone(DEFAULTS);
 
 // Internal helper to apply a state object to the mutable GenConfig
 function applyState(source: typeof DEFAULTS) {
-    // Noise
-    GenConfig.noise.temperature = clone(source.noise.temperature);
-    GenConfig.noise.weirdness = clone(source.noise.weirdness);
-    GenConfig.noise.continentalness = clone(source.noise.continentalness);
-    GenConfig.noise.river = clone(source.noise.river);
-    GenConfig.noise.terrain = clone(source.noise.terrain);
-
-    // Terrain Shape
-    GenConfig.terrainShape = clone(source.terrainShape);
-
-    // Biomes
-    const keys = Object.keys(source.biomes) as BiomeKey[];
-    keys.forEach(k => {
-        Object.assign(GenConfig.biomes[k], clone(source.biomes[k]));
-    });
-
-    // Height
-    GenConfig.height.globalScale = source.height.globalScale;
-    GenConfig.height.seaLevel = source.height.seaLevel;
-
-    // Climate Warp
-    GenConfig.climateWarp = clone(source.climateWarp);
-
-    // Spawn
-    GenConfig.spawn = clone(source.spawn);
-
-    // Boss domains
-    GenConfig.bossDomains = clone(source.bossDomains);
+    Object.assign(GenConfig, clone(source));
 }
 
 // Helper to reset to defaults if needed
@@ -259,52 +272,10 @@ export const randomizeGenConfig = () => {
 
 // Load config from JSON object
 export const loadGenConfig = (data: unknown) => {
-    if (!isRecord(data)) return false;
     try {
-        const temp = clone(GenConfig);
-        
-        if (isRecord(data.noise)) {
-            const noiseData = data.noise;
-            Object.keys(noiseData).forEach((k) => {
-                if (!(k in temp.noise)) return;
-                const key = k as NoiseKey;
-                const incomingNoise = noiseData[k];
-                if (!isRecord(incomingNoise)) return;
-                const nextNoise = { ...incomingNoise };
-                const normalizedType = normalizeNoiseType(nextNoise.type);
-                if (normalizedType) {
-                    nextNoise.type = normalizedType;
-                } else {
-                    delete nextNoise.type;
-                }
-                Object.assign(temp.noise[key], nextNoise);
-            });
-        }
-        if (isRecord(data.terrainShape)) Object.assign(temp.terrainShape, data.terrainShape);
-        if (isRecord(data.biomes)) {
-            const biomeData = data.biomes;
-            Object.keys(biomeData).forEach((k) => {
-                if (!(k in temp.biomes)) return;
-                const key = k as BiomeKey;
-                const incomingBiome = biomeData[k];
-                if (!isRecord(incomingBiome)) return;
-                Object.assign(temp.biomes[key], incomingBiome);
-            });
-        }
-        if (isRecord(data.height)) Object.assign(temp.height, data.height);
-        if (isRecord(data.climateWarp)) Object.assign(temp.climateWarp, data.climateWarp);
-        if (isRecord(data.spawn)) Object.assign(temp.spawn, data.spawn);
-        if (isRecord(data.bossDomains)) {
-            const domainData = data.bossDomains;
-            Object.keys(domainData).forEach((k) => {
-                if (!(k in temp.bossDomains)) return;
-                const incoming = domainData[k];
-                if (!isRecord(incoming)) return;
-                Object.assign(temp.bossDomains[k as keyof typeof temp.bossDomains], incoming);
-            });
-        }
-        
-        applyState(temp);
+        const normalized = normalizeGenConfigSnapshot(data, GenConfig);
+        if (!normalized) return false;
+        applyState(normalized);
         return true;
     } catch (e) {
         console.error("Failed to load config:", e);

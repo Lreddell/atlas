@@ -7,6 +7,7 @@ import test from 'node:test';
 // Node's type-stripping runner. biomes.ts/chunkGeneration.ts import the
 // BlockType enum, so their behavior is asserted via source text instead.
 import { DEFAULTS, GenConfig, loadGenConfig, resetGenConfig } from './genConfig.ts';
+import * as genConfigModule from './genConfig.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -86,4 +87,50 @@ test('old presets without the new biome keys still load safely', () => {
     assert.ok(GenConfig.biomes.beach);
     assert.equal(typeof GenConfig.biomes.beach.continentalnessMax, 'number');
     resetGenConfig();
+});
+
+test('shared normalization preserves every worldgen section including Magnetic Fields', () => {
+    const normalizeGenConfigSnapshot = genConfigModule.normalizeGenConfigSnapshot;
+    assert.equal(typeof normalizeGenConfigSnapshot, 'function', 'shared normalizer is not exported');
+
+    const input = structuredClone(DEFAULTS);
+    input.noise.temperature.scale = 0.0042;
+    input.terrainShape.coastPower = 2.75;
+    input.biomes.ocean.base = 41;
+    input.height.seaLevel = 67;
+    input.climateWarp.amplitude = 31;
+    input.spawn.searchRadius = 2048;
+    input.bossDomains.magneticFields.radius = 777;
+    input.bossDomains.magneticFields.enabled = false;
+    const original = structuredClone(input);
+
+    const normalized = normalizeGenConfigSnapshot(input);
+    assert.deepEqual(Object.keys(normalized).sort(), Object.keys(DEFAULTS).sort());
+    assert.equal(normalized.noise.temperature.scale, 0.0042);
+    assert.equal(normalized.terrainShape.coastPower, 2.75);
+    assert.equal(normalized.biomes.ocean.base, 41);
+    assert.equal(normalized.height.seaLevel, 67);
+    assert.equal(normalized.climateWarp.amplitude, 31);
+    assert.equal(normalized.spawn.searchRadius, 2048);
+    assert.equal(normalized.bossDomains.magneticFields.radius, 777);
+    assert.equal(normalized.bossDomains.magneticFields.enabled, false);
+    assert.deepEqual(input, original, 'normalization must not mutate imported JSON');
+});
+
+test('shared normalization upgrades legacy values and ignores unknown keys', () => {
+    const normalizeGenConfigSnapshot = genConfigModule.normalizeGenConfigSnapshot;
+    assert.equal(typeof normalizeGenConfigSnapshot, 'function', 'shared normalizer is not exported');
+
+    const input = {
+        noise: { temperature: { type: 'simplex', scale: 0.003 } },
+        bossDomains: { magneticFields: { tierCount: 9 } },
+        unknownSection: { unsafe: true },
+    };
+    const normalized = normalizeGenConfigSnapshot(input);
+
+    assert.equal(normalized.noise.temperature.type, 'opensimplex2');
+    assert.equal(normalized.noise.temperature.scale, 0.003);
+    assert.equal(normalized.bossDomains.magneticFields.tierCount, 9);
+    assert.equal(normalized.bossDomains.magneticFields.radius, DEFAULTS.bossDomains.magneticFields.radius);
+    assert.equal('unknownSection' in normalized, false);
 });
