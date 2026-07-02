@@ -17,7 +17,7 @@ import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
 import { tickPlantGrowth } from './world/plantGrowth';
 import { getRegionAt } from './world/regions';
-import { MAGNETIC_FIELDS_REGION_ID } from './world/magneticFields';
+import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
 
@@ -1193,6 +1193,39 @@ export class WorldManager {
   getChest(x: number, y: number, z: number) { return TileEntities.getChest(this.state, x, y, z); }
   createChest(x: number, y: number, z: number) { TileEntities.createChest(this.state, x, y, z); }
   removeChest(x: number, y: number, z: number) { TileEntities.removeChest(this.state, x, y, z); }
+
+  /**
+   * Chest state for (x, y, z), created on demand. Worldgen-placed chests have no
+   * tile-entity state until first opened; natural loot caches additionally carry
+   * the 0x40 metadata bit, which seeds deterministic Magnetic Fields cache loot
+   * exactly once (the bit is cleared so re-opening never re-rolls).
+   */
+  ensureChest(x: number, y: number, z: number) {
+      let chest = TileEntities.getChest(this.state, x, y, z);
+      if (!chest) {
+          TileEntities.createChest(this.state, x, y, z);
+          chest = TileEntities.getChest(this.state, x, y, z);
+      }
+      const meta = this.getMetadata(x, y, z);
+      if (chest && (meta & 0x40) !== 0) {
+          const loot = getMagneticCacheLoot(x, y, z, this.activeSeed | 0, {
+              magnetiteBlock: BlockType.MAGNETITE_BLOCK,
+              magnetiteBricks: BlockType.MAGNETITE_BRICKS,
+              positiveCrystal: BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+              negativeCrystal: BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+              shard: BlockType.MAGNETITE_SHARD,
+              chargedMagnetite: BlockType.CHARGED_MAGNETITE,
+              ironIngot: BlockType.IRON_INGOT,
+              goldIngot: BlockType.GOLD_INGOT,
+              diamond: BlockType.DIAMOND,
+          });
+          for (const entry of loot) {
+              chest.items[entry.slot] = { type: entry.itemId as BlockType, count: entry.count };
+          }
+          this.setMetadataAt(x, y, z, meta & ~0x40);
+      }
+      return chest;
+  }
   
   tick(delta: number) {
       this.state.time++;
@@ -1314,6 +1347,12 @@ export class WorldManager {
     const index = WorldCoords.index3D(lx, y, lz);
     const oldType = chunk[index];
     const oldRotation = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+    // Breaking an unopened natural loot cache (chest with the 0x40 meta bit):
+    // seed its contents first so handleBlockReplaced spills the loot as drops
+    // instead of silently discarding it.
+    if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
+        this.ensureChest(x, y, z);
+    }
     chunk[index] = type;
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;

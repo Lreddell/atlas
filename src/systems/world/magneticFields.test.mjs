@@ -14,6 +14,7 @@ import {
     getActiveCenters,
     getMagnetiteWallPolarity,
     getMagneticFeature,
+    getMagneticCacheLoot,
     magneticFieldsTouchBox,
     MAGNETIC_SPIKE_FALL_MULTIPLIER,
     MF_RADIUS,
@@ -186,24 +187,61 @@ test('cliff walls are magnetized in clusters, not everywhere', () => {
     assert.equal(getMagnetiteWallPolarity(40, 18, SEED), getMagnetiteWallPolarity(40, 18, SEED));
 });
 
-test('magnetic features are deterministic, sparse crystal clusters', () => {
-    let crystals = 0;
+test('magnetic features are deterministic and sparse, with the full exploration mix', () => {
+    const KNOWN_KINDS = new Set(['crystals', 'shards', 'vein', 'spikes', 'launchPad', 'pylon', 'ruin']);
+    const counts = {};
     let total = 0;
-    for (let x = 0; x < 300; x++) {
-        for (let z = 0; z < 300; z++) {
+    let features = 0;
+    for (let x = 0; x < 800; x++) {
+        for (let z = 0; z < 800; z++) {
             const f = getMagneticFeature(x, z, SEED);
             total++;
             if (f) {
-                assert.equal(f.kind, 'crystals'); // spike/spire/launchpad removed for now
-                assert.ok(f.polarity === 1 || f.polarity === -1);
-                assert.ok(f.count >= 1);
-                crystals++;
+                assert.ok(KNOWN_KINDS.has(f.kind), `unknown feature kind ${f.kind}`);
+                if (f.kind === 'crystals') {
+                    assert.ok(f.polarity === 1 || f.polarity === -1);
+                    assert.ok(f.count >= 1);
+                }
+                if (f.kind === 'launchPad') assert.ok(f.polarity === 1 || f.polarity === -1);
+                if (f.kind === 'pylon') assert.ok(f.height >= 2);
+                if (f.kind === 'ruin') assert.ok(f.size >= 3);
+                counts[f.kind] = (counts[f.kind] ?? 0) + 1;
+                features++;
             }
         }
     }
     assert.deepEqual(getMagneticFeature(13, 24, SEED), getMagneticFeature(13, 24, SEED));
-    assert.ok(crystals > 0, 'expected some crystal clusters (the craft resource)');
-    assert.ok(crystals / total < 0.05, 'features stay sparse');
+    // Every exploration feature kind must actually roll somewhere.
+    for (const kind of KNOWN_KINDS) {
+        assert.ok((counts[kind] ?? 0) > 0, `expected some '${kind}' features`);
+    }
+    // Crystals stay the most common (they are the craft resource).
+    assert.ok(counts.crystals > counts.ruin, 'crystals should be far more common than ruins');
+    assert.ok(features / total < 0.02, 'features stay sparse');
+});
+
+test('cache loot is deterministic and always yields magnetite materials', () => {
+    const ids = {
+        magnetiteBlock: 242, magnetiteBricks: 252, positiveCrystal: 243,
+        negativeCrystal: 244, shard: 249, chargedMagnetite: 248,
+        ironIngot: 111, goldIngot: 124, diamond: 125,
+    };
+    const a = getMagneticCacheLoot(100, 71, -200, SEED, ids);
+    const b = getMagneticCacheLoot(100, 71, -200, SEED, ids);
+    assert.deepEqual(a, b, 'loot must be deterministic per position+seed');
+    assert.ok(a.length >= 4, 'a cache is never empty');
+    const itemIds = a.map((e) => e.itemId);
+    assert.ok(itemIds.includes(ids.magnetiteBricks));
+    assert.ok(itemIds.includes(ids.positiveCrystal));
+    assert.ok(itemIds.includes(ids.negativeCrystal));
+    // Slots are unique and within a 27-slot chest.
+    const slots = a.map((e) => e.slot);
+    assert.equal(new Set(slots).size, slots.length);
+    for (const s of slots) assert.ok(s >= 0 && s < 27);
+    for (const e of a) assert.ok(e.count >= 1);
+    // Different caches roll different loot (not one global table).
+    const c = getMagneticCacheLoot(-4000, 82, 900, SEED, ids);
+    assert.notDeepEqual(a.map((e) => `${e.itemId}:${e.count}:${e.slot}`), c.map((e) => `${e.itemId}:${e.count}:${e.slot}`));
 });
 
 test('getActiveCenters finds the instance near it and nothing in an empty stub', () => {
@@ -345,7 +383,7 @@ test('new blocks are defined with the right shape', () => {
 test('terrain wiring: edge blend + wall magnets + crystal feature pass', () => {
     const cg = read('src/systems/world/chunkGeneration.ts');
     // Outer apron blends down to ambient terrain (soft shore, no hard ocean wall).
-    assert.match(cg, /MF_APRON/);
+    assert.match(cg, /\.apron\b/);
     assert.match(cg, /computeAmbientTerrainInfo/);
     // Polarity magnets embedded on wall bands.
     assert.match(cg, /getMagnetiteWallPolarity/);

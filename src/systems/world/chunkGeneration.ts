@@ -11,11 +11,9 @@ import {
     getMagneticFieldColumn,
     getMagnetiteWallPolarity,
     getMagneticFeature,
+    getMagneticFieldsConfig,
     magneticFieldsTouchBox,
     getActiveCenters,
-    MF_APRON,
-    MF_APRON_MIN_Y,
-    MF_ARENA_FLOOR_Y,
 } from './magneticFields';
 import { generateMagneticWardenArena, ARENA_PROTECTED_RADIUS } from './magneticArena';
 import { index3D } from './worldCoords';
@@ -74,11 +72,12 @@ function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height:
     // terrain rather than a hard-walled disc.
     const mf = getMagneticFieldColumn(x, z, noiseSet.seed | 0, mfNoise2D(noiseSet));
     if (mf) {
+        const mfc = getMagneticFieldsConfig();
         let surfaceY = mf.surfaceY;
-        if (mf.tier === 0 && mf.edgeDistance < MF_APRON) {
+        if (mf.tier === 0 && mf.edgeDistance < mfc.apron) {
             const ambient = computeAmbientTerrainInfo(x, z, noiseSet).height;
-            const target = Math.max(ambient, MF_APRON_MIN_Y);
-            const t = THREE.MathUtils.smoothstep(mf.edgeDistance, 0, MF_APRON); // 0 at edge → 1 inside
+            const target = Math.max(ambient, mfc.apronMinY);
+            const t = THREE.MathUtils.smoothstep(mf.edgeDistance, 0, mfc.apron); // 0 at edge → 1 inside
             surfaceY = Math.round(THREE.MathUtils.lerp(target, surfaceY, t));
         }
         return { height: surfaceY, baseHeight: surfaceY };
@@ -834,11 +833,12 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2b. Magnetic Fields feature pass — sparse resource crystal clusters rooted in
-    // world space (so clusters crossing chunk borders place cleanly). Spike/spire/
-    // launch-pad formations were removed pending a redesign; the cliff-wall magnets
-    // and tiered terrain remain the structural content.
-    const MF_FEATURE_PADDING = 4;
+    // 2b. Magnetic Fields feature pass — exploration content between the biome
+    // boundary and the arena, rooted in world space (so features crossing chunk
+    // borders place cleanly): crystal/shard clusters, charged veins, spike hazard
+    // patches, polarity launch pads, pylon landmarks, and collapsed ruins with
+    // loot caches. Everything is hash-driven and deterministic.
+    const MF_FEATURE_PADDING = 8;
     const mfBox = magneticFieldsTouchBox(
         worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
         worldX + CHUNK_SIZE + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE + MF_FEATURE_PADDING,
@@ -852,6 +852,13 @@ function generateChunkInner(cx: number, cz: number) {
     );
     const onArena = (wx: number, wz: number): boolean =>
         arenaCenters.some((c) => Math.hypot(wx - c.centerX, wz - c.centerZ) <= ARENA_PROTECTED_RADIUS);
+    // A feature root must sit on a shelf interior (not hanging off a cliff edge):
+    // its immediate neighbours must share its surface height within 1 block.
+    const isFlatShelf = (wx: number, wz: number, y: number): boolean =>
+        Math.abs(getTerrainHeight(wx + 1, wz, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx - 1, wz, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx, wz + 1, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx, wz - 1, noiseSet) - y) <= 1;
     for (let rootWx = worldX - MF_FEATURE_PADDING; mfBox && rootWx < worldX + CHUNK_SIZE + MF_FEATURE_PADDING; rootWx++) {
         for (let rootWz = worldZ - MF_FEATURE_PADDING; rootWz < worldZ + CHUNK_SIZE + MF_FEATURE_PADDING; rootWz++) {
             if (getBiome(rootWx, rootWz, noiseSet).id !== 'magnetic_fields') continue;
@@ -859,10 +866,104 @@ function generateChunkInner(cx: number, cz: number) {
             const feature = getMagneticFeature(rootWx, rootWz, noiseSet.seed | 0);
             if (!feature) continue;
             const surfaceY = getTerrainHeight(rootWx, rootWz, noiseSet);
-            const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
-            const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
-            for (let i = 0; i < feature.count && i < cells.length; i++) {
-                placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
+
+            if (feature.kind === 'crystals') {
+                const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+                const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
+                for (let i = 0; i < feature.count && i < cells.length; i++) {
+                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
+                }
+            } else if (feature.kind === 'shards') {
+                const cells = [[0, 0], [1, 1], [-1, 0]];
+                for (let i = 0; i < feature.count && i < cells.length; i++) {
+                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], BlockType.MAGNETITE_SHARD, true);
+                }
+            } else if (feature.kind === 'vein') {
+                // Charged-magnetite vein flush WITH the shelf surface (replaces it).
+                const cells = [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1], [-1, -1]];
+                for (let i = 0; i < feature.size && i < cells.length; i++) {
+                    const vx = rootWx + cells[i][0], vz = rootWz + cells[i][1];
+                    placeIfInChunk(vx, getTerrainHeight(vx, vz, noiseSet), vz, BlockType.CHARGED_MAGNETITE);
+                }
+            } else if (feature.kind === 'spikes') {
+                // Hazard patch: spikes standing on the shelf. Kept off cliff edges
+                // so they read as a floor hazard, not wall decoration.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                for (let dx = -feature.radius; dx <= feature.radius; dx++) {
+                    for (let dz = -feature.radius; dz <= feature.radius; dz++) {
+                        if (Math.abs(dx) + Math.abs(dz) > feature.radius) continue;
+                        if (seededRand01(rootWx + dx, surfaceY, rootWz + dz, 61) < 0.65) {
+                            placeIfInChunk(rootWx + dx, surfaceY + 1, rootWz + dz, BlockType.MAGNETIC_SPIKE, true);
+                        }
+                    }
+                }
+            } else if (feature.kind === 'launchPad') {
+                // 3×3 polarity pad embedded flush in the shelf: repels a player
+                // holding the SAME polarity (launch), attracts the opposite —
+                // teaches arena traversal tier by tier. A shard marks each corner.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const pad = feature.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        placeIfInChunk(rootWx + dx, surfaceY, rootWz + dz, pad);
+                    }
+                }
+                placeIfInChunk(rootWx, surfaceY + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
+            } else if (feature.kind === 'pylon') {
+                // Magnetite-brick pylon landmark; intact ones carry a charged
+                // beacon block + shard on top (visible route markers toward the
+                // arena), broken ones end in a jagged snap.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const h = feature.broken ? Math.max(2, Math.floor(feature.height * 0.4)) : feature.height;
+                for (let i = 1; i <= h; i++) {
+                    placeIfInChunk(rootWx, surfaceY + i, rootWz, BlockType.MAGNETITE_BRICKS);
+                }
+                if (!feature.broken) {
+                    placeIfInChunk(rootWx, surfaceY + h + 1, rootWz, BlockType.CHARGED_MAGNETITE);
+                    placeIfInChunk(rootWx, surfaceY + h + 2, rootWz, BlockType.MAGNETITE_SHARD, true);
+                } else {
+                    // Rubble around a broken pylon.
+                    placeIfInChunk(rootWx + 1, surfaceY + 1, rootWz, BlockType.MAGNETITE_BRICKS, true);
+                    placeIfInChunk(rootWx - 1, surfaceY + 1, rootWz + 1, BlockType.MAGNETITE_BRICKS, true);
+                }
+            } else if (feature.kind === 'ruin') {
+                // Collapsed square ruin: a broken brick perimeter wall (height
+                // hash-jittered, some segments missing) around a chiseled floor,
+                // sometimes sheltering a loot cache chest (meta bit 0x40 marks it
+                // for deterministic loot seeding on first open).
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const s = feature.size;
+                for (let dx = -s; dx <= s; dx++) {
+                    for (let dz = -s; dz <= s; dz++) {
+                        const onEdge = Math.abs(dx) === s || Math.abs(dz) === s;
+                        const wx = rootWx + dx, wz = rootWz + dz;
+                        if (onEdge) {
+                            const segment = seededRand01(wx, 0, wz, 62);
+                            if (segment < 0.18) continue; // collapsed gap
+                            const wallH = 1 + Math.floor(seededRand01(wx, 1, wz, 63) * 3);
+                            for (let i = 1; i <= wallH; i++) {
+                                placeIfInChunk(wx, surfaceY + i, wz, BlockType.MAGNETITE_BRICKS, true);
+                            }
+                        } else if ((dx + dz) % 2 === 0 && seededRand01(wx, 2, wz, 64) < 0.5) {
+                            // Chiseled floor tiles flush with the shelf.
+                            placeIfInChunk(wx, getTerrainHeight(wx, wz, noiseSet), wz, BlockType.CHISELED_MAGNETITE);
+                        }
+                    }
+                }
+                if (feature.withCache) {
+                    // Cache chest at the ruin center. The 0x40 meta bit marks a
+                    // natural, unopened cache; WorldManager seeds deterministic
+                    // loot and clears the bit on first open.
+                    const lx = rootWx - worldX, lz = rootWz - worldZ;
+                    if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE
+                        && surfaceY + 1 >= MIN_Y && surfaceY + 1 <= MAX_Y) {
+                        const cIdx = index3D(lx, surfaceY + 1, lz);
+                        blocks[cIdx] = BlockType.CHEST;
+                        meta[cIdx] = 0x40;
+                        const colIdx = lz * CHUNK_SIZE + lx;
+                        if (surfaceY + 1 > colHeightmap[colIdx]) colHeightmap[colIdx] = surfaceY + 1;
+                    }
+                }
             }
         }
     }
@@ -882,7 +983,7 @@ function generateChunkInner(cx: number, cz: number) {
             }
         };
         for (const center of arenaCenters) {
-            generateMagneticWardenArena(center.centerX, center.centerZ, MF_ARENA_FLOOR_Y, {
+            generateMagneticWardenArena(center.centerX, center.centerZ, getMagneticFieldsConfig().arenaFloorY, {
                 setBlock: setArenaBlock,
                 minX: worldX, maxX: worldX + CHUNK_SIZE - 1,
                 minZ: worldZ, maxZ: worldZ + CHUNK_SIZE - 1,
