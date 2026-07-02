@@ -114,6 +114,7 @@ test('shared normalization preserves every worldgen section including Magnetic F
     assert.equal(normalized.spawn.searchRadius, 2048);
     assert.equal(normalized.bossDomains.magneticFields.radius, 777);
     assert.equal(normalized.bossDomains.magneticFields.enabled, false);
+    assert.deepEqual(normalized, input, 'every current config field must survive normalization');
     assert.deepEqual(input, original, 'normalization must not mutate imported JSON');
 });
 

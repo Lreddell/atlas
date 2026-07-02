@@ -48,6 +48,7 @@ test('browser preset round trip preserves the complete worldgen configuration', 
         assert.equal(loaded.config.spawn.searchRadius, 3072);
         assert.equal(loaded.config.bossDomains.magneticFields.radius, 901);
         assert.equal(loaded.config.bossDomains.magneticFields.fieldThreshold, 0.73);
+        assert.deepEqual(loaded.config, config, 'every current config field must survive the preset round trip');
 
         const raw = JSON.parse(localStorage.values.get('atlas.worldGen.presets'));
         assert.equal(raw[0].config.bossDomains.magneticFields.radius, 901);
