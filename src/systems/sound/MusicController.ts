@@ -233,6 +233,9 @@ class MusicController {
 
     public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         this.isDeathSuspended = false;
+        // Defensive: entering a world must never inherit a stale frenzy pitch-up
+        // from a previous session's boss fight.
+        this.bossFrenzy = false;
 
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;

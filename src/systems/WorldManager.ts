@@ -171,6 +171,11 @@ export class WorldManager {
   
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
+  // Per-chunk edit counter, bumped on every dirty-marking edit. The batch save
+  // snapshots it per chunk and only clears the dirty flag when it is unchanged,
+  // so an edit landing while the async flush is in flight keeps its chunk dirty
+  // (and is re-saved next pass) instead of being silently lost.
+  private dirtyEditVersion = new Map<string, number>();
   private saving = false; // guards processSaveQueue against overlapping runs
 
   constructor() {
@@ -230,6 +235,7 @@ export class WorldManager {
       this.inFlightMesh = 0;
       this.gcCounter = 0;
       this.dirtyChunks.clear();
+      this.dirtyEditVersion.clear();
       this.activeWorldId = null; // Clear context
     this.lastDesiredCenterKey = null;
     this.lastDesiredCount = -1;
@@ -812,6 +818,11 @@ export class WorldManager {
       return this.dirtyChunks.size > 0;
   }
 
+  private markDirty(key: string): void {
+      this.dirtyChunks.add(key);
+      this.dirtyEditVersion.set(key, (this.dirtyEditVersion.get(key) ?? 0) + 1);
+  }
+
   private async processSaveQueue() {
       // Re-entrancy guard: the 3s timer and an explicit forceSave can overlap.
       if (this.saving) return;
@@ -826,21 +837,30 @@ export class WorldManager {
           // so the chunks are retried on the next pass (no silent data loss).
           const keys = Array.from(this.dirtyChunks);
           const batch: Array<{ cx: number; cz: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array }> = [];
-          const savedKeys: string[] = [];
+          const savedKeys: Array<{ key: string; version: number }> = [];
           for (const key of keys) {
               const [cx, cz] = key.split(',').map(Number);
               const blocks = WorldStore.getChunkData(this.state, cx, cz);
               const light = WorldStore.getLightData(this.state, cx, cz);
               const meta = WorldStore.getMetadataData(this.state, cx, cz);
-              if (blocks && light && meta) { batch.push({ cx, cz, blocks, light, meta }); savedKeys.push(key); }
+              if (blocks && light && meta) {
+                  batch.push({ cx, cz, blocks, light, meta });
+                  savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
+              }
           }
           if (batch.length === 0) return;
 
           await WorldStorage.saveChunks(worldId, batch);
 
-          for (const key of savedKeys) {
-              this.dirtyChunks.delete(key);
-              this.knownMissingStorageChunks.delete(key); // now known to exist on disk
+          for (const s of savedKeys) {
+              this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
+              // Clear the flag only if no NEW edit landed while the write was in
+              // flight — an edit made after the snapshot may have missed the
+              // backend's copy, so the chunk stays dirty and re-saves next pass.
+              if ((this.dirtyEditVersion.get(s.key) ?? 0) === s.version) {
+                  this.dirtyChunks.delete(s.key);
+                  this.dirtyEditVersion.delete(s.key);
+              }
           }
       } catch (e) {
           console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
@@ -873,8 +893,13 @@ export class WorldManager {
       this.queuedMeshKeys.delete(key);
       this.genStartedAt.delete(key);
       this.meshStartedAt.delete(key);
-      this.activeGenTickets.delete(key);
-      this.activeMeshTickets.delete(key);
+      // An in-flight gen/mesh for this chunk can never complete once its ticket
+      // is deleted (handleWorkerMessage early-returns before its decrement), so
+      // release the worker slot here — mirroring the repair-timeout path. Without
+      // this, every eviction of an in-flight chunk permanently burned a slot and
+      // fast traversal eventually stalled streaming at MAX_*_IN_FLIGHT.
+      if (this.activeGenTickets.delete(key)) this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+      if (this.activeMeshTickets.delete(key)) this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
@@ -1245,7 +1270,7 @@ export class WorldManager {
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
       const meta = WorldStore.ensureMetadata(this.state, cx, cz);
       meta[WorldCoords.index3D(lx, y, lz)] = value;
-      this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
   getLoadedChunkKeys(): string[] {
       return Array.from(this.state.chunks.keys());
@@ -1329,7 +1354,7 @@ export class WorldManager {
     if (oldType !== type) this.breakUnsupported(x, y + 1, z);
 
     // Mark dirty for persistence
-    this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
   }
@@ -1358,7 +1383,7 @@ export class WorldManager {
       if (oldType === e.type && oldRot === rot) continue;
       chunk[index] = e.type;
       WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
-      this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
       meshChunks.add(`${cx},${cz}`);
       if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);
       if (lz === 0) meshChunks.add(`${cx},${cz - 1}`); else if (lz === CHUNK_SIZE - 1) meshChunks.add(`${cx},${cz + 1}`);

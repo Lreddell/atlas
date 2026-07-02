@@ -119,12 +119,15 @@ test('WorldManager batches dirty chunks and only clears them after a successful 
     assert.match(wm, /if \(this\.saving\) return;/);
     // Builds one batch and calls the batched API.
     assert.match(wm, /await WorldStorage\.saveChunks\(worldId, batch\)/);
-    // Dirty flags cleared only inside the post-await success path (in a try, after the save).
-    assert.match(wm, /await WorldStorage\.saveChunks\(worldId, batch\);[\s\S]*?this\.dirtyChunks\.delete\(key\)/);
+    // Dirty flags cleared only inside the post-await success path (in a try, after
+    // the save), and ONLY when no new edit bumped the chunk's version while the
+    // write was in flight — an edit landing mid-flush stays dirty for the next pass.
+    assert.match(wm, /await WorldStorage\.saveChunks\(worldId, batch\);[\s\S]*?dirtyEditVersion\.get\(s\.key\) \?\? 0\) === s\.version[\s\S]*?this\.dirtyChunks\.delete\(s\.key\)/);
+    assert.match(wm, /private markDirty\(key: string\): void \{[\s\S]*?dirtyEditVersion\.set/);
     // On failure, chunks stay dirty for retry (no clear in catch).
     assert.match(wm, /catch \(e\) \{[\s\S]*?stay dirty for retry/);
     // knownMissing updated only after a successful persist.
-    assert.match(wm, /this\.knownMissingStorageChunks\.delete\(key\); \/\/ now known to exist on disk/);
+    assert.match(wm, /this\.knownMissingStorageChunks\.delete\(s\.key\); \/\/ now known to exist on disk/);
     // (Eviction of dirty chunks is covered by its own test below — it now DEFERS
     // rather than fire-and-forget saving, so there is no eviction-time save here.)
 });

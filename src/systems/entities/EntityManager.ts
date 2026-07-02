@@ -52,6 +52,10 @@ class EntityManager {
     private entities = new Map<number, Entity>();
     private projectiles: Projectile[] = [];
     private shockwaves: Shockwave[] = [];
+    // Pending boss-loot drop (fires BOSS_DEFEAT_ALTAR_DELAY_MS after a kill).
+    // Tracked so clear() (world unload) can cancel it — otherwise the timer
+    // would spawn the Warden's loot into whatever world is loaded next.
+    private lootDropTimer: ReturnType<typeof setTimeout> | null = null;
     private nextId = 1;
     private nextProjectileId = 1;
     private nextShockwaveId = 1;
@@ -206,6 +210,7 @@ class EntityManager {
         this.entities.clear();
         this.projectiles = [];
         this.shockwaves = [];
+        if (this.lootDropTimer !== null) { clearTimeout(this.lootDropTimer); this.lootDropTimer = null; }
         if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
         gameEvents.emit('boss:cleared', {});
         if (hadEntities) this.notifyStructure();
@@ -310,7 +315,11 @@ class EntityManager {
             // altar finishes re-forming (BOSS_DEFEAT_ALTAR_DELAY_MS later) so it
             // lands cleanly on top of the summoner instead of being buried.
             const hx = e.home.x, hy = e.home.y + 4, hz = e.home.z;
-            window.setTimeout(() => spawnDrops(hx, hy, hz), BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
+            if (this.lootDropTimer !== null) clearTimeout(this.lootDropTimer);
+            this.lootDropTimer = setTimeout(() => {
+                this.lootDropTimer = null;
+                spawnDrops(hx, hy, hz);
+            }, BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
             // A huge multi-stage polarity eruption where the Warden falls.
             const cx = e.home.x, cy = e.pos.y + e.height * 0.5, cz = e.home.z;
             const col = polarityFxColor(e.polarity);
@@ -679,8 +688,14 @@ class EntityManager {
         targetable: boolean,
     ): void {
         if (this.projectiles.length === 0) return;
+        // Iterate a captured reference: a deflected bolt can be the killing blow,
+        // and kill() clears this.projectiles so the dead Warden's airborne volley
+        // stops. Without the guards below, this loop would keep walking the stale
+        // array and the final assignment would resurrect those bolts — letting a
+        // boss that is already dead keep hitting the player during the victory.
+        const list = this.projectiles;
         const survivors: Projectile[] = [];
-        for (const p of this.projectiles) {
+        for (const p of list) {
             p.ttl -= dt;
             p.pos.x += p.vel.x * dt;
             p.pos.y += p.vel.y * dt;
@@ -691,7 +706,12 @@ class EntityManager {
 
             if (p.owner === 'player') {
                 // A deflected bolt: it now hits the boss for a chunk of its HP.
-                if (this.hitBossWithDeflected(p)) continue;
+                if (this.hitBossWithDeflected(p)) {
+                    // Killing blow → kill() replaced this.projectiles; abandon the
+                    // stale list so the cleared state sticks.
+                    if (this.projectiles !== list) return;
+                    continue;
+                }
             } else if (targetable && pp) {
                 // Hit the whole player AABB (centre ± body), not just a low point.
                 const cx = pp.x, cy = pp.y + PLAYER_HEIGHT * 0.5, cz = pp.z;

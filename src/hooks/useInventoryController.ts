@@ -381,24 +381,27 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                 }
 
                 const itemsPerSlot = Math.floor(count / targets.length);
-                const remainder = count % targets.length;
-                
-                // Distribute itemsPerSlot to everyone
-                // Distribute remainder 1 by 1 to the first 'remainder' slots
+                const extra = count % targets.length;
+
+                // Distribute itemsPerSlot to everyone (+1 to the first `extra`
+                // slots), capping each slot at its REAL remaining capacity. A
+                // near-full target absorbs only what fits; whatever could not be
+                // placed returns to the cursor instead of vanishing.
+                let placed = 0;
                 targets.forEach((slot, idx) => {
                     const sItem = getSlot(slot.collection, slot.index);
                     const currentCount = sItem ? sItem.count : 0;
-                    const bonus = idx < remainder ? 1 : 0;
-                    const amount = itemsPerSlot + bonus;
-                    
+                    const bonus = idx < extra ? 1 : 0;
+                    const amount = Math.min(itemsPerSlot + bonus, max - currentCount);
                     if (amount > 0) {
-                        updateSlot(slot.collection, slot.index, cloneItemStack(startStack, Math.min(max, currentCount + amount)));
+                        updateSlot(slot.collection, slot.index, cloneItemStack(startStack, currentCount + amount));
+                        placed += amount;
                     }
                 });
-                
-                // Cursor should be empty if we distributed everything logic correctly
-                cursorRef.current = null;
-                setCursorStack(null);
+
+                const leftover = count - placed;
+                cursorRef.current = leftover > 0 ? cloneItemStack(startStack, leftover) : null;
+                setCursorStack(cursorRef.current);
             }
             return;
         }

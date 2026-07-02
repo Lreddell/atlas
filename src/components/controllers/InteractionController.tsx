@@ -89,7 +89,7 @@ export const InteractionController = ({
     const highlightSigRef = useRef<string>('');
 
     // Interaction State
-    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number } | null>(null);
+    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number } | null>(null);
     const isLeftMouseDown = useRef(false);
     const isRightMouseDown = useRef(false);
     const interactionCooldown = useRef(0);
@@ -594,8 +594,13 @@ export const InteractionController = ({
             const targetType = worldManager.tryGetBlock(bx, by, bz);
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                if (!breakingRef.current || breakingRef.current.x !== bx || breakingRef.current.y !== by || breakingRef.current.z !== bz) {
-                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0 };
+                // Keyed by target AND hotbar slot: switching tools mid-break resets
+                // progress, so the harvest check + durability cost at completion
+                // always charge the tool that actually did the mining (no switching
+                // to an empty slot on the last frame to mine for free).
+                if (!breakingRef.current || breakingRef.current.x !== bx || breakingRef.current.y !== by || breakingRef.current.z !== bz
+                    || breakingRef.current.slot !== selectedSlotRef.current) {
+                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0, slot: selectedSlotRef.current };
                 }
                 
                 // Play Hit Sound Throttled

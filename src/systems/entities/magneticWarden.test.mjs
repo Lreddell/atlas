@@ -461,7 +461,10 @@ test('boss loot erupts above the altar and the altar re-forms after a delay', ()
     // Boss loot drops one block above the altar (summoner at baseY+4 = home.y+3),
     // deferred until the altar re-forms.
     assert.match(manager, /e\.home\.y \+ 4/);
-    assert.match(manager, /setTimeout\(\(\) => spawnDrops[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
+    // The drop timer is TRACKED (lootDropTimer) so world unload can cancel it —
+    // an untracked timeout used to spawn the loot into the next loaded world.
+    assert.match(manager, /this\.lootDropTimer = setTimeout\([\s\S]*?spawnDrops\(hx, hy, hz\);[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
+    assert.match(manager, /clear\(\): void \{[\s\S]*?clearTimeout\(this\.lootDropTimer\)/);
     // A defeat eruption (glowing FX bursts + camera trauma) at the centre.
     assert.match(manager, /if \(e\.isBoss && e\.home\) {[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
     // The altar restore is delayed on a clean defeat (shared delay constant).
