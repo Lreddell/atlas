@@ -103,6 +103,9 @@ interface PlayerProps {
   isDead: boolean;
     forcedFov?: number | null;
   magneticMode?: MagneticMode;
+  /** Riding a boat: water-glide physics; sneak hops out (see onExitBoat). */
+  boating?: boolean;
+  onExitBoat?: () => void;
 }
 
 export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3>; cinematicMode?: boolean }> = ({ playerPosRef, cinematicMode = false }) => {
@@ -125,7 +128,7 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
 export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
     position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, 
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
-    isDead, forcedFov = null, magneticMode = 'none'
+    isDead, forcedFov = null, magneticMode = 'none', boating = false, onExitBoat
 }, ref) => {
   const { camera } = useThree();
   
@@ -445,15 +448,22 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
         const startingJump = intent.jump && grounded.current && !isFlying.current;
 
+        // Boat dismount: a sneak press while riding hops out (the boat packs back
+        // into the inventory item — it was never consumed).
+        if (boating && intent.sneak && onExitBoat) {
+            onExitBoat();
+        }
+
         const simRes = simulateStep(
-            worldManager, 
-            pos.current, 
-            vel.current, 
-            intent, 
-            camera.rotation.y, 
-            FIXED_DT, 
+            worldManager,
+            pos.current,
+            vel.current,
+            intent,
+            camera.rotation.y,
+            FIXED_DT,
             isFlying.current,
-            gameMode === 'spectator'
+            gameMode === 'spectator',
+            boating && !isFlying.current
         );
 
         // --- Guard against Physics NaN ---
@@ -567,7 +577,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         // Magnetism (Phase 4): nudge velocity from nearby magnet blocks. Applied
         // after integration (like the sprint-jump boost) so this tick's friction
         // doesn't immediately cancel it; collision is resolved next substep.
-        if (magneticMode !== 'none' && !isFlying.current) {
+        if (magneticMode !== 'none' && !isFlying.current && !boating) {
             // Gentle pull while grounded (so you can stand and walk to a block's
             // edge), full strength airborne (so traversal/attaching still works).
             applyMagneticForce(
@@ -599,7 +609,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         // Latch onto a magnet wall when pressed against an attractive face. The
         // pull-through-air above brings the player in; only here (real contact)
         // does adhesion begin, so the camera never rolls mid-flight.
-        if (magneticMode === 'controlled' && !isFlying.current && !isDead && Date.now() >= a.detachCooldownUntil) {
+        if (magneticMode === 'controlled' && !isFlying.current && !isDead && !boating && Date.now() >= a.detachCooldownUntil) {
             const aHeight = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
             const center: Vec3 = { x: pos.current.x, y: pos.current.y + aHeight * 0.5, z: pos.current.z };
             const cand = findAdhesionCandidate(magnetPolarityAt, solidAt, center, inputState.magneticPolarity);

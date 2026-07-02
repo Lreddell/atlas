@@ -24,9 +24,20 @@ export const SNEAK_MULTIPLIER = 0.3;    // -> 1.295 b/s
 export const SPRINT_JUMP_BOOST = 2.0;
 
 // Fluid speeds
-export const SWIM_SPEED = 2.55;           
-export const SWIM_SUBMERGED_SPEED = 2.096; 
-export const LAVA_HORIZONTAL_REDUCTION = 0.4; 
+export const SWIM_SPEED = 2.55;
+export const SWIM_SUBMERGED_SPEED = 2.096;
+export const LAVA_HORIZONTAL_REDUCTION = 0.4;
+
+// --- Boat (rideable water traversal) ---
+// Afloat, the boat glides: high per-tick velocity retention with an input
+// acceleration whose equilibrium is BOAT_SPEED (~2.2x sprint swimming). Beached
+// it scrapes along slowly so you can nudge back into water.
+export const BOAT_SPEED = 9.0;            // blocks/sec afloat
+export const BOAT_FRICTION = 0.94;        // per-tick retention -> long glide
+export const BOAT_LAND_SPEED = 0.9;       // scraping over land
+export const BOAT_LAND_FRICTION = 0.5;
+export const BOAT_BUOYANCY = 30;          // upward accel while the hull is submerged
+export const BOAT_VERTICAL_DAMP = 0.6;    // per-tick vertical damping while afloat (calm bobbing)
 
 // Fluid Physics (Vertical)
 export const FLUID_GRAVITY = 4;       

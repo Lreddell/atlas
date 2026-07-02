@@ -6,6 +6,7 @@ import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
+import { BoatRig } from './components/BoatRig';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
 import { FxParticles } from './components/FxParticles';
@@ -304,6 +305,9 @@ const App: React.FC = () => {
   const climbMagnetsActiveRef = useRef(false);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
+  // Riding a boat (use a Boat item on water; sneak hops out). Session-only state:
+  // the boat item never leaves the inventory, so nothing needs persisting.
+  const [boating, setBoating] = useState(false);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -2438,6 +2442,7 @@ const App: React.FC = () => {
 
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
+    setBoating(false);
     // Persist the post-death state immediately (cleared bed spawn, new position,
     // reset health/inventory) so a crash before the next autosave can't revert it.
     // The vitals reset above hasn't committed yet, so pass it explicitly — the
@@ -2448,6 +2453,25 @@ const App: React.FC = () => {
     });
     resumeFromUserGesture('respawn');
   };
+
+  // --- Boat riding ---
+  const handleEnterBoat = useCallback((x: number, y: number, z: number) => {
+      setBoating((already) => {
+          if (already) return already;
+          // Climb in at the clicked water cell; hull buoyancy settles the rest.
+          playerRef.current?.teleport(new THREE.Vector3(x + 0.5, y + 0.6, z + 0.5));
+          return true;
+      });
+  }, []);
+
+  const handleExitBoat = useCallback(() => {
+      setBoating((riding) => {
+          if (!riding) return riding;
+          // A small hop out of the hull so you don't dismount straight into a swim.
+          playerRef.current?.applyImpulse(0, 4.0, 0);
+          return false;
+      });
+  }, []);
 
   const handleQuitToTitle = useCallback(() => {
       // Leaving mid-fight resets the arena first, so the save (and the world we'd
@@ -2541,6 +2565,7 @@ const App: React.FC = () => {
       // collectible) at their old coordinates inside World B.
       setDrops([]);
       setMessages([]);
+      setBoating(false);
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
@@ -2827,6 +2852,11 @@ const App: React.FC = () => {
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
+                    {boating && !showDeathScreen && !cinematicMode && !openContainer && (
+                        <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
+                            Sneak (Shift) to hop out of the boat
+                        </div>
+                    )}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
@@ -2926,6 +2956,7 @@ const App: React.FC = () => {
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
+                    onEnterBoat={handleEnterBoat}
                 />
 
                 <BreakingVisualMesh suspended={isCapturingPanorama} />
@@ -2947,8 +2978,10 @@ const App: React.FC = () => {
                             onTakeDamage={applyRawDamage}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                             magneticMode={magneticMode}
+                            boating={boating} onExitBoat={handleExitBoat}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} cinematicMode={cinematicMode} />
+                        {boating && !cinematicMode && <BoatRig playerPosRef={playerPosRef} />}
                     </>
                 )}
                 
