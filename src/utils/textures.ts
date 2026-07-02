@@ -976,6 +976,31 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(3, 1, 1, 1); ctx.fillRect(11, 9, 1, 1);
     });
 
+    // 215: Polarity Boots Upgrade — Warden drop module: a violet core in a dark
+    // housing with red/blue polarity pins. (Item icon; previously collided with
+    // the Charged Magnetite block tile at 211.)
+    withTile(215, () => {
+        const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+        set(4, 3, 8, 10, '#241b38');           // housing
+        set(5, 4, 6, 8, '#4a3a6e');            // inner frame
+        set(6, 6, 4, 4, '#b39ddb');            // glowing core
+        set(7, 7, 2, 2, '#efe6ff');            // core highlight
+        set(3, 5, 1, 2, '#ff4030'); set(12, 5, 1, 2, '#3060ff');   // polarity pins
+        set(3, 9, 1, 2, '#3060ff'); set(12, 9, 1, 2, '#ff4030');
+        set(6, 13, 4, 1, '#8a7fd6');           // base contact strip
+    });
+
+    // 216: Boat — wooden hull item icon (oak planks with a lighter rim + seat).
+    withTile(216, () => {
+        const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+        set(1, 8, 14, 2, '#6d4c33');           // hull rim
+        set(2, 10, 12, 3, '#8d6e63');          // hull body
+        set(3, 13, 10, 1, '#5d4037');          // keel shadow
+        set(1, 7, 2, 1, '#a1887f'); set(13, 7, 2, 1, '#a1887f');   // bow/stern tips
+        set(4, 9, 8, 1, '#3e2723');            // interior hollow
+        set(7, 9, 2, 1, '#c9a877');            // seat plank
+    });
+
     // 214: Chiseled Magnetite — framed panel with an engraved polarity sigil.
     withTile(214, () => {
         fill('#4a4a58');

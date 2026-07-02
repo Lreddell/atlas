@@ -211,4 +211,8 @@ export const TEXTURE_PATHS: Record<number, string> = {
     212: 'blocks/magnetite_shard.png',
     213: 'blocks/magnetite_bricks.png',
     214: 'blocks/chiseled_magnetite.png',
+
+    // --- ITEMS (procedural fallbacks; PNGs are optional overrides) ---
+    215: 'items/polarity_boots_upgrade.png',
+    216: 'items/boat.png',
 };

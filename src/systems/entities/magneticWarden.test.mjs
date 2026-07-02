@@ -508,9 +508,12 @@ test('the World Editor surfaces the Magnetic Fields boss biome + boss-field laye
     assert.match(editor, /bossBiome\.noise2D/);
     // The biome list is now driven by the full GenConfig set (not a hardcoded 10).
     assert.match(editor, /const biomeKeys = Object\.keys\(GenConfig\.biomes\)/);
-    // The Magnetic Fields biome is documented in the BIOMES tab.
+    // The Magnetic Fields biome is an EDITABLE domain in the BIOMES tab
+    // (GenConfig.bossDomains.magneticFields), with an arena finder.
     assert.match(editor, /BIOMES\.MAGNETIC_FIELDS\.color/);
-    assert.match(editor, /MF_FIELD_THRESHOLD/);
+    assert.match(editor, /bossDomains\.magneticFields/);
+    assert.match(editor, /fieldThreshold/);
+    assert.match(editor, /findNearestMagneticField/);
 });
 
 test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutscene', () => {
