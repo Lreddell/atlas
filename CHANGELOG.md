@@ -88,6 +88,19 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Browser shortcuts no longer interrupt play, and tab closing is blocked while a world loads.
 - Fixed held shaped items rendering inside-out and double-slab merging being misread
   against the player's collision box.
+- Fixed distant oceans rendering see-through: deep water kept its floor instead of
+  being culled with enclosed cave geometry.
+- Fixed rare save/session bugs: chunk streaming could stall after long fast travel,
+  an edit made during an autosave flush could be lost, spreading a stack across
+  nearly-full slots destroyed the overflow, and mining costs always charge the tool
+  that did the mining.
+- Defeating the Warden and quitting immediately no longer leaks its loot or arena
+  rebuild into the next world you open, and item drops no longer carry over between
+  worlds.
+- A failed save now shows a warning in-game instead of crashing to an error screen
+  (including a Windows file-lock case during autosave).
+- The tutorial covers magnetism, the Warden, gear durability, and current commands;
+  smoother performance around magnets and during growth ticks.
 - Added an in-game "What's New" screen that appears after updates and can be reopened
   from the main menu.
 
