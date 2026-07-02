@@ -557,7 +557,12 @@ export function generateGeometryData(
                         const tx = x + dx;
                         const tz = z + dz;
 
-                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0) continue;
+                        // Dark-cull only against enclosed dark AIR (cave interiors).
+                        // A zero-light facing cell holding water is still visible
+                        // THROUGH the water column above (deep ocean floors), so it
+                        // must keep its face or distant oceans render see-through.
+                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0
+                            && getTypeFast(tx, nY, tz) === BlockType.AIR) continue;
 
                         const p0x = tx + c0[0];
                         const p0y = y + c0[1];
@@ -806,7 +811,11 @@ export function generateGeometryData(
              }
              
              if (visible) {
-                 if (cullDarkFaces && getLightFast(nx, ny, nz) === 0) continue;
+                 // As in the greedy pass: only dark AIR is safely invisible from
+                 // outside. Dark water/fluid cells (deep oceans) show this face
+                 // through the medium, so they are never dark-culled.
+                 if (cullDarkFaces && getLightFast(nx, ny, nz) === 0
+                     && nType === BlockType.AIR) continue;
 
                  const { uvs } = resolveTexture(type, dir, dx, dy, dz, rotation);
 
