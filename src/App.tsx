@@ -2848,7 +2848,7 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
+                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
