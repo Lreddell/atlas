@@ -34,12 +34,22 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: '',
         tagline: 'Slab & stair polish, smarter lighting, and new music.',
         highlights: [
+            'Craftable boats — ride across water at roughly twice sprint speed.',
             'Big slabs & stairs pass: corner stairs, double-slab merging, and correct shading.',
             'Light now flows correctly through and around shaped blocks.',
             'New death music plus an optional calmer night soundtrack (on by default).',
             'Holding Ctrl no longer blocks scroll-wheel hotbar switching.',
         ],
         sections: [
+            {
+                title: 'Transportation',
+                items: [
+                    'Added a craftable Boat: a U-shape of 5 planks (any plank family).',
+                    'Use the boat item on water to place it, right-click to board, sneak to dismount, punch to break it back into the item.',
+                    'Boats float on water, travel at roughly twice sprint speed, and collide with terrain.',
+                    'Placed boats save with the world and are restored on load.',
+                ],
+            },
             {
                 title: 'Building & Lighting',
                 items: [

@@ -13,11 +13,21 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 > the update is built, then publish when ready.
 
 ### Highlights
+- Craftable boats — ride across water at roughly twice sprint speed.
 - Big slabs & stairs pass: corner stairs, double-slab merging, and correct shading.
 - Light now flows correctly through and around shaped blocks.
 - New death music plus an optional calmer night soundtrack (on by default).
 - Holding Ctrl no longer blocks scroll-wheel hotbar switching.
 - In-game "What's New" popup that shows on update and can be reopened from the main menu.
+
+### Transportation
+- Added a craftable Boat (U-shape of 5 planks, any plank family; found in the
+  Functional creative tab).
+- Use the boat item on water to place it; right-click to board, sneak to
+  dismount, punch it to break it back into the item.
+- Boats float on the water surface, move at roughly twice sprint speed on
+  water (slow scraping on land), and collide with terrain.
+- Placed boats are saved with the world and restored on load.
 
 ### Building & Lighting
 - Stairs form corner shapes when placed against neighbouring stairs.

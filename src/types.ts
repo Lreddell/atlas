@@ -169,7 +169,10 @@ export enum BlockType {
   STONE_STAIRS = 163,
   SANDSTONE_STAIRS = 164,
   RED_SANDSTONE_STAIRS = 165,
-  BRICK_STAIRS = 166
+  BRICK_STAIRS = 166,
+
+  // Transportation
+  BOAT = 167
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';
@@ -230,6 +233,16 @@ export interface Drop {
     velocity: [number, number, number];
     createdAt: number;
     pickupDelay: number; // Timestamp when it can be picked up
+}
+
+// A placed boat entity. Position/velocity are mutated in place by the physics
+// step (same pattern as Drop) so riding doesn't churn React state every tick.
+// position is the hull bottom center; yaw is the render heading in radians.
+export interface Boat {
+    id: string;
+    position: [number, number, number];
+    velocity: [number, number, number];
+    yaw: number;
 }
 
 export type GameMode = 'survival' | 'creative' | 'spectator';

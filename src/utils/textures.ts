@@ -641,6 +641,29 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#f48fb1'; ctx.fillRect(5, 4, 2, 2); ctx.fillRect(9, 5, 2, 2); ctx.fillRect(7, 7, 2, 1); // pink blossoms
     });
 
+    // 149: Boat Item Icon (side view of a wooden rowboat)
+    withTile(149, () => {
+        // Hull sides
+        ctx.fillStyle = '#8d6e63';
+        ctx.fillRect(2, 8, 12, 3);
+        ctx.fillRect(1, 7, 2, 2); ctx.fillRect(13, 7, 2, 2); // raised bow/stern tips
+        // Hull bottom (darker)
+        ctx.fillStyle = '#5d4037';
+        ctx.fillRect(3, 11, 10, 2);
+        ctx.fillRect(2, 11, 1, 1); ctx.fillRect(13, 11, 1, 1);
+        // Gunwale highlight
+        ctx.fillStyle = '#a1887f';
+        ctx.fillRect(2, 7, 12, 1);
+        // Interior shadow
+        ctx.fillStyle = '#4e342e';
+        ctx.fillRect(4, 8, 8, 1);
+        // Paddle
+        ctx.fillStyle = '#6d4c41';
+        ctx.fillRect(8, 3, 1, 5);
+        ctx.fillStyle = '#8d6e63';
+        ctx.fillRect(7, 2, 3, 2);
+    });
+
     // Raw Iron
     withTile(55, () => {
         ctx.fillStyle = '#a1887f'; ctx.fillRect(5, 5, 6, 6); ctx.fillRect(4, 6, 8, 4);

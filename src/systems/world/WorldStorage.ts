@@ -29,6 +29,7 @@ export interface WorldMetadata {
     player?: PlayerData; // Last known player state
     spawnPoint?: { x: number, y: number, z: number } | null;
     worldSpawn?: { x: number, y: number, z: number } | null;
+    boats?: { x: number, y: number, z: number, yaw: number }[]; // Placed boat entities
     time: number; // World time
     worldGenConfig?: unknown;
     worldGenPresetId?: string | null;
@@ -298,6 +299,7 @@ class WorldStorageSystem {
                 player: meta.player,
                 spawnPoint: meta.spawnPoint ?? null,
                 worldSpawn: meta.worldSpawn ?? null,
+                boats: meta.boats,
                 worldGenConfig: meta.worldGenConfig,
                 worldGenPresetId: meta.worldGenPresetId ?? null,
                 worldGenPresetName: meta.worldGenPresetName ?? null,
@@ -335,6 +337,7 @@ class WorldStorageSystem {
             player: data.meta?.player,
             spawnPoint: data.meta?.spawnPoint ?? null,
             worldSpawn: data.meta?.worldSpawn ?? null,
+            boats: Array.isArray(data.meta?.boats) ? data.meta.boats : undefined,
             worldGenConfig: data.meta?.worldGenConfig,
             worldGenPresetId: data.meta?.worldGenPresetId ?? null,
             worldGenPresetName: data.meta?.worldGenPresetName ?? null,

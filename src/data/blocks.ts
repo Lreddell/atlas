@@ -220,6 +220,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.BIRCH_SAPLING]: { id: BlockType.BIRCH_SAPLING, color: '#81c784', name: 'Birch Sapling', textureSlot: 147, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.CHERRY_SAPLING]: { id: BlockType.CHERRY_SAPLING, color: '#f48fb1', name: 'Cherry Sapling', textureSlot: 148, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.WHEAT_SEEDS]: { id: BlockType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, category: 'natural' },
+  [BlockType.BOAT]: { id: BlockType.BOAT, color: '#8d6e63', name: 'Boat', textureSlot: 149, hardness: 0, isItem: true, isFuel: true, fuelValue: 15000, category: 'functional' },
 
   // --- SLABS (half blocks; reuse the parent block's atlas texture) ---
   [BlockType.OAK_SLAB]: { id: BlockType.OAK_SLAB, color: '#8d6e63', name: 'Oak Slab', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.OAK_SLAB, chance: 1, min: 1, max: 1 }] },

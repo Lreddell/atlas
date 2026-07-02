@@ -7,6 +7,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
+import { BoatManager } from './components/BoatManager';
 import { ParticleManager } from './components/ParticleManager';
 import { DayNightCycle, DayNightCycleRef } from './components/world/DayNightCycle';
 import { Clouds } from './components/world/Clouds';
@@ -41,6 +42,7 @@ import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH } from './systems/player/playerConstants';
 import {
+  type Boat,
   type BreakingVisual,
   type GameMode,
   type OpenContainerState,
@@ -232,6 +234,14 @@ const App: React.FC = () => {
   
   const [chunks, setChunks] = useState<{ cx: number; cz: number }[]>([]);
   const [drops, setDrops] = useState<Drop[]>([]);
+  const [boats, setBoats] = useState<Boat[]>([]);
+  const [ridingBoatId, setRidingBoatId] = useState<string | null>(null);
+  // Refs mirror the boat state for consumers that must not re-bind on every
+  // change (save timer, window mouse listeners, the player physics loop).
+  const boatsRef = useRef<Boat[]>([]);
+  const ridingBoatIdRef = useRef<string | null>(null);
+  useEffect(() => { boatsRef.current = boats; }, [boats]);
+  useEffect(() => { ridingBoatIdRef.current = ridingBoatId; }, [ridingBoatId]);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false); 
@@ -527,6 +537,9 @@ const App: React.FC = () => {
           };
           meta.spawnPoint = worldManager.getSpawnPoint();
           meta.worldSpawn = worldManager.getWorldSpawn();
+          meta.boats = boatsRef.current.map(b => ({
+              x: b.position[0], y: b.position[1], z: b.position[2], yaw: b.yaw
+          }));
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           console.log(`[AutoSave] World ${meta.name} saved.`);
@@ -1966,6 +1979,8 @@ const App: React.FC = () => {
           setShowCommandInput(false);
           setShowAtlasViewer(false);
           setIsPaused(false);
+          setRidingBoatId(null);
+          setBoats([]);
           lastAppliedChunkKeyRef.current = null;
           activeWorldIdRef.current = null;
           activeWorldGenConfigRef.current = null;
@@ -2016,6 +2031,18 @@ const App: React.FC = () => {
       
       setGameMode(meta.gameMode);
       worldManager.setTime(meta.time);
+
+      // Restore placed boats (older saves simply have none). Riding state is
+      // intentionally not persisted — players start each session on foot.
+      setRidingBoatId(null);
+      setBoats((meta.boats ?? [])
+          .filter(b => Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.z))
+          .map(b => ({
+              id: crypto.randomUUID(),
+              position: [b.x, b.y, b.z] as [number, number, number],
+              velocity: [0, 0, 0] as [number, number, number],
+              yaw: Number.isFinite(b.yaw) ? b.yaw : 0
+          })));
 
       // 3. Restore Player State (if exists)
       if (meta.player) {
@@ -2119,6 +2146,47 @@ const App: React.FC = () => {
   const handleSpawnDrop = useCallback((type: BlockType, x: number, y: number, z: number) => {
       worldManager.spawnDrop(type, x, y, z);
   }, []);
+
+  // --- Boat handlers ---
+  const handlePlaceBoat = useCallback((x: number, y: number, z: number, yaw: number) => {
+      setBoats(prev => [...prev, {
+          id: crypto.randomUUID(),
+          position: [x, y, z],
+          velocity: [0, 0, 0],
+          yaw
+      }]);
+      return true;
+  }, []);
+
+  const handleEnterBoat = useCallback((id: string) => {
+      soundManager.play("ui.click");
+      setRidingBoatId(id);
+  }, []);
+
+  const handleExitBoat = useCallback(() => {
+      setRidingBoatId(null);
+  }, []);
+
+  const handleBreakBoat = useCallback((id: string) => {
+      const boat = boatsRef.current.find(b => b.id === id);
+      setBoats(prev => prev.filter(b => b.id !== id));
+      setRidingBoatId(prev => (prev === id ? null : prev));
+      if (boat) {
+          const [bx, by, bz] = boat.position;
+          soundManager.playAt("block.wood.break", { x: bx, y: by + 0.3, z: bz });
+          if (gameMode === 'survival') {
+              worldManager.spawnDrop(BlockType.BOAT, Math.floor(bx), Math.floor(by + 0.3), Math.floor(bz));
+          }
+      }
+  }, [gameMode]);
+
+  // Safety dismounts: death and spectator mode both end the ride.
+  useEffect(() => {
+      if (isDead) setRidingBoatId(null);
+  }, [isDead]);
+  useEffect(() => {
+      if (gameMode === 'spectator') setRidingBoatId(null);
+  }, [gameMode]);
 
   // Stable identity — an inline arrow here re-bound InteractionController's
   // window mouse listeners on every App render.
@@ -2319,6 +2387,7 @@ const App: React.FC = () => {
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
+                    <BoatManager boats={boats} ridingBoatId={ridingBoatId} isPaused={worldPaused} brightness={brightness} />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                 </Suspense>
@@ -2328,6 +2397,7 @@ const App: React.FC = () => {
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
+                    boatsRef={boatsRef} ridingBoatIdRef={ridingBoatIdRef} onEnterBoat={handleEnterBoat} onBreakBoat={handleBreakBoat} onPlaceBoat={handlePlaceBoat}
                 />
 
                 <BreakingVisualMesh suspended={isCapturingPanorama} />
@@ -2355,6 +2425,7 @@ const App: React.FC = () => {
                                 }
                             }} 
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
+                            boatsRef={boatsRef} ridingBoatId={ridingBoatId} onExitBoat={handleExitBoat}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} />
                     </>
