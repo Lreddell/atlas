@@ -2,7 +2,7 @@
   "name": "atlas-desktop",
   "version": "v1.1.0-alpha",
   "displayVersion": "Alpha 1.1.0",
-  "description": "Voxel-based world editor built with Electron, React, and Three.js",
+  "description": "Voxel action-adventure game built with Electron, React, and Three.js",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",

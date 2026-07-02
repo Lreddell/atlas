@@ -227,7 +227,7 @@ interface PanoramaPanelProps {
 }
 
 const getPanoramaLabel = (filePath: string, defaultPanoramaId: string) => {
-    if (filePath === defaultPanoramaId) return 'Default Panorama (Alpha-1.0.1)';
+    if (filePath === defaultPanoramaId) return 'Default Panorama';
     if (filePath.startsWith('web:')) return filePath.slice(4) || 'Browser Panorama';
     const normalized = filePath.replace(/\\/g, '/');
     const chunks = normalized.split('/');
@@ -505,7 +505,7 @@ interface TutorialPromptModalProps {
 export const TutorialPromptModal: React.FC<TutorialPromptModalProps> = ({ onAccept, onDecline }) => (
     <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70">
         <div className="w-[560px] border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6">
-            <h2 className="mb-2 text-2xl font-bold text-white text-shadow-md">First Time Here?</h2>
+            <h2 className="mb-2 text-2xl font-bold font-pixel text-white text-shadow-md">First Time Here?</h2>
             <p className="mb-6 text-sm font-pixel leading-relaxed text-gray-200">
                 Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
                 Open it now?

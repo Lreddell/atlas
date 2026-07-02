@@ -202,7 +202,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     // Main Menu
     const renderMain = () => (
         <div className="flex flex-col gap-3 items-center">
-            <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">{isMainMenu ? 'Options' : 'Game Menu'}</h1>
+            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">{isMainMenu ? 'Options' : 'Game Menu'}</h1>
             
             <div className="flex flex-col gap-3 w-full items-center">
                 {!isMainMenu && <MenuButton label="Back to Game" onClick={onResume} width="w-80" />}
@@ -223,7 +223,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     // Video Settings
     const renderVideo = () => (
         <div className="flex flex-col gap-2 items-center w-[600px]">
-            <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">Video Settings</h1>
+            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Video Settings</h1>
             
             <div className="grid grid-cols-2 gap-4 mb-4">
                 <MenuSlider 
@@ -274,7 +274,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     // Audio Settings
     const renderAudio = () => (
         <div className="flex flex-col gap-2 items-center w-[600px]">
-            <h1 className="text-white text-xl mb-4 font-bold text-shadow-lg">Music & Sounds</h1>
+            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Music & Sounds</h1>
             
             <div className="mb-4 flex gap-4">
                 <MenuSlider 
@@ -313,7 +313,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
         return (
             <div className="flex flex-col gap-2 items-center w-[820px]">
-                <h1 className="text-white text-xl mb-2 font-bold text-shadow-lg">Tutorial</h1>
+                <h1 className="text-white text-xl mb-2 font-bold font-pixel text-shadow-lg">Tutorial</h1>
 
                 <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-pixel">
                     Tutorial wiki. You can always return here through Options &gt; Tutorial.
@@ -331,7 +331,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 </div>
 
                 <div className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4">
-                    <h2 className="text-white text-lg font-bold text-shadow-md mb-1">{activeSection.title}</h2>
+                    <h2 className="text-white text-lg font-bold font-pixel text-shadow-md mb-1">{activeSection.title}</h2>
                     <p className="text-blue-200 text-sm font-pixel mb-3">{activeSection.subtitle}</p>
 
                     <div className="space-y-3 mb-4">
