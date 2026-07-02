@@ -329,6 +329,42 @@ const MAG = BlockType.MAGNETITE_BLOCK;
 push(2, [MAG, MAG, MAG, MAG], BlockType.MAGNETITE_BRICKS, 4);
 push(2, [BlockType.MAGNETITE_SLAB, null, BlockType.MAGNETITE_SLAB, null], BlockType.CHISELED_MAGNETITE, 1);
 
+// Charged Magnetite (emissive building light): a shard set into a magnetite block.
+const SH = BlockType.MAGNETITE_SHARD;
+push(2, [SH, null, MAG, null], BlockType.CHARGED_MAGNETITE, 1);
+
+// Magnetic Spikes (fall-damage hazard): a shard crown over a magnetite base.
+push(3, [null, null, null, SH, null, SH, MAG, MAG, MAG], BlockType.MAGNETIC_SPIKE, 4);
+
+// --- Armor (iron / gold / diamond / copper) ---
+// Helmet, chestplate, leggings, boots use the classic silhouettes. These were
+// missing entirely, which made every armor set creative-only.
+const ARMOR_SETS: { mat: BlockType; helmet: BlockType; chestplate: BlockType; leggings: BlockType; boots: BlockType }[] = [
+    { mat: BlockType.IRON_INGOT, helmet: BlockType.IRON_HELMET, chestplate: BlockType.IRON_CHESTPLATE, leggings: BlockType.IRON_LEGGINGS, boots: BlockType.IRON_BOOTS },
+    { mat: BlockType.GOLD_INGOT, helmet: BlockType.GOLD_HELMET, chestplate: BlockType.GOLD_CHESTPLATE, leggings: BlockType.GOLD_LEGGINGS, boots: BlockType.GOLD_BOOTS },
+    { mat: BlockType.DIAMOND, helmet: BlockType.DIAMOND_HELMET, chestplate: BlockType.DIAMOND_CHESTPLATE, leggings: BlockType.DIAMOND_LEGGINGS, boots: BlockType.DIAMOND_BOOTS },
+    { mat: BlockType.COPPER_INGOT, helmet: BlockType.COPPER_HELMET, chestplate: BlockType.COPPER_CHESTPLATE, leggings: BlockType.COPPER_LEGGINGS, boots: BlockType.COPPER_BOOTS },
+];
+for (const a of ARMOR_SETS) {
+    const M = a.mat;
+    push(3, [M, M, M, M, null, M, null, null, null], a.helmet, 1);
+    push(3, [M, null, M, M, M, M, M, M, M], a.chestplate, 1);
+    push(3, [M, M, M, M, null, M, M, null, M], a.leggings, 1);
+    push(3, [null, null, null, M, null, M, M, null, M], a.boots, 1);
+}
+
+// Wool from woven plant fiber — wheat seeds were a dead-end drop and wool (the
+// bed ingredient, i.e. respawn anchors) had no survival source at all.
+push(2, [BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS], BlockType.WOOL, 1);
+
+// Packed ice from ice (Ice Spikes material, otherwise creative-only to build with).
+push(2, [BlockType.ICE, BlockType.ICE, BlockType.ICE, BlockType.ICE], BlockType.PACKED_ICE, 1);
+
+// Boat — classic hull silhouette (5 planks), one recipe per wood family.
+for (const { planks } of WOOD_FAMILIES) {
+    push(3, [null, null, null, planks, null, planks, planks, planks, planks], BlockType.BOAT, 1);
+}
+
 interface TrimmedGrid {
     cells: (BlockType | null)[];
     w: number;

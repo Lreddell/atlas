@@ -87,6 +87,8 @@ export const PR19_TEXTURE_ASSETS: ReadonlyArray<{
     { slot: 194, path: 'blocks/jungle_sapling.png' },
     { slot: 199, path: 'blocks/dark_oak_sapling.png' },
     { slot: 204, path: 'blocks/acacia_sapling.png' },
+    { slot: 215, path: 'items/polarity_boots_upgrade.png' },
+    { slot: 216, path: 'items/boat.png' },
 ];
 
 const IRON_SHADOW = '#9e9e9e';
@@ -528,6 +530,31 @@ const ARMOR_TEXTURES = [
 for (const [slot, piece, material] of ARMOR_TEXTURES) {
     PR19_TEXTURE_TILES[slot] = armorTile(piece, MATERIAL_PALETTES[material]);
 }
+
+// --- 1.1.0 additions ---
+Object.assign(PR19_TEXTURE_TILES, {
+    // 215: Polarity Boots Upgrade — the Warden's drop: a violet core module in a
+    // dark housing with red/blue polarity pins. (Previously reused the Charged
+    // Magnetite block tile, which made the drop read as a building block.)
+    215: tile(
+        layer('#241b38', [[4, 3, 8, 10]]),
+        layer('#4a3a6e', [[5, 4, 6, 8]]),
+        layer('#b39ddb', [[6, 6, 4, 4]]),
+        layer('#efe6ff', [[7, 7, 2, 2]]),
+        layer('#ff4030', [[3, 5, 1, 2], [12, 9, 1, 2]]),
+        layer('#3060ff', [[12, 5, 1, 2], [3, 9, 1, 2]]),
+        layer('#8a7fd6', [[6, 13, 4, 1]]),
+    ),
+    // 216: Boat — wooden hull with a lighter rim, seat plank, and keel shadow.
+    216: tile(
+        layer('#a1887f', [[1, 7, 2, 1], [13, 7, 2, 1]]),
+        layer('#6d4c33', [[1, 8, 14, 2]]),
+        layer('#8d6e63', [[2, 10, 12, 3]]),
+        layer('#5d4037', [[3, 13, 10, 1]]),
+        layer('#3e2723', [[4, 9, 8, 1]]),
+        layer('#c9a877', [[7, 9, 2, 1]]),
+    ),
+});
 
 const parseHexColor = (color: string): readonly [number, number, number, number] => {
     const value = Number.parseInt(color.slice(1), 16);
