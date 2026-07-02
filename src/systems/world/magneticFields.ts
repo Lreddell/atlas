@@ -1,4 +1,4 @@
-// Magnetic Fields biome — centralized constants and deterministic helpers.
+// Magnetic Fields biome — config-driven deterministic helpers.
 //
 // The Magnetic Fields biome is a RARE, HUGE, TIERED magnetic-convergence biome.
 // It is NOT a crater. Terrain organizes inward toward a single deterministic
@@ -9,12 +9,21 @@
 // candidate centers sit on a sparse grid and only ACTIVATE where that noise peaks,
 // so instances are rare and naturally placed. The biome boundary and tier rings
 // are warped by the same noise so the region reads as organic rock, not a circle.
-// A future selector noise can pick WHICH boss biome activates at a center.
+//
+// All tunables live in GenConfig.bossDomains.magneticFields (editable from the
+// World Editor, saved with presets/worlds). The MF_* constants exported below are
+// the immutable DEFAULTS, kept for compatibility and for callers that want the
+// stock values. Everything here reads the LIVE config so the editor previews and
+// the worker generation stay in sync.
 //
 // This module stays enum-free (no BlockType import) so its math is unit-testable
 // under Node's --experimental-strip-types runner. The noise is injected as a
 // plain `noise2D(x, z) => ~[-1, 1]` sampler so callers pass NoiseSet.bossBiome and
 // tests can pass a deterministic stub.
+
+// Imported with an explicit .ts extension so Node's type-stripping test runner
+// can resolve it (the bundler resolves it identically).
+import { GenConfig, DEFAULTS } from './genConfig.ts';
 
 export const MAGNETIC_FIELDS_BIOME_ID = 'magnetic_fields';
 export const MAGNETIC_FIELDS_REGION_ID = 'magnetic_fields';
@@ -22,43 +31,30 @@ export const MAGNETIC_WARDEN_BOSS_ID = 'magnetic_warden';
 
 export type Noise2D = (x: number, z: number) => number;
 
-// --- Rarity / size ---
-// Size (radius) is intentionally compact and fixed. Rarity is tuned so boss biomes
-// feel like a genuine expedition find: instances sit ~20k blocks apart on average.
-export const MF_CELL = 2560;            // grid spacing between candidate centers (blocks)
-export const MF_RADIUS = 256;           // base biome radius (warped per-edge); kept compact
-export const MF_FIELD_FREQ = 0.0009;    // boss-biome noise frequency for center activation
-export const MF_FIELD_THRESHOLD = 0.55; // center activates only where the field peaks (rare)
+export type MagneticFieldsConfig = typeof DEFAULTS.bossDomains.magneticFields;
 
-// --- Natural (non-circular) shaping ---
-export const MF_EDGE_FREQ = 0.011;      // boundary wobble frequency
-export const MF_EDGE_AMP = 0.28;        // boundary radius varies by ±28% → organic outline
-export const MF_TIER_WARP_FREQ = 0.02;  // cliff-ring wobble frequency
-export const MF_TIER_WARP_AMP = 16;     // cliff rings shift in/out by up to 16 blocks
+/** Live tunables (mutated by the World Editor / preset loading). */
+export const getMagneticFieldsConfig = (): MagneticFieldsConfig => GenConfig.bossDomains.magneticFields;
 
-// Gentle per-column surface variation so shelves read as natural rock, not a table.
-export const MF_SHELF_JITTER_FREQ = 0.075;
-export const MF_SHELF_JITTER_AMP = 1.8;  // ≈ ±2 blocks of bumpiness on shelves
-
-// Outer apron: within this many blocks of the boundary, the outer shelf ramps down
-// to the surrounding terrain so the biome blends in rather than ending in a wall.
-// Kept just below sea level so an ocean edge becomes a soft rocky shore, not a cliff.
-export const MF_APRON = 64;
-export const MF_APRON_MIN_Y = 60;
-
-// --- Central arena plateau ---
-// The arena is a large generated structure (see magneticArena.ts), so the flat
-// plateau it sits on must be sized to match its footprint. The tiers then lead up
-// from the biome edge to this plateau.
-export const MF_ARENA_RADIUS = 80;                       // flat plateau the arena sits on
-export const MF_ARENA_FLOOR_Y = 132;                     // world Y of the plateau / arena base
-
-// --- Tier (height-band) layout, outer rim inward to the arena plateau ---
-export const MF_BASE_HEIGHT = 70;       // outer shelf surface (world Y of tier 0)
-export const MF_TIER_HEIGHT = 12;       // vertical rise of each flat magnetite wall
-export const MF_TIER_COUNT = 5;         // shelves: tier 0 (outer) .. tier 4 (plateau rim)
-// Tiers occupy the radial band between the plateau edge and the biome boundary.
-export const MF_TIER_BAND = (MF_RADIUS - MF_ARENA_RADIUS) / MF_TIER_COUNT;
+// --- Compatibility defaults (the stock config values) ---
+const D = DEFAULTS.bossDomains.magneticFields;
+export const MF_CELL = D.cell;
+export const MF_RADIUS = D.radius;
+export const MF_FIELD_FREQ = D.fieldFreq;
+export const MF_FIELD_THRESHOLD = D.fieldThreshold;
+export const MF_EDGE_FREQ = D.edgeFreq;
+export const MF_EDGE_AMP = D.edgeAmp;
+export const MF_TIER_WARP_FREQ = D.tierWarpFreq;
+export const MF_TIER_WARP_AMP = D.tierWarpAmp;
+export const MF_SHELF_JITTER_FREQ = D.shelfJitterFreq;
+export const MF_SHELF_JITTER_AMP = D.shelfJitterAmp;
+export const MF_APRON = D.apron;
+export const MF_APRON_MIN_Y = D.apronMinY;
+export const MF_ARENA_RADIUS = D.arenaRadius;
+export const MF_ARENA_FLOOR_Y = D.arenaFloorY;
+export const MF_BASE_HEIGHT = D.baseHeight;
+export const MF_TIER_HEIGHT = D.tierHeight;
+export const MF_TIER_COUNT = D.tierCount;
 
 /** Fall-damage multiplier when a player lands on a Magnetic Spike. */
 export const MAGNETIC_SPIKE_FALL_MULTIPLIER = 2.5;
@@ -82,22 +78,28 @@ export interface MagneticFieldInstance {
 
 /** Deterministic jittered center for a grid cell. */
 const cellCenter = (cx: number, cz: number, worldSeed: number): MagneticFieldInstance => {
+    const cell = getMagneticFieldsConfig().cell;
     const jx = hash3(cx, 1, cz, worldSeed ^ 0x6669656c);
     const jz = hash3(cx, 2, cz, worldSeed ^ 0x6473);
     // Keep centers away from cell edges so warped regions never touch a neighbour.
     return {
-        centerX: cx * MF_CELL + Math.floor((0.25 + jx * 0.5) * MF_CELL),
-        centerZ: cz * MF_CELL + Math.floor((0.25 + jz * 0.5) * MF_CELL),
+        centerX: cx * cell + Math.floor((0.25 + jx * 0.5) * cell),
+        centerZ: cz * cell + Math.floor((0.25 + jz * 0.5) * cell),
     };
 };
 
 /** A center activates only where the boss-biome field peaks (→ rare, natural). */
-const isCenterActive = (inst: MagneticFieldInstance, noise2D: Noise2D): boolean =>
-    noise2D(inst.centerX * MF_FIELD_FREQ, inst.centerZ * MF_FIELD_FREQ) > MF_FIELD_THRESHOLD;
+const isCenterActive = (inst: MagneticFieldInstance, noise2D: Noise2D): boolean => {
+    const c = getMagneticFieldsConfig();
+    if (!c.enabled) return false;
+    return noise2D(inst.centerX * c.fieldFreq, inst.centerZ * c.fieldFreq) > c.fieldThreshold;
+};
 
 /** Warped (non-circular) effective radius for the region boundary at (wx, wz). */
-const warpedRadius = (wx: number, wz: number, noise2D: Noise2D): number =>
-    MF_RADIUS * (1 + MF_EDGE_AMP * noise2D(wx * MF_EDGE_FREQ, wz * MF_EDGE_FREQ));
+const warpedRadius = (wx: number, wz: number, noise2D: Noise2D): number => {
+    const c = getMagneticFieldsConfig();
+    return c.radius * (1 + c.edgeAmp * noise2D(wx * c.edgeFreq, wz * c.edgeFreq));
+};
 
 /**
  * The active Magnetic Fields instance covering (wx, wz), or null. Only the home
@@ -111,9 +113,11 @@ export function getMagneticFieldInstanceAt(
     worldSeed: number,
     noise2D: Noise2D,
 ): MagneticFieldInstance | null {
-    const baseCx = Math.floor(wx / MF_CELL);
-    const baseCz = Math.floor(wz / MF_CELL);
-    const maxReach = MF_RADIUS * (1 + MF_EDGE_AMP);
+    const c = getMagneticFieldsConfig();
+    if (!c.enabled) return null;
+    const baseCx = Math.floor(wx / c.cell);
+    const baseCz = Math.floor(wz / c.cell);
+    const maxReach = c.radius * (1 + c.edgeAmp);
     for (let dcx = -1; dcx <= 1; dcx++) {
         for (let dcz = -1; dcz <= 1; dcz++) {
             const inst = cellCenter(baseCx + dcx, baseCz + dcz, worldSeed);
@@ -142,11 +146,13 @@ export function magneticFieldsTouchBox(
     minX: number, minZ: number, maxX: number, maxZ: number,
     worldSeed: number, noise2D: Noise2D,
 ): boolean {
-    const reach = MF_RADIUS * (1 + MF_EDGE_AMP);
-    const c0x = Math.floor((minX - reach) / MF_CELL);
-    const c1x = Math.floor((maxX + reach) / MF_CELL);
-    const c0z = Math.floor((minZ - reach) / MF_CELL);
-    const c1z = Math.floor((maxZ + reach) / MF_CELL);
+    const c = getMagneticFieldsConfig();
+    if (!c.enabled) return false;
+    const reach = c.radius * (1 + c.edgeAmp);
+    const c0x = Math.floor((minX - reach) / c.cell);
+    const c1x = Math.floor((maxX + reach) / c.cell);
+    const c0z = Math.floor((minZ - reach) / c.cell);
+    const c1z = Math.floor((maxZ + reach) / c.cell);
     for (let cx = c0x; cx <= c1x; cx++) {
         for (let cz = c0z; cz <= c1z; cz++) {
             const inst = cellCenter(cx, cz, worldSeed);
@@ -159,20 +165,28 @@ export function magneticFieldsTouchBox(
     return false;
 }
 
+/** Radial width of one tier band (plateau edge → biome boundary, tierCount bands). */
+export function getMagneticFieldTierBand(): number {
+    const c = getMagneticFieldsConfig();
+    return Math.max(1, (c.radius - c.arenaRadius) / Math.max(1, c.tierCount));
+}
+
 /**
- * Tier index (0 = outer shelf .. MF_TIER_COUNT-1 = arena rim) for a radial
+ * Tier index (0 = outer shelf .. tierCount-1 = arena rim) for a radial
  * distance to the center. Closer to center = higher tier = taller/harder. This is
  * what makes terrain converge inward in stable height bands rather than a bowl.
  */
 export function getMagneticFieldTier(distanceToCenter: number): number {
-    const d = Math.max(0, distanceToCenter - MF_ARENA_RADIUS);
-    const tier = MF_TIER_COUNT - 1 - Math.floor(d / MF_TIER_BAND);
-    return Math.max(0, Math.min(MF_TIER_COUNT - 1, tier));
+    const c = getMagneticFieldsConfig();
+    const d = Math.max(0, distanceToCenter - c.arenaRadius);
+    const tier = c.tierCount - 1 - Math.floor(d / getMagneticFieldTierBand());
+    return Math.max(0, Math.min(c.tierCount - 1, tier));
 }
 
 /** Flat shelf surface height (world Y) for a given tier. */
 export function getMagneticFieldTierHeight(tier: number): number {
-    return MF_BASE_HEIGHT + tier * MF_TIER_HEIGHT;
+    const c = getMagneticFieldsConfig();
+    return c.baseHeight + tier * c.tierHeight;
 }
 
 export interface MagneticFieldColumn {
@@ -192,7 +206,7 @@ export interface MagneticFieldColumn {
  * boundary (for edge blending). Returns null outside the biome.
  *
  * Because each tier maps to one near-flat Y and adjacent tiers differ by
- * MF_TIER_HEIGHT, the band edges become vertical magnetite walls — natural shelves
+ * tierHeight, the band edges become vertical magnetite walls — natural shelves
  * separated by tall climb walls, converging on the arena.
  */
 export function getMagneticFieldColumn(
@@ -203,6 +217,7 @@ export function getMagneticFieldColumn(
 ): MagneticFieldColumn | null {
     const instance = getMagneticFieldInstanceAt(wx, wz, worldSeed, noise2D);
     if (!instance) return null;
+    const c = getMagneticFieldsConfig();
 
     const dx = wx - instance.centerX;
     const dz = wz - instance.centerZ;
@@ -212,15 +227,15 @@ export function getMagneticFieldColumn(
     // rather than perfectly concentric circles.
     const warpedDist = Math.max(
         0,
-        rawDist + MF_TIER_WARP_AMP * noise2D(wx * MF_TIER_WARP_FREQ, wz * MF_TIER_WARP_FREQ),
+        rawDist + c.tierWarpAmp * noise2D(wx * c.tierWarpFreq, wz * c.tierWarpFreq),
     );
 
-    if (warpedDist <= MF_ARENA_RADIUS) {
+    if (warpedDist <= c.arenaRadius) {
         // The arena floor stays perfectly flat for the boss fight.
-        return { instance, distance: warpedDist, tier: MF_TIER_COUNT - 1, surfaceY: MF_ARENA_FLOOR_Y, isArena: true, edgeDistance };
+        return { instance, distance: warpedDist, tier: c.tierCount - 1, surfaceY: c.arenaFloorY, isArena: true, edgeDistance };
     }
     const tier = getMagneticFieldTier(warpedDist);
-    const jitter = Math.round(noise2D(wx * MF_SHELF_JITTER_FREQ, wz * MF_SHELF_JITTER_FREQ) * MF_SHELF_JITTER_AMP);
+    const jitter = Math.round(noise2D(wx * c.shelfJitterFreq, wz * c.shelfJitterFreq) * c.shelfJitterAmp);
     return { instance, distance: warpedDist, tier, surfaceY: getMagneticFieldTierHeight(tier) + jitter, isArena: false, edgeDistance };
 }
 
@@ -239,23 +254,89 @@ export function getMagnetiteWallPolarity(wx: number, wz: number, worldSeed: numb
     return hash3(cx, 12, cz, worldSeed ^ 0x706f6c) < 0.5 ? 1 : -1;
 }
 
-export type ShelfDecoration = 'none' | 'crystal_pos' | 'crystal_neg';
-
 /**
  * A deliberate, sparse Magnetic Fields feature rooted at (rootWx, rootWz), or null.
- * Currently only resource crystal clusters — the spike/spire/launch-pad formations
- * are deferred (to be redesigned later). Magnets on the cliff walls and the tiered
- * terrain remain the structural traversal content.
+ * The exploration content between the boundary and the arena:
+ *   - crystals:   harvestable resource crystal clusters (crafting material)
+ *   - shards:     bright emissive shard clusters (light + decoration + loot)
+ *   - vein:       charged-magnetite decorative vein patches on the shelf
+ *   - spikes:     hazard patches that multiply fall damage (avoid when launching)
+ *   - launchPad:  3×3 polarity pad flush with the shelf: hold the SAME polarity
+ *                 to be flung upward/away, the OPPOSITE to be pulled in — the
+ *                 traversal lesson for the arena, taught tier by tier
+ *   - pylon:      broken/intact magnetite-brick pylons with a charged beacon top
+ *                 (landmarks that read as a route toward the center)
+ *   - ruin:       collapsed magnetite-brick ruin, sometimes sheltering a cache
+ *                 chest seeded with deterministic loot
+ * Roots are hash-driven (deterministic, chunk-border safe).
  */
 export type MagneticFeature =
     | { kind: 'crystals'; polarity: number; count: number }
+    | { kind: 'shards'; count: number }
+    | { kind: 'vein'; size: number }
+    | { kind: 'spikes'; radius: number }
+    | { kind: 'launchPad'; polarity: number }
+    | { kind: 'pylon'; height: number; broken: boolean }
+    | { kind: 'ruin'; size: number; withCache: boolean; rotation: number }
     | null;
 
 export function getMagneticFeature(rootWx: number, rootWz: number, worldSeed: number): MagneticFeature {
     const r = hash3(rootWx, 41, rootWz, worldSeed ^ 0x66656174);
     const h = (salt: number) => hash3(rootWx, salt, rootWz, worldSeed ^ 0x66656174);
+    // Cumulative rarity bands (per column root, so densities are per-block):
     if (r < 0.0030) return { kind: 'crystals', polarity: h(45) < 0.5 ? 1 : -1, count: 1 + Math.floor(h(46) * 3) };
+    if (r < 0.0042) return { kind: 'shards', count: 1 + Math.floor(h(47) * 2) };
+    if (r < 0.0058) return { kind: 'vein', size: 2 + Math.floor(h(48) * 3) };
+    if (r < 0.0070) return { kind: 'spikes', radius: 1 + Math.floor(h(49) * 2) };
+    if (r < 0.00745) return { kind: 'launchPad', polarity: h(50) < 0.5 ? 1 : -1 };
+    if (r < 0.00765) return { kind: 'pylon', height: 6 + Math.floor(h(51) * 6), broken: h(52) < 0.45 };
+    if (r < 0.00775) return { kind: 'ruin', size: 4 + Math.floor(h(53) * 3), withCache: h(54) < 0.6, rotation: Math.floor(h(55) * 4) };
     return null;
+}
+
+/**
+ * Deterministic loot for a Magnetic Fields cache chest at (x, y, z). Returns
+ * item ids/counts as plain numbers (no BlockType import) — the caller maps them.
+ * Slots are chosen deterministically so a cache always contains the same loot
+ * for the same world seed.
+ */
+export interface CacheLootEntry { itemId: number; count: number; slot: number }
+
+export function getMagneticCacheLoot(
+    x: number, y: number, z: number, worldSeed: number,
+    ids: {
+        magnetiteBlock: number; magnetiteBricks: number; positiveCrystal: number;
+        negativeCrystal: number; shard: number; chargedMagnetite: number;
+        ironIngot: number; goldIngot: number; diamond: number;
+    },
+): CacheLootEntry[] {
+    const h = (salt: number) => hash3(x ^ Math.imul(y, 31), salt, z, worldSeed ^ 0x63616368);
+    const out: CacheLootEntry[] = [];
+    const usedSlots = new Set<number>();
+    const pickSlot = (salt: number): number => {
+        for (let i = 0; i < 27; i++) {
+            const s = Math.floor(h(salt + i * 7) * 27);
+            if (!usedSlots.has(s)) { usedSlots.add(s); return s; }
+        }
+        return usedSlots.size % 27;
+    };
+    const add = (itemId: number, count: number, salt: number) => {
+        if (count <= 0) return;
+        out.push({ itemId, count, slot: pickSlot(salt) });
+    };
+    // Guaranteed magnetite building material + crystals of both polarities.
+    add(ids.magnetiteBricks, 4 + Math.floor(h(1) * 9), 100);
+    add(ids.magnetiteBlock, 3 + Math.floor(h(2) * 6), 110);
+    add(ids.positiveCrystal, 1 + Math.floor(h(3) * 3), 120);
+    add(ids.negativeCrystal, 1 + Math.floor(h(4) * 3), 130);
+    // Common extras.
+    if (h(5) < 0.7) add(ids.shard, 1 + Math.floor(h(6) * 2), 140);
+    if (h(7) < 0.5) add(ids.chargedMagnetite, 1 + Math.floor(h(8) * 2), 150);
+    if (h(9) < 0.6) add(ids.ironIngot, 2 + Math.floor(h(10) * 4), 160);
+    // Rare treats.
+    if (h(11) < 0.25) add(ids.goldIngot, 1 + Math.floor(h(12) * 3), 170);
+    if (h(13) < 0.10) add(ids.diamond, 1, 180);
+    return out;
 }
 
 /** Active instance centers within `margin` of the box (for the arena build pass). */
@@ -263,11 +344,13 @@ export function getActiveCenters(
     minX: number, minZ: number, maxX: number, maxZ: number,
     worldSeed: number, noise2D: Noise2D, margin: number,
 ): MagneticFieldInstance[] {
+    const c = getMagneticFieldsConfig();
+    if (!c.enabled) return [];
     const out: MagneticFieldInstance[] = [];
-    const c0x = Math.floor((minX - margin) / MF_CELL);
-    const c1x = Math.floor((maxX + margin) / MF_CELL);
-    const c0z = Math.floor((minZ - margin) / MF_CELL);
-    const c1z = Math.floor((maxZ + margin) / MF_CELL);
+    const c0x = Math.floor((minX - margin) / c.cell);
+    const c1x = Math.floor((maxX + margin) / c.cell);
+    const c0z = Math.floor((minZ - margin) / c.cell);
+    const c1z = Math.floor((maxZ + margin) / c.cell);
     for (let cx = c0x; cx <= c1x; cx++) {
         for (let cz = c0z; cz <= c1z; cz++) {
             const inst = cellCenter(cx, cz, worldSeed);
@@ -290,5 +373,37 @@ export function getArenaCenter(
 ): { x: number; y: number; z: number } | null {
     const inst = getMagneticFieldInstanceAt(wx, wz, worldSeed, noise2D);
     if (!inst) return null;
-    return { x: inst.centerX, y: MF_ARENA_FLOOR_Y, z: inst.centerZ };
+    return { x: inst.centerX, y: getMagneticFieldsConfig().arenaFloorY, z: inst.centerZ };
+}
+
+/**
+ * The nearest ACTIVE Magnetic Fields center to (wx, wz) within `searchRadius`
+ * blocks, or null. Scans candidate grid cells outward — cheap (one hash + one
+ * noise sample per cell) even for very large search radii.
+ */
+export function findNearestMagneticField(
+    wx: number, wz: number, worldSeed: number, noise2D: Noise2D,
+    searchRadius = 50000,
+): { centerX: number; centerZ: number; distance: number } | null {
+    const c = getMagneticFieldsConfig();
+    if (!c.enabled) return null;
+    const baseCx = Math.floor(wx / c.cell);
+    const baseCz = Math.floor(wz / c.cell);
+    const maxRings = Math.max(1, Math.ceil(searchRadius / c.cell) + 1);
+    let bestX = 0, bestZ = 0, bestDist = Infinity;
+    for (let ring = 0; ring <= maxRings; ring++) {
+        for (let dcx = -ring; dcx <= ring; dcx++) {
+            for (let dcz = -ring; dcz <= ring; dcz++) {
+                if (Math.max(Math.abs(dcx), Math.abs(dcz)) !== ring) continue; // ring shell only
+                const inst = cellCenter(baseCx + dcx, baseCz + dcz, worldSeed);
+                if (!isCenterActive(inst, noise2D)) continue;
+                const dist = Math.hypot(wx - inst.centerX, wz - inst.centerZ);
+                if (dist < bestDist) { bestX = inst.centerX; bestZ = inst.centerZ; bestDist = dist; }
+            }
+        }
+        // A hit this ring can't be beaten by a later ring once the ring's inner
+        // edge exceeds the best distance.
+        if (bestDist < Infinity && (ring + 1) * c.cell - c.cell * 0.75 > bestDist) break;
+    }
+    return bestDist <= searchRadius ? { centerX: bestX, centerZ: bestZ, distance: bestDist } : null;
 }

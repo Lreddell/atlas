@@ -232,6 +232,9 @@ export const InteractionController = ({
                         setOpenContainer({ type: 'furnace', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.CHEST) {
+                        // Worldgen chests have no tile-entity state until first
+                        // opened; natural loot caches seed their contents here.
+                        worldManager.ensureChest(bx, by, bz);
                         setOpenContainer({ type: 'chest', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {

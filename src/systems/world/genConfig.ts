@@ -94,6 +94,35 @@ export const DEFAULTS = {
         safeSearchRadius: 128,
         safeSearchStep: 16,
         earlyAcceptScore: 120
+    },
+    // Boss-domain worldgen. These used to be hardcoded constants in
+    // magneticFields.ts; they are now editable config (World Editor > Biomes >
+    // Magnetic Fields) with the old constants kept as compatibility defaults.
+    // NOTE: cell / fieldFreq / fieldThreshold determine WHERE instances (and
+    // their arenas) land — changing them relocates every Magnetic Field in an
+    // existing world. The other values only reshape terrain around the same
+    // deterministic centers.
+    bossDomains: {
+        magneticFields: {
+            enabled: true,
+            cell: 2560,            // grid spacing between candidate centers (blocks)
+            radius: 384,           // base biome radius before edge warping
+            fieldFreq: 0.0009,     // boss-field noise frequency for center activation
+            fieldThreshold: 0.55,  // center activates only where the field peaks (rare)
+            edgeFreq: 0.011,       // boundary wobble frequency
+            edgeAmp: 0.28,         // boundary radius varies by ±28% → organic outline
+            tierWarpFreq: 0.02,    // cliff-ring wobble frequency
+            tierWarpAmp: 16,       // cliff rings shift in/out by up to 16 blocks
+            shelfJitterFreq: 0.075,
+            shelfJitterAmp: 1.8,   // ≈ ±2 blocks of bumpiness on shelves
+            tierCount: 6,          // shelves: tier 0 (outer) .. tierCount-1 (plateau rim)
+            tierHeight: 12,        // vertical rise of each magnetite wall
+            arenaRadius: 80,       // flat plateau the arena sits on
+            arenaFloorY: 132,      // world Y of the plateau / arena base
+            baseHeight: 70,        // outer shelf surface (world Y of tier 0)
+            apron: 64,             // edge band that ramps down into ambient terrain
+            apronMinY: 60,         // apron never ramps below this (soft rocky shore)
+        }
     }
 };
 
@@ -154,6 +183,9 @@ function applyState(source: typeof DEFAULTS) {
 
     // Spawn
     GenConfig.spawn = clone(source.spawn);
+
+    // Boss domains
+    GenConfig.bossDomains = clone(source.bossDomains);
 }
 
 // Helper to reset to defaults if needed
@@ -262,6 +294,15 @@ export const loadGenConfig = (data: unknown) => {
         if (isRecord(data.height)) Object.assign(temp.height, data.height);
         if (isRecord(data.climateWarp)) Object.assign(temp.climateWarp, data.climateWarp);
         if (isRecord(data.spawn)) Object.assign(temp.spawn, data.spawn);
+        if (isRecord(data.bossDomains)) {
+            const domainData = data.bossDomains;
+            Object.keys(domainData).forEach((k) => {
+                if (!(k in temp.bossDomains)) return;
+                const incoming = domainData[k];
+                if (!isRecord(incoming)) return;
+                Object.assign(temp.bossDomains[k as keyof typeof temp.bossDomains], incoming);
+            });
+        }
         
         applyState(temp);
         return true;
