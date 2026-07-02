@@ -7,7 +7,7 @@ import {
     findNearestMagneticField,
 } from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
-import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
+import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, normalizeGenConfigSnapshot, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
 import { CHUNK_SIZE } from '../../constants';
 import { worldManager } from '../../systems/WorldManager';
 import { createNoiseSet, hashSeed } from '../../utils/noise';
@@ -511,7 +511,12 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     };
 
     const downloadConfig = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(GenConfig, null, 2));
+        const snapshot = normalizeGenConfigSnapshot(GenConfig);
+        if (!snapshot) {
+            alert('Failed to export world generation configuration.');
+            return;
+        }
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snapshot, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
         downloadAnchorNode.setAttribute("download", "world_gen_config.json");
