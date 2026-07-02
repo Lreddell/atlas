@@ -1,9 +1,11 @@
 
 import React, { useEffect, useState } from 'react';
-import { ItemStack, BlockType } from '../../types';
+import { ItemStack, BlockType, EquipmentSlot } from '../../types';
 import { Slot } from './Slot';
 import { BLOCKS } from '../../data/blocks';
 import { MAX_BREATH } from '../../systems/player/playerConstants';
+import { totalDefense, type Equipment } from '../../systems/registry/equipment';
+import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
 
 interface HUDProps {
     health: number;
@@ -15,9 +17,56 @@ interface HUDProps {
     gameMode: 'survival' | 'creative' | 'spectator';
     headBlockType?: BlockType;
     lastDamageTime?: number;
+    equipment?: Equipment;
 }
 
-export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0 }) => {
+// A single armor pip (chestplate silhouette). fill: 0 | 0.5 | 1.
+const ArmorPip: React.FC<{ fill: number }> = ({ fill }) => (
+    <div className="w-6 h-6 relative" aria-hidden>
+        <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+            {/* empty outline */}
+            <path d="M3 2 L6 2 L6 4 L10 4 L10 2 L13 2 L14 5 L12 7 L12 14 L4 14 L4 7 L2 5 Z" fill="#3a3a3a" stroke="#141414" strokeWidth="1" />
+        </svg>
+        {fill > 0 && (
+            <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full"
+                style={fill === 0.5 ? { clipPath: 'inset(0 50% 0 0)' } : undefined}>
+                <path d="M3 2 L6 2 L6 4 L10 4 L10 2 L13 2 L14 5 L12 7 L12 14 L4 14 L4 7 L2 5 Z" fill="#c9d2da" stroke="#5b6770" strokeWidth="1" />
+                <path d="M4 3 L5 3 L5 5 L4 5 Z" fill="#eef3f7" />
+            </svg>
+        )}
+    </div>
+);
+
+// Equipped-armor readout: one mini slot per worn piece with its durability bar
+// (via Slot) plus a red pulse when a piece is nearly broken. Tooltips carry the
+// exact numbers.
+const ARMOR_HUD_SLOTS: EquipmentSlot[] = ['helmet', 'chestplate', 'leggings', 'boots'];
+const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
+    const pieces = ARMOR_HUD_SLOTS.map((slot) => ({ slot, item: equipment[slot] }));
+    if (!pieces.some((p) => p.item)) return null;
+    return (
+        <div className="absolute bottom-4 left-4 z-40 flex flex-col gap-1 pointer-events-none">
+            {pieces.map(({ slot, item }) => {
+                if (!item) return null;
+                const stats = getItemStats(item);
+                const max = getMaxDurability(item.type);
+                const cur = item.instance?.durability ?? max;
+                const frac = max !== undefined && cur !== undefined ? cur / max : 1;
+                const low = max !== undefined && frac < 0.15;
+                const title = `${BLOCKS[item.type].name} — ${stats?.defense ?? 0} defense`
+                    + (max !== undefined ? `, ${cur}/${max} durability` : ', unbreakable');
+                return (
+                    <div key={slot} title={title}
+                        className={`relative ${low ? 'animate-pulse ring-2 ring-red-500 rounded-sm' : ''}`}>
+                        <Slot item={item} size="small" />
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment }) => {
     
     const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
     const [isFlashing, setIsFlashing] = useState(false);
@@ -69,6 +118,18 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {gameMode === 'survival' && (
                 <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex gap-16 z-40 p-2 pointer-events-none">
                     <div className="flex flex-col gap-1 items-start">
+                        {/* Armor (defense) pips — shown above the hearts while any
+                            armor is worn; 1 pip = 2 defense points, matching the
+                            applyArmor() reduction the pips represent. */}
+                        {equipment && totalDefense(equipment) > 0 && (
+                            <div className="flex gap-1 h-6" title={`${totalDefense(equipment)} armor — reduces combat damage (not falls, fire, or drowning)`}>
+                                {Array.from({ length: 10 }).map((_, i) => {
+                                    const def = Math.min(20, totalDefense(equipment));
+                                    const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
+                                    return <ArmorPip key={i} fill={fill} />;
+                                })}
+                            </div>
+                        )}
                          {/* Health Bar */}
                         <div className="flex gap-1 h-6">
                             {Array.from({length: 10}).map((_, i) => {
@@ -141,6 +202,9 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                     </div>
                 </div>
             )}
+
+            {/* Equipped armor readout (icons + durability bars, bottom-left) */}
+            {gameMode === 'survival' && equipment && <ArmorReadout equipment={equipment} />}
 
             {/* Hotbar */}
             {gameMode !== 'spectator' && (
