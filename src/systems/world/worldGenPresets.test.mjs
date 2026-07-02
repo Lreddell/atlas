@@ -25,7 +25,7 @@ test('browser preset round trip preserves the complete worldgen configuration', 
     globalThis.window = { localStorage };
 
     try {
-        const config = structuredClone(DEFAULTS);
+        const config = JSON.parse(JSON.stringify(DEFAULTS));
         config.noise.temperature.scale = 0.0024;
         config.terrainShape.landOffset = 0.27;
         config.biomes.mountains.base = 166;

@@ -93,7 +93,7 @@ test('shared normalization preserves every worldgen section including Magnetic F
     const normalizeGenConfigSnapshot = genConfigModule.normalizeGenConfigSnapshot;
     assert.equal(typeof normalizeGenConfigSnapshot, 'function', 'shared normalizer is not exported');
 
-    const input = structuredClone(DEFAULTS);
+    const input = JSON.parse(JSON.stringify(DEFAULTS));
     input.noise.temperature.scale = 0.0042;
     input.terrainShape.coastPower = 2.75;
     input.biomes.ocean.base = 41;
@@ -102,7 +102,7 @@ test('shared normalization preserves every worldgen section including Magnetic F
     input.spawn.searchRadius = 2048;
     input.bossDomains.magneticFields.radius = 777;
     input.bossDomains.magneticFields.enabled = false;
-    const original = structuredClone(input);
+    const original = JSON.parse(JSON.stringify(input));
 
     const normalized = normalizeGenConfigSnapshot(input);
     assert.deepEqual(Object.keys(normalized).sort(), Object.keys(DEFAULTS).sort());
