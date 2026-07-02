@@ -1204,7 +1204,6 @@ export class WorldManager {
           setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
-          getLoadedChunkKeys: () => this.getLoadedChunkKeys(),
           getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed

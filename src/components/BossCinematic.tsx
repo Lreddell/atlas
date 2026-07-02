@@ -14,6 +14,9 @@ import { particleFx, FX_CHARGED } from '../systems/fx/particleFx';
 // always; idle until bossSummon.running.
 
 const SHIELD_BEAM = 0xc060ff;   // all summon/shield beams are this purple (consistent)
+// Hoisted predicate: this lookup runs inside useFrame every rendered frame.
+const isShieldedBossWithCrystals = (e: { isBoss?: boolean; shieldCrystalPositions?: unknown[] }) =>
+    !!e.isBoss && (e.shieldCrystalPositions?.length ?? 0) > 0;
 const _dir = new THREE.Vector3();
 const _mid = new THREE.Vector3();
 const _crystal = new THREE.Vector3();
@@ -70,7 +73,7 @@ export const BossCinematic: React.FC = () => {
         // with a burst (and a sound, played in App on crystal:broken).
         const cutsceneProg = bossSummon.beamProgress;
         const boss = cutsceneProg <= 0
-            ? entityManager.getEntities().find((e) => e.isBoss && (e.shieldCrystalPositions?.length ?? 0) > 0)
+            ? entityManager.findEntity(isShieldedBossWithCrystals)
             : undefined;
 
         for (let i = 0; i < 4; i++) {

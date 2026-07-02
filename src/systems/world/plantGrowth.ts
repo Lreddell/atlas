@@ -21,7 +21,6 @@ interface WorldAccess {
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
-    getLoadedChunkKeys(): string[];
     getChunkData(cx: number, cz: number): Uint8Array | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
@@ -33,9 +32,6 @@ export function tickPlantGrowth(world: WorldAccess) {
     tickAccumulator++;
     if (tickAccumulator < GROWTH_TICK_INTERVAL) return;
     tickAccumulator = 0;
-
-    const chunkKeys = world.getLoadedChunkKeys();
-    if (chunkKeys.length === 0) return;
 
     const seed = world.getSeed();
     // Cheap LCG. Growth timing was always wall-clock random (Date.now-based), so this
@@ -50,11 +46,12 @@ export function tickPlantGrowth(world: WorldAccess) {
     const LAYER = CHUNK_SIZE * CHUNK_SIZE;
     const center = world.getTickCenter();
 
-    for (const key of chunkKeys) {
-        const comma = key.indexOf(',');
-        const cx = parseInt(key.slice(0, comma), 10);
-        const cz = parseInt(key.slice(comma + 1), 10);
-        if (Math.max(Math.abs(cx - center.cx), Math.abs(cz - center.cz)) > GROWTH_TICK_RADIUS) continue;
+    // Iterate the radius box around the player directly — enumerating (and
+    // allocating) the FULL loaded-chunk key list just to discard everything
+    // outside the radius scaled with render distance (~7,200 keys at RD 48)
+    // instead of with the constant 17x17 tick neighbourhood.
+    for (let cx = center.cx - GROWTH_TICK_RADIUS; cx <= center.cx + GROWTH_TICK_RADIUS; cx++) {
+      for (let cz = center.cz - GROWTH_TICK_RADIUS; cz <= center.cz + GROWTH_TICK_RADIUS; cz++) {
         const chunk = world.getChunkData(cx, cz);
         if (!chunk) continue;
         const layers = chunk.length / LAYER;
@@ -92,6 +89,7 @@ export function tickPlantGrowth(world: WorldAccess) {
                 break; // Only one sapling per column per tick
             }
         }
+      }
     }
 }
 

@@ -125,6 +125,12 @@ class EntityManager {
     getEntity(id: number): Entity | undefined {
         return this.entities.get(id);
     }
+    /** First entity matching pred — iterates the live map, so per-frame callers
+     *  (e.g. the boss beam renderer) don't allocate a fresh entity array. */
+    findEntity(pred: (e: Entity) => boolean): Entity | undefined {
+        for (const e of this.entities.values()) if (pred(e)) return e;
+        return undefined;
+    }
 
     spawn(kindId: string, x: number, y: number, z: number, opts: SpawnOptions = {}): Entity | null {
         const kind = ENTITY_KINDS[kindId];
