@@ -7,6 +7,7 @@ import { setCloudTexture } from '../world/cloudState';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
+import { UiNotice, type UiNoticeState } from './UiNotice';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 
@@ -135,6 +136,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 }) => {
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
+    const [notice, setNotice] = useState<UiNoticeState | null>(null);
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
     const fileInputRef = useRef<HTMLInputElement>(null);
     
@@ -193,10 +195,14 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             if (evt.target?.result) {
                 setCloudTexture(evt.target.result as string);
                 soundManager.play("ui.click");
-                alert("Clouds updated!");
+                setNotice({ type: 'success', message: 'Cloud texture updated.' });
+            } else {
+                setNotice({ type: 'error', message: 'Failed to read the cloud texture.' });
             }
         };
+        reader.onerror = () => setNotice({ type: 'error', message: 'Failed to read the cloud texture.' });
         reader.readAsDataURL(file);
+        e.target.value = '';
     };
 
     // Main Menu
@@ -362,6 +368,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
         >
+            <UiNotice notice={notice} onDismiss={() => setNotice(null)} />
             {isMainMenu && showMenuBackground && (
                 <MenuPanoramaBackground
                     backgroundMode={backgroundMode}

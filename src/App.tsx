@@ -17,6 +17,8 @@ import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
 import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
+import { ConfirmModal } from './components/ui/ConfirmModal';
+import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
@@ -313,6 +315,8 @@ const App: React.FC = () => {
   const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [appNotice, setAppNotice] = useState<UiNoticeState | null>(null);
+  const [pendingPanoramaDelete, setPendingPanoramaDelete] = useState<{ filePath: string; fileName: string } | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
@@ -1587,73 +1591,92 @@ const App: React.FC = () => {
               const file = input.files?.[0];
               if (!file) return;
 
-              const safeName = file.name.replace(/[\\/:*?"<>|]+/g, '_');
-              const webEntryId = `${WEB_PANORAMA_PREFIX}${Date.now()}-${safeName}`;
-              saveWebPanoramaBlob(webEntryId, file).then(() => {
-                  setMenuPanoramaPath(webEntryId);
-                  setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
-                  setMenuBackgroundMode('panorama');
-                  logMsg('Panorama imported into blob storage.', 'success');
-              }).catch(() => {
-                  alert('Failed to import panorama file.');
-              });
+              void (async () => {
+                  try {
+                      const safeName = file.name.replace(/[\\/:*?"<>|]+/g, '_');
+                      const webEntryId = `${WEB_PANORAMA_PREFIX}${Date.now()}-${safeName}`;
+                      await saveWebPanoramaBlob(webEntryId, file);
+                      setMenuPanoramaPath(webEntryId);
+                      setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
+                      setMenuBackgroundMode('panorama');
+                      logMsg('Panorama imported into blob storage.', 'success');
+                      setAppNotice({ type: 'success', message: 'Panorama imported.' });
+                  } catch (error) {
+                      console.error('[Panorama] Failed to import browser panorama:', error);
+                      setAppNotice({ type: 'error', message: 'Failed to import the panorama file.' });
+                  }
+              })();
           };
           input.click();
           return;
       }
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.pickPanorama) {
-          alert('Desktop panorama picker API is unavailable.');
-          return;
-      }
+      try {
+          const desktopApi = window.atlasDesktop;
+          if (!desktopApi?.pickPanorama) {
+              setAppNotice({ type: 'error', message: 'Desktop panorama picker is unavailable.' });
+              return;
+          }
 
-      const result = await desktopApi.pickPanorama();
-      if (result?.canceled) return;
-      if (result?.error) {
-          alert(`Failed to pick panorama: ${result.error}`);
-          return;
-      }
-      if (!result?.filePath) return;
+          const result = await desktopApi.pickPanorama();
+          if (result?.canceled) return;
+          if (result?.error) {
+              setAppNotice({ type: 'error', message: `Failed to pick panorama: ${result.error}` });
+              return;
+          }
+          if (!result?.filePath) return;
 
-      setActivePanorama(result.filePath);
+          setActivePanorama(result.filePath);
+          setAppNotice({ type: 'success', message: 'Panorama imported.' });
+      } catch (error) {
+          console.error('[Panorama] Failed to pick desktop panorama:', error);
+          setAppNotice({ type: 'error', message: 'Failed to open the panorama picker.' });
+      }
   }, [isElectron, setActivePanorama, logMsg]);
 
-  const deletePanoramaFromDisk = useCallback(async (filePath: string) => {
-      if (!isElectron) {
-          const fileName = filePath.replace(/^web:/, '');
-          const confirmDelete = window.confirm(`Remove panorama from browser storage?\n\n${fileName}`);
-          if (!confirmDelete) return;
-
-          await deleteWebPanoramaBlob(filePath);
-          removePanoramaFromLibrary(filePath);
-          logMsg('Panorama removed from browser storage.', 'success');
-          return;
-      }
-
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.deletePanorama) {
-          alert('Desktop delete API is unavailable.');
-          return;
-      }
-
+  const deletePanoramaFromDisk = useCallback((filePath: string) => {
       const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-      const confirmDelete = window.confirm(`Delete panorama file from disk?\n\n${fileName}`);
-      if (!confirmDelete) return;
+      setPendingPanoramaDelete({ filePath, fileName: fileName.replace(/^web:/, '') });
+  }, []);
 
-      const result = await desktopApi.deletePanorama(filePath);
-      if (!result?.ok) {
-          alert(`Failed to delete panorama: ${result?.error || 'Unknown error'}`);
-          return;
+  const confirmDeletePanorama = useCallback(async () => {
+      const pending = pendingPanoramaDelete;
+      setPendingPanoramaDelete(null);
+      if (!pending) return;
+
+      try {
+          if (!isElectron) {
+              await deleteWebPanoramaBlob(pending.filePath);
+              removePanoramaFromLibrary(pending.filePath);
+              logMsg('Panorama removed from browser storage.', 'success');
+              setAppNotice({ type: 'success', message: 'Panorama removed from browser storage.' });
+              return;
+          }
+
+          const desktopApi = window.atlasDesktop;
+          if (!desktopApi?.deletePanorama) {
+              setAppNotice({ type: 'error', message: 'Desktop panorama deletion is unavailable.' });
+              return;
+          }
+
+          const result = await desktopApi.deletePanorama(pending.filePath);
+          if (!result?.ok) {
+              setAppNotice({ type: 'error', message: `Failed to delete panorama: ${result?.error || 'Unknown error'}` });
+              return;
+          }
+
+          removePanoramaFromLibrary(pending.filePath);
+          logMsg('Panorama deleted from disk.', 'success');
+          setAppNotice({ type: 'success', message: 'Panorama deleted from disk.' });
+      } catch (error) {
+          console.error('[Panorama] Failed to delete panorama:', error);
+          setAppNotice({ type: 'error', message: 'Failed to delete the panorama.' });
       }
-
-      removePanoramaFromLibrary(filePath);
-      logMsg('Panorama deleted from disk.', 'success');
-  }, [isElectron, removePanoramaFromLibrary, logMsg]);
+  }, [isElectron, pendingPanoramaDelete, removePanoramaFromLibrary, logMsg]);
 
   const toggleMenuBackgroundMode = useCallback(() => {
       if (menuBackgroundMode === 'dirt') {
           if (!menuPanoramaDataUrl) {
-              alert(`No panorama is available yet. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.`);
+              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.` });
               return;
           }
           setMenuBackgroundMode('panorama');
@@ -2507,7 +2530,7 @@ const App: React.FC = () => {
   const handleStartGame = useCallback(async (worldId: string) => {
       // Re-entrancy guard: a fast double-click on "Play" fired two overlapping
       // opens; the second then hit its OWN session lock and popped the confusing
-      // "already open in another window" alert.
+      // "already open in another window" message.
       if (startingWorldRef.current) return;
       startingWorldRef.current = true;
       try {
@@ -2519,8 +2542,8 @@ const App: React.FC = () => {
       // 1. Load Metadata
       const meta = await WorldStorage.getWorldMeta(worldId);
       if (!meta) {
-          alert("Failed to load world");
           setAppState('menu');
+          setAppNotice({ type: 'error', message: 'Failed to load the selected world.' });
           return;
       }
 
@@ -2537,7 +2560,7 @@ const App: React.FC = () => {
           if ((lockErr as { code?: string })?.code === 'LOCKED') {
               activeWorldIdRef.current = null;
               setAppState('menu');
-              alert('This world is already open in another window or browser tab. Close it there first, then try again.');
+              setAppNotice({ type: 'error', message: 'This world is already open in another window or tab. Close it there first.' });
               return;
           }
           console.warn('[Saves] Could not acquire world lock:', lockErr);
@@ -2657,6 +2680,17 @@ const App: React.FC = () => {
       relockWantedRef.current = true;
       suppressAutoPauseFor(500);
       requestPointerLockBurst('start-game', { force: true });
+      } catch (error) {
+          console.error('[World] Failed to start world:', error);
+          const failedWorldId = activeWorldIdRef.current;
+          activeWorldIdRef.current = null;
+          activeWorldGenConfigRef.current = null;
+          if (failedWorldId) {
+              await WorldStorage.closeWorld(failedWorldId).catch(() => {});
+          }
+          worldManager.reset();
+          setAppState('menu');
+          setAppNotice({ type: 'error', message: 'Failed to start the world. The save was closed safely.' });
       } finally {
           startingWorldRef.current = false;
       }
@@ -2721,6 +2755,18 @@ const App: React.FC = () => {
   return (
         <div className={`w-full h-full relative font-sans text-white select-none outline-none ${hideGameplayCursor ? 'cursor-none' : 'cursor-auto'}`} tabIndex={0} autoFocus onClick={handleGameClick}>
       {fatalError && <ErrorOverlay error={fatalError} playerPos={playerPosRef.current} />}
+      <UiNotice notice={appNotice} onDismiss={() => setAppNotice(null)} />
+
+      {pendingPanoramaDelete && (
+          <ConfirmModal
+              title="Remove Panorama?"
+              message={<>Remove <span className="text-white">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
+              confirmLabel="Remove"
+              danger
+              onConfirm={() => void confirmDeletePanorama()}
+              onCancel={() => setPendingPanoramaDelete(null)}
+          />
+      )}
 
       {!bootReady && (
           <LoadingScreen 

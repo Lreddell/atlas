@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ModPack, TextureEntry } from './editorTypes';
 import { soundManager } from '../../../systems/sound/SoundManager';
 import { PixelEditor } from './PixelEditor';
+import { ConfirmModal } from '../ConfirmModal';
+import { UiNotice, type UiNoticeState } from '../UiNotice';
 
 interface TextureEditorViewProps {
     pack: ModPack;
@@ -12,6 +14,8 @@ interface TextureEditorViewProps {
 
 export const TextureEditorView: React.FC<TextureEditorViewProps> = ({ pack, onUpdatePack, selectedId, onSelectId }) => {
     const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem('atlas_texture_list_width')) || 224);
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [notice, setNotice] = useState<UiNoticeState | null>(null);
     const textures = useMemo(() => Object.values(pack.textures), [pack.textures]);
     const selectedTexture = selectedId ? pack.textures[selectedId] : null;
     
@@ -47,7 +51,13 @@ export const TextureEditorView: React.FC<TextureEditorViewProps> = ({ pack, onUp
     };
 
     const handleDeleteTexture = (id: string) => {
-        if (!confirm(`Delete texture "${pack.textures[id]?.name || id}"?`)) return;
+        setPendingDeleteId(id);
+    };
+
+    const confirmDeleteTexture = () => {
+        const id = pendingDeleteId;
+        setPendingDeleteId(null);
+        if (!id) return;
         const newTextures = { ...pack.textures };
         delete newTextures[id];
         onUpdatePack({ ...pack, textures: newTextures });
@@ -64,7 +74,9 @@ export const TextureEditorView: React.FC<TextureEditorViewProps> = ({ pack, onUp
         a.href = url;
         a.download = `${selectedTexture.name.replace(/\s+/g, '_')}.json`;
         a.click();
+        URL.revokeObjectURL(url);
         soundManager.play("ui.click");
+        setNotice({ type: 'success', message: 'Texture JSON exported.' });
     };
 
     const handleImportTexture = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -72,34 +84,57 @@ export const TextureEditorView: React.FC<TextureEditorViewProps> = ({ pack, onUp
         if (!file) return;
         const reader = new FileReader();
         
-        if (file.type === 'application/json') {
+        const isJson = file.type === 'application/json' || /\.json$/i.test(file.name);
+        if (isJson) {
             reader.onload = (event) => {
                 try {
                     const imported = JSON.parse(event.target?.result as string);
+                    if (!imported || typeof imported !== 'object' || !Array.isArray(imported.data) || imported.data.length !== 16 * 16 * 4) {
+                        setNotice({ type: 'error', message: 'Invalid texture JSON.' });
+                        return;
+                    }
                     const id = `tex_${Date.now()}`;
                     onUpdatePack({ ...pack, textures: { ...pack.textures, [id]: { ...imported, id, lastModified: Date.now() } } });
                     onSelectId(id);
                     soundManager.play("ui.click", { pitch: 1.2 });
-                } catch (err) { alert("Invalid texture JSON"); }
+                    setNotice({ type: 'success', message: 'Texture JSON imported.' });
+                } catch (error) {
+                    console.error('[FeatureEditor] Failed to import texture JSON:', error);
+                    setNotice({ type: 'error', message: 'Invalid texture JSON.' });
+                }
             };
+            reader.onerror = () => setNotice({ type: 'error', message: 'Failed to read the texture JSON.' });
             reader.readAsText(file);
         } else {
             const img = new Image();
+            const url = URL.createObjectURL(file);
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = 16; canvas.height = 16;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 16; canvas.height = 16;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) throw new Error('Canvas context unavailable');
                     ctx.drawImage(img, 0, 0, 16, 16);
                     const pixels = Array.from(ctx.getImageData(0, 0, 16, 16).data);
                     const id = `tex_${Date.now()}`;
                     onUpdatePack({ ...pack, textures: { ...pack.textures, [id]: { id, name: file.name.split('.')[0], data: pixels, lastModified: Date.now() } } });
                     onSelectId(id);
                     soundManager.play("ui.click", { pitch: 1.2 });
+                    setNotice({ type: 'success', message: 'Texture image imported.' });
+                } catch (error) {
+                    console.error('[FeatureEditor] Failed to import texture image:', error);
+                    setNotice({ type: 'error', message: 'Failed to import the texture image.' });
+                } finally {
+                    URL.revokeObjectURL(url);
                 }
             };
-            img.src = URL.createObjectURL(file);
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                setNotice({ type: 'error', message: 'Failed to decode the texture image.' });
+            };
+            img.src = url;
         }
+        e.target.value = '';
     };
 
     const renderThumbnail = (data: number[]) => {
@@ -114,6 +149,18 @@ export const TextureEditorView: React.FC<TextureEditorViewProps> = ({ pack, onUp
     return (
         <div className="flex h-full bg-black">
             <input type="file" ref={importInputRef} className="hidden" accept=".json,image/*" onChange={handleImportTexture} />
+            <UiNotice notice={notice} onDismiss={() => setNotice(null)} />
+
+            {pendingDeleteId && (
+                <ConfirmModal
+                    title="Delete Texture?"
+                    message={<>Delete <span className="text-white">{pack.textures[pendingDeleteId]?.name ?? pendingDeleteId}</span>?</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={confirmDeleteTexture}
+                    onCancel={() => setPendingDeleteId(null)}
+                />
+            )}
             
             {/* Texture List Sidebar */}
             <div className="bg-[#121212] border-r border-white/5 flex flex-col relative flex-shrink-0" style={{ width: listWidth }}>

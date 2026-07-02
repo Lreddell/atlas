@@ -1,7 +1,8 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ModPack, RecipeDefinition, BlockDefinition, ItemDefinition } from './editorTypes';
 import { soundManager } from '../../../systems/sound/SoundManager';
+import { ConfirmModal } from '../ConfirmModal';
 
 interface RecipeEditorViewProps {
     pack: ModPack;
@@ -11,6 +12,7 @@ interface RecipeEditorViewProps {
 }
 
 export const RecipeEditorView: React.FC<RecipeEditorViewProps> = ({ pack, onUpdatePack, selectedId, onSelectId }) => {
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const recipes = useMemo(() => Object.values(pack.recipes), [pack.recipes]);
     const selectedRecipe = selectedId ? pack.recipes[selectedId] : null;
 
@@ -36,7 +38,13 @@ export const RecipeEditorView: React.FC<RecipeEditorViewProps> = ({ pack, onUpda
     };
 
     const handleDeleteRecipe = (id: string) => {
-        if (!confirm(`Delete recipe?`)) return;
+        setPendingDeleteId(id);
+    };
+
+    const confirmDeleteRecipe = () => {
+        const id = pendingDeleteId;
+        setPendingDeleteId(null);
+        if (!id) return;
         const next = { ...pack.recipes };
         delete next[id];
         onUpdatePack({ ...pack, recipes: next });
@@ -102,6 +110,16 @@ export const RecipeEditorView: React.FC<RecipeEditorViewProps> = ({ pack, onUpda
 
     return (
         <div className="flex h-full bg-black/20">
+            {pendingDeleteId && (
+                <ConfirmModal
+                    title="Delete Recipe?"
+                    message="Delete this recipe? This cannot be undone."
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={confirmDeleteRecipe}
+                    onCancel={() => setPendingDeleteId(null)}
+                />
+            )}
             {/* List */}
             <div className="w-64 bg-[#121212] border-r border-white/5 flex flex-col">
                 <div className="p-3 bg-black/20 flex flex-col gap-2">

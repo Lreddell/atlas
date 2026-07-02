@@ -20,6 +20,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { RenameWorldModal } from './RenameWorldModal';
 import { getChangelogEntry } from '../../data/changelog';
 import { APP_VERSION } from '../../constants';
+import { UiNotice } from './UiNotice';
 
 const PANORAMA_DEBUG_HOTKEY = 'F5';
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
@@ -121,6 +122,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         handleOpenSaveFolder,
         canOpenSaveFolder,
         storageInfo,
+        menuNotice,
+        dismissMenuNotice,
     } = useWorldMenu({ onStart });
     const { formattedSplash, splashFontSize } = useSplashAnimation(view === 'main');
 
@@ -261,6 +264,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
     return (
         <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center">
+            <UiNotice notice={menuNotice} onDismiss={dismissMenuNotice} />
             {showBackground && (
                 <MenuPanoramaBackground
                     backgroundMode={backgroundMode}
