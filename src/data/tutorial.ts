@@ -79,7 +79,9 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Day/night affects visibility and atmosphere.',
             'Health and hunger shape survival pacing; armor reduces combat damage (not falls, fire, or drowning).',
             'Tools and weapons show durability bars and break at zero — tiers (wood to diamond) differ in damage and lifespan.',
-            'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen.',
+            'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen. All four sets (iron, gold, diamond, copper) are craftable.',
+            'While armor is worn, the HUD shows your defense pips above the hearts and each piece\'s durability at the bottom-left — a piece pulses red when close to breaking.',
+            'Craft a Boat (5 planks) and use it on water for fast travel; sneak to hop back out.',
             'Biome context influences visuals and soundscape.'
         ]
     },
@@ -89,13 +91,15 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'Polarity traversal and the sealed Magnetic Fields',
         paragraphs: [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
-            'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones — enough to launch across gaps and climb magnetic walls.',
+            'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
+            'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones — enough to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
             'Summon the Magnetic Warden at the central altar. Break its four shield crystals, strike its deflectable bolts back at it, and survive the slam and frenzy phases to cleanse the region.'
         ],
         bullets: [
             'Press R to flip your polarity; press N to switch the ability off entirely (upgraded boots).',
             'Same polarity repels, opposite attracts — use repulsion to launch and attraction to stick.',
             'Iron armor is ferromagnetic: without boots it drags you toward every magnet, with no control.',
+            'Ruin caches hold magnetite building materials, crystals, and sometimes rarer metals.',
             'The Warden drops a boot upgrade, and defeating it permanently unlocks the region.',
             'Dying or leaving the arena resets an unfinished fight so it can be summoned again.'
         ]

@@ -32,12 +32,12 @@ export const CHANGELOG: ChangelogEntry[] = [
         version: 'v1.1.0-alpha',
         displayVersion: 'Alpha 1.1.0',
         date: '',
-        tagline: 'A magnetic boss adventure, expanded world generation, and safer local saves.',
+        tagline: 'A magnetic boss adventure, expanded world generation, boats, and safer local saves.',
         highlights: [
-            'Explore the Magnetic Fields and defeat the Magnetic Warden in a multi-stage arena fight.',
+            'Explore the expanded Magnetic Fields — ruins, pylons, launch pads, and loot caches — and defeat the Magnetic Warden.',
             'Master polarity boots to attract, repel, launch, and climb through magnetic terrain.',
-            'Discover 12 new biomes, three new wood families, and many biome-specific blocks.',
-            'Equip full armor sets and use tier-based weapons and tools with visible durability.',
+            'Discover 13 new biomes (now with real swamps and sandy beaches), three new wood families, and many biome-specific blocks.',
+            'Craft full armor sets with an on-screen defense and durability readout, and sail a craftable boat.',
             'Safer local world saves now migrate automatically and finish saving when you quit.',
             'Major polish for shaped blocks, lighting, music, menus, controls, and update notes.',
         ],
@@ -45,18 +45,21 @@ export const CHANGELOG: ChangelogEntry[] = [
             {
                 title: 'Adventure & Magnetic Fields',
                 items: [
-                    'Explore the rare Magnetic Fields biome: tiered magnetite terrain, crystal deposits, spike hazards, launch routes, a lava-ringed arena, and a full magnetite building set.',
+                    'Explore the rare Magnetic Fields biome, now half again larger: tiered magnetite terrain, crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, collapsed ruins, a lava-ringed arena, and a full magnetite building set.',
+                    'Ruins can shelter loot caches stocked with magnetite materials, crystals of both polarities, and sometimes rarer metals.',
                     'Magnetic Fields begin sealed. Defeat their Warden to cleanse the region and unlock normal mining and building; doors, containers, and required crystals remain usable.',
                     'Summon the Magnetic Warden at the central altar, break its four shield crystals, parry returnable bolts, and survive homing slams, polarity feints, and a final frenzy.',
-                    'Polarity Boots let you switch attraction and repulsion around red and blue magnets, launch between structures, and climb magnetic walls. The Warden drops an upgrade that adds an on/off toggle.',
+                    'Polarity Boots let you switch attraction and repulsion around red and blue magnets, launch between structures, and climb magnetic walls. The Warden drops an upgrade that adds an on/off toggle. Magnet forces no longer spike at point-blank range.',
                     'Defeated bosses, cleansed regions, and equipment persist with each world. Dying or leaving the arena resets an unfinished fight so it can be summoned again.',
-                    'The World Editor can place Magnetic Fields and preview the Warden’s arena influence.',
+                    'The World Editor now fully edits Magnetic Fields generation (size, rarity, tiers, arena, blending), can find and jump to the nearest Warden arena, copy its teleport command, and reads out tier/center/field values under the cursor.',
                 ],
             },
             {
                 title: 'World Generation & Building',
                 items: [
-                    'Added Birch Forest, Flower Forest, Dark Forest, Meadow, Savanna, Jungle, Taiga, Ice Spikes, Mountains, Swamp, Stone Shore, and Magnetic Fields biomes.',
+                    'Added Birch Forest, Flower Forest, Dark Forest, Meadow, Savanna, Jungle, Taiga, Ice Spikes, Mountains, Swamp, Beach, Stone Shore, and Magnetic Fields biomes.',
+                    'A generation quality pass: swamps, jungles, and dark forests actually generate now (the old mountain rule silently swallowed them), sandy beaches rim the coasts, biome edges read organic instead of blocky, and oceans no longer inherit mountain or mesa terrain.',
+                    'Volcanic Crags is a normal (unsealed) biome again — it previously claimed to be a boss region that had no boss, leaving it permanently unmineable.',
                     'New terrain includes distinct ground cover and vegetation, jagged snowy mountains, packed-ice spires, muddy wetlands, rocky shores, and auroras in snowy regions.',
                     'Added jungle, dark oak, and acacia trees with matching planks, saplings, slabs, stairs, crafting recipes, and dedicated textures.',
                     'Stairs form corner shapes when placed against neighbouring stairs, and matching slabs merge back into full blocks.',
@@ -65,12 +68,21 @@ export const CHANGELOG: ChangelogEntry[] = [
                 ],
             },
             {
+                title: 'Boats & Traversal',
+                items: [
+                    'Craft a Boat from 5 planks (any wood family) and use it on water to climb in: it glides at over triple swimming speed, bobs at the surface, and scrapes slowly if beached.',
+                    'Sneak to hop out — the boat packs back into your inventory, so it can never be lost to a crash or reload.',
+                ],
+            },
+            {
                 title: 'Combat & Gear',
                 items: [
                     'Melee combat now uses each weapon’s real damage, with knockback, hit feedback, loot drops, and clear boss health and shield feedback.',
                     'Tools and weapons wear down through use, show durability bars, and break at zero; material tiers now have distinct damage and durability.',
-                    'Added equippable iron, gold, diamond, and copper armor sets with defense and durability, plus dedicated armor slots in the inventory screen.',
-                    'Every tool, weapon, armor piece, and special item now has its own inventory and held-item artwork.',
+                    'Added equippable iron, gold, diamond, and copper armor sets with defense and durability, plus dedicated armor slots in the inventory screen — and every set is now craftable.',
+                    'New armor HUD: defense pips above the hearts and per-piece durability icons at the bottom-left, with a red pulse when a piece is close to breaking.',
+                    'Wool now weaves from wheat seeds (so beds are craftable in survival), packed ice crafts from ice, and Charged Magnetite and Magnetic Spikes have recipes.',
+                    'Every tool, weapon, armor piece, and special item now has its own inventory and held-item artwork, including a dedicated icon for the Warden’s boot-upgrade drop.',
                 ],
             },
             {
