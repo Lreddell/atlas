@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import type { WorldManager } from '../WorldManager';
 import { BlockType } from '../../types';
 import {
-    MAGNET_FORCE,
     MAGNET_MAX_SPEED,
     MAGNET_RANGE,
+    magnetFieldStrength,
     getClosestPointOnAabb,
     getDirectionalAxis,
     getDirectionalMultiplier,
@@ -159,7 +159,9 @@ export function applyMagneticForce(
         );
         _dir.multiplyScalar(1 / dist);
 
-        const strength = (MAGNET_FORCE / (dist * dist)) * directionalMultiplier;
+        // Clamped inverse-square + edge feather: no point-blank acceleration
+        // spikes, no force pop at the range boundary (see magnetFieldStrength).
+        const strength = magnetFieldStrength(dist) * directionalMultiplier;
         const responseSign = getMagneticResponseSign(
             mode === 'controlled',
             playerPolarity,
