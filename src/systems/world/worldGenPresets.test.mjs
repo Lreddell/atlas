@@ -57,3 +57,27 @@ test('browser preset round trip preserves the complete worldgen configuration', 
         else globalThis.window = previousWindow;
     }
 });
+
+test('reading a legacy preset supplies defaults without rewriting stored JSON', () => {
+    const previousWindow = globalThis.window;
+    const localStorage = makeLocalStorage();
+    const legacyRaw = JSON.stringify([{
+        id: 'legacy',
+        name: 'Legacy',
+        config: { height: { seaLevel: 70 } },
+        createdAt: 1,
+        updatedAt: 1,
+    }]);
+    localStorage.setItem('atlas.worldGen.presets', legacyRaw);
+    globalThis.window = { localStorage };
+
+    try {
+        const [loaded] = listWorldGenPresets();
+        assert.equal(loaded.config.height.seaLevel, 70);
+        assert.deepEqual(loaded.config.bossDomains.magneticFields, DEFAULTS.bossDomains.magneticFields);
+        assert.equal(localStorage.getItem('atlas.worldGen.presets'), legacyRaw);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
