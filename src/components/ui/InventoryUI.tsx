@@ -507,7 +507,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={e => { e.preventDefault(); stopPropagation(e); }}
         >
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[800px]' : ''}`} onClick={stopPropagation}>
+            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[800px]' : 'scale-110'}`} onClick={stopPropagation}>
                 
                 {openContainer.type === 'creative' && (
                     <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">

@@ -23,6 +23,82 @@ interface SlotProps {
   isCursor?: boolean;
 }
 
+interface PixelPerfectItemIconProps {
+  src: string;
+  targetSize: number;
+}
+
+const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, targetSize }) => {
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  React.useLayoutEffect(() => {
+      const wrapper = wrapperRef.current;
+      const canvas = canvasRef.current;
+      if (!wrapper || !canvas) return;
+
+      const image = new Image();
+      const draw = () => {
+          if (!image.complete || image.naturalWidth === 0) return;
+
+          const ancestorScale = wrapper.offsetWidth > 0
+              ? wrapper.getBoundingClientRect().width / wrapper.offsetWidth
+              : 1;
+          const physicalPixelsPerCssPixel = window.devicePixelRatio * ancestorScale;
+          const sourcePixelScale = Math.max(
+              1,
+              Math.round((targetSize * physicalPixelsPerCssPixel) / 16)
+          );
+          const backingSize = 16 * sourcePixelScale;
+          const cssSize = backingSize / physicalPixelsPerCssPixel;
+
+          canvas.width = backingSize;
+          canvas.height = backingSize;
+          canvas.style.width = `${cssSize}px`;
+          canvas.style.height = `${cssSize}px`;
+          canvas.style.transform = '';
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.imageSmoothingEnabled = false;
+          ctx.clearRect(0, 0, backingSize, backingSize);
+          ctx.drawImage(image, 0, 0, backingSize, backingSize);
+
+          // Centering can land on a fractional device pixel. Nudge the finished
+          // canvas onto the physical pixel grid so every texel stays uniform.
+          const rect = canvas.getBoundingClientRect();
+          const offsetX = (Math.round(rect.left * window.devicePixelRatio) - rect.left * window.devicePixelRatio)
+              / physicalPixelsPerCssPixel;
+          const offsetY = (Math.round(rect.top * window.devicePixelRatio) - rect.top * window.devicePixelRatio)
+              / physicalPixelsPerCssPixel;
+          canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+      };
+
+      image.onload = draw;
+      image.src = src;
+
+      const resizeObserver = new ResizeObserver(draw);
+      resizeObserver.observe(wrapper);
+      window.addEventListener('resize', draw);
+
+      return () => {
+          resizeObserver.disconnect();
+          window.removeEventListener('resize', draw);
+          image.onload = null;
+      };
+  }, [src, targetSize]);
+
+  return (
+      <div
+          ref={wrapperRef}
+          className="pointer-events-none flex shrink-0 items-center justify-center"
+          style={{ width: `${targetSize}px`, height: `${targetSize}px` }}
+      >
+          <canvas ref={canvasRef} className="pointer-events-none select-none" />
+      </div>
+  );
+};
+
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
     onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false 
@@ -194,25 +270,17 @@ export const Slot: React.FC<SlotProps> = ({
           );
       } else {
           // 2D Item / Sprite Render
-          // Match Minecraft's 16px item inside an 18px slot at 2x UI scale.
           // Prefer the source PNG so CSS never resamples the padded atlas.
-          const pxSize = 32;
+          // The canvas renderer snaps the 16px source to whole physical pixels.
+          const pxSize = size === 'large' ? 36 : 28;
           const texSlot = blockDef.textureSlot || 0;
           const texturePath = TEXTURE_PATHS[texSlot];
 
           if (texturePath) {
               return (
-                  <img
+                  <PixelPerfectItemIcon
                       src={`assets/textures/${texturePath}`}
-                      alt=""
-                      draggable={false}
-                      className="pointer-events-none select-none"
-                      style={{
-                          width: `${pxSize}px`,
-                          height: `${pxSize}px`,
-                          imageRendering: 'pixelated',
-                          objectFit: 'contain'
-                      }}
+                      targetSize={pxSize}
                   />
               );
           }
@@ -256,7 +324,7 @@ export const Slot: React.FC<SlotProps> = ({
         className={`
             relative bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]
             flex items-center justify-center cursor-pointer hover:bg-[#a0a0a0]
-            ${size === 'large' ? 'w-10 h-10' : 'w-9 h-9'}
+            ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
             ${selected ? 'border-4 border-white shadow-lg z-10' : ''}
         `}
     >
