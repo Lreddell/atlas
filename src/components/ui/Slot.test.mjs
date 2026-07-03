@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { URL } from 'node:url';
+
+const slot = readFileSync(new URL('./Slot.tsx', import.meta.url), 'utf8');
+const inventory = readFileSync(new URL('./InventoryUI.tsx', import.meta.url), 'utf8');
+
+test('GUI item sprites stay on a synchronous 16px integer grid', () => {
+    assert.match(slot, /React\.useLayoutEffect/);
+    assert.match(slot, /getAtlasCanvas\(\)/);
+    assert.match(slot, /16,\s*16,\s*0,\s*0,\s*backingSize,\s*backingSize/s);
+    assert.match(slot, /const pxSize = 32/);
+    assert.match(slot, /imageRendering:\s*'pixelated'/);
+});
+
+test('creative tabs render a bare icon and keep their scrollbar gutter stable', () => {
+    assert.match(inventory, /<Slot item=\{\{ type: tab\.icon, count: 1 \}\} size="small" bare \/>/);
+    assert.match(inventory, /\[scrollbar-gutter:stable\]/);
+    assert.match(inventory, /b\.id !== BlockType\.DEBUG_CROSS/);
+    assert.doesNotMatch(inventory, /backdrop-blur/);
+});
+
+test('selection and durability decorations overlay without resizing the item', () => {
+    assert.match(slot, /absolute -inset-1[^\n]*border-4 border-white/);
+    assert.match(slot, /w-\[26px\]/);
+    assert.match(slot, /Math\.round\(durabilityFrac \* 13\) \* 2/);
+    assert.doesNotMatch(slot, /selected \? 'border-4/);
+});

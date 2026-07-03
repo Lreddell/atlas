@@ -159,7 +159,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         };
 
         return Object.values(BLOCKS)
-            .filter(b => b.id !== BlockType.AIR && b.id !== BlockType.FURNACE_ACTIVE && b.id !== BlockType.BED_HEAD && b.id !== BlockType.BED_FOOT && b.category === activeTab)
+            .filter(b => b.id !== BlockType.AIR
+                && b.id !== BlockType.FURNACE_ACTIVE
+                && b.id !== BlockType.BED_HEAD
+                && b.id !== BlockType.BED_FOOT
+                && b.id !== BlockType.DEBUG_CROSS
+                && b.category === activeTab)
             .sort(sortFn) 
             .map(b => ({ type: b.id, count: 1 }));
     }, [activeTab]);
@@ -499,7 +504,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     return (
         <div 
-            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center backdrop-blur-sm" 
+            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center"
             onMouseMove={handleMouseMove}
             onClick={handleBackdropClick} 
             onMouseDown={(e) => { if(e.button !== 0 && !isDragging) e.stopPropagation(); }}
@@ -523,7 +528,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                 `}
                                 title={tab.name}
                             >
-                                <Slot item={{ type: tab.icon, count: 1 }} size="small" />
+                                <Slot item={{ type: tab.icon, count: 1 }} size="small" bare />
                             </div>
                         ))}
                     </div>
@@ -541,7 +546,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     </div>
                     
                     {openContainer.type === 'creative' && (
-                        <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
+                        <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin [scrollbar-gutter:stable]">
                              <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
                                      <div key={`c-${i}`} onMouseDown={(e) => handleSlotMouseDown('creative', i, e)}>
@@ -656,7 +661,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             
             {hoverInfo && !isDragging && (
                 <div
-                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-[#101010] border-2 border-[#303030] text-white px-2 py-1 text-sm shadow-lg"
+                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-black/90 text-white px-2 py-1 text-sm shadow-lg"
                     style={{ left: hoverInfo.x + 15, top: hoverInfo.y - 30 }}
                 >
                     <div className="text-white font-bold drop-shadow-sm">{hoverInfo.name}</div>

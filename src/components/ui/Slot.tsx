@@ -27,6 +27,8 @@ interface SlotProps {
   onMouseUp?: (e: React.MouseEvent) => void;
   size?: 'large' | 'small';
   isCursor?: boolean;
+  /** Render only the item, for surfaces such as creative category tabs. */
+  bare?: boolean;
 }
 
 interface PixelPerfectItemIconProps {
@@ -126,7 +128,8 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, ta
 
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
-    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false 
+    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
+    bare = false,
 }) => {
   const blockDef = item ? BLOCKS[item.type] : null;
   const atlasURL = getAtlasURL();
@@ -137,9 +140,15 @@ export const Slot: React.FC<SlotProps> = ({
   const curDurability = item?.instance?.durability;
   const showDurability = maxDurability !== undefined && curDurability !== undefined && curDurability < maxDurability;
   const durabilityFrac = showDurability ? Math.max(0, curDurability / maxDurability) : 0;
+  const durabilityColor = `rgb(${Math.round((1 - durabilityFrac) * 255)}, ${Math.round(durabilityFrac * 255)}, 0)`;
+  const durabilityDimColor = `rgb(${Math.round((1 - durabilityFrac) * 63)}, 63, 0)`;
   const durabilityBar = showDurability ? (
-      <div className="absolute bottom-0.5 left-1 right-1 h-1 bg-black/70 pointer-events-none z-20">
-          <div className="h-full" style={{ width: `${durabilityFrac * 100}%`, background: `hsl(${durabilityFrac * 120}, 90%, 45%)` }} />
+      <div className="absolute bottom-[10px] left-1/2 h-1 w-[26px] -translate-x-1/2 bg-black pointer-events-none z-20">
+          <div className="absolute left-0 top-0 h-0.5 w-6" style={{ background: durabilityDimColor }} />
+          <div
+              className="absolute left-0 top-0 h-0.5"
+              style={{ width: `${Math.round(durabilityFrac * 13) * 2}px`, background: durabilityColor }}
+          />
       </div>
   ) : null;
 
@@ -334,13 +343,23 @@ export const Slot: React.FC<SlotProps> = ({
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
         className={`
-            relative bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]
-            flex items-center justify-center cursor-pointer hover:bg-[#a0a0a0]
+            group relative flex items-center justify-center
             ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
-            ${selected ? 'border-4 border-white shadow-lg z-10' : ''}
+            ${bare
+                ? 'pointer-events-none'
+                : 'cursor-pointer bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]'}
+            ${selected ? 'z-10' : ''}
         `}
     >
         {renderContent()}
+
+        {!bare && (
+            <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />
+        )}
+
+        {selected && !bare && (
+            <span className="absolute -inset-1 z-30 pointer-events-none border-4 border-white shadow-lg" />
+        )}
 
         {item && item.count > 1 && (
             <span className="absolute bottom-1 right-1 text-white text-[12px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none pointer-events-none z-20">
