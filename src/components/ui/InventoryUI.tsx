@@ -656,16 +656,14 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             
             {hoverInfo && !isDragging && (
                 <div
-                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-[#100010] border-2 border-[#2a0b4d] text-white px-2 py-1 text-sm shadow-lg"
+                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-[#101010] border-2 border-[#303030] text-white px-2 py-1 text-sm shadow-lg"
                     style={{ left: hoverInfo.x + 15, top: hoverInfo.y - 30 }}
                 >
                     <div className="text-white font-bold drop-shadow-sm">{hoverInfo.name}</div>
                     {hoverInfo.lines.map((line, i) => (
                         <div
                             key={i}
-                            className={line.tone === 'info'
-                                ? 'text-[11px] italic text-purple-200/80 leading-snug mt-0.5'
-                                : 'text-[12px] text-gray-300 leading-snug'}
+                            className="text-[12px] text-gray-300 leading-snug"
                         >
                             {line.text}
                         </div>

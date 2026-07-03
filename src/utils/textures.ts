@@ -23,9 +23,12 @@ export const ATLAS_STRIDE = ATLAS_RAW_TILE_SIZE + ATLAS_PADDING * 2; // 32px
 
 let cachedAtlasDimensions = { width: 128, height: 128 };
 let cachedAtlasURL: string | null = null;
+let cachedAtlasCanvas: HTMLCanvasElement | null = null;
 let cachedDirtBG: string | null = null;
 
+export const ATLAS_UPDATED_EVENT = 'atlas:textures-updated';
 export const getAtlasURL = () => cachedAtlasURL;
+export const getAtlasCanvas = () => cachedAtlasCanvas;
 
 export const getAtlasDimensions = () => {
     // If running in a worker or before atlas generation, calculate theoretical dimensions
@@ -1020,7 +1023,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     if (!paddedAtlas) return document.createElement('canvas');
 
     cachedAtlasDimensions = { width: paddedAtlas.width, height: paddedAtlas.height };
+    cachedAtlasCanvas = paddedAtlas.canvas;
     cachedAtlasURL = paddedAtlas.canvas.toDataURL();
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(ATLAS_UPDATED_EVENT));
     return paddedAtlas.canvas;
 };
 

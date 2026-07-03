@@ -13,7 +13,7 @@ const hud = read('src/components/ui/HUD.tsx');
 
 test('tooltip stats derive from the live gameplay registries, not magic numbers', () => {
     // Attack/defense/durability come from getItemStats/getMaxDurability (the
-    // combat + equipment code paths); tool class/tier/mining power come from
+    // combat + equipment code paths); tool class/mining power come from
     // BLOCKS (the mining code path).
     assert.match(tooltips, /import \{ getItemStats, getMaxDurability \} from '\.\/itemStats'/);
     assert.match(tooltips, /stats\?\.attack/);
@@ -50,14 +50,10 @@ test('hoes are explicitly excluded from mining stats, with the reason documented
     assert.match(stats, /\[BlockType\.IRON_HOE\]:\s*tool\(/);
 });
 
-test('special gear carries how-to descriptions (polarity boots, boat, upgrade)', () => {
-    for (const key of [
-        'POLARITY_BOOTS', 'UPGRADED_POLARITY_BOOTS', 'POLARITY_BOOTS_UPGRADE',
-        'BOAT', 'POSITIVE_MAGNET', 'NEGATIVE_MAGNET', 'MAGNETIC_SPIKE',
-        'MAGNETIC_BOSS_SUMMONER',
-    ]) {
-        assert.match(tooltips, new RegExp(`\\[BlockType\\.${key}\\]:`), `${key} needs a description`);
-    }
+test('tooltips omit tier labels and purple informational descriptions', () => {
+    assert.doesNotMatch(tooltips, /TIER_NAMES|Wood tier|Stone tier|Iron tier|Diamond tier/);
+    assert.doesNotMatch(tooltips, /ITEM_DESCRIPTIONS|tone:\s*'info'/);
+    assert.doesNotMatch(inventoryUI, /text-purple-200|bg-\[#100010\]|border-\[#2a0b4d\]/);
 });
 
 test('the inventory tooltip and hotbar name plate render the stat lines', () => {
