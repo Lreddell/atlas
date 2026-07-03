@@ -86,6 +86,25 @@ test('old presets without the new biome keys still load safely', () => {
     // ...and keys the preset never knew about keep working defaults.
     assert.ok(GenConfig.biomes.beach);
     assert.equal(typeof GenConfig.biomes.beach.continentalnessMax, 'number');
+    // A pre-1.1.0 preset has no bossDomains block at all — the Magnetic Fields
+    // config must remain fully populated (enabled, placement, shape, arena).
+    const mf = GenConfig.bossDomains.magneticFields;
+    assert.equal(mf.enabled, true);
+    assert.equal(typeof mf.cell, 'number');
+    assert.equal(typeof mf.radius, 'number');
+    assert.equal(typeof mf.arenaFloorY, 'number');
+    resetGenConfig();
+});
+
+test('partial bossDomains config merges over defaults without dropping keys', () => {
+    resetGenConfig();
+    assert.equal(loadGenConfig({ bossDomains: { magneticFields: { radius: 300 } } }), true);
+    assert.equal(GenConfig.bossDomains.magneticFields.radius, 300);
+    // Untouched keys keep their defaults (no partial-object clobbering).
+    assert.equal(GenConfig.bossDomains.magneticFields.tierCount, DEFAULTS.bossDomains.magneticFields.tierCount);
+    assert.equal(GenConfig.bossDomains.magneticFields.enabled, true);
+    // Unknown domains in saved JSON are ignored, not crashed on.
+    assert.equal(loadGenConfig({ bossDomains: { unknownDomain: { radius: 1 } } }), true);
     resetGenConfig();
 });
 

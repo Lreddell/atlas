@@ -490,3 +490,21 @@ test('Magnetic Fields + Magnetic Warden music are wired with on-disk folders', (
     assert.ok(fs.existsSync(path.join(root, 'public/assets/rvx/sounds/music/magnetic_fields')));
     assert.ok(fs.existsSync(path.join(root, 'public/assets/rvx/sounds/music/boss_magnetic_warden')));
 });
+
+test('cache chests seed loot exactly once and spill it when broken unopened', () => {
+    const wm = read('src/systems/WorldManager.ts');
+    // ensureChest seeds deterministic loot for the 0x40 meta bit, then CLEARS
+    // the bit so re-opening never re-rolls.
+    assert.match(wm, /\(meta & 0x40\) !== 0/);
+    assert.match(wm, /setMetadataAt\(x, y, z, meta & ~0x40\)/);
+    // Breaking an unopened cache seeds it first, so handleBlockReplaced spills
+    // the loot as drops instead of deleting it.
+    assert.match(wm, /oldType === BlockType\.CHEST && type !== BlockType\.CHEST && \(oldRotation & 0x40\) !== 0/);
+    // The chest texture resolver masks to the facing bits, so the cache flag
+    // cannot corrupt chest rotation rendering.
+    const resolver = read('src/systems/world/textureResolver.ts');
+    assert.match(resolver, /const facing = rotation & 0x3/);
+    // Opening a chest goes through the seeding path.
+    const ic = read('src/components/controllers/InteractionController.tsx');
+    assert.match(ic, /worldManager\.ensureChest\(bx, by, bz\)/);
+});
