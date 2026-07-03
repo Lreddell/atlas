@@ -193,7 +193,9 @@ export const Slot: React.FC<SlotProps> = ({
           );
       } else {
           // 2D Item / Sprite Render
-          const pxSize = size === 'large' ? 36 : 28; 
+          // Keep the 16x16 source pixels on an exact 2x grid. Fractional scales
+          // (36px/28px) make alternating source pixels render at different widths.
+          const pxSize = 32;
           const texSlot = blockDef.textureSlot || 0;
           return (
               <div 
