@@ -338,9 +338,17 @@ class MusicController {
         // biome wander — switch promptly instead of waiting out the biome debounce,
         // so the right track starts even when nothing is currently playing.
         const isCreativeSwitch = targetContext === 'CREATIVE' || this.currentContext === 'CREATIVE';
-        const threshold = (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch)
-            ? 0
-            : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
+        // Leaving the boss track while the boss is STILL ALIVE is usually an aggro
+        // flicker (a beat of combat:stop mid-fight), not the fight ending — debounce
+        // it so the music doesn't thrash boss↔biome. A real end (boss dead/cleared,
+        // player dead, quitting to menu) switches away instantly as before.
+        const leavingLiveBossFlicker = this.currentContext === 'BOSS_MAGNETIC'
+            && targetContext !== 'BOSS_MAGNETIC' && this.bossAlive && !inMenu;
+        const threshold = leavingLiveBossFlicker
+            ? 3000
+            : (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch)
+                ? 0
+                : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
         if (this.pendingContext && now - this.contextStableTime >= threshold) {
             if (this.pendingContext !== this.currentContext) {
@@ -408,6 +416,11 @@ class MusicController {
         } else if (enteringMenu) {
             fadeOut = 0;
             silence = 0;
+            // Menu music is always as-authored: clear any lingering fight state and
+            // snap both decks back to 1.0. Safe here (no audible pitch snap) because
+            // the menu switch stops the old track with a zero-length fade anyway.
+            this.bossFrenzy = false;
+            soundManager.setMusicPlaybackRate(1.0);
         } else if (leavingMenuForWorld) {
             fadeOut = FAST_FADE_OUT;
             silence = FAST_SILENCE;

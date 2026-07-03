@@ -426,6 +426,9 @@ class SoundManager {
      * frenzy speed-up (the exact opposite of the night slowdown).
      */
     public setMusicPlaybackRate(rate: number): void {
+        // Defensive clamp: a bad rate (NaN/0/huge) would throw or chipmunk the
+        // decks; live rate changes are only ever small musical shifts.
+        if (!Number.isFinite(rate) || rate < 0.5 || rate > 2) return;
         for (const deck of [this.musicDeckA, this.musicDeckB]) {
             if (!deck) continue;
             const d = deck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
@@ -514,15 +517,29 @@ class SoundManager {
 
         // Crossfade: Fade Out Prev
         if (prevDeck && prevGain && this.activeDeck) {
+            const prevDeckId: 'A' | 'B' = nextDeckId === 'A' ? 'B' : 'A';
             prevGain.gain.cancelScheduledValues(now);
             prevGain.gain.setValueAtTime(prevGain.gain.value, now);
             prevGain.gain.linearRampToValueAtTime(0, now + fadeOutTime);
-            
-            setTimeout(() => {
-                if (this.activeDeck !== (nextDeckId === 'A' ? 'B' : 'A')) return; 
+
+            // Pause the retired deck once its fade completes — UNLESS a newer
+            // transition has made it the live deck again in the meantime. (This
+            // guard used to be inverted: it never paused retired decks — they
+            // kept streaming silently at gain 0 — and on a quick A→B→A reuse it
+            // paused the deck that was actively playing, which is exactly the
+            // intermittent "music cuts out" stutter, menu included.)
+            // The timeout is tracked in the per-deck stop slot so both stopMusic
+            // and a playMusic that reuses this deck cancel it deterministically.
+            this.clearMusicStopTimeout(prevDeckId);
+            const pauseTimeout = window.setTimeout(() => {
+                if (prevDeckId === 'A') this.musicStopTimeoutA = null;
+                else this.musicStopTimeoutB = null;
+                if (this.activeDeck === prevDeckId) return;
                 prevDeck.pause();
                 prevDeck.currentTime = 0;
             }, fadeOutTime * 1000 + 100);
+            if (prevDeckId === 'A') this.musicStopTimeoutA = pauseTimeout;
+            else this.musicStopTimeoutB = pauseTimeout;
         }
 
         this.activeDeck = nextDeckId;
