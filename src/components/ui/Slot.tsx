@@ -6,6 +6,7 @@ import { getAtlasURL, ATLAS_STRIDE, ATLAS_PADDING, getAtlasDimensions } from '..
 import { resolveTexture } from '../../systems/world/textureResolver';
 import { getShapeBoxes } from '../../systems/world/blockShapes';
 import { getMaxDurability } from '../../systems/registry/itemStats';
+import { TEXTURE_PATHS } from '../../systems/textures/textureMapping';
 
 interface SlotProps {
   item: ItemStack | null;
@@ -63,7 +64,7 @@ export const Slot: React.FC<SlotProps> = ({
           backgroundImage: `url(${atlasURL})`,
           backgroundSize: `${bgSize}px`, 
           backgroundPosition: `-${offsetX}px -${offsetY}px`,
-          filter: `brightness(${brightness})`,
+          ...(brightness === 1 ? {} : { filter: `brightness(${brightness})` }),
           imageRendering: 'pixelated' as const,
           backfaceVisibility: 'hidden' as const
       };
@@ -193,10 +194,29 @@ export const Slot: React.FC<SlotProps> = ({
           );
       } else {
           // 2D Item / Sprite Render
-          // Keep the 16x16 source pixels on an exact 2x grid. Fractional scales
-          // (36px/28px) make alternating source pixels render at different widths.
+          // Match Minecraft's 16px item inside an 18px slot at 2x UI scale.
+          // Prefer the source PNG so CSS never resamples the padded atlas.
           const pxSize = 32;
           const texSlot = blockDef.textureSlot || 0;
+          const texturePath = TEXTURE_PATHS[texSlot];
+
+          if (texturePath) {
+              return (
+                  <img
+                      src={`assets/textures/${texturePath}`}
+                      alt=""
+                      draggable={false}
+                      className="pointer-events-none select-none"
+                      style={{
+                          width: `${pxSize}px`,
+                          height: `${pxSize}px`,
+                          imageRendering: 'pixelated',
+                          objectFit: 'contain'
+                      }}
+                  />
+              );
+          }
+
           return (
               <div 
                   className="pointer-events-none"
@@ -236,7 +256,7 @@ export const Slot: React.FC<SlotProps> = ({
         className={`
             relative bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]
             flex items-center justify-center cursor-pointer hover:bg-[#a0a0a0]
-            ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
+            ${size === 'large' ? 'w-10 h-10' : 'w-9 h-9'}
             ${selected ? 'border-4 border-white shadow-lg z-10' : ''}
         `}
     >
