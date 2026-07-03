@@ -70,8 +70,9 @@ export const CHANGELOG: ChangelogEntry[] = [
             {
                 title: 'Boats & Traversal',
                 items: [
-                    'Craft a Boat from 5 planks (any wood family) and use it on water to climb in: it glides at over triple swimming speed, bobs at the surface, and scrapes slowly if beached.',
-                    'Sneak to hop out — the boat packs back into your inventory, so it can never be lost to a crash or reload.',
+                    'Craft a Boat from 5 planks (any wood family) and use it on a water cell to set it afloat as a real boat in the world; right-click to board.',
+                    'Riding glides at over triple swimming speed, bobs at the surface, and scrapes slowly if beached; sneak hops out and leaves the boat parked where you left it.',
+                    'Boats are saved with your world, survive reload and world switches, and a couple of punches break one back into its item.',
                 ],
             },
             {
@@ -83,6 +84,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'New armor HUD: defense pips above the hearts and per-piece durability icons at the bottom-left, with a red pulse when a piece is close to breaking.',
                     'Wool now weaves from wheat seeds (so beds are craftable in survival), packed ice crafts from ice, and Charged Magnetite and Magnetic Spikes have recipes.',
                     'Every tool, weapon, armor piece, and special item now has its own inventory and held-item artwork, including a dedicated icon for the Warden’s boot-upgrade drop.',
+                    'Inventory tooltips now show real gameplay stats — attack, tool class/tier/speed, defense, durability, food, and fuel — and the hotbar name plate carries a compact stat line for the held item.',
                 ],
             },
             {

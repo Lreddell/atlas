@@ -103,8 +103,9 @@ interface PlayerProps {
   isDead: boolean;
     forcedFov?: number | null;
   magneticMode?: MagneticMode;
-  /** Riding a boat: water-glide physics; sneak hops out (see onExitBoat). */
-  boating?: boolean;
+  /** Entity id of the boat being ridden (null = on foot). While riding, the
+   *  player's boat physics drives the entity's position/yaw each frame. */
+  ridingBoatId?: number | null;
   onExitBoat?: () => void;
 }
 
@@ -128,8 +129,9 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
 export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
     position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, 
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
-    isDead, forcedFov = null, magneticMode = 'none', boating = false, onExitBoat
+    isDead, forcedFov = null, magneticMode = 'none', ridingBoatId = null, onExitBoat
 }, ref) => {
+  const boating = ridingBoatId !== null;
   const { camera } = useThree();
   
   const pos = useRef(position.clone());
@@ -448,8 +450,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
         const startingJump = intent.jump && grounded.current && !isFlying.current;
 
-        // Boat dismount: a sneak press while riding hops out (the boat packs back
-        // into the inventory item — it was never consumed).
+        // Boat dismount: a sneak press while riding hops out. The boat entity
+        // stays parked where the ride ended.
         if (boating && intent.sneak && onExitBoat) {
             onExitBoat();
         }
@@ -695,6 +697,17 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
     const alpha = Math.max(0, Math.min(1, timeAccumulator.current / FIXED_DT));
     renderPos.current.lerpVectors(prevPos.current, pos.current, alpha);
+
+    // Carry the ridden boat: the entity's body tracks the rider's feet and the
+    // hull yaws to the camera so the bow always points where you steer.
+    if (boating && ridingBoatId !== null) {
+        const boat = entityManager.getEntity(ridingBoatId);
+        if (boat) {
+            boat.pos.set(renderPos.current.x, renderPos.current.y - 0.05, renderPos.current.z);
+            boat.yaw = camera.rotation.y;
+            boat.vel.set(vel.current.x, 0, vel.current.z);
+        }
+    }
 
     const blockHeadUI = worldManager.getBlock(Math.floor(pos.current.x), Math.floor(pos.current.y + 1.5), Math.floor(pos.current.z), false);
     setHeadBlock(blockHeadUI);

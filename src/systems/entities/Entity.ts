@@ -59,6 +59,9 @@ export interface Entity {
     slamGroundY: number;
     /** Seconds of post-spawn grace: present (music/bar) but passive, no attacks. */
     aggroGrace: number;
+    /** Rideable entities (boats): true while the player is aboard — the player's
+     *  physics drives the entity's position/yaw instead of its own tick. */
+    ridden: boolean;
 }
 
 // An expanding polarity shockwave ring from a slam. Same polarity as the boss;
@@ -118,6 +121,11 @@ export interface EntityKind {
     attackCooldown: number;
     /** render color (hex). */
     color: number;
+    /** Passive prop/vehicle (boats): no AI, no aggro, no contact damage, never
+     *  triggers combat music; simulated with simple float/settle physics. */
+    passive?: boolean;
+    /** Floats on water (buoyancy + surface bobbing) while unridden. */
+    floats?: boolean;
     isBoss?: boolean;
     drops?: DropSpec[];
     /** can the entity jump up a 1-block step while chasing. */
@@ -167,6 +175,24 @@ export interface EntityKind {
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
+    // Boat — a rideable, passive water vehicle. Placed by using a Boat item on
+    // water; boarded with a right click; broken (a few punches) it drops its
+    // item back. Unridden it floats and bobs at the surface; ridden, the
+    // player's boat physics drives it. Persisted per world (WorldMetadata.boats).
+    boat: {
+        id: 'boat',
+        maxHp: 8,
+        width: 1.2,
+        height: 0.62,
+        speed: 0,
+        aggroRange: 0,
+        contactDamage: 0,
+        attackCooldown: 1,
+        color: 0x8d6e63,
+        passive: true,
+        floats: true,
+        drops: [{ type: BlockType.BOAT, min: 1, max: 1 }],
+    },
     slime: {
         id: 'slime',
         maxHp: 16,

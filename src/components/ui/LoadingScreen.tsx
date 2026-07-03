@@ -33,7 +33,7 @@ const LOADING_TIPS = [
     "Raw iron, raw copper, and raw gold can all be smelted into ingots in a furnace.",
     "Atlas worlds span Plains, Forests, Desert, Tundra, Cherry Grove, Mesa, Jungle, Savanna, Taiga, Swamp, Beach, Meadow, Mountains, Ice Spikes, Volcanic Crags, and more.",
     "Swamps are waterlogged lowlands, and sandy beaches now rim most coastlines.",
-    "Craft a Boat from 5 planks and use it on water — it glides far faster than swimming. Sneak to hop out.",
+    "Craft a Boat from 5 planks and use it on water to set it afloat. Right-click to board, Sneak to hop out — it stays parked where you leave it.",
     "Wheat seeds from tall grass weave into wool — three wool over three planks makes a bed.",
     "Armor is craftable from iron, gold, diamond, and copper. Your defense pips and armor durability show on the HUD.",
     "Rare Magnetic Fields are sealed against mining and building until their guardian, the Magnetic Warden, is defeated.",

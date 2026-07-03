@@ -11,12 +11,55 @@ const PARRY_RETURN = 0x80ffea;   // deflected, player-owned bolt
 const PROJECTILE_POOL = 48;
 const SHOCKWAVE_POOL = 4;
 
+const BOAT_HULL = 0x8d6e63;
+const BOAT_TRIM = 0x6d4c33;
+const BOAT_SEAT = 0xc9a877;
+
+// The boat's world model: a wooden hull built from boxes, centered on the
+// entity's mid-height origin (the shared position update places every entity
+// group at pos + height/2). Forward is -Z, matching entity yaw conventions.
+const BoatModel: React.FC = () => {
+    const dy = -0.31; // shift children down so the hull floor sits at the entity's feet
+    return (
+        <group>
+            <mesh position={[0, 0.06 + dy, -0.15]} castShadow>
+                <boxGeometry args={[1.15, 0.12, 2.3]} />
+                <meshLambertMaterial color={BOAT_TRIM} />
+            </mesh>
+            <mesh position={[-0.58, 0.28 + dy, -0.15]} castShadow>
+                <boxGeometry args={[0.14, 0.34, 2.3]} />
+                <meshLambertMaterial color={BOAT_HULL} />
+            </mesh>
+            <mesh position={[0.58, 0.28 + dy, -0.15]} castShadow>
+                <boxGeometry args={[0.14, 0.34, 2.3]} />
+                <meshLambertMaterial color={BOAT_HULL} />
+            </mesh>
+            <mesh position={[0, 0.28 + dy, -1.32]} castShadow>
+                <boxGeometry args={[1.3, 0.34, 0.16]} />
+                <meshLambertMaterial color={BOAT_HULL} />
+            </mesh>
+            <mesh position={[0, 0.28 + dy, 1.0]} castShadow>
+                <boxGeometry args={[1.3, 0.34, 0.16]} />
+                <meshLambertMaterial color={BOAT_HULL} />
+            </mesh>
+            <mesh position={[0, 0.22 + dy, -1.5]} castShadow>
+                <boxGeometry args={[0.5, 0.22, 0.24]} />
+                <meshLambertMaterial color={BOAT_TRIM} />
+            </mesh>
+            <mesh position={[0, 0.22 + dy, 0.55]}>
+                <boxGeometry args={[1.0, 0.08, 0.35]} />
+                <meshLambertMaterial color={BOAT_SEAT} />
+            </mesh>
+        </group>
+    );
+};
+
 // Renders all entities owned by the EntityManager. The React list is rebuilt only
 // on structural changes (spawn/despawn); per-frame position/flash/shield/projectile
 // updates are written directly to meshes via refs to avoid re-renders.
 export const EntityRenderer: React.FC = () => {
     const [ids, setIds] = useState<number[]>([]);
-    const meshRefs = useRef<Map<number, THREE.Mesh>>(new Map());
+    const meshRefs = useRef<Map<number, THREE.Object3D>>(new Map());
     const shieldRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const auraRefs = useRef<Map<number, THREE.Mesh>>(new Map());
     const slamRefs = useRef<Map<number, THREE.Mesh>>(new Map());
@@ -40,10 +83,16 @@ export const EntityRenderer: React.FC = () => {
             if (mesh) {
                 mesh.position.set(e.pos.x, e.pos.y + e.height / 2, e.pos.z);
                 mesh.rotation.y = e.yaw;
-                const mat = mesh.material as THREE.MeshLambertMaterial;
-                // Polarity bosses tint red/blue with their current polarity.
-                const base = kind.polaritySwapInterval ? (e.polarity > 0 ? POLARITY_RED : POLARITY_BLUE) : kind.color;
-                mat.color.setHex(now < e.hurtUntil ? 0xffffff : base);
+                if (kind.passive) {
+                    // Passive props (boats) are multi-mesh groups: a hit reads as
+                    // a quick scale pop instead of a material flash.
+                    mesh.scale.setScalar(now < e.hurtUntil ? 1.07 : 1);
+                } else {
+                    const mat = (mesh as THREE.Mesh).material as THREE.MeshLambertMaterial;
+                    // Polarity bosses tint red/blue with their current polarity.
+                    const base = kind.polaritySwapInterval ? (e.polarity > 0 ? POLARITY_RED : POLARITY_BLUE) : kind.color;
+                    mat.color.setHex(now < e.hurtUntil ? 0xffffff : base);
+                }
             }
             // Shield bubble: visible only while the boss is shielded. A blocked
             // hit makes it flare so the invulnerability reads clearly.
@@ -158,13 +207,19 @@ export const EntityRenderer: React.FC = () => {
                 const slamR = Math.max(kind.width, 2) * 1.7;
                 return (
                     <React.Fragment key={id}>
-                        <mesh
-                            ref={(m) => { if (m) meshRefs.current.set(id, m); else meshRefs.current.delete(id); }}
-                            castShadow
-                        >
-                            <boxGeometry args={[kind.width, kind.height, kind.width]} />
-                            <meshLambertMaterial color={kind.color} />
-                        </mesh>
+                        {kind.id === 'boat' ? (
+                            <group ref={(m) => { if (m) meshRefs.current.set(id, m); else meshRefs.current.delete(id); }}>
+                                <BoatModel />
+                            </group>
+                        ) : (
+                            <mesh
+                                ref={(m) => { if (m) meshRefs.current.set(id, m); else meshRefs.current.delete(id); }}
+                                castShadow
+                            >
+                                <boxGeometry args={[kind.width, kind.height, kind.width]} />
+                                <meshLambertMaterial color={kind.color} />
+                            </mesh>
+                        )}
                         {isShieldBoss && (
                             <mesh ref={(m) => { if (m) shieldRefs.current.set(id, m); else shieldRefs.current.delete(id); }}>
                                 <sphereGeometry args={[Math.max(kind.width, kind.height) * 0.62, 16, 12]} />

@@ -47,6 +47,10 @@ export interface WorldMetadata {
     // abilities/recipes). Absent on worlds created before this feature -> treated
     // as empty progression on load.
     progression?: ProgressionData;
+    // Placed boat entities (world-positioned vehicles). Absent on older saves ->
+    // no boats. Same optional-extension pattern as `progression`, so old worlds
+    // and v1/v2 exports load unchanged.
+    boats?: { x: number; y: number; z: number; yaw: number }[];
 }
 
 export interface ChunkStorageData {

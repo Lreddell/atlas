@@ -172,6 +172,7 @@ class EntityManager {
             home: new THREE.Vector3(x, y, z),
             shieldCrystalPositions: opts.shieldCrystalPositions,
             maxShieldCrystals: kind.shieldCrystals ?? 0,
+            ridden: false,
         };
         this.entities.set(entity.id, entity);
         this.notifyStructure();
@@ -306,6 +307,70 @@ class EntityManager {
         this.shockwaves = [];
     }
 
+    /**
+     * Passive prop/vehicle simulation (boats). While ridden the player's physics
+     * drives pos/yaw directly, so the tick does nothing. Unridden, a floating
+     * kind bobs at the water surface (buoyancy + heavy vertical damping — the
+     * same profile as the ridden boat physics) and drifts to a stop; otherwise
+     * it just falls and settles.
+     */
+    private tickPassive(e: Entity, kind: EntityKind, dt: number): void {
+        e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
+        if (e.ridden) return;
+
+        // Horizontal drift bleeds off (water drag / ground friction).
+        e.vel.x *= 0.92;
+        e.vel.z *= 0.92;
+
+        const bx = Math.floor(e.pos.x);
+        const by = Math.floor(e.pos.y);
+        const bz = Math.floor(e.pos.z);
+        const feetInWater = worldManager.getBlock(bx, by, bz, false) === BlockType.WATER;
+        const waterBelow = worldManager.getBlock(bx, by - 1, bz, false) === BlockType.WATER;
+
+        if (kind.floats && (feetInWater || (waterBelow && e.pos.y - by < 0.25))) {
+            // Hull buoyancy: push up while submerged, heavy damping → calm bobbing.
+            e.vel.y *= 0.6;
+            if (feetInWater) e.vel.y += 30 * dt;
+            else if (e.vel.y < 0) e.vel.y = Math.max(e.vel.y, -0.5);
+        } else {
+            e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);
+        }
+        this.moveWithCollision(e, kind, dt, false);
+    }
+
+    /** Mark/unmark a rideable entity as ridden (the rider's physics takes over). */
+    setRidden(id: number, ridden: boolean): void {
+        const e = this.entities.get(id);
+        if (e) {
+            e.ridden = ridden;
+            if (ridden) { e.vel.set(0, 0, 0); }
+        }
+    }
+
+    /** Serialized boat states for the world save (WorldMetadata.boats). */
+    serializeBoats(): { x: number; y: number; z: number; yaw: number }[] {
+        const out: { x: number; y: number; z: number; yaw: number }[] = [];
+        for (const e of this.entities.values()) {
+            if (e.kind !== 'boat' || e.hp <= 0) continue;
+            out.push({ x: e.pos.x, y: e.pos.y, z: e.pos.z, yaw: e.yaw });
+        }
+        return out;
+    }
+
+    /** Respawn saved boats on world load (tolerates missing/malformed entries). */
+    restoreBoats(boats: unknown): void {
+        if (!Array.isArray(boats)) return;
+        for (const b of boats) {
+            if (!b || typeof b !== 'object') continue;
+            const { x, y, z, yaw } = b as { x?: unknown; y?: unknown; z?: unknown; yaw?: unknown };
+            if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number'
+                || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+            const e = this.spawn('boat', x, y, z);
+            if (e && typeof yaw === 'number' && Number.isFinite(yaw)) e.yaw = yaw;
+        }
+    }
+
     private kill(e: Entity): void {
         const kind = ENTITY_KINDS[e.kind];
         const spawnDrops = (dx: number, dy: number, dz: number) => {
@@ -373,6 +438,12 @@ class EntityManager {
         for (const e of this.entities.values()) {
             const kind = ENTITY_KINDS[e.kind];
             if (!kind) continue;
+
+            // --- Passive props/vehicles (boats): no AI, no aggro, no combat ---
+            if (kind.passive) {
+                this.tickPassive(e, kind, dt);
+                continue;
+            }
 
             // A boss whose fight the player has abandoned (wandered far from the
             // arena, or died) despawns — the bar clears and it can be re-summoned.

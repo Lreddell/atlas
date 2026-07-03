@@ -81,7 +81,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Tools and weapons show durability bars and break at zero — tiers (wood to diamond) differ in damage and lifespan.',
             'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen. All four sets (iron, gold, diamond, copper) are craftable.',
             'While armor is worn, the HUD shows your defense pips above the hearts and each piece\'s durability at the bottom-left — a piece pulses red when close to breaking.',
-            'Craft a Boat (5 planks) and use it on water for fast travel; sneak to hop back out.',
+            'Craft a Boat (5 planks) and use it on water to launch it. Right-click boards it, Sneak hops out, and a punch or two breaks it back into the item. Boats stay where you park them and are saved with the world.',
             'Biome context influences visuals and soundscape.'
         ]
     },
@@ -113,6 +113,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Autocomplete is available in command input, and many commands have subcommands.'
         ],
         bullets: [
+            '/help — list every command group',
             '/gamemode <survival|creative|spectator>',
             '/setspawn — set your respawn point where you stand',
             '/keepinventory <on|off> — keep items on death',

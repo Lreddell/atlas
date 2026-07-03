@@ -75,13 +75,16 @@ interface InteractionControllerProps {
     foodStateRef: MutableRefObject<FoodState>;
     setIsSleeping: Dispatch<SetStateAction<boolean>>;
     onSleepInBed?: (x: number, y: number, z: number) => void;
-    /** Use a held Boat on water: board it at the targeted water cell. */
-    onEnterBoat?: (x: number, y: number, z: number) => void;
+    /** Use a held Boat item on water: place a boat entity there. Returns true on
+     *  success (so survival placement consumes the item). */
+    onPlaceBoat?: (x: number, y: number, z: number) => boolean;
+    /** Right-clicked a boat entity within reach: board it. */
+    onEnterBoat?: (entityId: number) => void;
 }
 
 export const InteractionController = ({ 
     isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
-    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onEnterBoat
+    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onPlaceBoat, onEnterBoat
 }: InteractionControllerProps) => {
     const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
@@ -92,6 +95,9 @@ export const InteractionController = ({
 
     // Interaction State
     const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number } | null>(null);
+    // Sealed-region denial dwell: the toast fires only after LMB is held on the
+    // same non-editable block for a beat (see the useFrame mining branch).
+    const deniedDwellRef = useRef<{ x: number, y: number, z: number, heldFor: number, notified: boolean } | null>(null);
     const isLeftMouseDown = useRef(false);
     const isRightMouseDown = useRef(false);
     const interactionCooldown = useRef(0);
@@ -192,7 +198,25 @@ export const InteractionController = ({
     }, [camera, gameMode, setInventory, isDead]);
 
     const performInteraction = useCallback((isContinuous: boolean, isShiftHeld: boolean = false) => {
-        if (gameMode === 'spectator' || isDead) return; 
+        if (gameMode === 'spectator' || isDead) return;
+
+        // Right-clicking a boat entity within reach boards it (entities take
+        // priority over the block behind them, same as melee).
+        if (!isContinuous && onEnterBoat) {
+            camera.getWorldPosition(_camPos);
+            camera.getWorldDirection(_camDir);
+            const eHit = entityManager.raycastEntity(_camPos, _camDir, 4.0);
+            if (eHit) {
+                const entity = entityManager.getEntity(eHit.id);
+                if (entity?.kind === 'boat' && !entity.ridden) {
+                    const blockHit = castFromCamera(camera, 4.0);
+                    if (isEntityHitVisible(eHit.dist, blockHit?.distance ?? null)) {
+                        onEnterBoat(eHit.id);
+                        return;
+                    }
+                }
+            }
+        }
 
         const emitPlacementAnimation = () => {
             if (typeof window !== 'undefined') {
@@ -257,11 +281,13 @@ export const InteractionController = ({
             }
 
             if (targetType === BlockType.WATER || targetType === BlockType.LAVA) {
-                // Boarding: using a held Boat on a water cell climbs in there.
+                // Placing: using a held Boat item on a water cell spawns a boat
+                // entity there. Survival consumes the item; creative doesn't.
                 const held = inventoryRef.current[selectedSlotRef.current] as { type: BlockType } | null;
-                if (!isContinuous && targetType === BlockType.WATER && held?.type === BlockType.BOAT && onEnterBoat) {
-                    soundManager.play('ui.click');
-                    onEnterBoat(bx, by, bz);
+                if (!isContinuous && targetType === BlockType.WATER && held?.type === BlockType.BOAT && onPlaceBoat) {
+                    if (onPlaceBoat(bx, by, bz) && gameMode === 'survival') {
+                        consumeItem(selectedSlotRef.current);
+                    }
                 }
                 return;
             }
@@ -468,7 +494,7 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, onEnterBoat, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
 
     // Melee: if the player is looking at an entity within reach, a left click is
     // an attack (and does not start mining). Damage is a simple weapon lookup for
@@ -482,11 +508,15 @@ export const InteractionController = ({
         if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
         const held = inventory[selectedSlot];
         const dmg = getAttackDamage(held);
+        const targetKind = entityManager.getEntity(hit.id)?.kind;
         const result = entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
         // A shield absorbs the blow: a metallic "clink", no hurt cry — so it is
         // obvious the boss is invulnerable until its crystals are gone.
         if (result === 'blocked') {
             soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
+        } else if (targetKind === 'boat') {
+            // Wooden props knock, they don't cry.
+            soundManager.play('block.wood.hit', { volume: 0.8 });
         } else {
             soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
         }
@@ -525,10 +555,11 @@ export const InteractionController = ({
                 performInteraction(false, e.shiftKey);
             }
         };
-        const onUp = (e: MouseEvent) => { 
+        const onUp = (e: MouseEvent) => {
             if(e.button === 0) {
-                isLeftMouseDown.current = false; 
+                isLeftMouseDown.current = false;
                 breakingRef.current = null;
+                deniedDwellRef.current = null;
                 setBreakingVisual(null);
             }
             if(e.button === 2) {
@@ -597,10 +628,25 @@ export const InteractionController = ({
         }
 
         if (isLeftMouseDown.current && hit && !worldManager.canEditBlock(hit.bx, hit.by, hit.bz)) {
-            // Sealed region: can't mine. Clear any in-progress break and notify (throttled by the App handler).
+            // Sealed region: can't mine. Clear any in-progress break, and notify
+            // only after the player has held the button on the SAME sealed block
+            // for a beat — a missed combat swing that sweeps across sealed terrain
+            // (constant during the Warden fight) must not toast "defeat its
+            // guardian" at the player who is doing exactly that. A deliberate
+            // mining attempt still gets clear feedback almost immediately.
             if (breakingRef.current) { breakingRef.current = null; setBreakingVisual(null); }
-            canPlayerEdit(hit.bx, hit.by, hit.bz);
+            const d = deniedDwellRef.current;
+            if (!d || d.x !== hit.bx || d.y !== hit.by || d.z !== hit.bz) {
+                deniedDwellRef.current = { x: hit.bx, y: hit.by, z: hit.bz, heldFor: 0, notified: false };
+            } else {
+                d.heldFor += delta;
+                if (!d.notified && d.heldFor >= 0.25) {
+                    d.notified = true;
+                    canPlayerEdit(hit.bx, hit.by, hit.bz);
+                }
+            }
         } else if (isLeftMouseDown.current && hit) {
+            deniedDwellRef.current = null;
             const bx = hit.bx;
             const by = hit.by;
             const bz = hit.bz;

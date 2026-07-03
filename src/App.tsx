@@ -6,7 +6,6 @@ import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
-import { BoatRig } from './components/BoatRig';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
 import { FxParticles } from './components/FxParticles';
@@ -306,9 +305,9 @@ const App: React.FC = () => {
   const climbMagnetsActiveRef = useRef(false);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
-  // Riding a boat (use a Boat item on water; sneak hops out). Session-only state:
-  // the boat item never leaves the inventory, so nothing needs persisting.
-  const [boating, setBoating] = useState(false);
+  // Entity id of the boat the player is riding, or null. Boats are real world
+  // entities (placed, boarded, broken, persisted); see the boat handlers below.
+  const [ridingBoatId, setRidingBoatId] = useState<number | null>(null);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
@@ -652,10 +651,11 @@ const App: React.FC = () => {
       const spawnPoint = worldManager.getSpawnPoint();
       const worldSpawn = worldManager.getWorldSpawn();
       const progressionData = progression.serialize();
+      const boatsData = entityManager.serializeBoats();
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -682,6 +682,7 @@ const App: React.FC = () => {
                   activeWorldGenConfigRef.current = worldGenConfigSnapshot;
               }
           }
+          meta.boats = boatsData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -1944,7 +1945,14 @@ const App: React.FC = () => {
               setShowMagneticFields(nextVisible);
               logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
           }
-      } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
+      } else if (parts[0] === '/help') {
+          // Grouped, compact command listing (autocomplete carries the details).
+          logMsg('Commands — world: /tp /locate /setspawn /spawn /time /phase', 'info');
+          logMsg('Progression: /boss /region /cleanse /seal /magfields', 'info');
+          logMsg('Player: /gamemode /giveitem /equip /unequip /keepinventory', 'info');
+          logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
+          logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
+      } else { logMsg(`Unknown command: ${parts[0]} — try /help`, 'error'); }
       if (commandValue.trim()) {
           commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
           setHistoryIndex(-1);
@@ -2471,7 +2479,10 @@ const App: React.FC = () => {
 
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
-    setBoating(false);
+    setRidingBoatId((riding) => {
+        if (riding !== null) entityManager.setRidden(riding, false);
+        return null;
+    });
     // Persist the post-death state immediately (cleared bed spawn, new position,
     // reset health/inventory) so a crash before the next autosave can't revert it.
     // The vitals reset above hasn't committed yet, so pass it explicitly — the
@@ -2483,23 +2494,54 @@ const App: React.FC = () => {
     resumeFromUserGesture('respawn');
   };
 
-  // --- Boat riding ---
-  const handleEnterBoat = useCallback((x: number, y: number, z: number) => {
-      setBoating((already) => {
-          if (already) return already;
-          // Climb in at the clicked water cell; hull buoyancy settles the rest.
-          playerRef.current?.teleport(new THREE.Vector3(x + 0.5, y + 0.6, z + 0.5));
-          return true;
+  // --- Boat riding (real world entities; persisted in WorldMetadata.boats) ---
+  // Place: use a Boat item on a water cell — spawns a boat entity (the item is
+  // consumed in survival). Board: right-click the boat. Dismount: sneak — the
+  // boat stays where you left it. Break: punch it; it drops its Boat item.
+  const handlePlaceBoat = useCallback((x: number, y: number, z: number) => {
+      // Spawn slightly above the clicked water cell; hull buoyancy settles it.
+      const boat = entityManager.spawn('boat', x + 0.5, y + 0.6, z + 0.5);
+      if (boat && controlsRef.current) {
+          // Face the way the player is looking so boarding feels natural.
+          boat.yaw = controlsRef.current.getRotation().y;
+      }
+      soundManager.playAt('block.wood.place', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+      return boat !== null;
+  }, []);
+
+  const handleEnterBoat = useCallback((entityId: number) => {
+      setRidingBoatId((already) => {
+          if (already !== null) return already;
+          const boat = entityManager.getEntity(entityId);
+          if (!boat || boat.kind !== 'boat' || boat.hp <= 0) return null;
+          entityManager.setRidden(entityId, true);
+          // Sit in the hull: feet at the boat's floor; the player's boat physics
+          // takes over from here (and drives the entity each frame).
+          playerRef.current?.teleport(new THREE.Vector3(boat.pos.x, boat.pos.y + 0.1, boat.pos.z));
+          soundManager.play('ui.click');
+          return entityId;
       });
   }, []);
 
   const handleExitBoat = useCallback(() => {
-      setBoating((riding) => {
-          if (!riding) return riding;
+      setRidingBoatId((riding) => {
+          if (riding === null) return riding;
+          // The boat stays parked where the ride ended.
+          entityManager.setRidden(riding, false);
           // A small hop out of the hull so you don't dismount straight into a swim.
           playerRef.current?.applyImpulse(0, 4.0, 0);
-          return false;
+          return null;
       });
+  }, []);
+
+  // If the ridden boat is destroyed (punched apart under the player, despawned
+  // by a world reset), dismount cleanly instead of gliding on a ghost hull.
+  useEffect(() => {
+      const off = gameEvents.on('entity:died', ({ entityId, type }) => {
+          if (type !== 'boat') return;
+          setRidingBoatId((riding) => (riding === entityId ? null : riding));
+      });
+      return off;
   }, []);
 
   const handleQuitToTitle = useCallback(() => {
@@ -2596,10 +2638,14 @@ const App: React.FC = () => {
       // collectible) at their old coordinates inside World B.
       setDrops([]);
       setMessages([]);
-      setBoating(false);
+      setRidingBoatId(null);
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
+
+      // Respawn this world's parked boats (entityManager.clear() above removed
+      // the previous world's — boats never leak across worlds).
+      entityManager.restoreBoats(meta.boats);
 
       if (meta.worldSpawn) {
           worldManager.setWorldSpawn(meta.worldSpawn.x, meta.worldSpawn.y, meta.worldSpawn.z);
@@ -2906,7 +2952,7 @@ const App: React.FC = () => {
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
-                    {boating && !showDeathScreen && !cinematicMode && !openContainer && (
+                    {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
                             Sneak (Shift) to hop out of the boat
                         </div>
@@ -3010,7 +3056,7 @@ const App: React.FC = () => {
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
-                    onEnterBoat={handleEnterBoat}
+                    onPlaceBoat={handlePlaceBoat} onEnterBoat={handleEnterBoat}
                 />
 
                 <BreakingVisualMesh suspended={isCapturingPanorama} />
@@ -3032,10 +3078,9 @@ const App: React.FC = () => {
                             onTakeDamage={applyRawDamage}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                             magneticMode={magneticMode}
-                            boating={boating} onExitBoat={handleExitBoat}
+                            ridingBoatId={ridingBoatId} onExitBoat={handleExitBoat}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} cinematicMode={cinematicMode} />
-                        {boating && !cinematicMode && <BoatRig playerPosRef={playerPosRef} />}
                     </>
                 )}
                 
