@@ -16,6 +16,7 @@ import { worldManager } from '../../systems/WorldManager';
 import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
 import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/registry/equipment';
+import { getItemTooltip, type TooltipLine } from '../../systems/registry/itemTooltips';
 import { cloneItemStack } from '../../systems/inventory/itemStackPolicy';
 import type { EquipmentSlot } from '../../types';
 
@@ -125,7 +126,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     equipment, setEquipment
 }) => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-    const [hoverInfo, setHoverInfo] = useState<{name: string, x: number, y: number} | null>(null);
+    const [hoverInfo, setHoverInfo] = useState<{name: string, lines: TooltipLine[], x: number, y: number} | null>(null);
     const [activeTab, setActiveTab] = useState<CreativeTab>('building');
     const [hoveredSlot, setHoveredSlot] = useState<DragTargetSlot | null>(null);
     
@@ -340,8 +341,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             setHoverInfo(null);
             return;
         }
-        const name = BLOCKS[item.type]?.name || 'Unknown';
-        setHoverInfo({ name, x: e.clientX, y: e.clientY });
+        const tooltip = getItemTooltip(item);
+        setHoverInfo({ name: tooltip.name, lines: tooltip.lines, x: e.clientX, y: e.clientY });
     };
 
     const handleMouseUp = (e: React.MouseEvent) => {
@@ -399,7 +400,9 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     const handleEquipEnter = (slot: EquipmentSlot, e: React.MouseEvent) => {
         const it = equipment[slot];
-        if (it) setHoverInfo({ name: BLOCKS[it.type]?.name || 'Unknown', x: e.clientX, y: e.clientY });
+        if (!it) return;
+        const tooltip = getItemTooltip(it);
+        setHoverInfo({ name: tooltip.name, lines: tooltip.lines, x: e.clientX, y: e.clientY });
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -652,11 +655,21 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             </div>
             
             {hoverInfo && !isDragging && (
-                <div 
-                    className="fixed pointer-events-none z-[70] bg-[#100010] border-2 border-[#2a0b4d] text-white px-2 py-1 text-sm font-bold shadow-lg"
+                <div
+                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-[#100010] border-2 border-[#2a0b4d] text-white px-2 py-1 text-sm shadow-lg"
                     style={{ left: hoverInfo.x + 15, top: hoverInfo.y - 30 }}
                 >
-                    <div className="text-white drop-shadow-sm">{hoverInfo.name}</div>
+                    <div className="text-white font-bold drop-shadow-sm">{hoverInfo.name}</div>
+                    {hoverInfo.lines.map((line, i) => (
+                        <div
+                            key={i}
+                            className={line.tone === 'info'
+                                ? 'text-[11px] italic text-purple-200/80 leading-snug mt-0.5'
+                                : 'text-[12px] text-gray-300 leading-snug'}
+                        >
+                            {line.text}
+                        </div>
+                    ))}
                 </div>
             )}
 

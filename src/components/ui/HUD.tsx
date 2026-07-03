@@ -6,6 +6,7 @@ import { BLOCKS } from '../../data/blocks';
 import { MAX_BREATH } from '../../systems/player/playerConstants';
 import { totalDefense, type Equipment } from '../../systems/registry/equipment';
 import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
+import { summarizeItemStats } from '../../systems/registry/itemTooltips';
 
 interface HUDProps {
     health: number;
@@ -210,8 +211,16 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {gameMode !== 'spectator' && (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
                     {inventory[selectedSlot] && (
-                        <div className="text-white font-bold text-shadow-md bg-black/40 px-3 py-1 rounded text-base mb-1 pointer-events-none transition-opacity duration-200">
-                            {BLOCKS[inventory[selectedSlot]!.type].name}
+                        <div className="flex flex-col items-center bg-black/40 px-3 py-1 rounded mb-1 pointer-events-none transition-opacity duration-200">
+                            <div className="text-white font-bold text-shadow-md text-base">
+                                {BLOCKS[inventory[selectedSlot]!.type].name}
+                            </div>
+                            {(() => {
+                                const summary = summarizeItemStats(inventory[selectedSlot]!);
+                                return summary
+                                    ? <div className="text-[11px] text-gray-300 text-shadow-sm font-pixel">{summary}</div>
+                                    : null;
+                            })()}
                         </div>
                     )}
                     <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
