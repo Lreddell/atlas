@@ -24,11 +24,13 @@ interface SlotProps {
 }
 
 interface PixelPerfectItemIconProps {
-  src: string;
+  src?: string;
+  atlasURL: string | null;
+  texSlot: number;
   targetSize: number;
 }
 
-const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, targetSize }) => {
+const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, atlasURL, texSlot, targetSize }) => {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
@@ -37,9 +39,13 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, target
       const canvas = canvasRef.current;
       if (!wrapper || !canvas) return;
 
-      const image = new Image();
+      let image: HTMLImageElement | null = null;
+      let imageIsAtlas = false;
+      let sourceReady = false;
+      let disposed = false;
+
       const draw = () => {
-          if (!image.complete || image.naturalWidth === 0) return;
+          if (!image || !image.complete || image.naturalWidth === 0) return;
 
           const ancestorScale = wrapper.offsetWidth > 0
               ? wrapper.getBoundingClientRect().width / wrapper.offsetWidth
@@ -47,7 +53,7 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, target
           const physicalPixelsPerCssPixel = window.devicePixelRatio * ancestorScale;
           const sourcePixelScale = Math.max(
               1,
-              Math.round((targetSize * physicalPixelsPerCssPixel) / 16)
+              Math.floor((targetSize * physicalPixelsPerCssPixel) / 16)
           );
           const backingSize = 16 * sourcePixelScale;
           const cssSize = backingSize / physicalPixelsPerCssPixel;
@@ -62,7 +68,23 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, target
           if (!ctx) return;
           ctx.imageSmoothingEnabled = false;
           ctx.clearRect(0, 0, backingSize, backingSize);
-          ctx.drawImage(image, 0, 0, backingSize, backingSize);
+          if (imageIsAtlas) {
+              const col = texSlot % ATLAS_COLS;
+              const row = Math.floor(texSlot / ATLAS_COLS);
+              ctx.drawImage(
+                  image,
+                  col * ATLAS_STRIDE + ATLAS_PADDING,
+                  row * ATLAS_STRIDE + ATLAS_PADDING,
+                  16,
+                  16,
+                  0,
+                  0,
+                  backingSize,
+                  backingSize
+              );
+          } else {
+              ctx.drawImage(image, 0, 0, backingSize, backingSize);
+          }
 
           // Centering can land on a fractional device pixel. Nudge the finished
           // canvas onto the physical pixel grid so every texel stays uniform.
@@ -74,19 +96,41 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, target
           canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
       };
 
-      image.onload = draw;
-      image.src = src;
+      const atlasImage = atlasURL ? new Image() : null;
+      if (atlasImage && atlasURL) {
+          atlasImage.onload = () => {
+              if (disposed || sourceReady) return;
+              image = atlasImage;
+              imageIsAtlas = true;
+              draw();
+          };
+          atlasImage.src = atlasURL;
+      }
+
+      const sourceImage = src ? new Image() : null;
+      if (sourceImage && src) {
+          sourceImage.onload = () => {
+              if (disposed) return;
+              sourceReady = true;
+              image = sourceImage;
+              imageIsAtlas = false;
+              draw();
+          };
+          sourceImage.src = src;
+      }
 
       const resizeObserver = new ResizeObserver(draw);
       resizeObserver.observe(wrapper);
       window.addEventListener('resize', draw);
 
       return () => {
+          disposed = true;
           resizeObserver.disconnect();
           window.removeEventListener('resize', draw);
-          image.onload = null;
+          if (atlasImage) atlasImage.onload = null;
+          if (sourceImage) sourceImage.onload = null;
       };
-  }, [src, targetSize]);
+  }, [atlasURL, src, targetSize, texSlot]);
 
   return (
       <div
@@ -94,7 +138,14 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ src, target
           className="pointer-events-none flex shrink-0 items-center justify-center"
           style={{ width: `${targetSize}px`, height: `${targetSize}px` }}
       >
-          <canvas ref={canvasRef} className="pointer-events-none select-none" />
+          <canvas
+              ref={canvasRef}
+              width={16}
+              height={16}
+              data-texture-slot={texSlot}
+              className="pointer-events-none select-none"
+              style={{ width: '100%', height: '100%' }}
+          />
       </div>
   );
 };
@@ -272,14 +323,16 @@ export const Slot: React.FC<SlotProps> = ({
           // 2D Item / Sprite Render
           // Prefer the source PNG so CSS never resamples the padded atlas.
           // The canvas renderer snaps the 16px source to whole physical pixels.
-          const pxSize = size === 'large' ? 36 : 28;
+          const pxSize = size === 'large' ? 40 : 28;
           const texSlot = blockDef.textureSlot || 0;
           const texturePath = TEXTURE_PATHS[texSlot];
 
-          if (texturePath) {
+          if (texturePath || atlasURL) {
               return (
                   <PixelPerfectItemIcon
-                      src={`assets/textures/${texturePath}`}
+                      src={texturePath ? `assets/textures/${texturePath}` : undefined}
+                      atlasURL={atlasURL}
+                      texSlot={texSlot}
                       targetSize={pxSize}
                   />
               );
