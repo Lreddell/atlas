@@ -224,7 +224,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                         </div>
                     )}
                     <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
-                        {inventory.slice(0, 9).map((it, i) => <Slot key={i} item={it} selected={selectedSlot === i} />)}
+                        {inventory.slice(0, 9).map((it, i) => <Slot key={i} item={it} selected={selectedSlot === i} animateChanges />)}
                     </div>
                 </div>
             )}

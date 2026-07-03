@@ -29,6 +29,8 @@ interface SlotProps {
   isCursor?: boolean;
   /** Render only the item, for surfaces such as creative category tabs. */
   bare?: boolean;
+  /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
+  animateChanges?: boolean;
 }
 
 interface PixelPerfectItemIconProps {
@@ -129,8 +131,12 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, ta
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
     onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
-    bare = false,
+    bare = false, animateChanges = false,
 }) => {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
+  const currentItemType = item?.type;
+  const currentItemCount = item?.count;
   const blockDef = item ? BLOCKS[item.type] : null;
   const atlasURL = getAtlasURL();
   const { width } = getAtlasDimensions(); // Real POT width of texture
@@ -151,6 +157,25 @@ export const Slot: React.FC<SlotProps> = ({
           />
       </div>
   ) : null;
+
+  React.useLayoutEffect(() => {
+      const previous = previousItemRef.current;
+      const current = currentItemType === undefined || currentItemCount === undefined
+          ? null
+          : { type: currentItemType, count: currentItemCount };
+      const shouldPop = animateChanges
+          && previous !== undefined
+          && current !== null
+          && (previous === null || (previous.type === current.type && current.count > previous.count));
+
+      previousItemRef.current = current;
+      if (!shouldPop || !contentRef.current) return;
+
+      const content = contentRef.current;
+      content.classList.remove('atlas-item-pop');
+      void content.offsetWidth;
+      content.classList.add('atlas-item-pop');
+  }, [animateChanges, currentItemCount, currentItemType]);
 
   const getFaceStyle = (texIdx: number, brightness: number, displaySize: number) => {
       if (!atlasURL) return {};
@@ -351,7 +376,9 @@ export const Slot: React.FC<SlotProps> = ({
             ${selected ? 'z-10' : ''}
         `}
     >
-        {renderContent()}
+        <div ref={contentRef} className="pointer-events-none flex items-center justify-center">
+            {renderContent()}
+        </div>
 
         {!bare && (
             <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />

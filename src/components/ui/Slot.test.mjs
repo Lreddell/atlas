@@ -5,6 +5,8 @@ import { URL } from 'node:url';
 
 const slot = readFileSync(new URL('./Slot.tsx', import.meta.url), 'utf8');
 const inventory = readFileSync(new URL('./InventoryUI.tsx', import.meta.url), 'utf8');
+const hud = readFileSync(new URL('./HUD.tsx', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
 
 test('GUI item sprites stay on a synchronous 16px integer grid', () => {
     assert.match(slot, /React\.useLayoutEffect/);
@@ -15,10 +17,19 @@ test('GUI item sprites stay on a synchronous 16px integer grid', () => {
 });
 
 test('creative tabs render a bare icon and keep their scrollbar gutter stable', () => {
+    assert.match(inventory, /openContainer\.type === 'creative' \? 'w-\[867px\]'/);
     assert.match(inventory, /<Slot item=\{\{ type: tab\.icon, count: 1 \}\} size="small" bare \/>/);
     assert.match(inventory, /\[scrollbar-gutter:stable\]/);
     assert.match(inventory, /b\.id !== BlockType\.DEBUG_CROSS/);
     assert.doesNotMatch(inventory, /backdrop-blur/);
+});
+
+test('hotbar stacks reproduce the five-tick Minecraft item pop', () => {
+    assert.match(hud, /selected=\{selectedSlot === i\} animateChanges/);
+    assert.match(slot, /previous === null \|\| \(previous\.type === current\.type && current\.count > previous\.count\)/);
+    assert.match(slot, /classList\.add\('atlas-item-pop'\)/);
+    assert.match(styles, /@keyframes atlas-item-pop/);
+    assert.match(styles, /animation: atlas-item-pop 250ms/);
 });
 
 test('selection and durability decorations overlay without resizing the item', () => {
