@@ -24,12 +24,16 @@ export interface ItemTooltip {
 
 /** Player-facing names for harvest tiers (BLOCKS[].toolTier semantics). */
 const TIER_NAMES: Record<number, string> = {
-    1: 'wood tier',
-    2: 'stone tier',
-    3: 'iron tier',
-    4: 'diamond tier',
+    1: 'Wood tier',
+    2: 'Stone tier',
+    3: 'Iron tier',
+    4: 'Diamond tier',
 };
 
+// Mining-tool display names. Hoes are deliberately absent: Atlas has no
+// tilling/farmland system, so hoes carry no toolType/toolSpeed in BLOCKS and
+// have no mining stat to show — they still display Attack and Durability via
+// ITEM_STATS like any other weapon-ish tool.
 const TOOL_NAMES: Record<string, string> = {
     pickaxe: 'Pickaxe',
     axe: 'Axe',
@@ -69,12 +73,14 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
         lines.push({ text: `Attack: ${stats.attack}`, tone: 'stat' });
     }
 
-    // Mining: tool class, harvest tier, and speed multiplier.
+    // Mining: tool class, harvest tier, and mining power (the raw registry
+    // toolSpeed the break-speed math uses — presented as a stat, not a "×N"
+    // multiplier, which wrongly implied "times some baseline").
     if (def.toolType && def.toolType !== 'none') {
         const tier = TIER_NAMES[def.toolTier ?? 0];
         const parts = [TOOL_NAMES[def.toolType] ?? def.toolType];
         if (tier) parts.push(tier);
-        if (def.toolSpeed) parts.push(`×${def.toolSpeed} speed`);
+        if (def.toolSpeed) parts.push(`Mining power ${def.toolSpeed.toFixed(1)}`);
         lines.push({ text: parts.join(' · '), tone: 'stat' });
     }
 
@@ -94,15 +100,11 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
     }
 
     // Food: hunger + saturation restored (matches the eating code).
+    // (Fuel burn time is deliberately NOT shown — furnace behavior is unchanged,
+    // it's just not a player-facing tooltip stat.)
     if (def.nutrition) {
         const saturation = def.nutrition * (def.saturationModifier ?? 0) * 2;
         lines.push({ text: `Food: +${def.nutrition} hunger, +${Math.round(saturation * 10) / 10} saturation`, tone: 'stat' });
-    }
-
-    // Fuel: shown for burnable ITEMS (sticks, coal, wood tools…), not every
-    // wooden block, to keep block tooltips quiet.
-    if (def.isItem && def.isFuel && def.fuelValue) {
-        lines.push({ text: `Fuel: burns ${Math.round(def.fuelValue / 1000)}s`, tone: 'stat' });
     }
 
     const description = ITEM_DESCRIPTIONS[stack.type];
@@ -121,7 +123,7 @@ export function summarizeItemStats(stack: ItemStack): string {
     const stats = getItemStats(stack);
     const parts: string[] = [];
     if (stats?.attack !== undefined) parts.push(`ATK ${stats.attack}`);
-    if (def.toolType && def.toolType !== 'none' && def.toolSpeed) parts.push(`×${def.toolSpeed}`);
+    if (def.toolType && def.toolType !== 'none' && def.toolSpeed) parts.push(`Power ${def.toolSpeed.toFixed(1)}`);
     if (stats?.defense !== undefined && stats.slot) parts.push(`DEF +${stats.defense}`);
     const max = stats?.maxDurability ?? getMaxDurability(stack.type);
     if (max !== undefined) {

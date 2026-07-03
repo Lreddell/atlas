@@ -283,8 +283,12 @@ export const InteractionController = ({
             if (targetType === BlockType.WATER || targetType === BlockType.LAVA) {
                 // Placing: using a held Boat item on a water cell spawns a boat
                 // entity there. Survival consumes the item; creative doesn't.
+                // Placement follows the same sealed-region policy as blocks: a
+                // sealed water cell denies the boat (with the standard feedback)
+                // instead of spawning before the edit rules are checked.
                 const held = inventoryRef.current[selectedSlotRef.current] as { type: BlockType } | null;
                 if (!isContinuous && targetType === BlockType.WATER && held?.type === BlockType.BOAT && onPlaceBoat) {
+                    if (!canPlayerEdit(bx, by, bz)) return;
                     if (onPlaceBoat(bx, by, bz) && gameMode === 'survival') {
                         consumeItem(selectedSlotRef.current);
                     }

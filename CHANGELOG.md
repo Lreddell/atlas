@@ -85,9 +85,9 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   crafts from ice, and Charged Magnetite and Magnetic Spikes have recipes.
 - Every tool, weapon, armor piece, and special item now has its own inventory and
   held-item artwork, including a dedicated icon for the Warden's boot-upgrade drop.
-- Inventory tooltips now show real gameplay stats — attack, tool class/tier/speed,
-  defense, durability, food, and fuel — and the hotbar name plate carries a compact
-  stat line for the held item.
+- Inventory tooltips now show real gameplay stats — attack, tool class, harvest
+  tier, mining power, defense, durability, and food — and the hotbar name plate
+  carries a compact stat line for the held item.
 
 ### World Saves
 - Desktop worlds now live as files in the Atlas save folder; browser worlds use the

@@ -13,19 +13,41 @@ const hud = read('src/components/ui/HUD.tsx');
 
 test('tooltip stats derive from the live gameplay registries, not magic numbers', () => {
     // Attack/defense/durability come from getItemStats/getMaxDurability (the
-    // combat + equipment code paths); tool class/tier/speed come from BLOCKS
-    // (the mining code path).
+    // combat + equipment code paths); tool class/tier/mining power come from
+    // BLOCKS (the mining code path).
     assert.match(tooltips, /import \{ getItemStats, getMaxDurability \} from '\.\/itemStats'/);
     assert.match(tooltips, /stats\?\.attack/);
     assert.match(tooltips, /def\.toolType/);
-    assert.match(tooltips, /def\.toolSpeed/);
     assert.match(tooltips, /stats\?\.defense/);
     assert.match(tooltips, /stack\.instance\?\.durability \?\? maxDurability/);
-    // Food + fuel lines match the eating/furnace math.
+    // Food line matches the eating math.
     assert.match(tooltips, /def\.nutrition \* \(def\.saturationModifier \?\? 0\) \* 2/);
-    assert.match(tooltips, /def\.fuelValue \/ 1000/);
     // Unbreakable special gear reads as such instead of showing nothing.
     assert.match(tooltips, /Unbreakable/);
+});
+
+test('mining power is a quantified stat from toolSpeed — no multiplier wording, no fuel line', () => {
+    // "Mining power 6.0" (the raw registry toolSpeed), never "×6 speed".
+    assert.match(tooltips, /Mining power \$\{def\.toolSpeed\.toFixed\(1\)\}/);
+    assert.match(tooltips, /Power \$\{def\.toolSpeed\.toFixed\(1\)\}/); // hotbar summary
+    assert.doesNotMatch(tooltips, /×\$\{def\.toolSpeed\}/);
+    assert.doesNotMatch(tooltips, /speed`/i);
+    // Fuel burn time is not a player-facing tooltip stat (furnace behavior and
+    // the isFuel/fuelValue data are unchanged).
+    assert.doesNotMatch(tooltips, /Fuel: burns/);
+    assert.doesNotMatch(tooltips, /fuelValue/);
+});
+
+test('hoes are explicitly excluded from mining stats, with the reason documented', () => {
+    // No tilling/farmland system → hoes have no toolType/toolSpeed in BLOCKS and
+    // no mining line; they still show Attack + Durability via ITEM_STATS.
+    assert.match(tooltips, /Hoes are deliberately absent/);
+    const blocks = read('src/data/blocks.ts');
+    assert.doesNotMatch(blocks, /BlockType\.WOOD_HOE\]:[^\n]*toolType/);
+    assert.doesNotMatch(blocks, /BlockType\.IRON_HOE\]:[^\n]*toolType/);
+    // Hoes DO have combat stats, so the tooltip still has content for them.
+    const stats = read('src/systems/registry/itemStats.ts');
+    assert.match(stats, /\[BlockType\.IRON_HOE\]:\s*tool\(/);
 });
 
 test('special gear carries how-to descriptions (polarity boots, boat, upgrade)', () => {

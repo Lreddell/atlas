@@ -84,7 +84,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'New armor HUD: defense pips above the hearts and per-piece durability icons at the bottom-left, with a red pulse when a piece is close to breaking.',
                     'Wool now weaves from wheat seeds (so beds are craftable in survival), packed ice crafts from ice, and Charged Magnetite and Magnetic Spikes have recipes.',
                     'Every tool, weapon, armor piece, and special item now has its own inventory and held-item artwork, including a dedicated icon for the Warden’s boot-upgrade drop.',
-                    'Inventory tooltips now show real gameplay stats — attack, tool class/tier/speed, defense, durability, food, and fuel — and the hotbar name plate carries a compact stat line for the held item.',
+                    'Inventory tooltips now show real gameplay stats — attack, tool class, harvest tier, mining power, defense, durability, and food — and the hotbar name plate carries a compact stat line for the held item.',
                 ],
             },
             {

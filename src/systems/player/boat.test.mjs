@@ -66,6 +66,17 @@ test('placement consumes the item in survival only; boarding is a right-click', 
     assert.match(app, /entityManager\.spawn\('boat'/);
 });
 
+test('boat placement follows the sealed-region edit policy', () => {
+    // The sealed check runs BEFORE the spawn (and before any item consumption),
+    // using the same canPlayerEdit gate (and denial feedback) as block placement.
+    const placeIdx = interaction.indexOf("held?.type === BlockType.BOAT && onPlaceBoat");
+    const block = interaction.slice(placeIdx, placeIdx + 400);
+    const guardIdx = block.indexOf('if (!canPlayerEdit(bx, by, bz)) return;');
+    const spawnIdx = block.indexOf('onPlaceBoat(bx, by, bz)');
+    assert.ok(guardIdx !== -1, 'boat placement must run the sealed-region edit check');
+    assert.ok(spawnIdx !== -1 && guardIdx < spawnIdx, 'the sealed check must precede the spawn/consume');
+});
+
 test('riding drives the entity; sneak dismounts and parks it', () => {
     assert.match(player, /boating && intent\.sneak && onExitBoat/);
     assert.match(player, /entityManager\.getEntity\(ridingBoatId\)/);
