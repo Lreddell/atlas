@@ -59,6 +59,8 @@ const CREATIVE_TABS: { id: CreativeTab, name: string, icon: BlockType }[] = [
     { id: 'ingredients', name: 'Ingredients', icon: BlockType.IRON_INGOT },
 ];
 
+const ARMOR_EQUIPMENT_SLOTS = EQUIPMENT_SLOTS.filter((slot) => slot !== 'accessory');
+
 const ITEM_SORT_ORDER: BlockType[] = [
     // --- BUILDING ---
     BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
@@ -498,6 +500,38 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         );
     };
 
+    const renderEquipmentSlot = (slot: EquipmentSlot) => {
+        const item = equipment[slot] ?? null;
+        return (
+            <div
+                key={slot}
+                className="relative"
+                onMouseDown={(e) => handleEquipMouseDown(slot, e)}
+                onMouseEnter={(e) => handleEquipEnter(slot, e)}
+                onMouseLeave={onSlotLeave}
+                title={slot}
+            >
+                <Slot item={item} size="large" />
+                {!item && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
+                        {slot}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
+    const renderPlayerInventory = () => (
+        <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+                {inventory.slice(9).map((item, index) => renderSlot(item, 'inventory', index + 9))}
+            </div>
+            <div className="grid grid-cols-9 gap-0 mt-2 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+                {inventory.slice(0, 9).map((item, index) => renderSlot(item, 'inventory', index))}
+            </div>
+        </div>
+    );
+
     const displayCursor = isDragging && startDragStack ? 
         (dragDist.remainder > 0 ? { ...startDragStack, count: dragDist.remainder } : null) 
         : cursorStack;
@@ -512,7 +546,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={e => { e.preventDefault(); stopPropagation(e); }}
         >
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : 'scale-110'}`} onClick={stopPropagation}>
+            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[904px]' : 'scale-110'}`} onClick={stopPropagation}>
                 
                 {openContainer.type === 'creative' && (
                     <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">
@@ -570,42 +604,35 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                         </div>
                     )}
 
-                    <div className="flex gap-6 justify-center">
-                        {(openContainer.type === 'inventory' || openContainer.type === 'creative') && (
-                            <div className="flex flex-col gap-1 justify-center mr-1">
-                                <div className="text-[#333] text-[10px] font-bold uppercase text-center mb-1">Armor</div>
-                                {EQUIPMENT_SLOTS.map((slot) => {
-                                    const it = equipment[slot] ?? null;
-                                    return (
-                                        <div
-                                            key={slot}
-                                            className="relative"
-                                            onMouseDown={(e) => handleEquipMouseDown(slot, e)}
-                                            onMouseEnter={(e) => handleEquipEnter(slot, e)}
-                                            onMouseLeave={onSlotLeave}
-                                            title={slot}
-                                        >
-                                            <Slot item={it} size="large" />
-                                            {!it && (
-                                                <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
-                                                    {slot}
-                                                </span>
-                                            )}
+                    {(openContainer.type === 'inventory' || openContainer.type === 'creative') ? (
+                        <div className="relative flex justify-center">
+                            <div className="relative">
+                                <div className="absolute right-full top-2 mr-6 flex items-start gap-1">
+                                    {renderEquipmentSlot('accessory')}
+                                    <div className="relative flex flex-col gap-1">
+                                        <div className="absolute bottom-full left-0 right-0 mb-1 text-[#333] text-[10px] font-bold uppercase text-center">Armor</div>
+                                        {ARMOR_EQUIPMENT_SLOTS.map(renderEquipmentSlot)}
+                                    </div>
+                                </div>
+
+                                {renderPlayerInventory()}
+
+                                {openContainer.type === 'inventory' && (
+                                    <div className="absolute left-full top-2 ml-0.5 flex w-[184px] items-center gap-0.5">
+                                        <div className="grid w-[116px] shrink-0 grid-cols-2 gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+                                            {craftingGrid2x2.map((item, index) => renderSlot(item, 'crafting', index))}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                        <div className="flex flex-col gap-2">
-                            <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
-                                {inventory.slice(9).map((it, i) => renderSlot(it, 'inventory', i + 9))}
-                            </div>
-                            <div className="grid grid-cols-9 gap-0 mt-2 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
-                                {inventory.slice(0, 9).map((it, i) => renderSlot(it, 'inventory', i))}
+                                        <div className="w-3 shrink-0 text-2xl text-[#333] font-bold text-center drop-shadow-sm">&rarr;</div>
+                                        <div className="shrink-0">{renderSlot(craftingOutput, 'output', 0)}</div>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        
-                        {openContainer.type !== 'chest' && openContainer.type !== 'creative' && (
+                    ) : (
+                        <div className="flex gap-6 justify-center">
+                            {renderPlayerInventory()}
+
+                            {openContainer.type !== 'chest' && (
                             <>
                                 <div className="w-px bg-black/20 self-stretch" />
                                 <div className="flex flex-col items-center justify-center min-w-[120px]">
@@ -654,8 +681,9 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                     )}
                                 </div>
                             </>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
             

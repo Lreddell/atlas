@@ -33,6 +33,15 @@ test('hotbar stacks reproduce the five-tick Minecraft item pop', () => {
     assert.match(styles, /animation: atlas-item-pop 250ms/);
 });
 
+test('player inventory stays centered with equipment attached on the left', () => {
+    assert.match(inventory, /openContainer\.type === 'inventory' \? 'w-\[904px\]'/);
+    assert.match(inventory, /relative flex justify-center/);
+    assert.match(inventory, /absolute right-full top-2 mr-6 flex items-start gap-1/);
+    assert.match(inventory, /renderEquipmentSlot\('accessory'\)/);
+    assert.match(inventory, /ARMOR_EQUIPMENT_SLOTS\.map\(renderEquipmentSlot\)/);
+    assert.match(inventory, /absolute left-full top-2 ml-0\.5 flex w-\[184px\] items-center gap-0\.5/);
+});
+
 test('selection and durability decorations overlay without resizing the item', () => {
     assert.match(slot, /absolute -inset-1[^\n]*border-4 border-white/);
     assert.match(slot, /w-\[26px\]/);
