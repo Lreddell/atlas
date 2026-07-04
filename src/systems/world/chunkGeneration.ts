@@ -17,6 +17,15 @@ import {
 } from './magneticFields';
 import { generateMagneticWardenArena, ARENA_PROTECTED_RADIUS } from './magneticArena';
 import { index3D } from './worldCoords';
+import {
+    isBreachColumn,
+    caveSurfaceTaper,
+    isCaveCarved,
+    caveBiomeAt,
+    isDeepslateAt,
+    type Noise2D,
+    type Noise3D,
+} from './caves';
 
 // Grassy-surface test: true for all grass-topped biome surface blocks (so
 // vegetation placement works on mossy/lush/dark/meadow/savanna/jungle grass,
@@ -313,6 +322,12 @@ function generateChunkInner(cx: number, cz: number) {
     const caveOx = noiseSet.offsets.cave.x;
     const caveOz = noiseSet.offsets.cave.z;
 
+    // Cave config + bound noise samplers, shared with the World Editor preview via
+    // systems/world/caves.ts (identical carving math in both places).
+    const caveCfg = GenConfig.caves;
+    const caveNoise2D: Noise2D = (px, pz) => noiseSet.cave.noise2D(px, pz);
+    const caveNoise3D: Noise3D = (px, py, pz) => noiseSet.cave.noise3D(px, py, pz);
+
     const seededRand01 = (x: number, y: number, z: number, salt: number): number => {
         let h = Math.imul((x | 0) ^ worldSeed, 374761393);
         h = Math.imul(h ^ ((y | 0) + salt), 668265263);
@@ -389,8 +404,7 @@ function generateChunkInner(cx: number, cz: number) {
             const cwz = wz + caveOz;
             const wdx = wx + noiseSet.offsets.weirdness.x;
             const wdz = wz + noiseSet.offsets.weirdness.z;
-            const breachNoise = noiseSet.cave.noise2D(cwx * 0.015, cwz * 0.015);
-            const isBreachZone = breachNoise > 0.05; 
+            const isBreachZone = isBreachColumn(cwx, cwz, caveNoise2D, caveCfg);
 
             // Loop from top (MAX_Y) down to bottom (MIN_Y)
             for (let y = MAX_Y; y >= MIN_Y; y--) {
@@ -463,66 +477,21 @@ function generateChunkInner(cx: number, cz: number) {
                         type = BlockType.DIRT;
                     }
                     
-                    if (y > MIN_Y) { 
+                    if (y > MIN_Y) {
                         if (biome.id === 'mesa_bryce' && y > baseHeight) {
                         } else {
-                            let isCave = false;
+                            // Deep-stone: plain stone below the deepslate band becomes
+                            // deepslate (jagged hash-blended boundary). Biome-special
+                            // solids (magnetite, terracotta, basalt) are untouched.
+                            if (type === BlockType.STONE && isDeepslateAt(y, seededRand01(wx, y, wz, 71), caveCfg)) {
+                                type = BlockType.DEEPSLATE;
+                            }
+
+                            // Carve caves (config-driven; identical to the editor preview).
                             const depth = height - y;
-
-                            let surfaceTaper = 1.0;
-                            if (depth < 20) {
-                                surfaceTaper = depth / 20.0;
-                                if (isBreachZone) {
-                                    surfaceTaper = Math.max(0.6, surfaceTaper);
-                                }
-                            }
-
-                            const wormFreq = 0.02;
-                            const wormThresh = 0.15 * surfaceTaper; 
-                            const wc1 = noiseSet.cave.noise3D(cwx * wormFreq, y * wormFreq * 1.2, cwz * wormFreq);
-                            if (Math.abs(wc1) < wormThresh) {
-                                const wc2 = noiseSet.cave.noise3D(cwx * wormFreq + 123.4, y * wormFreq * 1.2 + 123.4, cwz * wormFreq + 123.4);
-                                const wormVal = Math.sqrt(wc1*wc1 + wc2*wc2);
-                                if (wormVal < wormThresh) isCave = true;
-                            }
-
-                            if (!isCave && depth > 15) {
-                                const megaMask = noiseSet.cave.noise3D(cwx * 0.005, y * 0.02, cwz * 0.005);
-                                if (megaMask > 0.5) { 
-                                    const megaFreq = 0.012; 
-                                    const megaThresh = 0.25;
-                                    const mc1 = noiseSet.cave.noise3D(cwx * megaFreq + 99, y * megaFreq + 99, cwz * megaFreq + 99);
-                                    if (Math.abs(mc1) < megaThresh) {
-                                        const mc2 = noiseSet.cave.noise3D(cwx * megaFreq + 88, y * megaFreq + 88, cwz * megaFreq + 88);
-                                        const megaVal = Math.sqrt(mc1*mc1 + mc2*mc2);
-                                        if (megaVal < megaThresh) isCave = true; 
-                                    }
-                                }
-                            }
-
-                            if (!isCave) {
-                                const noodleFreq = 0.05; 
-                                const noodleMask = noiseSet.cave.noise3D(cwx * 0.01 + 222, y * 0.01, cwz * 0.01 + 222);
-                                if (noodleMask > 0.2) {
-                                    const noodleThresh = 0.08 * surfaceTaper;
-                                    const nc1 = noiseSet.cave.noise3D(cwx * noodleFreq + 555, y * noodleFreq, cwz * noodleFreq + 555);
-                                    if (Math.abs(nc1) < noodleThresh) {
-                                        const nc2 = noiseSet.cave.noise3D(cwx * noodleFreq + 444, y * noodleFreq, cwz * noodleFreq + 444);
-                                        const noodleVal = Math.sqrt(nc1*nc1 + nc2*nc2);
-                                        if (noodleVal < noodleThresh) isCave = true;
-                                    }
-                                }
-                            }
-                            
-                            if (!isCave && depth > 10 && y < 0) {
-                                const cheeseFreq = 0.03;
-                                const cheeseVal = noiseSet.cave.noise3D(cwx * cheeseFreq + 777, y * cheeseFreq + 777, cwz * cheeseFreq + 777);
-                                if (cheeseVal > 0.45) isCave = true; 
-                            }
-
-                            if (isCave) {
-                                if (y <= MIN_Y + 10) type = BlockType.LAVA;
-                                else type = BlockType.AIR;
+                            const taper = caveSurfaceTaper(depth, isBreachZone, caveCfg);
+                            if (isCaveCarved(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg)) {
+                                type = (y <= MIN_Y + caveCfg.lavaLevel) ? BlockType.LAVA : BlockType.AIR;
                             }
                         }
                     }
@@ -542,10 +511,11 @@ function generateChunkInner(cx: number, cz: number) {
             }
 
             // --- 1.18 ORE GENERATION ---
-            const stoneTop = height - 1; 
+            const stoneTop = height - 1;
             for (let y = MIN_Y + 1; y <= stoneTop; y++) {
                 const index = index3D(x, y, z);
-                if (blocks[index] !== BlockType.STONE) continue;
+                // Ores host in both stone and deepslate (the deep band is deepslate).
+                if (blocks[index] !== BlockType.STONE && blocks[index] !== BlockType.DEEPSLATE) continue;
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
@@ -988,6 +958,106 @@ function generateChunkInner(cx: number, cz: number) {
                 minX: worldX, maxX: worldX + CHUNK_SIZE - 1,
                 minZ: worldZ, maxZ: worldZ + CHUNK_SIZE - 1,
             });
+        }
+    }
+
+    // 2d. Cave decoration pass — dripstone, glow lichen, and moss keyed by the
+    // cave-biome region for a column. Runs before the light scan so emissive
+    // lichen seeds block light. Chunk-local, deterministic (hash + noise).
+    const YZ_STRIDE = CHUNK_SIZE * CHUNK_SIZE;
+    const isCaveRock = (t: BlockType): boolean => {
+        if (t === BlockType.AIR || t === BlockType.WATER || t === BlockType.LAVA) return false;
+        const d = BLOCKS[t];
+        return !!d && !d.transparent && !d.noCollision;
+    };
+    if (caveCfg.enabled && caveCfg.decorate) {
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            for (let z = 0; z < CHUNK_SIZE; z++) {
+                const wx = worldX + x, wz = worldZ + z;
+                if (getBiome(wx, wz, noiseSet).id === 'magnetic_fields') continue;
+                const surfaceY = getTerrainHeight(wx, wz, noiseSet);
+                const cwx = wx + caveOx, cwz = wz + caveOz;
+                const region = caveBiomeAt(cwx, cwz, caveNoise2D, caveCfg);
+                const topY = Math.min(surfaceY - 6, 72);
+                for (let y = MIN_Y + 2; y <= topY; y++) {
+                    const idx = index3D(x, y, z);
+                    if (blocks[idx] !== BlockType.AIR) continue;
+                    const belowIdx = idx - YZ_STRIDE, aboveIdx = idx + YZ_STRIDE;
+                    const below = blocks[belowIdx], above = blocks[aboveIdx];
+                    const onFloor = isCaveRock(below), onCeil = isCaveRock(above);
+                    if (!onFloor && !onCeil) continue;
+                    const r = (salt: number) => seededRand01(wx, y, wz, salt);
+                    const isPlainRock = (t: BlockType) => t === BlockType.STONE || t === BlockType.DEEPSLATE;
+
+                    // Ambient glow lichen (all regions) — a little natural cave light.
+                    if (onCeil && r(90) < caveCfg.glowLichenChance) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+
+                    if (region === 'dripstone') {
+                        if (onCeil && r(91) < caveCfg.dripstoneChance) {
+                            blocks[idx] = BlockType.POINTED_DRIPSTONE;
+                            if (isPlainRock(above)) blocks[aboveIdx] = BlockType.DRIPSTONE_BLOCK;
+                            continue;
+                        }
+                        if (onFloor && r(92) < caveCfg.dripstoneChance) {
+                            blocks[idx] = BlockType.POINTED_DRIPSTONE;
+                            if (isPlainRock(below)) blocks[belowIdx] = BlockType.DRIPSTONE_BLOCK;
+                            continue;
+                        }
+                        if (onFloor && isPlainRock(below) && r(93) < 0.18) blocks[belowIdx] = BlockType.DRIPSTONE_BLOCK;
+                    } else if (region === 'lush') {
+                        if (onFloor && (isPlainRock(below) || below === BlockType.DIRT)) {
+                            if (r(94) < caveCfg.mossChance) blocks[belowIdx] = BlockType.MOSS_BLOCK;
+                            if (r(95) < 0.10) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+                        }
+                        if (onCeil && r(96) < caveCfg.glowLichenChance * 1.6) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2e. Amethyst geodes — rare hollow calcite/amethyst pockets deep underground.
+    // Rooted on a coarse world grid (so a geode crossing a chunk border is built
+    // identically by every overlapping chunk) and only overwriting plain rock/air.
+    if (caveCfg.enabled && caveCfg.decorate && caveCfg.geodeRarity > 0) {
+        const R = 4;
+        const pad = R + 1;
+        const geodeReplaceable = (t: BlockType) =>
+            t === BlockType.STONE || t === BlockType.DEEPSLATE || t === BlockType.AIR
+            || t === BlockType.COBBLED_DEEPSLATE || t === BlockType.DRIPSTONE_BLOCK;
+        for (let gx = worldX - pad; gx < worldX + CHUNK_SIZE + pad; gx++) {
+            if ((gx & 7) !== 0) continue;
+            for (let gz = worldZ - pad; gz < worldZ + CHUNK_SIZE + pad; gz++) {
+                if ((gz & 7) !== 0) continue;
+                if (seededRand01(gx, 0, gz, 240) >= caveCfg.geodeRarity) continue;
+                if (getBiome(gx, gz, noiseSet).id === 'magnetic_fields') continue;
+                const surfaceY = getTerrainHeight(gx, gz, noiseSet);
+                const centerY = MIN_Y + 10 + Math.floor(seededRand01(gx, 1, gz, 241) * 26);
+                if (centerY > surfaceY - R - 6) continue; // keep the shell well underground
+                for (let dx = -R; dx <= R; dx++) {
+                    const lx = gx + dx - worldX;
+                    if (lx < 0 || lx >= CHUNK_SIZE) continue;
+                    for (let dz = -R; dz <= R; dz++) {
+                        const lz = gz + dz - worldZ;
+                        if (lz < 0 || lz >= CHUNK_SIZE) continue;
+                        for (let dy = -R; dy <= R; dy++) {
+                            const wy = centerY + dy;
+                            if (wy <= MIN_Y || wy >= MAX_Y) continue;
+                            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            if (d > R + 0.5) continue;
+                            const idx = index3D(lx, wy, lz);
+                            if (!geodeReplaceable(blocks[idx])) continue;
+                            const gwx = gx + dx, gwz = gz + dz;
+                            let t: BlockType;
+                            if (d <= R - 2.6) t = BlockType.AIR;                                   // hollow core
+                            else if (d <= R - 2.0) t = seededRand01(gwx, wy, gwz, 242) < 0.5 ? BlockType.AMETHYST_CLUSTER : BlockType.AIR;
+                            else if (d <= R - 1.0) t = seededRand01(gwx, wy, gwz, 243) < 0.22 ? BlockType.BUDDING_AMETHYST : BlockType.AMETHYST_BLOCK;
+                            else t = BlockType.CALCITE;                                            // shell
+                            blocks[idx] = t;
+                        }
+                    }
+                }
+            }
         }
     }
 

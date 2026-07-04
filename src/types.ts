@@ -268,10 +268,24 @@ export enum BlockType {
   MAGNETITE_BRICKS = 252,
   MAGNETITE_BRICK_SLAB = 253,
   MAGNETITE_BRICK_STAIRS = 254,
-  CHISELED_MAGNETITE = 255
+  CHISELED_MAGNETITE = 255,
   // NOTE: the solid "Positive/Negative Magnetite Block" traversal sources reuse
   // the existing POSITIVE_MAGNET (190) / NEGATIVE_MAGNET (191) ids for save
   // compatibility; only their user-facing names are magnetite-themed.
+
+  // --- Cave content (deep-stone, dripstone, lush, amethyst) ---
+  // Block ids 211-255 are packed, so these reuse free low ids (50-59). Texture
+  // slots 217-226 (the atlas grows to fit). See systems/world/caves.ts.
+  DEEPSLATE = 50,           // deep-stone below the deepslate band; harder than stone
+  COBBLED_DEEPSLATE = 51,   // deepslate's cobble (mining drop / building block)
+  DRIPSTONE_BLOCK = 52,     // dripstone-cave bedrock lumps
+  POINTED_DRIPSTONE = 53,   // cross-plane stalactite/stalagmite
+  MOSS_BLOCK = 54,          // lush-cave floor carpeting
+  GLOW_LICHEN = 55,         // cross-plane emissive cave lichen (natural cave light)
+  AMETHYST_BLOCK = 56,      // amethyst geode inner lining
+  BUDDING_AMETHYST = 57,    // amethyst geode core (grows clusters; drops nothing)
+  AMETHYST_CLUSTER = 58,    // cross-plane emissive amethyst crystal cluster
+  CALCITE = 59,             // amethyst geode shell / white deep-cave accent
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

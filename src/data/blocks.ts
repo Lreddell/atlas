@@ -374,7 +374,29 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.MAGNETITE_SLAB]: { id: BlockType.MAGNETITE_SLAB, color: '#4a4a55', name: 'Magnetite Slab', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_SLAB, chance: 1, min: 1, max: 1 }] },
   [BlockType.MAGNETITE_STAIRS]: { id: BlockType.MAGNETITE_STAIRS, color: '#4a4a55', name: 'Magnetite Stairs', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_STAIRS, chance: 1, min: 1, max: 1 }] },
   [BlockType.MAGNETITE_BRICK_SLAB]: { id: BlockType.MAGNETITE_BRICK_SLAB, color: '#43434f', name: 'Magnetite Brick Slab', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] }
+  [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
+
+  // ===== Cave content (deep-stone, dripstone, lush, amethyst) =====
+  // Deepslate — the harder deep-stone that replaces stone below the deepslate
+  // band; mines into cobbled deepslate exactly like stone → cobblestone.
+  [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#4a4a52', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#3f3f47', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.DEEPSLATE, category: 'building', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+
+  // Dripstone caves — lumpy dripstone bedrock + cross-plane pointed dripstone
+  // (stalactites hang, stalagmites stand). Pointed dripstone keeps collision.
+  [BlockType.DRIPSTONE_BLOCK]: { id: BlockType.DRIPSTONE_BLOCK, color: '#8a6a55', name: 'Dripstone Block', textureSlot: 219, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.DRIPSTONE_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.POINTED_DRIPSTONE]: { id: BlockType.POINTED_DRIPSTONE, color: '#9a745c', name: 'Pointed Dripstone', textureSlot: 220, transparent: true, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POINTED_DRIPSTONE, chance: 1, min: 1, max: 1 }] },
+
+  // Lush caves — moss carpeting + emissive glow lichen that lights caves softly.
+  [BlockType.MOSS_BLOCK]: { id: BlockType.MOSS_BLOCK, color: '#5a7a35', name: 'Moss Block', textureSlot: 221, hardness: 0.3, preferredTool: 'shovel', category: 'natural', drops: [{ type: BlockType.MOSS_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: BlockType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }] },
+
+  // Amethyst geodes — calcite shell, amethyst lining, budding cores that grow
+  // faceted (emissive) clusters. Budding amethyst can't be harvested (drops []).
+  [BlockType.AMETHYST_BLOCK]: { id: BlockType.AMETHYST_BLOCK, color: '#8b5fc9', name: 'Amethyst Block', textureSlot: 223, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.AMETHYST_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.BUDDING_AMETHYST]: { id: BlockType.BUDDING_AMETHYST, color: '#9264d0', name: 'Budding Amethyst', textureSlot: 224, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [] },
+  [BlockType.AMETHYST_CLUSTER]: { id: BlockType.AMETHYST_CLUSTER, color: '#b389e6', name: 'Amethyst Cluster', textureSlot: 225, transparent: true, noCollision: true, hardness: 0.6, lightLevel: 5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.AMETHYST_CLUSTER, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CALCITE]: { id: BlockType.CALCITE, color: '#dcdcd6', name: 'Calcite', textureSlot: 226, hardness: 0.75, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CALCITE, chance: 1, min: 1, max: 1 }] }
 };
 
 export const ATLAS_COLS = 8;

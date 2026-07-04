@@ -37,6 +37,7 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Explore the expanded Magnetic Fields — ruins, pylons, launch pads, and loot caches — and defeat the Magnetic Warden.',
             'Master polarity boots to attract, repel, launch, and climb through magnetic terrain.',
             'Discover 13 new biomes (now with real swamps and sandy beaches), three new wood families, and many biome-specific blocks.',
+            'Delve overhauled caves — deepslate depths, dripstone caverns, glowing lush hollows, and amethyst geodes — all tunable live in the World Editor.',
             'Craft full armor sets with an on-screen defense and durability readout, and sail a craftable boat.',
             'Safer local world saves now migrate automatically and finish saving when you quit.',
             'Major polish for shaped blocks, lighting, music, menus, controls, and update notes.',
@@ -52,6 +53,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Polarity Boots let you switch attraction and repulsion around red and blue magnets, launch between structures, and climb magnetic walls. The Warden drops an upgrade that adds an on/off toggle. Magnet forces no longer spike at point-blank range.',
                     'Defeated bosses, cleansed regions, and equipment persist with each world. Dying or leaving the arena resets an unfinished fight so it can be summoned again.',
                     'The World Editor now fully edits Magnetic Fields generation (size, rarity, tiers, arena, blending), can find and jump to the nearest Warden arena, copy its teleport command, and reads out tier/center/field values under the cursor.',
+                    'A new World Editor Caves tab exposes every cave attribute — each carving layer, the deepslate band, and all decoration densities — over a live vertical cross-section preview that redraws as you tune, so you can see exactly how the caves will look.',
                 ],
             },
             {
@@ -62,6 +64,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Volcanic Crags is a normal (unsealed) biome again — it previously claimed to be a boss region that had no boss, leaving it permanently unmineable.',
                     'New terrain includes distinct ground cover and vegetation, jagged snowy mountains, packed-ice spires, muddy wetlands, rocky shores, and auroras in snowy regions.',
                     'Added jungle, dark oak, and acacia trees with matching planks, saplings, slabs, stairs, crafting recipes, and dedicated textures.',
+                    'Overhauled caves: layered spaghetti tunnels, cheese caverns, noodle threads, and deep swiss-cheese holes now carve deepslate depths, with dripstone caverns (pointed dripstone), lush hollows (moss + emissive glow lichen that lights the dark), and rare amethyst geodes.',
                     'Stairs form corner shapes when placed against neighbouring stairs, and matching slabs merge back into full blocks.',
                     'Light, smooth shading, and ambient occlusion now respect the solid and open parts of slabs and stairs without over-darkening them.',
                     'Selection outlines, inventory icons, held and dropped models, plants, and torches now follow the real shape and support surface of slabs and stairs.',

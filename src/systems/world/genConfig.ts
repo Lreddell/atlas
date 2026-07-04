@@ -76,6 +76,58 @@ export const DEFAULTS = {
         globalScale: 1.0,
         seaLevel: 63
     },
+    // Cave system. Every carving + decoration knob the generator reads lives here
+    // (previously hardcoded in chunkGeneration.ts) so the World Editor can expose
+    // and preview all of it. See systems/world/caves.ts for the sampler that both
+    // the generator and the editor cross-section preview call.
+    caves: {
+        enabled: true,             // master toggle: off = solid underground (no carving)
+        surfaceTaperDepth: 20,     // caves fade in over the first N blocks below the surface
+        breachFreq: 0.015,         // low-freq mask: where cave mouths are allowed to breach daylight
+        breachThreshold: 0.05,
+
+        // Spaghetti / worm caves — the primary long winding tunnels.
+        wormEnabled: true,
+        wormFreq: 0.02,            // smaller = larger, smoother tunnels
+        wormThreshold: 0.15,       // larger = wider/more tunnels
+        wormYScale: 1.2,           // vertical frequency multiplier (>1 = flatter tunnels)
+
+        // Cheese caverns — big open rooms, gated to deeper rock by a coarse mask.
+        cavernEnabled: true,
+        cavernMinDepth: 15,        // no caverns until this deep below the surface
+        cavernMaskThreshold: 0.5,  // coarse mask gate (larger = rarer caverns)
+        cavernFreq: 0.012,
+        cavernThreshold: 0.25,     // larger = bigger caverns
+
+        // Noodle caves — thin secondary tunnels threading between the big ones.
+        noodleEnabled: true,
+        noodleFreq: 0.05,
+        noodleMaskThreshold: 0.2,
+        noodleThreshold: 0.08,
+
+        // Deep "swiss cheese" holes near the world floor.
+        deepCheeseEnabled: true,
+        deepCheeseMaxY: 0,         // only below this Y
+        deepCheeseFreq: 0.03,
+        deepCheeseThreshold: 0.45, // larger = fewer holes
+
+        lavaLevel: 10,             // carved cells at/below MIN_Y + this flood with lava
+
+        // Deepslate band — stone turns to deepslate with a jagged blend.
+        deepslateStartY: 8,        // stone above this Y stays stone
+        deepslateFullY: -4,        // fully deepslate at/below this Y
+
+        // Decoration pass — cave-biome regions + feature densities.
+        decorate: true,            // master toggle for all cave decoration below
+        lushFreq: 0.008,           // lush-cave region noise (moss + glow berries feel)
+        lushThreshold: 0.33,       // larger = rarer lush regions
+        dripstoneFreq: 0.009,      // dripstone-cave region noise
+        dripstoneThreshold: 0.33,  // larger = rarer dripstone regions
+        glowLichenChance: 0.05,    // emissive lichen on cave ceilings/walls (ambient light)
+        mossChance: 0.55,          // moss coverage on lush-region cave floors
+        dripstoneChance: 0.16,     // pointed dripstone frequency in dripstone regions
+        geodeRarity: 0.0016,       // amethyst-geode chance per deep candidate column
+    },
     // Domain warp applied to every climate channel's sample coordinates. Enabled
     // by default so biome borders and coastlines read as organic, fractal edges
     // instead of smooth single-octave blobs. Old exported presets carry their own

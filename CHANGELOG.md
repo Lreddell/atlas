@@ -18,6 +18,8 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Master polarity boots to attract, repel, launch, and climb through magnetic terrain.
 - Discover 13 new biomes (now with real swamps and sandy beaches), three new wood
   families, and many biome-specific blocks.
+- Delve overhauled caves — deepslate depths, dripstone caverns, glowing lush hollows,
+  and amethyst geodes — all tunable live in the World Editor.
 - Craft full armor sets with an on-screen defense and durability readout, and sail a
   craftable boat.
 - Safer local world saves now migrate automatically and finish saving when you quit.
@@ -42,6 +44,9 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - The World Editor now fully edits Magnetic Fields generation (size, rarity, tiers,
   arena, blending), can find and jump to the nearest Warden arena, copy its teleport
   command, and reads out tier/center/field values under the cursor.
+- A new World Editor Caves tab exposes every cave attribute — each carving layer, the
+  deepslate band, and all decoration densities — over a live vertical cross-section
+  preview that redraws as you tune, so you can see exactly how the caves will look.
 
 ### World Generation & Building
 - Added Birch Forest, Flower Forest, Dark Forest, Meadow, Savanna, Jungle, Taiga,
@@ -56,6 +61,10 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   packed-ice spires, muddy wetlands, rocky shores, and auroras in snowy regions.
 - Added jungle, dark oak, and acacia trees with matching planks, saplings, slabs,
   stairs, crafting recipes, and dedicated textures.
+- Overhauled caves: layered spaghetti tunnels, cheese caverns, noodle threads, and
+  deep swiss-cheese holes now carve deepslate depths, with dripstone caverns (pointed
+  dripstone), lush hollows (moss + emissive glow lichen that lights the dark), and
+  rare amethyst geodes (calcite shell, budding amethyst, glowing clusters).
 - Stairs form corner shapes when placed against neighbouring stairs, and matching
   slabs merge back into full blocks.
 - Light, smooth shading, and ambient occlusion now respect the solid and open parts

@@ -215,4 +215,16 @@ export const TEXTURE_PATHS: Record<number, string> = {
     // --- ITEMS (procedural fallbacks; PNGs are optional overrides) ---
     215: 'items/polarity_boots_upgrade.png',
     216: 'items/boat.png',
+
+    // --- CAVE CONTENT (procedural; PNGs are optional overrides) ---
+    217: 'blocks/deepslate.png',
+    218: 'blocks/cobbled_deepslate.png',
+    219: 'blocks/dripstone_block.png',
+    220: 'blocks/pointed_dripstone.png',
+    221: 'blocks/moss_block.png',
+    222: 'blocks/glow_lichen.png',
+    223: 'blocks/amethyst_block.png',
+    224: 'blocks/budding_amethyst.png',
+    225: 'blocks/amethyst_cluster.png',
+    226: 'blocks/calcite.png',
 };

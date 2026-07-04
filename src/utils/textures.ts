@@ -1017,6 +1017,104 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(2, 2, 1, 1); ctx.fillRect(13, 2, 1, 1); ctx.fillRect(2, 13, 1, 1); ctx.fillRect(13, 13, 1, 1);
     });
 
+    // ===== Cave content tiles (deep-stone, dripstone, lush, amethyst) =====
+    const speckle = (color: string, n: number) => {
+        ctx.fillStyle = color;
+        for (let i = 0; i < n; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+    };
+
+    // 217: Deepslate — darker, bluer stone with a faint banded grain.
+    withTile(217, () => {
+        fill('#4a4a52');
+        speckle('#35353c', 30);
+        speckle('#5c5c66', 20);
+        ctx.fillStyle = '#3a3a42';
+        for (let y = 2; y < 16; y += 5) ctx.fillRect(0, y, 16, 1);
+    });
+    // 218: Cobbled Deepslate — deepslate-toned cobble cells with dark mortar.
+    withTile(218, () => {
+        fill('#3f3f47');
+        ctx.fillStyle = '#2b2b31';
+        for (let x = 0; x < 16; x++) for (let y = 0; y < 16; y++) if ((x % 8 === 0 || y % 8 === 0 || (x % 8 === 4 && y % 8 === 4)) && Math.random() < 0.6) ctx.fillRect(x, y, 1, 1);
+        speckle('#52525c', 16);
+        speckle('#2b2b31', 12);
+    });
+    // 219: Dripstone Block — warm mottled brown with vertical drip streaks.
+    withTile(219, () => {
+        fill('#8a6a55');
+        speckle('#6e5040', 26);
+        speckle('#a5896f', 16);
+        ctx.fillStyle = '#6e5040';
+        ctx.fillRect(4, 0, 1, 7); ctx.fillRect(10, 3, 1, 9); ctx.fillRect(13, 0, 1, 5);
+    });
+    // 220: Pointed Dripstone — cross-plane spindle (points at both ends so it
+    // reads whether hung as a stalactite or stood up as a stalagmite).
+    withTile(220, () => {
+        const set = (x: number, y: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); };
+        const spans: [number, number, number][] = [
+            [7, 0, 1], [7, 1, 2], [6, 2, 3], [6, 3, 3], [5, 4, 4], [5, 5, 4],
+            [5, 6, 5], [5, 7, 5], [5, 8, 5], [5, 9, 4], [6, 10, 3], [6, 11, 3], [7, 12, 2], [7, 13, 1], [7, 14, 1], [8, 15, 1],
+        ];
+        for (const [x, y, w] of spans) { for (let i = 0; i < w; i++) set(x + i, y, '#9a745c'); }
+        for (const [x, y, w] of spans) { set(x, y, '#b89478'); set(x + w - 1, y, '#6e5040'); }
+    });
+    // 221: Moss Block — fuzzy lush green.
+    withTile(221, () => {
+        fill('#5a7a35');
+        speckle('#3f5a22', 34);
+        speckle('#7fa04a', 26);
+        speckle('#87ad52', 10);
+    });
+    // 222: Glow Lichen — sparse emissive lichen network on a transparent tile.
+    withTile(222, () => {
+        const dots: [number, number][] = [
+            [2, 3], [3, 3], [3, 4], [4, 4], [2, 5], [7, 2], [8, 2], [8, 3], [9, 3], [13, 4], [12, 4], [13, 5],
+            [4, 9], [5, 9], [5, 10], [6, 10], [10, 8], [11, 8], [11, 9], [3, 13], [4, 13], [12, 12], [13, 12], [9, 13], [10, 13],
+        ];
+        ctx.fillStyle = '#4f8f6a';
+        for (const [x, y] of dots) ctx.fillRect(x, y, 1, 1);
+        ctx.fillStyle = '#6fae8a';
+        for (const [x, y] of dots) if (Math.random() < 0.6) ctx.fillRect(x, y, 1, 1);
+        ctx.fillStyle = '#b6f2d4';
+        for (const [x, y] of dots) if (Math.random() < 0.28) ctx.fillRect(x, y, 1, 1);
+    });
+    // 223: Amethyst Block — faceted purple with bright glints.
+    withTile(223, () => {
+        fill('#8b5fc9');
+        ctx.fillStyle = '#6a3fb0';
+        for (let i = 0; i < 16; i++) ctx.fillRect((i * 5) % 16, (i * 3) % 16, 2, 2);
+        speckle('#a97fe0', 18);
+        ctx.fillStyle = '#e6d4ff'; ctx.fillRect(3, 3, 2, 2); ctx.fillRect(10, 9, 2, 2); ctx.fillRect(8, 4, 1, 1);
+    });
+    // 224: Budding Amethyst — darker amethyst with four growing bud nubs.
+    withTile(224, () => {
+        fill('#7a4fb8');
+        speckle('#5a3298', 22);
+        ctx.fillStyle = '#c9a6f0';
+        ctx.fillRect(2, 2, 2, 2); ctx.fillRect(12, 3, 2, 2); ctx.fillRect(3, 12, 2, 2); ctx.fillRect(11, 11, 3, 3);
+        ctx.fillStyle = '#efe0ff'; ctx.fillRect(12, 12, 1, 1); ctx.fillRect(2, 2, 1, 1);
+    });
+    // 225: Amethyst Cluster — cross-plane clump of upright faceted crystals.
+    withTile(225, () => {
+        const shard = (cx: number, baseY: number, h: number) => {
+            for (let r = 0; r < h; r++) {
+                const half = Math.max(0, Math.floor((h - r) / 3));
+                ctx.fillStyle = '#a06fdc';
+                for (let x = cx - half; x <= cx + half; x++) ctx.fillRect(x, baseY - r, 1, 1);
+                ctx.fillStyle = '#c9a6f0'; ctx.fillRect(cx - half, baseY - r, 1, 1);
+                ctx.fillStyle = '#7a4fb8'; ctx.fillRect(cx + half, baseY - r, 1, 1);
+            }
+            ctx.fillStyle = '#efe0ff'; ctx.fillRect(cx, baseY - h + 1, 1, 1);
+        };
+        shard(4, 15, 8); shard(8, 15, 12); shard(11, 15, 7); shard(13, 15, 5);
+    });
+    // 226: Calcite — bright near-white with faint gray mottle.
+    withTile(226, () => {
+        fill('#dcdcd6');
+        speckle('#c2c2ba', 26);
+        speckle('#f0f0ea', 22);
+    });
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);

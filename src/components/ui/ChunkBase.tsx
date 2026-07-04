@@ -8,7 +8,9 @@ import {
 } from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
 import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, normalizeGenConfigSnapshot, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
-import { CHUNK_SIZE } from '../../constants';
+import { isBreachColumn, caveSurfaceTaper, isCaveCarved, isDeepslateAt } from '../../systems/world/caves';
+import { CHUNK_SIZE, MIN_Y } from '../../constants';
+import type { NoiseSet } from '../../utils/noise';
 import { worldManager } from '../../systems/WorldManager';
 import { createNoiseSet, hashSeed } from '../../utils/noise';
 import { deleteWorldGenPresetAsync, getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, saveWorldGenPresetAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
@@ -58,8 +60,8 @@ const MfNum = ({ label, title, value, step, onChange, onReset }: {
 );
 
 const ResetBtn = ({ onClick }: { onClick: () => void }) => (
-    <button 
-        onClick={onClick} 
+    <button
+        onClick={onClick}
         className="ml-2 w-6 flex-shrink-0 flex items-center justify-center bg-[#444] hover:bg-[#555] text-xs rounded text-gray-200 border border-gray-600 aspect-square"
         title="Reset"
         aria-label="Reset"
@@ -67,6 +69,101 @@ const ResetBtn = ({ onClick }: { onClick: () => void }) => (
         R
     </button>
 );
+
+// Vertical cave cross-section preview. Samples the REAL cave functions
+// (systems/world/caves.ts) along an X strip at the map centre's Z, from y=140
+// down to the world floor, so tuning a cave slider immediately shows how the
+// carve changes. Same math the generator runs — this is a faithful side view.
+const CROSS_TOP_Y = 140;
+const CaveCrossSection: React.FC<{
+    centerX: number;
+    centerZ: number;
+    noiseSet: NoiseSet;
+    version: number;
+    width: number;
+    blocksPerPx?: number;
+}> = ({ centerX, centerZ, noiseSet, version, width, blocksPerPx = 1.4 }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const height = 240;
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const cfg = GenConfig.caves;
+        const seaLevel = GenConfig.height.seaLevel;
+        const caveOx = noiseSet.offsets.cave.x;
+        const caveOz = noiseSet.offsets.cave.z;
+        const caveNoise2D = (px: number, pz: number) => noiseSet.cave.noise2D(px, pz);
+        const caveNoise3D = (px: number, py: number, pz: number) => noiseSet.cave.noise3D(px, py, pz);
+        // Cheap deterministic hash for the deepslate blend (illustrative — the
+        // carve shape above is exact; the speckled boundary need only look right).
+        const hash01 = (x: number, y: number, z: number) => {
+            let h = Math.imul(x ^ 0x9e3779b9, 374761393);
+            h = Math.imul(h ^ (y + 101), 668265263);
+            h = Math.imul(h ^ (z - 101), 2147483647);
+            h ^= h >>> 13; return (h >>> 0) / 4294967296;
+        };
+
+        const STEP = 2;
+        const rw = Math.max(1, Math.ceil(width / STEP));
+        const rh = Math.max(1, Math.ceil(height / STEP));
+        const img = ctx.createImageData(rw, rh);
+        const data = img.data;
+        const bottomY = MIN_Y;
+        const yRange = CROSS_TOP_Y - bottomY;
+
+        for (let px = 0; px < rw; px++) {
+            const wx = Math.round(centerX + (px - rw / 2) * blocksPerPx * STEP);
+            const h = getTerrainHeight(wx, centerZ, noiseSet);
+            const isBreach = isBreachColumn(wx + caveOx, centerZ + caveOz, caveNoise2D, cfg);
+            for (let py = 0; py < rh; py++) {
+                const wy = Math.round(CROSS_TOP_Y - (py / rh) * yRange);
+                let r = 20, g = 28, b = 38; // sky
+                if (wy <= bottomY) { r = 12; g = 12; b = 14; } // bedrock floor
+                else if (wy > h) {
+                    if (wy <= seaLevel) { r = 26; g = 78; b = 116; } // water column
+                } else {
+                    const depth = h - wy;
+                    const taper = caveSurfaceTaper(depth, isBreach, cfg);
+                    if (isCaveCarved(wx + caveOx, wy, centerZ + caveOz, depth, taper, caveNoise3D, cfg)) {
+                        if (wy <= bottomY + cfg.lavaLevel) { r = 224; g = 98; b = 30; } // lava
+                        else { r = 8; g = 8; b = 10; } // cave void
+                    } else if (wy === h) { r = 74; g = 122; b = 60; } // surface skin
+                    else if (isDeepslateAt(wy, hash01(wx, wy, centerZ), cfg)) { r = 64; g = 64; b = 74; }
+                    else { r = 116; g = 116; b = 116; } // stone
+                }
+                const i = (py * rw + px) * 4;
+                data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
+            }
+        }
+
+        const tmp = document.createElement('canvas');
+        tmp.width = rw; tmp.height = rh;
+        tmp.getContext('2d')?.putImageData(img, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(tmp, 0, 0, width, height);
+
+        // Reference lines: sea level + y=0, with labels.
+        const yToPx = (wy: number) => ((CROSS_TOP_Y - wy) / yRange) * height;
+        ctx.font = '9px monospace'; ctx.textBaseline = 'bottom';
+        for (const [wy, label, col] of [[seaLevel, `y=${seaLevel} (sea)`, 'rgba(90,180,255,0.5)'], [0, 'y=0', 'rgba(255,255,255,0.35)'], [bottomY + cfg.lavaLevel, 'lava', 'rgba(255,140,60,0.5)']] as [number, string, string][]) {
+            const sy = yToPx(wy);
+            if (sy < 0 || sy > height) continue;
+            ctx.strokeStyle = col; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(width, sy); ctx.stroke();
+            ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(label, 3, sy - 1);
+        }
+        // Centre marker (the X the map is centred on).
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(width / 2, 0); ctx.lineTo(width / 2, height); ctx.stroke();
+    }, [centerX, centerZ, noiseSet, version, width, blocksPerPx]);
+
+    return <canvas ref={canvasRef} width={width} height={height} className="block w-full rounded border border-black/40" />;
+};
 
 export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -86,7 +183,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const [showRulers, setShowRulers] = useState(false);
     const [rulerType, setRulerType] = useState<'power2' | 'decimal'>('power2');
     const [expandedBiomes, setExpandedBiomes] = useState<Record<string, boolean>>({});
-    const [activeSection, setActiveSection] = useState<'noise' | 'biomes' | 'terrain'>('biomes');
+    const [activeSection, setActiveSection] = useState<'noise' | 'biomes' | 'terrain' | 'caves'>('biomes');
     const [historyState, setHistoryState] = useState(getHistoryState());
     const [presetNameInput, setPresetNameInput] = useState('My World Preset');
     const [showSavesMenu, setShowSavesMenu] = useState(false);
@@ -718,9 +815,10 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                 </div>
                 
                 <div className="flex bg-[#222] border-b border-black">
-                    <button onClick={() => setActiveSection('biomes')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'biomes' ? 'bg-[#333] text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>BIOMES</button>
-                    <button onClick={() => setActiveSection('terrain')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'terrain' ? 'bg-[#333] text-white border-b-2 border-green-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>TERRAIN</button>
-                    <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
+                    <button onClick={() => setActiveSection('biomes')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'biomes' ? 'bg-[#333] text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>BIOMES</button>
+                    <button onClick={() => setActiveSection('terrain')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'terrain' ? 'bg-[#333] text-white border-b-2 border-green-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>TERRAIN</button>
+                    <button onClick={() => setActiveSection('caves')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'caves' ? 'bg-[#333] text-white border-b-2 border-amber-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>CAVES</button>
+                    <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -902,6 +1000,94 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                             })}
                         </div>
                     )}
+                    {/* --- CAVES SECTION --- */}
+                    {activeSection === 'caves' && (() => {
+                        const cv = GenConfig.caves;
+                        const dcv = DEFAULTS.caves;
+                        const setNum = <K extends keyof typeof cv>(key: K) => (v: number) => { (cv[key] as number) = v; forceUpdate(); };
+                        const resetNum = <K extends keyof typeof cv>(key: K) => () => { (cv[key] as typeof cv[K]) = dcv[key]; commitChange(); };
+                        const boolRow = (k: keyof typeof cv, label: string, tip: string) => (
+                            <label key={String(k)} title={tip} className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input type="checkbox" checked={cv[k] as boolean} onChange={(e) => { (cv[k] as boolean) = e.target.checked; commitChange(); }} className="w-3.5 h-3.5 accent-amber-500" />
+                                <span className="text-[10px] text-gray-300">{label}</span>
+                            </label>
+                        );
+                        type NumField = { key: keyof typeof cv; label: string; step: number; tip: string };
+                        type BoolField = { k: keyof typeof cv; label: string; tip: string };
+                        const groups: { title: string; bools?: BoolField[]; fields: NumField[] }[] = [
+                            { title: 'General', bools: [{ k: 'enabled', label: 'Caves', tip: 'Master carve toggle (off = solid underground).' }, { k: 'decorate', label: 'Decorate', tip: 'Dripstone / lichen / moss / geode decoration pass.' }], fields: [
+                                { key: 'surfaceTaperDepth', label: 'Surface Taper', step: 1, tip: 'Caves fade in over this many blocks below the surface.' },
+                                { key: 'lavaLevel', label: 'Lava Level', step: 1, tip: 'Carved cells at/below world-bottom + this flood with lava.' },
+                                { key: 'breachFreq', label: 'Breach Freq', step: 0.001, tip: 'Frequency of the mask that lets cave mouths reach daylight.' },
+                                { key: 'breachThreshold', label: 'Breach Thresh', step: 0.01, tip: 'Higher = fewer surface openings.' },
+                            ] },
+                            { title: 'Spaghetti / Worm', bools: [{ k: 'wormEnabled', label: 'Enabled', tip: 'The main long winding tunnels.' }], fields: [
+                                { key: 'wormFreq', label: 'Freq', step: 0.002, tip: 'Smaller = larger, smoother tunnels.' },
+                                { key: 'wormThreshold', label: 'Width', step: 0.01, tip: 'Larger = wider / more tunnels.' },
+                                { key: 'wormYScale', label: 'Y Scale', step: 0.1, tip: '>1 flattens tunnels horizontally.' },
+                            ] },
+                            { title: 'Cheese Caverns', bools: [{ k: 'cavernEnabled', label: 'Enabled', tip: 'Big open rooms.' }], fields: [
+                                { key: 'cavernMinDepth', label: 'Min Depth', step: 1, tip: 'No caverns until this deep below the surface.' },
+                                { key: 'cavernMaskThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = rarer caverns.' },
+                                { key: 'cavernFreq', label: 'Freq', step: 0.002, tip: 'Smaller = larger caverns.' },
+                                { key: 'cavernThreshold', label: 'Size', step: 0.02, tip: 'Larger = bigger caverns.' },
+                            ] },
+                            { title: 'Noodle Caves', bools: [{ k: 'noodleEnabled', label: 'Enabled', tip: 'Thin secondary tunnels.' }], fields: [
+                                { key: 'noodleFreq', label: 'Freq', step: 0.005, tip: 'Smaller = longer noodles.' },
+                                { key: 'noodleMaskThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = fewer noodles.' },
+                                { key: 'noodleThreshold', label: 'Width', step: 0.01, tip: 'Larger = thicker noodles.' },
+                            ] },
+                            { title: 'Deep Cheese', bools: [{ k: 'deepCheeseEnabled', label: 'Enabled', tip: 'Swiss-cheese holes near the world floor.' }], fields: [
+                                { key: 'deepCheeseMaxY', label: 'Max Y', step: 1, tip: 'Only carve these below this Y.' },
+                                { key: 'deepCheeseFreq', label: 'Freq', step: 0.005, tip: 'Hole scale.' },
+                                { key: 'deepCheeseThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = fewer holes.' },
+                            ] },
+                            { title: 'Deepslate Band', fields: [
+                                { key: 'deepslateStartY', label: 'Start Y', step: 1, tip: 'Stone above this Y stays stone.' },
+                                { key: 'deepslateFullY', label: 'Full Y', step: 1, tip: 'Fully deepslate at/below this Y.' },
+                            ] },
+                            { title: 'Decoration', fields: [
+                                { key: 'lushFreq', label: 'Lush Freq', step: 0.001, tip: 'Lush-cave region scale (moss + glow lichen).' },
+                                { key: 'lushThreshold', label: 'Lush Rarity', step: 0.02, tip: 'Larger = rarer lush caves.' },
+                                { key: 'dripstoneFreq', label: 'Drip Freq', step: 0.001, tip: 'Dripstone-cave region scale.' },
+                                { key: 'dripstoneThreshold', label: 'Drip Rarity', step: 0.02, tip: 'Larger = rarer dripstone caves.' },
+                                { key: 'glowLichenChance', label: 'Glow Lichen', step: 0.01, tip: 'Emissive lichen density (natural cave light).' },
+                                { key: 'mossChance', label: 'Moss', step: 0.05, tip: 'Moss coverage on lush cave floors.' },
+                                { key: 'dripstoneChance', label: 'Dripstone', step: 0.02, tip: 'Pointed dripstone density.' },
+                                { key: 'geodeRarity', label: 'Geodes', step: 0.0005, tip: 'Amethyst-geode chance per deep column.' },
+                            ] },
+                        ];
+                        return (
+                            <div className="bg-[#1a1a1a] rounded p-3 border border-white/10 space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="text-sm font-bold text-amber-400">Cave Cross-Section</div>
+                                        <div className="text-[9px] text-gray-500 font-mono">x={center.x} · z={center.z}</div>
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses — tune a slider and watch the caves change.</div>
+                                    <CaveCrossSection centerX={center.x} centerZ={center.z} noiseSet={previewNoiseSet} version={configVersion} width={Math.max(200, sidebarWidth - 56)} />
+                                    <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono"><span>◼ stone</span><span>◼ deepslate</span><span>◼ cave</span><span>◼ lava</span></div>
+                                </div>
+                                {groups.map((g) => (
+                                    <div key={g.title} className="border-t border-white/10 pt-2">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-amber-400/70">{g.title}</div>
+                                            {g.bools && <div className="flex gap-3">{g.bools.map((bf) => boolRow(bf.k, bf.label, bf.tip))}</div>}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                            {g.fields.map((f) => (
+                                                <MfNum key={String(f.key)} label={f.label} title={f.tip} value={cv[f.key] as number} step={f.step} onChange={setNum(f.key)} onReset={resetNum(f.key)} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={() => { GenConfig.caves = JSON.parse(JSON.stringify(DEFAULTS.caves)); commitChange(); }}
+                                    className="w-full py-1 bg-[#4a3f2f] hover:bg-[#63533d] text-amber-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                >Reset Caves</button>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 <div className="p-3 border-t border-black bg-[#222] flex flex-col gap-3">

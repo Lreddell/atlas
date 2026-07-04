@@ -141,6 +141,10 @@ export const CUTOUT_TILE_CONFIGS: CutoutTileConfig[] = [
     { slot: 208 },  // magnetic spike
     { slot: 210 },  // magnetic shield crystal
     { slot: 212 },  // magnetite shard
+    // Cave content cross-plane cutouts (transparent backgrounds)
+    { slot: 220 },  // pointed dripstone
+    { slot: 222 },  // glow lichen
+    { slot: 225 },  // amethyst cluster
 ];
 
 export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {
