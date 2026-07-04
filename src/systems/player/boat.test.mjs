@@ -66,15 +66,15 @@ test('placement consumes the item in survival only; boarding is a right-click', 
     assert.match(app, /entityManager\.spawn\('boat'/);
 });
 
-test('boat placement follows the sealed-region edit policy', () => {
-    // The sealed check runs BEFORE the spawn (and before any item consumption),
-    // using the same canPlayerEdit gate (and denial feedback) as block placement.
+test('boat placement is a traversal exception to the sealed-region edit policy', () => {
+    // Boats are traversal, not terrain editing: placing one on water is exempt
+    // from canPlayerEdit, unlike block placement — so a boat can be launched
+    // on sealed water (e.g. inside an unsolved Magnetic Fields region).
     const placeIdx = interaction.indexOf("held?.type === BlockType.BOAT && onPlaceBoat");
     const block = interaction.slice(placeIdx, placeIdx + 400);
-    const guardIdx = block.indexOf('if (!canPlayerEdit(bx, by, bz)) return;');
-    const spawnIdx = block.indexOf('onPlaceBoat(bx, by, bz)');
-    assert.ok(guardIdx !== -1, 'boat placement must run the sealed-region edit check');
-    assert.ok(spawnIdx !== -1 && guardIdx < spawnIdx, 'the sealed check must precede the spawn/consume');
+    assert.ok(placeIdx !== -1, 'boat placement branch must exist');
+    assert.doesNotMatch(block, /canPlayerEdit/, 'boat placement must not be gated by the sealed-region edit check');
+    assert.match(block, /onPlaceBoat\(bx, by, bz\)/, 'boat placement must still spawn the entity');
 });
 
 test('riding drives the entity; sneak dismounts and parks it', () => {
