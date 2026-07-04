@@ -65,6 +65,14 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   deep swiss-cheese holes now carve deepslate depths, with dripstone caverns (pointed
   dripstone), lush hollows (moss + emissive glow lichen that lights the dark), and
   rare amethyst geodes (calcite shell, budding amethyst, glowing clusters).
+- Lush and dripstone cave biomes are large, coherent regions (~130 blocks across) but
+  rare, so stumbling into one is a find. The deepslate deep-stone is lighter now so
+  it reads clearly under low cave light.
+- Every ore — coal, iron, copper, gold, lapis, diamond, emerald — has a deepslate
+  variant that generates in the deep band, with its own texture and matching drops.
+- New foods: bananas drop rarely from jungle leaves, glowing Lumen Berries can be
+  foraged from cave glow lichen, and the three combine into a hearty Forager's Bowl at
+  a crafting table. Dark oak leaves now drop apples like other oaks.
 - Stairs form corner shapes when placed against neighbouring stairs, and matching
   slabs merge back into full blocks.
 - Light, smooth shading, and ambient occlusion now respect the solid and open parts
@@ -90,6 +98,8 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   now craftable.
 - New armor HUD: defense pips above the hearts and per-piece durability icons at the
   bottom-left, with a red pulse when a piece is close to breaking.
+- Restyled the health and hunger bars as crisp, stylized icons that match the armor
+  pips — angled hearts and drumsticks with an outline and a highlight glint.
 - Wool now weaves from wheat seeds (so beds are craftable in survival), packed ice
   crafts from ice, and Charged Magnetite and Magnetic Spikes have recipes.
 - Every tool, weapon, armor piece, and special item now has its own inventory and

@@ -104,6 +104,8 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
     BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
     BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.COPPER_ORE, BlockType.GOLD_ORE, BlockType.LAPIS_ORE, BlockType.DIAMOND_ORE, BlockType.EMERALD_ORE,
+    BlockType.DEEPSLATE, BlockType.COBBLED_DEEPSLATE,
+    BlockType.DEEPSLATE_COAL_ORE, BlockType.DEEPSLATE_IRON_ORE, BlockType.DEEPSLATE_COPPER_ORE, BlockType.DEEPSLATE_GOLD_ORE, BlockType.DEEPSLATE_LAPIS_ORE, BlockType.DEEPSLATE_DIAMOND_ORE, BlockType.DEEPSLATE_EMERALD_ORE,
 
     // --- TOOLS (Tiered) ---
     // Wood

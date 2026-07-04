@@ -38,83 +38,58 @@ const ArmorPip: React.FC<{ fill: number }> = ({ fill }) => (
     </div>
 );
 
-// Pixel-art hearts and hunger shanks that match the crisp, drop-shadowed armor
-// style: a dark "container" shape with the filled shape (plus a highlight
-// glint) layered on top, clipped for half values. Bitmaps are 9×9 grids so
-// hearts and shanks scale identically inside a 24px pip.
-const HEART_SHAPE = [
-    '.XX...XX.',
-    'XXXXXXXXX',
-    'XXXXXXXXX',
-    'XXXXXXXXX',
-    '.XXXXXXX.',
-    '..XXXXX..',
-    '...XXX...',
-    '....X....',
-    '.........',
-];
-const HEART_GLINT = [
-    '.........',
-    '.X.......',
-    '.X.......',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-];
-// Drumstick: rounded meat upper-right, bone tapering to the lower-left.
-const HUNGER_SHAPE = [
-    '....XXX..',
-    '...XXXXX.',
-    '..XXXXXX.',
-    '..XXXXXX.',
-    '.XXXXXX..',
-    '.XXXX....',
-    'XXX......',
-    'XX.......',
-    'X........',
-];
-const HUNGER_GLINT = [
-    '.........',
-    '....X....',
-    '....X....',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-    '.........',
-];
+// Hearts and hunger shanks in the same angled, stylized, drop-shadowed style as
+// the armor pips: a stroked vector silhouette drawn dark for the empty
+// "container", then the filled colour + a highlight glint on top, clipped for
+// half values. `shapes` can be several sub-paths (the drumstick is bone + meat).
+type PipPath = { d: string; fill: string; stroke?: string };
 
-const PixelShape: React.FC<{ rows: string[]; color: string; style?: React.CSSProperties }> = ({ rows, color, style }) => (
-    <svg viewBox="0 0 9 9" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full" style={style}>
-        {rows.flatMap((row, y) =>
-            row.split('').map((c, x) => (c === 'X'
-                ? <rect key={`${x}-${y}`} x={x} y={y} width={1.02} height={1.02} fill={color} />
-                : null))
-        )}
+// Heart: two angled lobes tapering to a point.
+const HEART_D = 'M8 5 L5.5 3 L3 3 L2 5.5 L2 7 L8 13.5 L14 7 L14 5.5 L13 3 L10.5 3 Z';
+const HEART_GLINT_D = 'M4 5 L5.5 4.6 L5 6.6 L4 6.6 Z';
+// Drumstick: rounded meat (upper-right) with a knobbed bone to the lower-left.
+const DRUM_BONE_D = 'M7 8 L9 10 L6 13 L6 14 L4 14 L4 12 L3 12 L3 10 L5 10 L5 8 Z';
+const DRUM_MEAT_D = 'M9 2 L12 2 L14 4 L14 8 L12 10 L9 10 L7 8 L7 4 Z';
+const DRUM_GLINT_D = 'M9.5 3.5 L11.5 3.5 L10.7 5.5 L9.3 5.5 Z';
+
+const PipSvg: React.FC<{ paths: PipPath[]; style?: React.CSSProperties }> = ({ paths, style }) => (
+    <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full" style={style}>
+        {paths.map((p, i) => (
+            <path key={i} d={p.d} fill={p.fill} stroke={p.stroke} strokeWidth={p.stroke ? 1 : undefined} strokeLinejoin="round" />
+        ))}
     </svg>
 );
 
 // One stat pip (heart or shank). fill: 0 | 0.5 | 1. `half` picks which side the
 // half-value keeps so the icon's main mass stays visible.
 const StatPip: React.FC<{
-    shape: string[]; glint: string[]; fill: number;
-    color: string; empty: string; shine: string; half: 'left' | 'right';
-}> = ({ shape, glint, fill, color, empty, shine, half }) => (
+    empty: PipPath[]; filled: PipPath[]; fill: number; half: 'left' | 'right';
+}> = ({ empty, filled, fill, half }) => (
     <div className="w-6 h-6 relative drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-hidden>
-        <PixelShape rows={shape} color={empty} />
+        <PipSvg paths={empty} />
         {fill > 0 && (
             <div className="absolute inset-0"
                 style={fill === 0.5 ? { clipPath: half === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)' } : undefined}>
-                <PixelShape rows={shape} color={color} />
-                <PixelShape rows={glint} color={shine} />
+                <PipSvg paths={filled} />
             </div>
         )}
     </div>
 );
+
+const HEART_EMPTY: PipPath[] = [{ d: HEART_D, fill: '#491316', stroke: '#6a1a1a' }];
+const HEART_FILLED: PipPath[] = [
+    { d: HEART_D, fill: '#d81f1f', stroke: '#7a0d0d' },
+    { d: HEART_GLINT_D, fill: '#ff9a9a' },
+];
+const HUNGER_EMPTY: PipPath[] = [
+    { d: DRUM_BONE_D, fill: '#413528', stroke: '#2c2318' },
+    { d: DRUM_MEAT_D, fill: '#4a3320', stroke: '#2c2318' },
+];
+const HUNGER_FILLED: PipPath[] = [
+    { d: DRUM_BONE_D, fill: '#f3ead0', stroke: '#b0a078' },
+    { d: DRUM_MEAT_D, fill: '#c96b2a', stroke: '#6e3410' },
+    { d: DRUM_GLINT_D, fill: '#f0a35a' },
+];
 
 const statFill = (value: number, index: number) => {
     const full = index < Math.floor(value / 2);
@@ -226,8 +201,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                                         className={`transition-transform duration-75 ${flashClass}`}
                                         style={{ transform: `translateY(${offsetY}px)` }}
                                     >
-                                        <StatPip shape={HEART_SHAPE} glint={HEART_GLINT} fill={statFill(health, i)}
-                                            color="#d81f1f" empty="#3a0b0b" shine="#ff9a9a" half="left" />
+                                        <StatPip empty={HEART_EMPTY} filled={HEART_FILLED} fill={statFill(health, i)} half="left" />
                                     </div>
                                 );
                             })}
@@ -256,8 +230,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                                     className="transition-transform duration-75"
                                     style={{ transform: `translateY(${hungerShake[i] || 0}px)` }}
                                 >
-                                    <StatPip shape={HUNGER_SHAPE} glint={HUNGER_GLINT} fill={statFill(hunger, i)}
-                                        color="#D35400" empty="#3a2410" shine="#F5CBA7" half="right" />
+                                    <StatPip empty={HUNGER_EMPTY} filled={HUNGER_FILLED} fill={statFill(hunger, i)} half="right" />
                                 </div>
                             ))}
                         </div>

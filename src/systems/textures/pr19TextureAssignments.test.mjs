@@ -104,7 +104,7 @@ const pixelSignature = (slot) =>
     Buffer.from(rasterizePixelTile(PR19_TEXTURE_TILES[slot])).toString('base64');
 
 test('every non-block item has one unique external PNG mapping', () => {
-    assert.equal(itemEntries.length, 68);
+    assert.equal(itemEntries.length, 71);
 
     const paths = itemEntries.map(({ type, slot }) => {
         const mappedPath = mappedItemPaths.get(slot);
@@ -166,9 +166,9 @@ test('every used atlas slot has a descriptive optional PNG mapping', () => {
 });
 
 test('generated catalog contains every item, sapling, and existing PR 19 block', () => {
-    assert.equal(PR19_TEXTURE_ASSETS.length, 74);
-    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ slot }) => slot)).size, 74);
-    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ path: relativePath }) => relativePath)).size, 74);
+    assert.equal(PR19_TEXTURE_ASSETS.length, 77);
+    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ slot }) => slot)).size, 77);
+    assert.equal(new Set(PR19_TEXTURE_ASSETS.map(({ path: relativePath }) => relativePath)).size, 77);
 
     for (const { slot } of PR19_TEXTURE_ASSETS) {
         assert.ok(PR19_TEXTURE_TILES[slot], `slot ${slot} has no pixel definition`);
@@ -193,7 +193,7 @@ test('every mapped item PNG exists and belongs to the generated catalog', () => 
 test('all generated item PNGs are 16x16 RGBA images', () => {
     const itemAssets = PR19_TEXTURE_ASSETS.filter(({ path: relativePath }) =>
         relativePath.startsWith('items/'));
-    assert.equal(itemAssets.length, 68);
+    assert.equal(itemAssets.length, 71);
 
     for (const { path: relativePath } of itemAssets) {
         const bytes = fs.readFileSync(path.join(root, 'public/assets/textures', relativePath));
@@ -334,7 +334,7 @@ test('Iron Block uses the Atlas iron palette with an opaque paneled face', () =>
 });
 
 test('committed PNGs exactly match the shared pixel definitions', () => {
-    assert.equal(PR19_TEXTURE_ASSETS.length, 74);
+    assert.equal(PR19_TEXTURE_ASSETS.length, 77);
     const result = spawnSync(
         process.execPath,
         [

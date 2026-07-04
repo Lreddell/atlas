@@ -538,12 +538,15 @@ function generateChunkInner(cx: number, cz: number) {
                 const index = index3D(x, y, z);
                 // Ores host in both stone and deepslate (the deep band is deepslate).
                 if (blocks[index] !== BlockType.STONE && blocks[index] !== BlockType.DEEPSLATE) continue;
+                // Inside the deepslate band, ores take their deepslate variant.
+                const inDeepslate = blocks[index] === BlockType.DEEPSLATE;
+                const oreType = (stoneOre: BlockType, deepslateOre: BlockType) => (inDeepslate ? deepslateOre : stoneOre);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
                     if (noise > 0.45) { 
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 101) > 0.5) {
-                            blocks[index] = BlockType.COAL_ORE;
+                            blocks[index] = oreType(BlockType.COAL_ORE, BlockType.DEEPSLATE_COAL_ORE);
                             continue;
                         }
                     }
@@ -556,7 +559,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = favorCopper ? 0.45 : 0.6; 
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 102) > 0.5) {
-                            blocks[index] = BlockType.COPPER_ORE;
+                            blocks[index] = oreType(BlockType.COPPER_ORE, BlockType.DEEPSLATE_COPPER_ORE);
                             continue;
                         }
                     }
@@ -569,7 +572,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.2 + 123, y * 0.2 + 123, cwz * 0.2 + 123);
                     if (noise > 0.52) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 103) > 0.5) {
-                            blocks[index] = BlockType.IRON_ORE;
+                            blocks[index] = oreType(BlockType.IRON_ORE, BlockType.DEEPSLATE_IRON_ORE);
                             continue;
                         }
                     }
@@ -587,7 +590,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (isMesaGold || !isExposed(index, y, x, z) || seededRand01(wx, y, wz, 104) > 0.5) {
-                            blocks[index] = BlockType.GOLD_ORE;
+                            blocks[index] = oreType(BlockType.GOLD_ORE, BlockType.DEEPSLATE_GOLD_ORE);
                             continue;
                         }
                     }
@@ -597,7 +600,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.3 + 444, y * 0.3 + 444, cwz * 0.3 + 444);
                     if (noise > 0.65) {
                         if (!isExposed(index, y, x, z)) {
-                            blocks[index] = BlockType.LAPIS_ORE;
+                            blocks[index] = oreType(BlockType.LAPIS_ORE, BlockType.DEEPSLATE_LAPIS_ORE);
                             continue;
                         }
                     }
@@ -608,7 +611,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 105) > 0.5) {
-                            blocks[index] = BlockType.DIAMOND_ORE;
+                            blocks[index] = oreType(BlockType.DIAMOND_ORE, BlockType.DEEPSLATE_DIAMOND_ORE);
                             continue;
                         }
                     }
@@ -618,7 +621,7 @@ function generateChunkInner(cx: number, cz: number) {
                     if (emeraldChance > 0) {
                         const noise = noiseSet.cave.noise3D(cwx * 0.35 + 111, y * 0.35 + 111, cwz * 0.35 + 111);
                         if (noise > 0.75) { 
-                            blocks[index] = BlockType.EMERALD_ORE;
+                            blocks[index] = oreType(BlockType.EMERALD_ORE, BlockType.DEEPSLATE_EMERALD_ORE);
                             continue;
                         }
                     }

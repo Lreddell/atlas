@@ -301,6 +301,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
       id: BlockType.JUNGLE_LEAVES, color: '#327028', name: 'Jungle Leaves', transparent: true, textureSlot: 193, hardness: 0.2,
       drops: [
           { type: BlockType.JUNGLE_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.BANANA, chance: 0.02, min: 1, max: 1 },
           { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
@@ -315,6 +316,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
       id: BlockType.DARK_OAK_LEAVES, color: '#1e461e', name: 'Dark Oak Leaves', transparent: true, textureSlot: 198, hardness: 0.2,
       drops: [
           { type: BlockType.DARK_OAK_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: BlockType.APPLE, chance: 0.02, min: 1, max: 1 },
           { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
@@ -379,8 +381,8 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // ===== Cave content (deep-stone, dripstone, lush, amethyst) =====
   // Deepslate — the harder deep-stone that replaces stone below the deepslate
   // band; mines into cobbled deepslate exactly like stone → cobblestone.
-  [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#4a4a52', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
-  [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#3f3f47', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.DEEPSLATE, category: 'building', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#585862', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#4c4c55', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.DEEPSLATE, category: 'building', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
 
   // Dripstone caves — lumpy dripstone bedrock + cross-plane pointed dripstone
   // (stalactites hang, stalagmites stand). Pointed dripstone keeps collision.
@@ -389,14 +391,35 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
 
   // Lush caves — moss carpeting + emissive glow lichen that lights caves softly.
   [BlockType.MOSS_BLOCK]: { id: BlockType.MOSS_BLOCK, color: '#5a7a35', name: 'Moss Block', textureSlot: 221, hardness: 0.3, preferredTool: 'shovel', category: 'natural', drops: [{ type: BlockType.MOSS_BLOCK, chance: 1, min: 1, max: 1 }] },
-  [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: BlockType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }] },
+  [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: BlockType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }, { type: BlockType.LUMEN_BERRY, chance: 0.25, min: 1, max: 1 }] },
 
   // Amethyst geodes — calcite shell, amethyst lining, budding cores that grow
   // faceted (emissive) clusters. Budding amethyst can't be harvested (drops []).
   [BlockType.AMETHYST_BLOCK]: { id: BlockType.AMETHYST_BLOCK, color: '#8b5fc9', name: 'Amethyst Block', textureSlot: 223, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.AMETHYST_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.BUDDING_AMETHYST]: { id: BlockType.BUDDING_AMETHYST, color: '#9264d0', name: 'Budding Amethyst', textureSlot: 224, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [] },
   [BlockType.AMETHYST_CLUSTER]: { id: BlockType.AMETHYST_CLUSTER, color: '#b389e6', name: 'Amethyst Cluster', textureSlot: 225, transparent: true, noCollision: true, hardness: 0.6, lightLevel: 5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.AMETHYST_CLUSTER, chance: 1, min: 1, max: 1 }] },
-  [BlockType.CALCITE]: { id: BlockType.CALCITE, color: '#dcdcd6', name: 'Calcite', textureSlot: 226, hardness: 0.75, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CALCITE, chance: 1, min: 1, max: 1 }] }
+  [BlockType.CALCITE]: { id: BlockType.CALCITE, color: '#dcdcd6', name: 'Calcite', textureSlot: 226, hardness: 0.75, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CALCITE, chance: 1, min: 1, max: 1 }] },
+
+  // ===== Deepslate ore variants =====
+  // Spawn when an ore rolls inside the deepslate band (see chunkGeneration). They
+  // drop exactly what the stone ores drop, but are a little tougher to mine.
+  [BlockType.DEEPSLATE_COAL_ORE]: { id: BlockType.DEEPSLATE_COAL_ORE, color: '#2b2b31', name: 'Deepslate Coal Ore', textureSlot: 227, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.COAL, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_IRON_ORE]: { id: BlockType.DEEPSLATE_IRON_ORE, color: '#8a8f9a', name: 'Deepslate Iron Ore', textureSlot: 228, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.RAW_IRON, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_COPPER_ORE]: { id: BlockType.DEEPSLATE_COPPER_ORE, color: '#a86a3c', name: 'Deepslate Copper Ore', textureSlot: 229, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.RAW_COPPER, chance: 1, min: 2, max: 5 }], category: 'natural' },
+  [BlockType.DEEPSLATE_GOLD_ORE]: { id: BlockType.DEEPSLATE_GOLD_ORE, color: '#c8a52c', name: 'Deepslate Gold Ore', textureSlot: 230, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.RAW_GOLD, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_DIAMOND_ORE]: { id: BlockType.DEEPSLATE_DIAMOND_ORE, color: '#3aa9bd', name: 'Deepslate Diamond Ore', textureSlot: 231, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.DIAMOND, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_LAPIS_ORE]: { id: BlockType.DEEPSLATE_LAPIS_ORE, color: '#2b3573', name: 'Deepslate Lapis Ore', textureSlot: 232, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.LAPIS_LAZULI, chance: 1, min: 4, max: 9 }], category: 'natural' },
+  [BlockType.DEEPSLATE_EMERALD_ORE]: { id: BlockType.DEEPSLATE_EMERALD_ORE, color: '#2ba85e', name: 'Deepslate Emerald Ore', textureSlot: 233, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural' },
+
+  // ===== Foods (Atlas-original) =====
+  // Banana — a rare drop from jungle leaves; a quick, filling snack.
+  [BlockType.BANANA]: { id: BlockType.BANANA, color: '#ffd54f', name: 'Banana', textureSlot: 234, hardness: 0, isItem: true, category: 'food', nutrition: 5, saturationModifier: 0.3 },
+  // Lumen Berry — a faintly glowing berry foraged from cave glow lichen. Light
+  // snack; carries a soft glow as a dropped item.
+  [BlockType.LUMEN_BERRY]: { id: BlockType.LUMEN_BERRY, color: '#8ef0d0', name: 'Lumen Berry', textureSlot: 235, hardness: 0, isItem: true, lightLevel: 4, category: 'food', nutrition: 3, saturationModifier: 0.3 },
+  // Forager's Bowl — a hearty crafted meal (apple + banana + lumen berry). The
+  // best hunger restore available without farming.
+  [BlockType.FORAGERS_BOWL]: { id: BlockType.FORAGERS_BOWL, color: '#c98a3c', name: "Forager's Bowl", textureSlot: 236, hardness: 0, isItem: true, category: 'food', nutrition: 9, saturationModifier: 0.6 }
 };
 
 export const ATLAS_COLS = 8;

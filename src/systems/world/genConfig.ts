@@ -122,9 +122,9 @@ export const DEFAULTS = {
         // frequency = big blobs; high threshold = uncommon), so most caves are
         // plain and stumbling into a lush or dripstone one feels like a find.
         decorate: true,            // master toggle for all cave decoration below
-        lushFreq: 0.003,           // lush-cave region noise (lower = larger biomes)
-        lushThreshold: 0.55,       // higher = rarer lush biomes
-        dripstoneFreq: 0.003,      // dripstone-cave region noise
+        lushFreq: 0.0022,          // lush-cave region noise (lower = larger biomes: ~130-block regions)
+        lushThreshold: 0.55,       // higher = rarer lush biomes (~2.8% of underground)
+        dripstoneFreq: 0.0022,     // dripstone-cave region noise
         dripstoneThreshold: 0.5,   // higher = rarer dripstone biomes
         glowLichenChance: 0.01,    // emissive lichen on cave ceilings (kept sparse)
         mossChance: 0.55,          // moss coverage on lush-biome cave floors

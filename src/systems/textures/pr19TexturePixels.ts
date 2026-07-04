@@ -89,6 +89,9 @@ export const PR19_TEXTURE_ASSETS: ReadonlyArray<{
     { slot: 204, path: 'blocks/acacia_sapling.png' },
     { slot: 215, path: 'items/polarity_boots_upgrade.png' },
     { slot: 216, path: 'items/boat.png' },
+    { slot: 234, path: 'items/banana.png' },
+    { slot: 235, path: 'items/lumen_berry.png' },
+    { slot: 236, path: 'items/foragers_bowl.png' },
 ];
 
 const IRON_SHADOW = '#9e9e9e';
@@ -553,6 +556,31 @@ Object.assign(PR19_TEXTURE_TILES, {
         layer('#5d4037', [[3, 13, 10, 1]]),
         layer('#3e2723', [[4, 9, 8, 1]]),
         layer('#c9a877', [[7, 9, 2, 1]]),
+    ),
+    // 234: Banana — a yellow crescent with browned tips.
+    234: tile(
+        layer('#7a5a1a', [[3, 11], [12, 4]]),
+        layer('#e0b93a', [[3, 10, 2, 2], [4, 9, 2, 2], [5, 8, 2, 2], [6, 7, 2, 2], [7, 6, 2, 2], [9, 5, 2, 2], [11, 5, 2, 2]]),
+        layer('#ffd54f', [[3, 9, 2, 2], [4, 8, 2, 2], [5, 7, 2, 2], [6, 6, 2, 2], [7, 5, 2, 2], [9, 4, 2, 2], [11, 4, 2, 2]]),
+        layer('#fff2b0', [[5, 7], [6, 6], [7, 5], [9, 4]]),
+    ),
+    // 235: Lumen Berry — a glowing teal berry cluster with a leafed stem.
+    235: tile(
+        layer('#2f7f5a', [[8, 4, 1, 2], [9, 4, 2, 1]]),
+        layer('#3ab88f', [[5, 7, 5, 5], [10, 9, 3, 3]]),
+        layer('#66e6c0', [[6, 8, 3, 3], [11, 10, 1, 1]]),
+        layer('#d6fff0', [[7, 9, 2, 2], [11, 10, 1, 1]]),
+    ),
+    // 236: Forager's Bowl — a wooden bowl with apple, banana, and berry on top.
+    236: tile(
+        layer('#d81f1f', [[4, 6, 2, 2]]),
+        layer('#ffd54f', [[7, 5, 3, 1], [8, 4, 2, 1]]),
+        layer('#3ab88f', [[11, 6, 2, 2]]),
+        layer('#d6fff0', [[11, 6]]),
+        layer('#5d4037', [[3, 9, 10, 1]]),
+        layer('#8d6e63', [[3, 10, 10, 3]]),
+        layer('#a1887f', [[3, 9, 1, 4], [12, 9, 1, 4]]),
+        layer('#4e342e', [[4, 12, 8, 1]]),
     ),
 });
 

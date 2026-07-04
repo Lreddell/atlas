@@ -227,4 +227,18 @@ export const TEXTURE_PATHS: Record<number, string> = {
     224: 'blocks/budding_amethyst.png',
     225: 'blocks/amethyst_cluster.png',
     226: 'blocks/calcite.png',
+
+    // --- DEEPSLATE ORE VARIANTS (procedural; PNGs are optional overrides) ---
+    227: 'blocks/deepslate_coal_ore.png',
+    228: 'blocks/deepslate_iron_ore.png',
+    229: 'blocks/deepslate_copper_ore.png',
+    230: 'blocks/deepslate_gold_ore.png',
+    231: 'blocks/deepslate_diamond_ore.png',
+    232: 'blocks/deepslate_lapis_ore.png',
+    233: 'blocks/deepslate_emerald_ore.png',
+
+    // --- FOODS (procedural; PNGs are optional overrides) ---
+    234: 'items/banana.png',
+    235: 'items/lumen_berry.png',
+    236: 'items/foragers_bowl.png',
 };

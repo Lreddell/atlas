@@ -365,6 +365,19 @@ for (const { planks } of WOOD_FAMILIES) {
     push(3, [null, null, null, planks, null, planks, planks, planks, planks], BlockType.BOAT, 1);
 }
 
+// --- Foods ---
+// Forager's Bowl — the three foraged fruits together (apple + banana + lumen
+// berry), in a row or column, any order, so it's easy to stumble onto.
+const BOWL_PERMS: BlockType[][] = (() => {
+    const [a, b, c] = [BlockType.APPLE, BlockType.BANANA, BlockType.LUMEN_BERRY];
+    return [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]];
+})();
+for (const [p, q, r] of BOWL_PERMS) {
+    // Horizontal row and vertical column variants.
+    push(3, [null, null, null, p, q, r, null, null, null], BlockType.FORAGERS_BOWL, 1);
+    push(3, [p, null, null, q, null, null, r, null, null], BlockType.FORAGERS_BOWL, 1);
+}
+
 interface TrimmedGrid {
     cells: (BlockType | null)[];
     w: number;

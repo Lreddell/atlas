@@ -286,6 +286,23 @@ export enum BlockType {
   BUDDING_AMETHYST = 57,    // amethyst geode core (grows clusters; drops nothing)
   AMETHYST_CLUSTER = 58,    // cross-plane emissive amethyst crystal cluster
   CALCITE = 59,             // amethyst geode shell / white deep-cave accent
+
+  // --- Deepslate ore variants (spawn when an ore rolls inside the deepslate
+  // band; same drops as the stone ores, tougher to mine). Free ids 60-66,
+  // texture slots 227-233. ---
+  DEEPSLATE_COAL_ORE = 60,
+  DEEPSLATE_IRON_ORE = 61,
+  DEEPSLATE_COPPER_ORE = 62,
+  DEEPSLATE_GOLD_ORE = 63,
+  DEEPSLATE_DIAMOND_ORE = 64,
+  DEEPSLATE_LAPIS_ORE = 65,
+  DEEPSLATE_EMERALD_ORE = 66,
+
+  // --- Foods (Atlas-original identity, not Minecraft imports). Free ids 67-69,
+  // texture slots 234-236. ---
+  BANANA = 67,          // rare jungle-leaf drop
+  LUMEN_BERRY = 68,     // glowing berry foraged from cave glow lichen
+  FORAGERS_BOWL = 69,   // crafted hearty meal (apple + banana + lumen berry)
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';

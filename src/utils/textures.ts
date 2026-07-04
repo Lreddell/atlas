@@ -4,6 +4,7 @@ import { ATLAS_COLS, getTextureRows } from '../data/blocks';
 import { createPaddedAtlasCanvas, sanitizeCutoutTiles } from './atlasCanvasTools';
 import {
     CUTOUT_TILE_CONFIGS,
+    drawDeepslateOreTiles,
     drawFoliageFamilyTiles,
     drawOreFamilyTiles,
     drawTerracottaTiles,
@@ -260,6 +261,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     drawWoodFamilyTiles(tilePainter);
     drawFoliageFamilyTiles(tilePainter);
     drawOreFamilyTiles(tilePainter);
+    drawDeepslateOreTiles(tilePainter);
     drawTerracottaTiles(tilePainter);
 
     // 0: Dirt
@@ -1023,21 +1025,23 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         for (let i = 0; i < n; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
     };
 
-    // 217: Deepslate — darker, bluer stone with a faint banded grain.
+    // 217: Deepslate — bluish deep-stone with a faint banded grain. Lightened
+    // from the original near-black so it reads clearly under low cave light.
     withTile(217, () => {
-        fill('#4a4a52');
-        speckle('#35353c', 30);
-        speckle('#5c5c66', 20);
-        ctx.fillStyle = '#3a3a42';
+        fill('#585862');
+        speckle('#45454e', 28);
+        speckle('#6e6e7a', 20);
+        ctx.fillStyle = '#484850';
         for (let y = 2; y < 16; y += 5) ctx.fillRect(0, y, 16, 1);
     });
-    // 218: Cobbled Deepslate — deepslate-toned cobble cells with dark mortar.
+    // 218: Cobbled Deepslate — deepslate-toned cobble cells with dark mortar
+    // (lightened to match the base deepslate).
     withTile(218, () => {
-        fill('#3f3f47');
-        ctx.fillStyle = '#2b2b31';
+        fill('#4c4c55');
+        ctx.fillStyle = '#38383f';
         for (let x = 0; x < 16; x++) for (let y = 0; y < 16; y++) if ((x % 8 === 0 || y % 8 === 0 || (x % 8 === 4 && y % 8 === 4)) && Math.random() < 0.6) ctx.fillRect(x, y, 1, 1);
-        speckle('#52525c', 16);
-        speckle('#2b2b31', 12);
+        speckle('#63636e', 16);
+        speckle('#38383f', 12);
     });
     // 219: Dripstone Block — warm mottled brown with vertical drip streaks.
     withTile(219, () => {
