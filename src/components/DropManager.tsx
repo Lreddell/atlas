@@ -22,7 +22,7 @@ import { applyMagneticFieldToVelocity } from '../systems/player/dropMagnetism';
 interface DropManagerProps {
     drops: Drop[];
     playerPos: THREE.Vector3;
-    onCollect: (id: string, stack: ItemStack) => boolean;
+    onCollect: (id: string, stack: ItemStack) => void;
     onDestroy: (id: string) => void;
     isPaused: boolean;
     brightness: number;
@@ -459,16 +459,12 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                 
                 if (canPickup && !burningDrops.current.has(drop.id)) {
                     if (dist < 1.4) {
-                        const fullyCollected = onCollect(drop.id, {
+                        onCollect(drop.id, {
                             type: drop.type,
                             count: drop.count,
                             instance: drop.instance ? structuredClone(drop.instance) : undefined,
                         });
-                        if (fullyCollected) {
-                            newPos.set(0, -5000, 0);
-                        } else {
-                            drop.pickupDelay = now + 250;
-                        }
+                        newPos.set(0, -5000, 0); 
                     } else if (dist < 5.0) {
                         const dir = _dropPullDir.copy(playerPos).sub(newPos).normalize();
                         const pullStrength = (5.0 - dist) * 25.0 * dt;

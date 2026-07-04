@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     type DragTargetSlot,
     type InventoryAction,
@@ -17,7 +17,7 @@ import { BLOCKS } from '../../data/blocks';
 import { isEditableElement } from '../../utils/dom';
 import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/registry/equipment';
 import { getItemTooltip, type TooltipLine } from '../../systems/registry/itemTooltips';
-import { canStacksMerge, cloneItemStack, getItemStackLimit } from '../../systems/inventory/itemStackPolicy';
+import { cloneItemStack } from '../../systems/inventory/itemStackPolicy';
 import type { EquipmentSlot } from '../../types';
 
 interface InventoryUIProps {
@@ -29,8 +29,10 @@ interface InventoryUIProps {
     craftingGrid3x3: (ItemStack | null)[];
     craftingOutput: ItemStack | null;
     cursorStack: ItemStack | null;
+    setCursorStack: (stack: ItemStack | null) => void;
     handleInventoryAction: InventoryActionHandler;
     equipment: Equipment;
+    setEquipment: (eq: Equipment) => void;
 }
 
 type SlotCollection = DragTargetSlot['collection'];
@@ -44,7 +46,6 @@ const SLOT_COLLECTIONS = new Set<SlotCollection>([
     'furnace_input',
     'furnace_fuel',
     'furnace_output',
-    'equipment',
 ]);
 
 const isSlotCollection = (value: string): value is SlotCollection => SLOT_COLLECTIONS.has(value as SlotCollection);
@@ -137,8 +138,8 @@ const ITEM_SORT_ORDER: BlockType[] = [
 export const InventoryUI: React.FC<InventoryUIProps> = ({ 
     inventory, openContainer, setOpenContainer,
     craftingGrid2x2, craftingGrid3x3, craftingOutput,
-    cursorStack, handleInventoryAction,
-    equipment
+    cursorStack, setCursorStack, handleInventoryAction,
+    equipment, setEquipment
 }) => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, lines: TooltipLine[], x: number, y: number} | null>(null);
@@ -151,12 +152,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const [startDragStack, setStartDragStack] = useState<ItemStack | null>(null);
     
     const dragSlotsRef = useRef<Set<string>>(new Set());
-    const dragOriginRef = useRef<DragTargetSlot | null>(null);
-    const dragMovedRef = useRef(false);
-    const activeDragModeRef = useRef<'split' | 'one' | 'shift' | null>(null);
-    const activeDragStackRef = useRef<ItemStack | null>(null);
-    const suppressBackdropClickRef = useRef(false);
-    const lastClickRef = useRef<{ time: number, key: string, button: number } | null>(null);
+    const lastClickRef = useRef<{ time: number, key: string } | null>(null);
     const [, setTick] = useState(0);
     const rafRef = useRef<number>(0);
 
@@ -210,23 +206,19 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
                 const hotbarIdx = parseInt(e.code.replace('Digit', '')) - 1;
                 if (hotbarIdx >= 0 && hotbarIdx < 9) {
-                    const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
-                    handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index,
-                        creativeItem ? { hotbarIdx, creativeItem } : { hotbarIdx });
+                    handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index, { hotbarIdx });
                 }
             }
 
             if (e.code === 'KeyQ') {
                 const dropAll = e.ctrlKey || e.metaKey;
-                const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
-                handleInventoryAction('drop_key', hoveredSlot.collection, hoveredSlot.index,
-                    creativeItem ? { dropAll, creativeItem } : { dropAll });
+                handleInventoryAction('drop_key', hoveredSlot.collection, hoveredSlot.index, { dropAll });
             }
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [creativeItems, hoveredSlot, handleInventoryAction]);
+    }, [hoveredSlot, handleInventoryAction]);
 
     const getChestItems = () => {
         if (openContainer.type === 'chest') {
@@ -248,33 +240,6 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     const getSlotKey = (collection: SlotCollection, index: number) => `${collection}-${index}`;
 
-    const getUiSlotItem = useCallback((collection: SlotCollection, index: number): ItemStack | null => {
-        if (collection === 'inventory') return inventory[index] ?? null;
-        if (collection === 'crafting') return (openContainer.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2)[index] ?? null;
-        if (collection === 'output') return craftingOutput;
-        if (collection === 'creative') return creativeItems[index] ?? null;
-        if (collection === 'chest') return chestItems[index] ?? null;
-        if (collection === 'furnace_input') return furnaceData?.input ?? null;
-        if (collection === 'furnace_fuel') return furnaceData?.fuel ?? null;
-        if (collection === 'furnace_output') return furnaceData?.output ?? null;
-        if (collection === 'equipment') {
-            const slot = EQUIPMENT_SLOTS[index];
-            return slot ? equipment[slot] : null;
-        }
-        return null;
-    }, [chestItems, craftingGrid2x2, craftingGrid3x3, craftingOutput, creativeItems, equipment, furnaceData, inventory, openContainer.type]);
-
-    const canDragIntoSlot = useCallback((collection: SlotCollection, index: number, stack: ItemStack): boolean => {
-        if (collection === 'creative' || collection === 'output' || collection === 'furnace_output') return false;
-        if (collection === 'furnace_input' && !BLOCKS[stack.type]?.smeltsInto) return false;
-        if (collection === 'furnace_fuel' && !BLOCKS[stack.type]?.isFuel) return false;
-        if (collection === 'equipment' && slotForItem(stack.type) !== EQUIPMENT_SLOTS[index]) return false;
-
-        const item = getUiSlotItem(collection, index);
-        const max = getItemStackLimit(stack.type);
-        return !item || (canStacksMerge(item, stack) && item.count < max);
-    }, [getUiSlotItem]);
-
     const calculateDragDistribution = () => {
         if (!startDragStack || dragSlots.size === 0 || !dragMode) {
             return { remainder: startDragStack ? startDragStack.count : 0, distribution: {} as Record<string, number> };
@@ -288,30 +253,23 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             return [{ collection: c, index: parseInt(i, 10) }];
         });
 
-        const eligibleTargets = targets.filter(target => canDragIntoSlot(target.collection, target.index, startDragStack));
-
         if (dragMode === 'one') {
-            eligibleTargets.forEach(target => {
-                if (remainder <= 0) return;
-                distribution[getSlotKey(target.collection, target.index)] = 1;
-                remainder--;
-            });
-        } else if (dragMode === 'split' && eligibleTargets.length > 0) {
-            const perSlot = Math.floor(startDragStack.count / eligibleTargets.length);
-            const remItems = startDragStack.count % eligibleTargets.length;
-            let placed = 0;
-            
-            eligibleTargets.forEach((target, idx) => {
-                const current = getUiSlotItem(target.collection, target.index)?.count ?? 0;
-                const capacity = getItemStackLimit(startDragStack.type) - current;
-                const bonus = idx < remItems ? 1 : 0;
-                const amount = Math.min(perSlot + bonus, capacity);
-                if (amount > 0) {
-                    distribution[getSlotKey(target.collection, target.index)] = amount;
-                    placed += amount;
+            targets.forEach(t => {
+                if (remainder > 0) {
+                    distribution[getSlotKey(t.collection, t.index)] = 1;
+                    remainder--;
                 }
             });
-            remainder = startDragStack.count - placed;
+        } else if (dragMode === 'split') {
+            const perSlot = Math.floor(startDragStack.count / targets.length);
+            const remItems = startDragStack.count % targets.length;
+            
+            targets.forEach((t, idx) => {
+                const bonus = idx < remItems ? 1 : 0;
+                const amt = perSlot + bonus;
+                if (amt > 0) distribution[getSlotKey(t.collection, t.index)] = amt;
+            });
+            remainder = 0; 
         }
         
         return { remainder, distribution };
@@ -319,173 +277,86 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     const dragDist = calculateDragDistribution();
 
-    const dispatchSlotAction = useCallback((action: InventoryAction, collection: SlotCollection, index: number) => {
-        if (collection === 'creative') {
-            const creativeItem = creativeItems[index];
-            if (creativeItem) handleInventoryAction(action, collection, index, { creativeItem });
-            return;
-        }
-        handleInventoryAction(action, collection, index);
-    }, [creativeItems, handleInventoryAction]);
-
-    const resetDrag = useCallback(() => {
-        activeDragModeRef.current = null;
-        activeDragStackRef.current = null;
-        dragOriginRef.current = null;
-        dragMovedRef.current = false;
-        dragSlotsRef.current = new Set();
-        setIsDragging(false);
-        setDragSlots(new Set());
-        setStartDragStack(null);
-        setDragMode(null);
-    }, []);
-
-    const beginDrag = useCallback((mode: 'split' | 'one' | 'shift', origin: DragTargetSlot, stack: ItemStack | null) => {
-        activeDragModeRef.current = mode;
-        activeDragStackRef.current = stack ? cloneItemStack(stack) : null;
-        dragOriginRef.current = origin;
-        dragMovedRef.current = false;
-
-        const originKey = getSlotKey(origin.collection, origin.index);
-        const includeOrigin = mode === 'shift' || (!!stack && canDragIntoSlot(origin.collection, origin.index, stack));
-        dragSlotsRef.current = includeOrigin ? new Set([originKey]) : new Set();
-
-        setIsDragging(true);
-        setDragMode(mode);
-        setStartDragStack(stack ? cloneItemStack(stack) : null);
-        setDragSlots(new Set(dragSlotsRef.current));
-    }, [canDragIntoSlot]);
-
-    const finishDrag = useCallback((commit = true) => {
-        const mode = activeDragModeRef.current;
-        const origin = dragOriginRef.current;
-        if (!mode || !origin) return;
-        if (!commit) lastClickRef.current = null;
-
-        suppressBackdropClickRef.current = true;
-        window.setTimeout(() => { suppressBackdropClickRef.current = false; }, 0);
-        if (commit && mode !== 'shift') {
-            const stack = activeDragStackRef.current;
-            if (stack) {
-                if (!dragMovedRef.current) {
-                    dispatchSlotAction(mode === 'one' ? 'right_click' : 'click', origin.collection, origin.index);
-                    lastClickRef.current = mode === 'split'
-                        ? { time: Date.now(), key: getSlotKey(origin.collection, origin.index), button: 0 }
-                        : null;
-                } else {
-                    lastClickRef.current = null;
-                    const targets: DragTargetSlot[] = Array.from(dragSlotsRef.current).flatMap((key) => {
-                        const [collection, rawIndex] = key.split('-');
-                        if (!isSlotCollection(collection)) return [];
-                        return [{ collection, index: parseInt(rawIndex, 10) }];
-                    });
-                    handleInventoryAction('drag_end', 'none', 0, { mode, slots: targets, startStack: stack });
-                }
-            }
-        }
-        resetDrag();
-    }, [dispatchSlotAction, handleInventoryAction, resetDrag]);
-
-    useEffect(() => {
-        const onPointerUp = () => finishDrag();
-        const onPointerCancel = () => finishDrag(false);
-        const onBlur = () => finishDrag(false);
-        window.addEventListener('pointerup', onPointerUp, true);
-        window.addEventListener('pointercancel', onPointerCancel, true);
-        window.addEventListener('blur', onBlur);
-        return () => {
-            window.removeEventListener('pointerup', onPointerUp, true);
-            window.removeEventListener('pointercancel', onPointerCancel, true);
-            window.removeEventListener('blur', onBlur);
-            activeDragModeRef.current = null;
-            activeDragStackRef.current = null;
-            dragOriginRef.current = null;
-            dragSlotsRef.current = new Set();
-        };
-    }, [finishDrag]);
-
-    const handleSlotPointerDown = (collection: SlotCollection, index: number, e: React.PointerEvent) => {
+    const handleSlotMouseDown = (collection: SlotCollection, index: number, e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
-        if (e.button < 0 || e.button > 2) return;
 
-        const slotItem = getUiSlotItem(collection, index);
-        const key = getSlotKey(collection, index);
+        if (e.shiftKey && !cursorStack && !isDragging) {
+             handleInventoryAction('shift_click', collection, index);
+             setIsDragging(true);
+             setDragMode('shift');
+             const key = getSlotKey(collection, index);
+             dragSlotsRef.current = new Set([key]);
+             setDragSlots(new Set([key]));
+             return;
+        }
+
+        if (cursorStack && !isDragging) {
+            if (collection === 'creative' || collection === 'output' || collection === 'furnace_output') return;
+
+            const mode = e.button === 2 ? 'one' : 'split'; 
+            setIsDragging(true);
+            setDragMode(mode);
+            setStartDragStack(cursorStack);
+            
+            const key = getSlotKey(collection, index);
+            dragSlotsRef.current = new Set([key]);
+            setDragSlots(new Set([key]));
+            return;
+        }
+
         const now = Date.now();
-
-        if (e.button === 1) {
-            dispatchSlotAction('middle_click', collection, index);
-            lastClickRef.current = null;
+        const key = getSlotKey(collection, index);
+        if (lastClickRef.current && lastClickRef.current.key === key && (now - lastClickRef.current.time < 450)) {
+            if (!isDragging) handleInventoryAction('double_click', collection, index);
+            lastClickRef.current = null; 
             return;
         }
+        lastClickRef.current = { time: now, key: key };
 
-        if (e.button === 0 && !e.shiftKey && lastClickRef.current
-            && lastClickRef.current.button === 0
-            && lastClickRef.current.key === key
-            && now - lastClickRef.current.time < 450) {
-            dispatchSlotAction('double_click', collection, index);
-            lastClickRef.current = null;
-            return;
+        let action: InventoryAction = 'click';
+        if (e.type === 'contextmenu' || e.button === 2) action = 'right_click';
+        if (e.type === 'auxclick' && e.button === 1) action = 'middle_click';
+        if (e.shiftKey && action === 'click') action = 'shift_click';
+        
+        if (collection === 'creative') {
+            const item = creativeItems[index]; 
+            handleInventoryAction(action, collection, index, { creativeItem: item });
+        } else {
+            handleInventoryAction(action, collection, index);
         }
+    };
 
-        if (e.shiftKey && e.button === 0 && !cursorStack) {
-            lastClickRef.current = null;
-            if (!slotItem) return;
-            dispatchSlotAction('shift_click', collection, index);
-            if (collection !== 'creative' && collection !== 'output' && collection !== 'furnace_output') {
-                beginDrag('shift', { collection, index }, null);
-                e.currentTarget.setPointerCapture(e.pointerId);
+    const tryAddDragSlot = (collection: SlotCollection, index: number, item: ItemStack | null) => {
+        if (!isDragging) return;
+        
+        const key = getSlotKey(collection, index);
+
+        if (dragMode === 'shift') {
+            if (!dragSlotsRef.current.has(key)) {
+                dragSlotsRef.current.add(key);
+                setDragSlots(new Set(dragSlotsRef.current));
+                handleInventoryAction('shift_click', collection, index);
             }
             return;
         }
 
-        if (collection === 'creative' || collection === 'output' || collection === 'furnace_output') {
-            dispatchSlotAction(e.button === 2 ? 'right_click' : 'click', collection, index);
-            lastClickRef.current = e.button === 0
-                ? { time: now, key, button: 0 }
-                : null;
-            return;
-        }
+        if (!startDragStack) return;
+        if (collection === 'creative' || collection === 'output' || collection === 'furnace_output') return;
+        if (item && item.type !== startDragStack.type) return;
+        if (item && item.count >= 64) return;
+        
+        if (dragMode === 'one' && dragDist.remainder <= 0) return;
 
-        if (cursorStack) {
-            beginDrag(e.button === 2 ? 'one' : 'split', { collection, index }, cursorStack);
-            e.currentTarget.setPointerCapture(e.pointerId);
-            return;
-        }
-
-        dispatchSlotAction(e.button === 2 ? 'right_click' : 'click', collection, index);
-        lastClickRef.current = e.button === 0
-            ? { time: now, key, button: 0 }
-            : null;
-    };
-
-    const tryAddDragSlot = (collection: SlotCollection, index: number) => {
-        const mode = activeDragModeRef.current;
-        if (!mode) return;
-
-        const key = getSlotKey(collection, index);
-        if (dragSlotsRef.current.has(key)) return;
-
-        if (mode === 'shift') {
-            const item = getUiSlotItem(collection, index);
-            if (!item || collection === 'creative' || collection === 'output' || collection === 'furnace_output') return;
+        if (!dragSlotsRef.current.has(key)) {
             dragSlotsRef.current.add(key);
-            dragMovedRef.current = true;
             setDragSlots(new Set(dragSlotsRef.current));
-            dispatchSlotAction('shift_click', collection, index);
-            return;
         }
-
-        const stack = activeDragStackRef.current;
-        if (!stack || !canDragIntoSlot(collection, index, stack)) return;
-        dragSlotsRef.current.add(key);
-        dragMovedRef.current = key !== getSlotKey(dragOriginRef.current!.collection, dragOriginRef.current!.index);
-        setDragSlots(new Set(dragSlotsRef.current));
     };
 
     const handleSlotEnter = (collection: SlotCollection, index: number, item: ItemStack | null, e: React.MouseEvent) => {
         setHoveredSlot({ collection, index });
-        tryAddDragSlot(collection, index);
+        tryAddDragSlot(collection, index, item);
 
         if (!item) {
             setHoverInfo(null);
@@ -495,9 +366,51 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         setHoverInfo({ name: tooltip.name, lines: tooltip.lines, x: e.clientX, y: e.clientY });
     };
 
-    const handlePointerUp = (e: React.PointerEvent) => {
+    const handleMouseUp = (e: React.MouseEvent) => {
         e.stopPropagation();
-        finishDrag();
+        if (!isDragging) return;
+
+        if (startDragStack && (dragMode === 'split' || dragMode === 'one')) {
+            // Use the ref (updated synchronously as slots are painted), not the
+            // async dragSlots state, so a fast release never loses targets.
+            const painted = Array.from(dragSlotsRef.current);
+
+            if (painted.length <= 1) {
+                // Only the origin slot was touched — this was a plain click, not a
+                // paint-drag. Route it to the standard click handler so it does the
+                // correct place / merge / SWAP / pickup. (Sending a lone click
+                // through drag_end silently bounced swaps back to the cursor — the
+                // "items just go back to the mouse" bug.)
+                const originKey = painted[0];
+                if (originKey) {
+                    const sep = originKey.lastIndexOf('-');
+                    const c = originKey.slice(0, sep);
+                    const i = parseInt(originKey.slice(sep + 1), 10);
+                    if (isSlotCollection(c) && i >= 0) {
+                        handleInventoryAction(dragMode === 'one' ? 'right_click' : 'click', c, i);
+                    }
+                }
+            } else {
+                // A genuine multi-slot paint: distribute the held stack across them.
+                const targets: DragTargetSlot[] = painted.flatMap((k: string) => {
+                    const sep = k.lastIndexOf('-');
+                    const c = k.slice(0, sep);
+                    if (!isSlotCollection(c)) return [];
+                    return [{ collection: c, index: parseInt(k.slice(sep + 1), 10) }];
+                });
+                handleInventoryAction('drag_end', 'none', 0, {
+                    mode: dragMode,
+                    slots: targets,
+                    startStack: startDragStack,
+                });
+            }
+        }
+
+        setIsDragging(false);
+        setDragSlots(new Set());
+        dragSlotsRef.current = new Set();
+        setStartDragStack(null);
+        setDragMode(null);
     };
 
     const onSlotLeave = () => {
@@ -505,13 +418,43 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         setHoverInfo(null);
     };
 
-    const handlePointerMove = (e: React.PointerEvent) => {
+    // Equipment slots interact only with the cursor + equipment state (both lifted
+    // to App), so they reuse the existing inventory<->cursor pickup without touching
+    // the inventory controller. Click to swap the cursor item with the slot, if the
+    // item belongs in that slot; click an empty cursor on a filled slot to pick it up.
+    const handleEquipMouseDown = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const current = equipment[slot] ?? null;
+        if (cursorStack) {
+            if (slotForItem(cursorStack.type) !== slot) return; // wrong gear for this slot
+            if (cursorStack.count === 1) {
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
+                setCursorStack(current);
+            } else if (!current) {
+                setEquipment({ ...equipment, [slot]: cloneItemStack(cursorStack, 1) });
+                setCursorStack({ ...cursorStack, count: cursorStack.count - 1 });
+            }
+        } else if (current) {
+            setEquipment({ ...equipment, [slot]: null });
+            setCursorStack(current);
+        }
+    };
+
+    const handleEquipEnter = (slot: EquipmentSlot, e: React.MouseEvent) => {
+        const it = equipment[slot];
+        if (!it) return;
+        const tooltip = getItemTooltip(it);
+        setHoverInfo({ name: tooltip.name, lines: tooltip.lines, x: e.clientX, y: e.clientY });
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
         setMousePos({x: e.clientX, y: e.clientY});
         if (hoverInfo) {
             setHoverInfo(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
         }
 
-        if (activeDragModeRef.current) {
+        if (isDragging) {
             const el = document.elementFromPoint(e.clientX, e.clientY);
             if (el) {
                 const slotEl = el.closest('[data-slot-collection]');
@@ -519,7 +462,14 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     const collection = slotEl.getAttribute('data-slot-collection');
                     const index = parseInt(slotEl.getAttribute('data-slot-index') || '-1');
                     if (collection && isSlotCollection(collection) && index >= 0) {
-                        tryAddDragSlot(collection, index);
+                        let item: ItemStack | null = null;
+                        if (collection === 'inventory') item = inventory[index];
+                        else if (collection === 'crafting') item = (openContainer?.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2)[index];
+                        else if (collection === 'chest') item = chestItems[index];
+                        else if (collection === 'furnace_input') item = furnaceData?.input || null;
+                        else if (collection === 'furnace_fuel') item = furnaceData?.fuel || null;
+                        
+                        tryAddDragSlot(collection, index, item);
                     }
                 }
             }
@@ -531,21 +481,13 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     };
 
     const handleBackdropClick = (e: React.MouseEvent) => {
-        if (suppressBackdropClickRef.current) {
-            e.stopPropagation();
+        if (isDragging) {
+            handleMouseUp(e);
             return;
         }
         e.stopPropagation();
         if (cursorStack) {
-            handleInventoryAction('drop_cursor', 'none', -1, { dropAll: true });
-        }
-    };
-
-    const handleBackdropContextMenu = (e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.target === e.currentTarget && !activeDragModeRef.current && cursorStack) {
-            handleInventoryAction('drop_cursor', 'none', -1, { dropAll: false });
+            handleInventoryAction('drop_cursor', 'none', -1);
         }
     };
 
@@ -556,7 +498,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         
         if (isDragging && dragAmount !== undefined && startDragStack) {
             const currentCount = item ? item.count : 0;
-            displayItem = cloneItemStack(startDragStack, currentCount + dragAmount);
+            displayItem = { type: startDragStack.type, count: currentCount + dragAmount };
         }
 
         return (
@@ -565,11 +507,10 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 className={`relative z-20 p-[2px]`}
                 data-slot-collection={collection} 
                 data-slot-index={index}
-                onPointerDown={(e) => handleSlotPointerDown(collection, index, e)}
+                onMouseDown={(e) => handleSlotMouseDown(collection, index, e)}
                 onMouseEnter={(e) => handleSlotEnter(collection, index, item, e)}
                 onMouseLeave={onSlotLeave}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={() => finishDrag(false)}
+                onMouseUp={handleMouseUp}
                 onClick={() => {}} 
                 onContextMenu={() => {}}
                 onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }} 
@@ -580,7 +521,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     onClick={() => {}} 
                     onContextMenu={() => {}}
                     onDoubleClick={() => {}}
-                    onAuxClick={e => { e.stopPropagation(); e.preventDefault(); }}
+                    onAuxClick={e => {
+                        if (e.button === 1 && !isDragging) {
+                            e.stopPropagation(); e.preventDefault();
+                            handleInventoryAction('middle_click', collection, index);
+                        }
+                    }}
                     onMouseDown={() => {}}
                     onMouseEnter={() => {}}
                     onMouseLeave={() => {}}
@@ -592,20 +538,13 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     const renderEquipmentSlot = (slot: EquipmentSlot) => {
         const item = equipment[slot] ?? null;
-        const index = EQUIPMENT_SLOTS.indexOf(slot);
         return (
             <div
                 key={slot}
                 className="relative"
-                data-slot-collection="equipment"
-                data-slot-index={index}
-                onPointerDown={(e) => handleSlotPointerDown('equipment', index, e)}
-                onMouseEnter={(e) => handleSlotEnter('equipment', index, item, e)}
+                onMouseDown={(e) => handleEquipMouseDown(slot, e)}
+                onMouseEnter={(e) => handleEquipEnter(slot, e)}
                 onMouseLeave={onSlotLeave}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={() => finishDrag(false)}
-                onContextMenu={(e) => e.preventDefault()}
-                onAuxClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 title={slot}
             >
                 <Slot item={item} size="large" />
@@ -636,13 +575,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     return (
         <div 
             className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center"
-            onPointerMove={handlePointerMove}
+            onMouseMove={handleMouseMove}
             onClick={handleBackdropClick} 
             onMouseDown={(e) => { if(e.button !== 0 && !isDragging) e.stopPropagation(); }}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={() => finishDrag(false)}
+            onMouseUp={handleMouseUp}
             onWheel={stopPropagation}
-            onContextMenu={handleBackdropContextMenu}
+            onContextMenu={e => { e.preventDefault(); stopPropagation(e); }}
         >
             <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
                 
@@ -681,21 +619,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                         <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
                              <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
-                                     <div
-                                        key={`c-${i}`}
-                                        data-slot-collection="creative"
-                                        data-slot-index={i}
-                                        onPointerDown={(e) => handleSlotPointerDown('creative', i, e)}
-                                        onMouseEnter={(e) => handleSlotEnter('creative', i, it, e)}
-                                        onMouseLeave={onSlotLeave}
-                                        onPointerUp={handlePointerUp}
-                                        onPointerCancel={() => finishDrag(false)}
-                                        onContextMenu={(e) => e.preventDefault()}
-                                        onAuxClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                     >
+                                     <div key={`c-${i}`} onMouseDown={(e) => handleSlotMouseDown('creative', i, e)}>
                                          <Slot 
                                             item={it}
                                             size="large"
+                                            onMouseEnter={(e) => handleSlotEnter('creative', i, it, e)}
+                                            onMouseLeave={onSlotLeave}
                                          />
                                      </div>
                                  ))}

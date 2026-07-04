@@ -412,7 +412,6 @@ export type InventoryCollection =
     | 'furnace_input'
     | 'furnace_fuel'
     | 'furnace_output'
-    | 'equipment'
     | 'none';
 
 export type InventoryAction =
@@ -428,8 +427,6 @@ export type InventoryAction =
 
 export interface CreativeInventoryActionData {
     creativeItem: ItemStack;
-    hotbarIdx?: number;
-    dropAll?: boolean;
 }
 
 export interface HotbarSwapActionData {

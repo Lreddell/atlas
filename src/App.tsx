@@ -503,9 +503,7 @@ const App: React.FC = () => {
       gameMode, 
       setDrops, 
       playerPosRef, 
-      cameraRef: controlsRef,
-      equipment,
-      setEquipment,
+      cameraRef: controlsRef 
   });
 
   const isInventoryOpenRef = useRef(false);
@@ -864,12 +862,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const handleContextMenu = (e: MouseEvent) => {
-          if (appState !== 'game' || isEditableElement(e.target)) return;
           e.preventDefault();
       };
       window.addEventListener('contextmenu', handleContextMenu);
       return () => window.removeEventListener('contextmenu', handleContextMenu);
-  }, [appState]);
+  }, []);
 
   useEffect(() => {
       const TICK_MS = 1000;
@@ -1165,15 +1162,10 @@ const App: React.FC = () => {
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
   const handleCollect = useCallback((id: string, stack: ItemStack) => {
-    if (health <= 0) return false;
-    const remainder = addToInventory(stack);
-    const pickedUp = stack.count - (remainder?.count ?? 0);
-    if (pickedUp <= 0) return false;
+    if (health <= 0) return; 
+    addToInventory(stack);
     soundManager.play("entity.item.pickup"); 
-    setDrops(prev => remainder
-        ? prev.map(drop => drop.id === id ? { ...drop, count: remainder.count } : drop)
-        : prev.filter(drop => drop.id !== id));
-    return remainder === null;
+    setDrops(prev => prev.filter(d => d.id !== id));
   }, [addToInventory, health]);
 
   const handleDestroy = useCallback((id: string) => {
@@ -1363,12 +1355,6 @@ const App: React.FC = () => {
   }, [appState, isPaused, openContainer, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, requestPointerLockBurst]);
 
   useEffect(() => {
-      // Pointer lock can only be (re)acquired from a real user gesture — a
-      // mousedown/mouseup/click, never a bare mousemove. So re-lock on the
-      // earliest gesture (mousedown = button press) as well as up/click, so the
-      // camera snaps back the instant the player touches the mouse. mousemove is
-      // kept only as a best-effort nudge (it no-ops if the browser refuses).
-      const onMouseDown = () => tryRecoverPointerLock('mouse-down');
       const onMouseUp = () => tryRecoverPointerLock('mouse-up');
       const onClick = () => tryRecoverPointerLock('click');
       const onMouseMove = (e: MouseEvent) => {
@@ -1376,49 +1362,25 @@ const App: React.FC = () => {
           tryRecoverPointerLock('mouse-move');
       };
 
-      window.addEventListener('mousedown', onMouseDown, true);
       window.addEventListener('mouseup', onMouseUp, true);
       window.addEventListener('click', onClick, true);
       window.addEventListener('mousemove', onMouseMove, true);
       return () => {
-          window.removeEventListener('mousedown', onMouseDown, true);
           window.removeEventListener('mouseup', onMouseUp, true);
           window.removeEventListener('click', onClick, true);
           window.removeEventListener('mousemove', onMouseMove, true);
       };
   }, [tryRecoverPointerLock]);
 
-  const dropInventoryOverflow = useCallback((item: ItemStack) => {
-    const position = playerPosRef.current;
-    setDrops(prev => [...prev, {
-      id: Math.random().toString(),
-      type: item.type,
-      count: item.count,
-      instance: item.instance ? structuredClone(item.instance) : undefined,
-      position: [position.x, position.y + 1, position.z],
-      velocity: [(Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2],
-      createdAt: Date.now(),
-      pickupDelay: Date.now() + 1500,
-      age: 0,
-    }]);
-  }, []);
-
   const closeInventory = useCallback((opts?: { deferPointerLock?: boolean }) => {
     soundManager.play("ui.close"); 
     const grids = [...craftingGrid2x2, ...craftingGrid3x3];
-    grids.forEach(item => {
-      if (!item) return;
-      const remainder = addToInventory(item);
-      if (remainder) dropInventoryOverflow(remainder);
-    });
-    if (cursorStack && gameMode !== 'creative') {
-      const remainder = addToInventory(cursorStack);
-      if (remainder) dropInventoryOverflow(remainder);
-    }
+    grids.forEach(item => { if (item) addToInventory(item); });
+    if (cursorStack && gameMode !== 'creative') addToInventory(cursorStack);
     setCraftingGrid2x2(Array(4).fill(null)); setCraftingGrid3x3(Array(9).fill(null));
     setCursorStack(null); 
     resumeGame(opts);
-  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, dropInventoryOverflow, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
+  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
 
   const openInventory = useCallback(() => {
     soundManager.play("ui.open"); 
@@ -1930,17 +1892,13 @@ const App: React.FC = () => {
           else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
           else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
       } else if (parts[0] === '/unequip' && parts[1]) {
-              const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
+          const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
           if (!slot) { logMsg('Usage: /unequip <helmet|chestplate|leggings|boots|accessory>', 'error'); }
           else {
               setEquipment(prev => {
                   const it = prev[slot];
                   if (!it) { logMsg(`Nothing equipped in ${slot}`, 'error'); return prev; }
-                  const remainder = addToInventory(it);
-                  if (remainder) {
-                      logMsg('Inventory is full.', 'error');
-                      return prev;
-                  }
+                  addToInventory(it);
                   logMsg(`Unequipped ${BLOCKS[it.type].name}`, 'success');
                   return { ...prev, [slot]: null };
               });
@@ -2025,15 +1983,13 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    if (e.code === 'F4') {
+    if (e.code === 'F4') { 
+        e.preventDefault(); 
         if (showAtlasViewer) {
-            e.preventDefault();
             setShowAtlasViewer(false);
             isAtlasViewerOpenRef.current = false;
             resumeGame();
-        } else if (appState === 'game' && !isEditableTarget && !openContainer && !isPaused
-            && !showCommandInput && !isDead && !isSleeping && !isCapturingPanorama) {
-            e.preventDefault();
+        } else {
             setShowAtlasViewer(true);
             isAtlasViewerOpenRef.current = true;
             enterUIMode();
@@ -2114,25 +2070,19 @@ const App: React.FC = () => {
         e.preventDefault(); e.stopPropagation();
         if (isDead || deathScreenActiveRef.current) return;
         
-        // These UIs already released pointer lock when they opened (via E / F4 /
-        // slash), so this Escape is NOT exiting an active lock — we can re-lock
-        // synchronously in the keydown, which still carries user activation. That
-        // restores camera control immediately instead of waiting for a click
-        // (a mousemove can never re-acquire pointer lock — no user gesture). The
-        // Escape keyup handler stays as a fallback if the browser refuses here.
         if (showAtlasViewer) {
             setShowAtlasViewer(false);
             isAtlasViewerOpenRef.current = false;
-            resumeGame();
+            resumeGame({ deferPointerLock: true });
             return;
         }
 
         if (showCommandInput) {
             if (showSuggestions) { setShowSuggestions(false); return; }
-            setShowCommandInput(false); setCommandValue(''); isCommandOpenRef.current = false; resumeGame(); return;
+            setShowCommandInput(false); setCommandValue(''); isCommandOpenRef.current = false; resumeGame({ deferPointerLock: true }); return; 
         }
 
-        if (openContainer) { closeInventory(); return; }
+        if (openContainer) { closeInventory({ deferPointerLock: true }); return; }
         if (isSleeping) { setIsSleeping(false); return; } 
         if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
@@ -3014,7 +2964,7 @@ const App: React.FC = () => {
                     )}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
                             bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : openContainer.bossId}
@@ -3073,8 +3023,7 @@ const App: React.FC = () => {
                         acCandidates={acCandidates} 
                         acIndex={acIndex} 
                         onMessageClick={(action) => executeCommand(action)} 
-                        showSuggestions={showSuggestions}
-                        interactionsDisabled={!!openContainer || isPaused || showAtlasViewer || showDeathScreen}
+                        showSuggestions={showSuggestions} 
                     />
                 </>
             )}

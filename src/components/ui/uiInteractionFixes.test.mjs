@@ -13,25 +13,28 @@ const worldManager = read('src/systems/WorldManager.ts');
 const chunkBase = read('src/components/ui/ChunkBase.tsx');
 
 test('a plain click routes to the standard click handler, not drag_end', () => {
-    // A press that never moved to another slot is a click, not a paint-drag, so
-    // it dispatches click/right_click (correct place/merge/swap) instead of
-    // distributing through drag_end (which bounced swaps back to the cursor).
-    assert.match(inventoryUI, /if \(!dragMovedRef\.current\)/);
-    assert.match(inventoryUI, /dispatchSlotAction\(mode === 'one' \? 'right_click' : 'click', origin\.collection, origin\.index\)/);
-    // A genuine paint (moved across slots) still distributes via drag_end,
-    // reading the authoritative ref rather than async state.
+    // A press that only ever touched its origin slot is a click, not a paint, so
+    // it dispatches click/right_click (correct place/merge/SWAP/pickup) instead
+    // of distributing through drag_end (which bounced swaps back to the cursor —
+    // the "items just go back to the mouse" bug).
+    assert.match(inventoryUI, /const painted = Array\.from\(dragSlotsRef\.current\)/);
+    assert.match(inventoryUI, /if \(painted\.length <= 1\)/);
+    assert.match(inventoryUI, /handleInventoryAction\(dragMode === 'one' \? 'right_click' : 'click', c, i\)/);
+    // A genuine multi-slot paint still distributes via drag_end.
     assert.match(inventoryUI, /handleInventoryAction\('drag_end'/);
-    assert.match(inventoryUI, /Array\.from\(dragSlotsRef\.current\)/);
+    // The fragile pointer-capture drag from the reverted commit is gone.
+    assert.doesNotMatch(inventoryUI, /setPointerCapture/);
+    assert.doesNotMatch(inventoryUI, /dragMovedRef/);
 });
 
-test('closing UIs with Escape re-locks immediately instead of waiting for a click', () => {
-    // The Escape-close paths no longer defer pointer lock (a mousemove can never
-    // re-acquire it), so the keydown — which still carries user activation —
-    // re-locks and restores camera control at once.
-    assert.doesNotMatch(app, /closeInventory\(\{ deferPointerLock: true \}\)/);
-    assert.match(app, /if \(openContainer\) \{ closeInventory\(\); return; \}/);
-    // mousedown is now a pointer-lock recovery trigger (earliest valid gesture).
-    assert.match(app, /window\.addEventListener\('mousedown', onMouseDown, true\)/);
+test('Escape from a container returns to the game, never the pause menu', () => {
+    // The openContainer close is handled BEFORE the pause fallback, so closing a
+    // UI with Escape resumes the game rather than opening the pause menu.
+    const esc = app.slice(app.lastIndexOf("if (e.key === 'Escape') {"));
+    const containerIdx = esc.indexOf('if (openContainer) { closeInventory');
+    const pauseIdx = esc.indexOf('setIsPaused(true)');
+    assert.ok(containerIdx !== -1, 'container Escape must close the inventory');
+    assert.ok(pauseIdx !== -1 && containerIdx < pauseIdx, 'container close must precede the pause fallback');
 });
 
 test('respawn re-centers chunk streaming so the spawn area renders', () => {
@@ -46,12 +49,9 @@ test('caves render across the near/mid view, not just a few chunks out', () => {
 });
 
 test('the Magnetic Fields editor row matches the standard biome accordion', () => {
-    // No more bespoke purple panel — it uses the same neutral accordion shell,
-    // swatch/name/chevron header, and expand mechanism as every other biome.
     assert.doesNotMatch(chunkBase, /border-purple-500\/40 rounded bg-\[#1c1726\]/);
     assert.doesNotMatch(chunkBase, /text-sm font-bold text-purple-300 flex-1/);
     assert.match(chunkBase, /toggleBiomeExpand\('magneticFields'\)/);
     assert.match(chunkBase, /expandedBiomes\['magneticFields'\]/);
-    // Header markup is identical in shape to the standard rows.
     assert.match(chunkBase, /<span className="text-sm font-bold text-gray-200 flex-1 text-left">Magnetic Fields<\/span>/);
 });

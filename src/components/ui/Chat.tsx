@@ -19,13 +19,11 @@ interface ChatProps {
     acIndex?: number;
     onMessageClick?: (action: string) => void;
     showSuggestions?: boolean;
-    interactionsDisabled?: boolean;
 }
 
 export const Chat: React.FC<ChatProps> = ({ 
     messages, showInput, inputValue, setInputValue, onSubmitInput,
-    acCandidates = [], acIndex = 0, onMessageClick, showSuggestions = false,
-    interactionsDisabled = false,
+    acCandidates = [], acIndex = 0, onMessageClick, showSuggestions = false
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +49,7 @@ export const Chat: React.FC<ChatProps> = ({
 
     return (
         <div 
-            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[500px] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            className="absolute bottom-2 left-2 z-[60] flex flex-col gap-1 w-[500px] pointer-events-none"
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}
@@ -63,14 +61,14 @@ export const Chat: React.FC<ChatProps> = ({
                         className={`
                             px-2 py-0.5 rounded text-shadow-sm font-medium bg-black/40 backdrop-blur-[1px]
                             ${msg.type === 'error' ? 'text-red-400' : msg.type === 'success' ? 'text-green-400' : 'text-white'}
-                            ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-black/60 pointer-events-auto' : ''}
+                            ${msg.clickAction ? 'cursor-pointer hover:bg-black/60 pointer-events-auto' : ''}
                         `}
                         style={{
                             opacity: (Date.now() - msg.timestamp) > 10000 && !showInput ? 0 : 1,
                             transition: 'opacity 1s ease-out',
                         }}
                         onClick={(e) => {
-                            if (!interactionsDisabled && msg.clickAction && onMessageClick) {
+                            if (msg.clickAction && onMessageClick) {
                                 e.stopPropagation();
                                 onMessageClick(msg.clickAction);
                             }

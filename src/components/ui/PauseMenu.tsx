@@ -171,19 +171,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         }
     }, [screen]);
 
-    useEffect(() => {
-        if (screen === 'main') return;
-        const handleSubmenuEscape = (event: KeyboardEvent) => {
-            if (event.key !== 'Escape') return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (screen === 'tutorial' && onTutorialClose) onTutorialClose();
-            else setScreen('main');
-        };
-        window.addEventListener('keydown', handleSubmenuEscape, true);
-        return () => window.removeEventListener('keydown', handleSubmenuEscape, true);
-    }, [onTutorialClose, screen]);
-
     const updateVolume = (cat: string, val: number) => {
         setVolumes(p => ({...p, [cat]: val}));
         soundManager.setVolume(cat as SoundCategory | 'master', val);

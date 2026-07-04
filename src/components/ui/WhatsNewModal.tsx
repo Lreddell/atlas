@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { CHANGELOG, getChangelogEntry, getLatestChangelogEntry, type ChangelogEntry } from '../../data/changelog';
-import { useDialogFocus } from '../../hooks/useDialogFocus';
 import { MenuButton } from './mainMenu/MainMenuControls';
 
 interface WhatsNewModalProps {
@@ -10,8 +9,6 @@ interface WhatsNewModalProps {
 }
 
 export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, onClose }) => {
-    const dialogRef = useDialogFocus<HTMLDivElement>(onClose);
-    const titleId = 'atlas-whats-new-title';
     const initialEntry =
         (initialVersion ? getChangelogEntry(initialVersion) : undefined) ?? getLatestChangelogEntry();
     const [activeVersion, setActiveVersion] = useState<string | undefined>(initialEntry?.version);
@@ -23,17 +20,12 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
     return (
         <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70" onClick={onClose}>
             <div
-                ref={dialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                tabIndex={-1}
-                className="flex max-h-[80vh] w-[640px] flex-col border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] outline-none"
+                className="flex max-h-[80vh] w-[640px] flex-col border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515]"
                 onClick={(event) => event.stopPropagation()}
             >
                 {/* Header */}
                 <div className="flex items-baseline justify-between border-b border-[#373737] px-6 py-4">
-                    <h2 id={titleId} className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">What&apos;s New</h2>
+                    <h2 className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">What&apos;s New</h2>
                     <span className="font-pixel text-sm text-yellow-300">
                         {entry.displayVersion}
                         {entry.date ? ` • ${entry.date}` : ' • Unreleased'}
