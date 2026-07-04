@@ -27,8 +27,17 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
     if (variant === 'danger') colors = 'bg-red-700 border-red-400 border-b-red-950 border-r-red-950 text-white';
 
     return (
-        <div className="relative">
+        <div
+            className="relative"
+            onMouseEnter={() => {
+                setIsHovered(true);
+                if (!disabled) soundManager.play('ui.hover', { volume: 0.2, pitch: 2.0 });
+            }}
+            onMouseLeave={() => setIsHovered(false)}
+        >
             <button
+                disabled={disabled}
+                aria-disabled={disabled}
                 onClick={(event) => {
                     event.stopPropagation();
                     if (!disabled && onClick) {
@@ -36,11 +45,6 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
                         onClick();
                     }
                 }}
-                onMouseEnter={() => {
-                    setIsHovered(true);
-                    if (!disabled) soundManager.play('ui.hover', { volume: 0.2, pitch: 2.0 });
-                }}
-                onMouseLeave={() => setIsHovered(false)}
                 className={`
                     ${width} ${small ? 'h-8 text-sm' : 'h-10'} relative border-2 select-none outline-none group
                     ${colors}

@@ -12,19 +12,20 @@ const app = read('src/App.tsx');
 const worldManager = read('src/systems/WorldManager.ts');
 const chunkBase = read('src/components/ui/ChunkBase.tsx');
 
-test('a plain click routes to the standard click handler, not drag_end', () => {
-    // A press that only ever touched its origin slot is a click, not a paint, so
-    // it dispatches click/right_click (correct place/merge/SWAP/pickup) instead
-    // of distributing through drag_end (which bounced swaps back to the cursor —
-    // the "items just go back to the mouse" bug).
-    assert.match(inventoryUI, /const painted = Array\.from\(dragSlotsRef\.current\)/);
-    assert.match(inventoryUI, /if \(painted\.length <= 1\)/);
-    assert.match(inventoryUI, /handleInventoryAction\(dragMode === 'one' \? 'right_click' : 'click', c, i\)/);
-    // A genuine multi-slot paint still distributes via drag_end.
+test('the inventory drag no longer captures the pointer (the real bug)', () => {
+    // setPointerCapture bound the pointer to the origin slot, suppressing the
+    // other slots' mouseenter events that the paint-drag relies on — so drags
+    // "stuck" to one slot and bounced items back to the cursor. Removing it lets
+    // handleSlotEnter → tryAddDragSlot run again. The rest of the hardening
+    // commit (double-click collect, dialog focus, etc.) is intact.
+    assert.doesNotMatch(inventoryUI, /\.setPointerCapture\(/);
+    assert.match(inventoryUI, /tryAddDragSlot/);
+    assert.match(inventoryUI, /dragMovedRef/);
+    // A lone origin (no move) is a click; a real paint distributes via drag_end.
+    assert.match(inventoryUI, /if \(!dragMovedRef\.current\)/);
     assert.match(inventoryUI, /handleInventoryAction\('drag_end'/);
-    // The fragile pointer-capture drag from the reverted commit is gone.
-    assert.doesNotMatch(inventoryUI, /setPointerCapture/);
-    assert.doesNotMatch(inventoryUI, /dragMovedRef/);
+    // Double-click-to-collect-into-cursor is preserved.
+    assert.match(inventoryUI, /dispatchSlotAction\('double_click', collection, index\)/);
 });
 
 test('Escape from a container returns to the game, never the pause menu', () => {

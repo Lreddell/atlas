@@ -59,7 +59,7 @@ test('tooltips omit tier labels and purple informational descriptions', () => {
 test('the inventory tooltip and hotbar name plate render the stat lines', () => {
     // Inventory hover builds from getItemTooltip for both slots and equipment.
     assert.match(inventoryUI, /getItemTooltip\(item\)/);
-    assert.match(inventoryUI, /getItemTooltip\(it\)/);
+    assert.match(inventoryUI, /handleSlotEnter\('equipment', index, item, e\)/);
     assert.match(inventoryUI, /hoverInfo\.lines\.map/);
     // Hotbar shows the compact one-line summary under the item name.
     assert.match(hud, /summarizeItemStats\(inventory\[selectedSlot\]!\)/);
