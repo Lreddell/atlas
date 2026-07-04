@@ -61,6 +61,20 @@ const CREATIVE_TABS: { id: CreativeTab, name: string, icon: BlockType }[] = [
 
 const ARMOR_EQUIPMENT_SLOTS = EQUIPMENT_SLOTS.filter((slot) => slot !== 'accessory');
 
+const CraftingArrow: React.FC = () => (
+    <svg
+        aria-hidden="true"
+        className="h-[26px] w-8 shrink-0"
+        viewBox="0 0 16 13"
+        shapeRendering="crispEdges"
+    >
+        <path
+            fill="#8b8b8b"
+            d="M9 0h1v1h1v1h1v1h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1v1h-1v1h-1v1H9V8H0V5h9V0Z"
+        />
+    </svg>
+);
+
 const ITEM_SORT_ORDER: BlockType[] = [
     // --- BUILDING ---
     BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
@@ -546,7 +560,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={e => { e.preventDefault(); stopPropagation(e); }}
         >
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[904px]' : 'scale-110'}`} onClick={stopPropagation}>
+            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
                 
                 {openContainer.type === 'creative' && (
                     <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">
@@ -618,11 +632,11 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                 {renderPlayerInventory()}
 
                                 {openContainer.type === 'inventory' && (
-                                    <div className="absolute left-full top-2 ml-0.5 flex w-[184px] items-center gap-0.5">
+                                    <div className="absolute left-full top-2 ml-6 flex w-[208px] items-center gap-1">
                                         <div className="grid w-[116px] shrink-0 grid-cols-2 gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
                                             {craftingGrid2x2.map((item, index) => renderSlot(item, 'crafting', index))}
                                         </div>
-                                        <div className="w-3 shrink-0 text-2xl text-[#333] font-bold text-center drop-shadow-sm">&rarr;</div>
+                                        <CraftingArrow />
                                         <div className="shrink-0">{renderSlot(craftingOutput, 'output', 0)}</div>
                                     </div>
                                 )}

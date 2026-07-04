@@ -34,13 +34,23 @@ test('hotbar stacks reproduce the five-tick Minecraft item pop', () => {
     assert.match(styles, /animation: atlas-item-pop 250ms/);
 });
 
-test('player inventory stays centered with equipment attached on the left', () => {
-    assert.match(inventory, /openContainer\.type === 'inventory' \? 'w-\[904px\]'/);
+test('player inventory stays centered with evenly spaced equipment and crafting groups', () => {
+    assert.match(inventory, /openContainer\.type === 'inventory' \? 'w-\[1000px\]'/);
     assert.match(inventory, /relative flex justify-center/);
     assert.match(inventory, /absolute right-full top-2 mr-6 flex items-start gap-1/);
     assert.match(inventory, /renderEquipmentSlot\('accessory'\)/);
     assert.match(inventory, /ARMOR_EQUIPMENT_SLOTS\.map\(renderEquipmentSlot\)/);
-    assert.match(inventory, /absolute left-full top-2 ml-0\.5 flex w-\[184px\] items-center gap-0\.5/);
+    assert.match(inventory, /absolute left-full top-2 ml-6 flex w-\[208px\] items-center gap-1/);
+});
+
+test('survival crafting uses the crisp Minecraft arrow and a normal output slot', () => {
+    assert.match(inventory, /viewBox="0 0 16 13"/);
+    assert.match(inventory, /shapeRendering="crispEdges"/);
+    assert.match(inventory, /className="h-\[26px\] w-8 shrink-0"/);
+    assert.match(inventory, /fill="#8b8b8b"/);
+    assert.match(inventory, /<CraftingArrow \/>/);
+    assert.match(inventory, /renderSlot\(craftingOutput, 'output', 0\)/);
+    assert.doesNotMatch(inventory, /&rarr;/);
 });
 
 test('selection and durability decorations overlay without resizing the item', () => {
