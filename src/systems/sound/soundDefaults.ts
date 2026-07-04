@@ -76,6 +76,32 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 }, // Magnetic Fields biome
     "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 }, // Magnetic Warden fight
 
+    // --- Per-biome music folders. Each biome has its own folder so custom tracks
+    // can be dropped in; until a folder has files it is empty and the biome falls
+    // back to a shared pack (wired in MusicController's MUSIC_PACKS). ---
+    "music.river": { category: "music", sounds: ["music/river"], volume: 0.5 },
+    "music.frozen_river": { category: "music", sounds: ["music/frozen_river"], volume: 0.5 },
+    "music.frozen_ocean": { category: "music", sounds: ["music/frozen_ocean"], volume: 0.5 },
+    "music.tundra": { category: "music", sounds: ["music/tundra"], volume: 0.5 },
+    "music.taiga": { category: "music", sounds: ["music/taiga"], volume: 0.5 },
+    "music.ice_spikes": { category: "music", sounds: ["music/ice_spikes"], volume: 0.5 },
+    "music.mountains": { category: "music", sounds: ["music/mountains"], volume: 0.5 },
+    "music.birch_forest": { category: "music", sounds: ["music/birch_forest"], volume: 0.5 },
+    "music.flower_forest": { category: "music", sounds: ["music/flower_forest"], volume: 0.5 },
+    "music.dark_forest": { category: "music", sounds: ["music/dark_forest"], volume: 0.5 },
+    "music.jungle": { category: "music", sounds: ["music/jungle"], volume: 0.5 },
+    "music.swamp": { category: "music", sounds: ["music/swamp"], volume: 0.5 },
+    "music.meadow": { category: "music", sounds: ["music/meadow"], volume: 0.5 },
+    "music.savanna": { category: "music", sounds: ["music/savanna"], volume: 0.5 },
+    "music.stone_shore": { category: "music", sounds: ["music/stone_shore"], volume: 0.5 },
+    "music.beach": { category: "music", sounds: ["music/beach"], volume: 0.5 },
+    "music.cherry_grove": { category: "music", sounds: ["music/cherry_grove"], volume: 0.5 },
+    "music.red_mesa": { category: "music", sounds: ["music/red_mesa"], volume: 0.5 },
+    "music.mesa_bryce": { category: "music", sounds: ["music/mesa_bryce"], volume: 0.5 },
+    // (music.volcanic + music.desert already declared above)
+    "music.lush_caves": { category: "music", sounds: ["music/lush_caves"], volume: 0.45 },
+    "music.dripstone_caves": { category: "music", sounds: ["music/dripstone_caves"], volume: 0.45 },
+
     // --- Magnetic Warden SFX (drop your own files at public/assets/rvx/sounds/magnetic_warden/) ---
     "entity.magnetic_warden.polarity": { category: "blocks", sounds: ["magnetic_warden/polarity"], volume: 0.6 },   // polarity swap telegraph
     "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },   // a hit absorbed by the shield

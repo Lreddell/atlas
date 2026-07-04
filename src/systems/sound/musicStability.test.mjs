@@ -58,3 +58,31 @@ test('the sound manifest only reloads from the explicit /sound reload command', 
     // init() must not re-run the manifest/folder-index load once initialized.
     assert.match(sm, /Already initialized — just resume if suspended/);
 });
+
+test('every biome has its own music folder + event, with a shared fallback', () => {
+    const biomes = read('src/systems/world/biomes.ts');
+    const defaults = read('src/systems/sound/soundDefaults.ts');
+    const biomeIds = [...new Set([...biomes.matchAll(/id:\s*'([a-z_]+)'/g)].map((m) => m[1]))];
+    assert.ok(biomeIds.length >= 20, 'expected to find the biome id list');
+
+    for (const id of biomeIds) {
+        // Every biome resolves to a music pack whose FIRST entry is its own folder
+        // event (music.<id>), so its own tracks take priority once present.
+        assert.match(mc, new RegExp(`"${id}":\\s*\\["music\\.${id}"`), `${id} pack must lead with music.${id}`);
+        // The own event is registered in the manifest, pointing at its folder.
+        assert.match(defaults, new RegExp(`"music\\.${id}":\\s*\\{[^}]*sounds:\\s*\\["music/${id}"\\]`), `music.${id} event missing`);
+        // The folder exists (so tracks can be dropped in).
+        assert.ok(
+            fs.existsSync(path.join(root, 'public/assets/rvx/sounds/music', id)),
+            `music folder for ${id} is missing`,
+        );
+    }
+});
+
+test('music selection prefers the own folder and falls back when it is empty', () => {
+    // Priority pick: the first pack event that actually has tracks. An empty own
+    // folder is skipped so the shared fallback plays until tracks are added.
+    assert.match(mc, /pack\.find\(eventId => soundManager\.hasTracksForEvent\(eventId\)\)/);
+    // Cave biomes route to their own music underground, else the generic caves pack.
+    assert.match(mc, /biomeId === 'lush_caves' \|\| biomeId === 'dripstone_caves'/);
+});
