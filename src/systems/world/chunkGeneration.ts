@@ -1007,7 +1007,7 @@ function generateChunkInner(cx: number, cz: number) {
                     } else if (region === 'lush') {
                         if (onFloor && (isPlainRock(below) || below === BlockType.DIRT)) {
                             if (r(94) < caveCfg.mossChance) blocks[belowIdx] = BlockType.MOSS_BLOCK;
-                            if (r(95) < 0.10) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+                            if (r(95) < 0.03) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
                         }
                         if (onCeil && r(96) < caveCfg.glowLichenChance * 1.6) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
                     }

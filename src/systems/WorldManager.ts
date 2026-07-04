@@ -165,7 +165,9 @@ export class WorldManager {
   // fully-unlit (cave) faces — enclosed geometry is only visible from inside the
   // cave, i.e. when the chunk is near. Tracks which READY meshes were built
   // culled so they can be remeshed in full when the player approaches.
-  private static readonly DARK_CULL_DISTANCE = 4;
+  // Kept large enough that caves render across the near/mid view (they were
+  // vanishing just 3-4 chunks out); only the far ring gets the cheap cull.
+  private static readonly DARK_CULL_DISTANCE = 8;
   private darkCulledMeshes = new Set<string>();
   private pendingMeshDark = new Map<string, boolean>();
   

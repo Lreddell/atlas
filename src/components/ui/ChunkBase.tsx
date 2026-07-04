@@ -8,7 +8,7 @@ import {
 } from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
 import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, normalizeGenConfigSnapshot, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
-import { isBreachColumn, caveSurfaceTaper, isCaveCarved, isDeepslateAt } from '../../systems/world/caves';
+import { isBreachColumn, caveSurfaceTaper, isCaveCarved, isDeepslateAt, caveBiomeAt } from '../../systems/world/caves';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import type { NoiseSet } from '../../utils/noise';
 import { worldManager } from '../../systems/WorldManager';
@@ -92,6 +92,13 @@ const CaveCrossSection: React.FC<{
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Coalesce redraws to one per frame (via rAF, cancelling any pending) so
+        // dragging a slider — which bumps `version` on every mousemove — never
+        // runs this ~thousands-of-samples pass more than once a frame. The
+        // component only mounts on the CAVES tab, so it never costs anything on
+        // the other editor tabs.
+        let raf = 0;
+        const render = () => {
         const cfg = GenConfig.caves;
         const seaLevel = GenConfig.height.seaLevel;
         const caveOx = noiseSet.offsets.cave.x;
@@ -107,7 +114,7 @@ const CaveCrossSection: React.FC<{
             h ^= h >>> 13; return (h >>> 0) / 4294967296;
         };
 
-        const STEP = 2;
+        const STEP = 3;
         const rw = Math.max(1, Math.ceil(width / STEP));
         const rh = Math.max(1, Math.ceil(height / STEP));
         const img = ctx.createImageData(rw, rh);
@@ -160,6 +167,9 @@ const CaveCrossSection: React.FC<{
         // Centre marker (the X the map is centred on).
         ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(width / 2, 0); ctx.lineTo(width / 2, height); ctx.stroke();
+        };
+        raf = requestAnimationFrame(render);
+        return () => cancelAnimationFrame(raf);
     }, [centerX, centerZ, noiseSet, version, width, blocksPerPx]);
 
     return <canvas ref={canvasRef} width={width} height={height} className="block w-full rounded border border-black/40" />;
@@ -551,7 +561,9 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         const mfc = getMagneticFieldsConfig();
         const mfCol = getMagneticFieldColumn(wx, wz, bossSeed, (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz));
         const mfFieldVal = previewNoiseSet.bossBiome.noise2D(wx * mfc.fieldFreq, wz * mfc.fieldFreq);
-        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params, mfCol, mfFieldVal });
+        // Which cave biome the rock under this column belongs to (real, large, rare regions).
+        const caveBiome = caveBiomeAt(wx + previewNoiseSet.offsets.cave.x, wz + previewNoiseSet.offsets.cave.z, (a, b) => previewNoiseSet.cave.noise2D(a, b), GenConfig.caves);
+        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params, mfCol, mfFieldVal, caveBiome });
         if (e.buttons === 1) { 
             setCenter({
                 x: center.x - e.movementX * invScale,
@@ -879,113 +891,114 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     {/* --- BIOMES SECTION --- */}
                     {activeSection === 'biomes' && (
                         <div className="border-t border-white/10 pt-2 flex flex-col gap-3">
-                            {/* Magnetic Fields — an editable boss-domain, placed by the
-                                dedicated Boss Field noise channel instead of the
-                                temperature/weirdness bands. */}
-                            <div className="border border-purple-500/40 rounded bg-[#1c1726] p-3">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: BIOMES.MAGNETIC_FIELDS.color }} />
-                                    <span className="text-sm font-bold text-purple-300 flex-1">Magnetic Fields <span className="text-[10px] text-purple-400/70">BOSS</span></span>
-                                    <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Generate Magnetic Fields instances at all">
-                                        <input
-                                            type="checkbox"
-                                            checked={GenConfig.bossDomains.magneticFields.enabled}
-                                            onChange={(e) => { GenConfig.bossDomains.magneticFields.enabled = e.target.checked; commitChange(); }}
-                                            className="w-3.5 h-3.5 accent-purple-500"
-                                        />
-                                        <span className="text-[10px] text-gray-300">Enabled</span>
-                                    </label>
-                                </div>
-                                <div className="text-[10px] text-gray-500 leading-relaxed mb-2" title="Cell / Field Freq / Threshold decide WHERE instances land — changing them relocates every field (and arena) in the world. The rest reshape terrain around the same centers.">
-                                    Placed by the dedicated <span className="text-purple-300">Boss Field</span> noise — enable that map layer to preview instances. Hover the map for tier/arena/center readouts.
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 mb-2">
-                                    <button
-                                        onClick={handleFindNearestMf}
-                                        className="py-1.5 bg-purple-800 hover:bg-purple-700 text-white font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
-                                        title="Search up to 50,000 blocks from the current map center and center the map on the nearest Warden arena"
-                                    >Find Nearest Field</button>
-                                    <button
-                                        onClick={() => void handleCopyMfTp()}
-                                        disabled={!nearestMf}
-                                        className={`py-1.5 font-bold text-[10px] rounded uppercase tracking-wider transition-colors ${nearestMf ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-gray-700 opacity-40 cursor-not-allowed text-gray-300'}`}
-                                        title="Copy a /tp command to the found arena center"
-                                    >{copiedMfTp ? 'Copied!' : 'Copy /tp'}</button>
-                                </div>
-                                {nearestMf && (
-                                    <div className="text-[10px] text-purple-300/90 font-mono mb-2">
-                                        Arena @ {nearestMf.centerX}, {GenConfig.bossDomains.magneticFields.arenaFloorY + 1}, {nearestMf.centerZ} ({Math.round(nearestMf.distance).toLocaleString()} blk away)
-                                    </div>
-                                )}
-                                {(() => {
-                                    const mf = GenConfig.bossDomains.magneticFields;
-                                    const dmf = DEFAULTS.bossDomains.magneticFields;
-                                    const set = <K extends keyof typeof mf>(key: K) => (v: number) => { (mf[key] as number) = v; forceUpdate(); };
-                                    const reset = <K extends keyof typeof mf>(key: K) => () => { (mf[key] as typeof mf[K]) = dmf[key]; commitChange(); };
-                                    const groups: { title: string; fields: { key: keyof typeof mf; label: string; step: number; tip: string }[] }[] = [
-                                        {
-                                            title: 'Placement (moves centers!)',
-                                            fields: [
-                                                { key: 'cell', label: 'Cell Spacing', step: 128, tip: 'Grid spacing between candidate centers (blocks). Larger = rarer.' },
-                                                { key: 'fieldFreq', label: 'Field Freq', step: 0.0001, tip: 'Boss-field noise frequency used to activate candidate centers.' },
-                                                { key: 'fieldThreshold', label: 'Threshold', step: 0.01, tip: 'Noise value a center must exceed to activate. Higher = rarer.' },
-                                            ],
-                                        },
-                                        {
-                                            title: 'Shape',
-                                            fields: [
-                                                { key: 'radius', label: 'Radius', step: 16, tip: 'Base biome radius in blocks (warped per-edge).' },
-                                                { key: 'edgeFreq', label: 'Edge Warp Freq', step: 0.001, tip: 'Boundary wobble frequency.' },
-                                                { key: 'edgeAmp', label: 'Edge Warp Amp', step: 0.02, tip: 'Boundary radius variation (0.28 = ±28%).' },
-                                                { key: 'tierWarpFreq', label: 'Tier Warp Freq', step: 0.005, tip: 'Cliff-ring wobble frequency.' },
-                                                { key: 'tierWarpAmp', label: 'Tier Warp Amp', step: 1, tip: 'How far cliff rings shift in/out (blocks).' },
-                                                { key: 'shelfJitterFreq', label: 'Shelf Jitter Freq', step: 0.005, tip: 'Per-column shelf bumpiness frequency.' },
-                                                { key: 'shelfJitterAmp', label: 'Shelf Jitter Amp', step: 0.2, tip: 'Shelf bumpiness amplitude (blocks).' },
-                                            ],
-                                        },
-                                        {
-                                            title: 'Tiers',
-                                            fields: [
-                                                { key: 'tierCount', label: 'Tier Count', step: 1, tip: 'Number of shelves from the rim to the arena plateau.' },
-                                                { key: 'tierHeight', label: 'Tier Height', step: 1, tip: 'Vertical rise of each magnetite wall (blocks).' },
-                                                { key: 'baseHeight', label: 'Base Height Y', step: 1, tip: 'Surface Y of the outermost shelf (tier 0).' },
-                                            ],
-                                        },
-                                        {
-                                            title: 'Arena & Blend',
-                                            fields: [
-                                                { key: 'arenaRadius', label: 'Arena Radius', step: 4, tip: 'Flat plateau radius the Warden arena sits on.' },
-                                                { key: 'arenaFloorY', label: 'Arena Floor Y', step: 1, tip: 'World Y of the arena plateau / boss floor.' },
-                                                { key: 'apron', label: 'Apron Size', step: 4, tip: 'Edge band (blocks) that ramps down into ambient terrain.' },
-                                                { key: 'apronMinY', label: 'Apron Min Y', step: 1, tip: 'The apron never ramps below this Y (soft shore over oceans).' },
-                                            ],
-                                        },
-                                    ];
-                                    return groups.map((g) => (
-                                        <div key={g.title} className="mb-2">
-                                            <div className="text-[9px] font-black uppercase tracking-widest text-purple-400/70 mb-1">{g.title}</div>
-                                            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                                {g.fields.map((f) => (
-                                                    <MfNum
-                                                        key={String(f.key)}
-                                                        label={f.label}
-                                                        title={f.tip}
-                                                        value={mf[f.key] as number}
-                                                        step={f.step}
-                                                        onChange={set(f.key)}
-                                                        onReset={reset(f.key)}
-                                                    />
+                            {/* Magnetic Fields — a boss-domain biome, rendered as a
+                                standard biome accordion row (same header/swatch/chevron
+                                and body styling as the others). Its expanded body just
+                                carries the extra boss-domain tools + parameters. */}
+                            {(() => {
+                                const mf = GenConfig.bossDomains.magneticFields;
+                                const dmf = DEFAULTS.bossDomains.magneticFields;
+                                const isExpanded = expandedBiomes['magneticFields'];
+                                const set = <K extends keyof typeof mf>(key: K) => (v: number) => { (mf[key] as number) = v; forceUpdate(); };
+                                const reset = <K extends keyof typeof mf>(key: K) => () => { (mf[key] as typeof mf[K]) = dmf[key]; commitChange(); };
+                                const groups: { title: string; fields: { key: keyof typeof mf; label: string; step: number; tip: string }[] }[] = [
+                                    {
+                                        title: 'Placement (moves centers!)',
+                                        fields: [
+                                            { key: 'cell', label: 'Cell Spacing', step: 128, tip: 'Grid spacing between candidate centers (blocks). Larger = rarer.' },
+                                            { key: 'fieldFreq', label: 'Field Freq', step: 0.0001, tip: 'Boss-field noise frequency used to activate candidate centers.' },
+                                            { key: 'fieldThreshold', label: 'Threshold', step: 0.01, tip: 'Noise value a center must exceed to activate. Higher = rarer.' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Shape',
+                                        fields: [
+                                            { key: 'radius', label: 'Radius', step: 16, tip: 'Base biome radius in blocks (warped per-edge).' },
+                                            { key: 'edgeFreq', label: 'Edge Warp Freq', step: 0.001, tip: 'Boundary wobble frequency.' },
+                                            { key: 'edgeAmp', label: 'Edge Warp Amp', step: 0.02, tip: 'Boundary radius variation (0.28 = ±28%).' },
+                                            { key: 'tierWarpFreq', label: 'Tier Warp Freq', step: 0.005, tip: 'Cliff-ring wobble frequency.' },
+                                            { key: 'tierWarpAmp', label: 'Tier Warp Amp', step: 1, tip: 'How far cliff rings shift in/out (blocks).' },
+                                            { key: 'shelfJitterFreq', label: 'Shelf Jitter Freq', step: 0.005, tip: 'Per-column shelf bumpiness frequency.' },
+                                            { key: 'shelfJitterAmp', label: 'Shelf Jitter Amp', step: 0.2, tip: 'Shelf bumpiness amplitude (blocks).' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Tiers',
+                                        fields: [
+                                            { key: 'tierCount', label: 'Tier Count', step: 1, tip: 'Number of shelves from the rim to the arena plateau.' },
+                                            { key: 'tierHeight', label: 'Tier Height', step: 1, tip: 'Vertical rise of each magnetite wall (blocks).' },
+                                            { key: 'baseHeight', label: 'Base Height Y', step: 1, tip: 'Surface Y of the outermost shelf (tier 0).' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Arena & Blend',
+                                        fields: [
+                                            { key: 'arenaRadius', label: 'Arena Radius', step: 4, tip: 'Flat plateau radius the Warden arena sits on.' },
+                                            { key: 'arenaFloorY', label: 'Arena Floor Y', step: 1, tip: 'World Y of the arena plateau / boss floor.' },
+                                            { key: 'apron', label: 'Apron Size', step: 4, tip: 'Edge band (blocks) that ramps down into ambient terrain.' },
+                                            { key: 'apronMinY', label: 'Apron Min Y', step: 1, tip: 'The apron never ramps below this Y (soft shore over oceans).' },
+                                        ],
+                                    },
+                                ];
+                                return (
+                                    <div className="border border-white/10 rounded bg-[#222]">
+                                        <button className="w-full flex items-center gap-3 p-3 hover:bg-[#333] transition-colors" onClick={() => toggleBiomeExpand('magneticFields')}>
+                                            <div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: BIOMES.MAGNETIC_FIELDS.color }} />
+                                            <span className="text-sm font-bold text-gray-200 flex-1 text-left">Magnetic Fields</span>
+                                            <span className="text-xs text-gray-500">{isExpanded ? 'v' : '>'}</span>
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="p-3 space-y-3 bg-[#1a1a1a] border-t border-black/20">
+                                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                    <input type="checkbox" checked={mf.enabled} onChange={(e) => { mf.enabled = e.target.checked; commitChange(); }} className="w-4 h-4 rounded accent-blue-500" />
+                                                    <span className="text-xs text-gray-300">Generate Magnetic Fields</span>
+                                                </label>
+                                                <div className="text-[10px] text-gray-500 leading-relaxed">Placed by the dedicated Boss Field noise layer — enable that map layer to preview instances. Hover the map for tier / arena / center readouts.</div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button
+                                                        onClick={handleFindNearestMf}
+                                                        className="py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-100 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                                        title="Search up to 50,000 blocks from the current map center and center the map on the nearest Warden arena"
+                                                    >Find Nearest</button>
+                                                    <button
+                                                        onClick={() => void handleCopyMfTp()}
+                                                        disabled={!nearestMf}
+                                                        className={`py-1.5 font-bold text-[10px] rounded uppercase tracking-wider transition-colors ${nearestMf ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-800 opacity-40 cursor-not-allowed text-gray-400'}`}
+                                                        title="Copy a /tp command to the found arena center"
+                                                    >{copiedMfTp ? 'Copied!' : 'Copy /tp'}</button>
+                                                </div>
+                                                {nearestMf && (
+                                                    <div className="text-[10px] text-gray-400 font-mono">
+                                                        Arena @ {nearestMf.centerX}, {mf.arenaFloorY + 1}, {nearestMf.centerZ} ({Math.round(nearestMf.distance).toLocaleString()} blk away)
+                                                    </div>
+                                                )}
+                                                {groups.map((g) => (
+                                                    <div key={g.title}>
+                                                        <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">{g.title}</div>
+                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                                            {g.fields.map((f) => (
+                                                                <MfNum
+                                                                    key={String(f.key)}
+                                                                    label={f.label}
+                                                                    title={f.tip}
+                                                                    value={mf[f.key] as number}
+                                                                    step={f.step}
+                                                                    onChange={set(f.key)}
+                                                                    onReset={reset(f.key)}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
                                                 ))}
+                                                <button
+                                                    onClick={() => { GenConfig.bossDomains.magneticFields = JSON.parse(JSON.stringify(DEFAULTS.bossDomains.magneticFields)); commitChange(); }}
+                                                    className="w-full py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                                >Reset Magnetic Fields</button>
                                             </div>
-                                        </div>
-                                    ));
-                                })()}
-                                <button
-                                    onClick={() => { GenConfig.bossDomains.magneticFields = JSON.parse(JSON.stringify(DEFAULTS.bossDomains.magneticFields)); commitChange(); }}
-                                    className="w-full py-1 bg-[#3a2f4f] hover:bg-[#4a3d63] text-purple-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
-                                >Reset Magnetic Fields</button>
-                            </div>
-                            <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider pt-1">Standard Biomes</div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             {biomeKeys.map(bKey => {
                                 const meta = getBiomeMeta(bKey);
                                 const isExpanded = expandedBiomes[bKey];
@@ -1194,6 +1207,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <span className="text-gray-400">Rain:</span> <span>{hoverInfo.riverVal.toFixed(3)}</span>
                                     <span className="text-gray-400">Cont:</span> <span>{hoverInfo.continentalness.toFixed(3)}</span>
                                     <span className="text-gray-400">Weird:</span> <span>{hoverInfo.weirdness.toFixed(3)}</span>
+                                    <span className="text-gray-400">Cave Biome:</span> <span className={hoverInfo.caveBiome === 'lush' ? 'text-green-400' : hoverInfo.caveBiome === 'dripstone' ? 'text-amber-400' : 'text-gray-300'}>{hoverInfo.caveBiome ?? '—'}</span>
                                     <span className="text-gray-400">Boss Field:</span> <span className="text-purple-300">{hoverInfo.mfFieldVal?.toFixed(3)}</span>
                                     {hoverInfo.mfCol && (
                                         <>

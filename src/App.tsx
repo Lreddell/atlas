@@ -1363,6 +1363,12 @@ const App: React.FC = () => {
   }, [appState, isPaused, openContainer, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, requestPointerLockBurst]);
 
   useEffect(() => {
+      // Pointer lock can only be (re)acquired from a real user gesture — a
+      // mousedown/mouseup/click, never a bare mousemove. So re-lock on the
+      // earliest gesture (mousedown = button press) as well as up/click, so the
+      // camera snaps back the instant the player touches the mouse. mousemove is
+      // kept only as a best-effort nudge (it no-ops if the browser refuses).
+      const onMouseDown = () => tryRecoverPointerLock('mouse-down');
       const onMouseUp = () => tryRecoverPointerLock('mouse-up');
       const onClick = () => tryRecoverPointerLock('click');
       const onMouseMove = (e: MouseEvent) => {
@@ -1370,10 +1376,12 @@ const App: React.FC = () => {
           tryRecoverPointerLock('mouse-move');
       };
 
+      window.addEventListener('mousedown', onMouseDown, true);
       window.addEventListener('mouseup', onMouseUp, true);
       window.addEventListener('click', onClick, true);
       window.addEventListener('mousemove', onMouseMove, true);
       return () => {
+          window.removeEventListener('mousedown', onMouseDown, true);
           window.removeEventListener('mouseup', onMouseUp, true);
           window.removeEventListener('click', onClick, true);
           window.removeEventListener('mousemove', onMouseMove, true);
@@ -2106,19 +2114,25 @@ const App: React.FC = () => {
         e.preventDefault(); e.stopPropagation();
         if (isDead || deathScreenActiveRef.current) return;
         
+        // These UIs already released pointer lock when they opened (via E / F4 /
+        // slash), so this Escape is NOT exiting an active lock — we can re-lock
+        // synchronously in the keydown, which still carries user activation. That
+        // restores camera control immediately instead of waiting for a click
+        // (a mousemove can never re-acquire pointer lock — no user gesture). The
+        // Escape keyup handler stays as a fallback if the browser refuses here.
         if (showAtlasViewer) {
             setShowAtlasViewer(false);
             isAtlasViewerOpenRef.current = false;
-            resumeGame({ deferPointerLock: true });
+            resumeGame();
             return;
         }
 
         if (showCommandInput) {
             if (showSuggestions) { setShowSuggestions(false); return; }
-            setShowCommandInput(false); setCommandValue(''); isCommandOpenRef.current = false; resumeGame({ deferPointerLock: true }); return; 
+            setShowCommandInput(false); setCommandValue(''); isCommandOpenRef.current = false; resumeGame(); return;
         }
 
-        if (openContainer) { closeInventory({ deferPointerLock: true }); return; }
+        if (openContainer) { closeInventory(); return; }
         if (isSleeping) { setIsSleeping(false); return; } 
         if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
@@ -2504,11 +2518,16 @@ const App: React.FC = () => {
         worldManager.setWorldSpawn(safe.x, safe.y, safe.z);
     }
 
-    // Ensure the chunk exists so we don't fall through
+    // Ensure the chunk exists so we don't fall through, and RE-CENTER chunk
+    // streaming on the respawn point. The Player remounts (respawnKey) but only
+    // fires onChunkChange once it crosses a boundary, so without this the world
+    // stays streamed around the death location and the spawn area renders blank
+    // until you walk. force=true bypasses the "same chunk" guard.
     if (spawn) {
         const cx = Math.floor(spawn.x / CHUNK_SIZE);
         const cz = Math.floor(spawn.z / CHUNK_SIZE);
         worldManager.ensureChunk(cx, cz);
+        applyChunkCenter(cx, cz, true);
     }
 
     const spawnVec = new THREE.Vector3(spawn!.x, spawn!.y, spawn!.z);

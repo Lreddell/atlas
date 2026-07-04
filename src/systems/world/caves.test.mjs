@@ -83,16 +83,34 @@ test('deepslate replaces stone only below its band, hash-blended in between', ()
     assert.equal(caves.isDeepslateAt(cfg.deepslateStartY - 1, 0.999, cfg), false);
 });
 
-test('the cave-biome classifier yields lush, dripstone, and plain regions', () => {
+test('cave biomes are large, rare, coherent regions (lush + dripstone + plain)', () => {
+    // Wide scan: the biomes are big and uncommon now, so sample a large area.
     const seen = new Set();
-    for (let wx = -400; wx < 400; wx += 7) {
-        for (let wz = -400; wz < 400; wz += 7) {
-            seen.add(caves.caveBiomeAt(wx + ox, wz + oz, n2, cfg));
+    let special = 0, total = 0;
+    for (let wx = -4000; wx < 4000; wx += 13) {
+        for (let wz = -4000; wz < 4000; wz += 13) {
+            const b = caves.caveBiomeAt(wx + ox, wz + oz, n2, cfg);
+            seen.add(b);
+            total++;
+            if (b !== 'plain') special++;
         }
     }
     for (const b of seen) assert.ok(['plain', 'lush', 'dripstone'].includes(b), `invalid region ${b}`);
     assert.ok(seen.has('plain'), 'plain regions must exist');
-    assert.ok(seen.size >= 2, 'at least one special cave region must appear across the sampled area');
+    assert.ok(seen.size >= 2, 'lush and/or dripstone biomes must appear across the sampled area');
+    // Rare: special cave biomes are a small minority of the underground.
+    assert.ok(special / total < 0.35, `cave biomes should be rare, got ${(special / total).toFixed(2)}`);
+
+    // Coherent + large: neighbouring samples along a line rarely flip biome
+    // (small blobs would flip constantly). Count transitions over a 4000-block row.
+    let flips = 0, steps = 0;
+    let prev = null;
+    for (let wx = -2000; wx < 2000; wx += 4) {
+        const b = caves.caveBiomeAt(wx + ox, oz, n2, cfg);
+        if (prev !== null && b !== prev) flips++;
+        prev = b; steps++;
+    }
+    assert.ok(flips / steps < 0.05, `biomes must be large/coherent, got ${(flips / steps).toFixed(3)} flip rate`);
 });
 
 test('GenConfig.caves exposes every carving + decoration knob', () => {

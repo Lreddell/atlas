@@ -117,15 +117,18 @@ export const DEFAULTS = {
         deepslateStartY: 8,        // stone above this Y stays stone
         deepslateFullY: -4,        // fully deepslate at/below this Y
 
-        // Decoration pass — cave-biome regions + feature densities.
+        // Decoration pass — cave-biome regions + feature densities. Lush and
+        // dripstone are real cave biomes: large, coherent, and rare (low region
+        // frequency = big blobs; high threshold = uncommon), so most caves are
+        // plain and stumbling into a lush or dripstone one feels like a find.
         decorate: true,            // master toggle for all cave decoration below
-        lushFreq: 0.008,           // lush-cave region noise (moss + glow berries feel)
-        lushThreshold: 0.33,       // larger = rarer lush regions
-        dripstoneFreq: 0.009,      // dripstone-cave region noise
-        dripstoneThreshold: 0.33,  // larger = rarer dripstone regions
-        glowLichenChance: 0.05,    // emissive lichen on cave ceilings/walls (ambient light)
-        mossChance: 0.55,          // moss coverage on lush-region cave floors
-        dripstoneChance: 0.16,     // pointed dripstone frequency in dripstone regions
+        lushFreq: 0.003,           // lush-cave region noise (lower = larger biomes)
+        lushThreshold: 0.55,       // higher = rarer lush biomes
+        dripstoneFreq: 0.003,      // dripstone-cave region noise
+        dripstoneThreshold: 0.5,   // higher = rarer dripstone biomes
+        glowLichenChance: 0.01,    // emissive lichen on cave ceilings (kept sparse)
+        mossChance: 0.55,          // moss coverage on lush-biome cave floors
+        dripstoneChance: 0.16,     // pointed dripstone frequency in dripstone biomes
         geodeRarity: 0.0016,       // amethyst-geode chance per deep candidate column
     },
     // Domain warp applied to every climate channel's sample coordinates. Enabled
