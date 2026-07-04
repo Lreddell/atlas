@@ -59,30 +59,42 @@ test('the sound manifest only reloads from the explicit /sound reload command', 
     assert.match(sm, /Already initialized — just resume if suspended/);
 });
 
-test('every biome has its own music folder + event, with a shared fallback', () => {
+test('every biome has a tag config, and every tag has a folder + manifest event', () => {
     const biomes = read('src/systems/world/biomes.ts');
     const defaults = read('src/systems/sound/soundDefaults.ts');
+    const musicRoot = path.join(root, 'public/assets/rvx/sounds/music');
     const biomeIds = [...new Set([...biomes.matchAll(/id:\s*'([a-z_]+)'/g)].map((m) => m[1]))];
     assert.ok(biomeIds.length >= 20, 'expected to find the biome id list');
 
     for (const id of biomeIds) {
-        // Every biome resolves to a music pack whose FIRST entry is its own folder
-        // event (music.<id>), so its own tracks take priority once present.
-        assert.match(mc, new RegExp(`"${id}":\\s*\\["music\\.${id}"`), `${id} pack must lead with music.${id}`);
-        // The own event is registered in the manifest, pointing at its folder.
-        assert.match(defaults, new RegExp(`"music\\.${id}":\\s*\\{[^}]*sounds:\\s*\\["music/${id}"\\]`), `music.${id} event missing`);
-        // The folder exists (so tracks can be dropped in).
-        assert.ok(
-            fs.existsSync(path.join(root, 'public/assets/rvx/sounds/music', id)),
-            `music folder for ${id} is missing`,
-        );
+        // Each biome has a tag-config folder listing its active tags.
+        const cfgPath = path.join(musicRoot, 'biomes', id, 'tags.json');
+        assert.ok(fs.existsSync(cfgPath), `music/biomes/${id}/tags.json is missing`);
+        const tags = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+        assert.ok(Array.isArray(tags) && tags.length > 0, `${id} must list at least one tag`);
+        // The same biome must have a code-default entry (safety net before load).
+        assert.match(mc, new RegExp(`\\b${id}:\\s*\\[`), `${id} missing from BIOME_TAGS default`);
+
+        for (const tag of tags) {
+            // Every referenced tag has a song folder and a manifest event.
+            assert.ok(fs.existsSync(path.join(musicRoot, tag)), `tag folder music/${tag} is missing (used by ${id})`);
+            assert.match(defaults, new RegExp(`"music\\.${tag}":`), `manifest event music.${tag} is missing (used by ${id})`);
+        }
     }
+    // The consolidated tags exist and the redundant ones are gone.
+    assert.ok(fs.existsSync(path.join(musicRoot, 'mesa')), 'mesa tag folder must exist');
+    assert.ok(!fs.existsSync(path.join(musicRoot, 'red_mesa')), 'red_mesa tag folder should be removed');
+    assert.ok(!fs.existsSync(path.join(musicRoot, 'mesa_bryce')), 'mesa_bryce tag folder should be removed');
+    assert.doesNotMatch(defaults, /"music\.cherry"/, 'legacy music.cherry event should be removed');
 });
 
-test('music selection prefers the own folder and falls back when it is empty', () => {
-    // Priority pick: the first pack event that actually has tracks. An empty own
-    // folder is skipped so the shared fallback plays until tracks are added.
-    assert.match(mc, /pack\.find\(eventId => soundManager\.hasTracksForEvent\(eventId\)\)/);
+test('music pools songs across a biome\'s tags, with cross-biome continuity', () => {
+    // Selection pools every tag that actually has songs and picks one at random.
+    assert.match(mc, /this\.tagsForContext\(this\.currentContext\)\s*\n?\s*\.filter\(tag => soundManager\.hasTracksForEvent\(`music\.\$\{tag\}`\)\)/);
+    // Continuity: keep the current song if the new context still uses its tag.
+    assert.match(mc, /this\.isPlaying && this\.currentTrackTag && newTags\.includes\(this\.currentTrackTag\)/);
     // Cave biomes route to their own music underground, else the generic caves pack.
     assert.match(mc, /biomeId === 'lush_caves' \|\| biomeId === 'dripstone_caves'/);
+    // Biome tags come from the folder config with a code default fallback.
+    assert.match(mc, /soundManager\.getBiomeTags\(context\)/);
 });

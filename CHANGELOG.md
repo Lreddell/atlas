@@ -124,9 +124,12 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Added dedicated Magnetic Fields and Magnetic Warden music, including phase-aware
   boss intensity, plus a new ocean track.
 - Added death music and an optional slower, calmer night soundtrack, enabled by default.
-- Every biome now has its own music folder. Biomes without their own tracks yet
-  (jungle, mountains, cave biomes, and the rest) automatically fall back to a fitting
-  shared pack, and start playing their own music the moment tracks are dropped in.
+- Music is now organised by tags: each tag is a folder of songs, and every biome
+  lists the tags it plays (music/biomes/<biome>/tags.json). Biomes can share a tag
+  for identical music (e.g. all cold biomes share "cold"), stack tags (dripstone
+  caves play "caves" + "dripstone_caves"), and — when a shared tag's song is already
+  playing — keep it going across a biome border instead of restarting. Every biome
+  has a tag config now, so custom music just needs files dropped into a tag folder.
 - The Warden encounter includes a summon cinematic, shield beams, fog, particles,
   camera shake, clearer phase warnings, and distinct combat sounds.
 - Rename, confirmation, and boss-warning dialogs now match the main menu style.

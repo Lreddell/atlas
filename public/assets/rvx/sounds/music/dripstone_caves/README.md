@@ -1,13 +1,12 @@
-# dripstone_caves music
+# dripstone_caves music tag
 
-Drop one or more `.ogg` (or `.mp3`/`.wav`) tracks in this folder to give the
-**dripstone_caves** biome its own music.
+Drop one or more `.ogg` (or `.mp3`/`.wav`) tracks here. Every biome whose
+`tags.json` includes `dripstone_caves` can play these songs.
 
-Until this folder has a track, the game automatically falls back to the
-**caves** music pack, so the biome is never silent.
+Used by: dripstone_caves.
 
-After adding files for the web build, regenerate the music index:
+After adding or removing files, regenerate the index for the web build:
 
     node scripts/generate_music_index.mjs
 
-(The Electron/desktop build scans folders directly and needs no regeneration.)
+(The desktop build scans folders directly.)

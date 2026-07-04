@@ -1,7 +1,12 @@
-# Magnetic Warden — boss music
+# boss_magnetic_warden music tag
 
-Drop one or more `.ogg` tracks for the Magnetic Warden fight here.
-This track is triggered automatically when the Magnetic Warden is summoned
-(via the `boss:spawned` event for bossId `magnetic_warden`) and stops/transitions
-back to biome music on `boss:defeated` / `boss:cleared`.
-Music manifest key: `music.boss_magnetic_warden` (src/systems/sound/soundDefaults.ts).
+Drop one or more `.ogg` (or `.mp3`/`.wav`) tracks here. Every biome whose
+`tags.json` includes `boss_magnetic_warden` can play these songs.
+
+A game-state track (not a biome tag).
+
+After adding or removing files, regenerate the index for the web build:
+
+    node scripts/generate_music_index.mjs
+
+(The desktop build scans folders directly.)

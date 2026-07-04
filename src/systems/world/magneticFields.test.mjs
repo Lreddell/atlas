@@ -483,8 +483,10 @@ test('Magnetic Fields + Magnetic Warden music are wired with on-disk folders', (
     assert.match(manifest, /"music\.boss_magnetic_warden":/);
 
     const mc = read('src/systems/sound/MusicController.ts');
-    assert.match(mc, /"magnetic_fields":\s*\["music\.magnetic_fields"\]/);
-    assert.match(mc, /"BOSS_MAGNETIC":\s*\["music\.boss_magnetic_warden"\]/);
+    // Tag model: the biome activates the magnetic_fields tag; the boss state maps
+    // to the boss_magnetic_warden tag.
+    assert.match(mc, /magnetic_fields:\s*\["magnetic_fields"\]/);
+    assert.match(mc, /BOSS_MAGNETIC:\s*\["boss_magnetic_warden"\]/);
     assert.match(mc, /boss:spawned[\s\S]*?MAGNETIC_WARDEN_BOSS_ID/);
 
     assert.ok(fs.existsSync(path.join(root, 'public/assets/rvx/sounds/music/magnetic_fields')));

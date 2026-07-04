@@ -37,6 +37,9 @@ class SoundManager {
     private readonly MAX_EVENT_SOURCES = 6;
 
     private musicFolderIndex: Map<string, string[]> = new Map();
+    // biomeId -> ordered list of music tags active for that biome (from
+    // music/biomes/<biome>/tags.json, folded into music-index.json).
+    private musicBiomeTags: Map<string, string[]> = new Map();
 
     // Music Streaming State (Dual Deck for Crossfade)
     private musicDeckA: HTMLAudioElement | null = null;
@@ -212,58 +215,69 @@ class SoundManager {
         }
     }
 
+    private static normalizeTracks(tracks: unknown): string[] {
+        if (!Array.isArray(tracks)) return [];
+        return tracks
+            .filter((track): track is string => typeof track === 'string')
+            .map(track => track.replace(/\\/g, '/').replace(/^\/+/, '').trim())
+            .filter(track => track.length > 0);
+    }
+
     private async loadMusicFolderIndex() {
-        // Build into a temp map first, then swap atomically so there is never
-        // a window where the index is empty while music is already playing.
-        const newIndex = new Map<string, string[]>();
+        // Build into temp maps first, then swap atomically so there is never a
+        // window where the index is empty while music is already playing.
+        const tagIndex = new Map<string, string[]>();
+        const biomeTags = new Map<string, string[]>();
 
-        // In Electron: dynamically scan the music folder (any filename, any audio extension)
-        if (typeof window !== 'undefined' && window.atlasDesktop?.scanMusicFolders) {
-            try {
-                const result = await window.atlasDesktop.scanMusicFolders();
-                if (result?.ok && result.index) {
-                    Object.entries(result.index).forEach(([folderName, tracks]) => {
-                        if (!Array.isArray(tracks)) return;
-                        const normalizedTracks = tracks
-                            .map(t => t.replace(/\\/g, '/').replace(/^\/+/, '').trim())
-                            .filter(t => t.length > 0);
-                        if (normalizedTracks.length > 0) {
-                            newIndex.set(folderName.toLowerCase(), normalizedTracks);
-                        }
-                    });
-                    this.musicFolderIndex = newIndex;
-                    return;
-                }
-            } catch (e) {
-                console.debug('Electron music scan failed, falling back to index file:', e);
-            }
-        }
-
-        // Fall back to static music-index.json (web / no Electron)
+        // 1. Always load the static index. It carries the biome -> tags config
+        //    (music/biomes/<biome>/tags.json) on every platform, and the tag
+        //    songs on the web. New shape: { tags: {...}, biomes: {...} }. Older
+        //    flat { folder: [...] } indexes are read as the tag map.
+        let staticTags: Record<string, unknown> = {};
         try {
             const response = await fetch(assetUrl(MUSIC_FOLDER_INDEX_PATH), { cache: 'no-store' });
-            if (!response.ok) {
+            if (response.ok) {
+                const json = await response.json() as Record<string, unknown>;
+                const tagsObj = (json.tags && typeof json.tags === 'object')
+                    ? json.tags as Record<string, unknown> : json;
+                const biomesObj = (json.biomes && typeof json.biomes === 'object')
+                    ? json.biomes as Record<string, unknown> : {};
+                staticTags = tagsObj;
+                Object.entries(biomesObj).forEach(([biome, list]) => {
+                    if (!Array.isArray(list)) return;
+                    const tags = list.filter((t): t is string => typeof t === 'string').map(t => t.toLowerCase());
+                    if (tags.length > 0) biomeTags.set(biome.toLowerCase(), tags);
+                });
+            } else {
                 console.warn(`Failed to load music folder index (${response.status}).`);
-                return;
             }
-
-            const json = await response.json() as Record<string, unknown>;
-            Object.entries(json).forEach(([folderName, tracks]) => {
-                if (!Array.isArray(tracks)) return;
-
-                const normalizedTracks = tracks
-                    .filter((track): track is string => typeof track === 'string')
-                    .map(track => track.replace(/\\/g, '/').replace(/^\/+/, '').trim())
-                    .filter(track => track.length > 0);
-
-                if (normalizedTracks.length > 0) {
-                    newIndex.set(folderName.toLowerCase(), normalizedTracks);
-                }
-            });
-            this.musicFolderIndex = newIndex;
         } catch (e) {
             console.debug('Error loading music folder index:', e);
         }
+        this.musicBiomeTags = biomeTags;
+
+        // 2. Tag songs: in Electron, scan the folders live (any filename / audio
+        //    extension) so dropped-in tracks work without regenerating the index;
+        //    otherwise use the static index's tags.
+        let tagSource: Record<string, unknown> = staticTags;
+        if (typeof window !== 'undefined' && window.atlasDesktop?.scanMusicFolders) {
+            try {
+                const result = await window.atlasDesktop.scanMusicFolders();
+                if (result?.ok && result.index) tagSource = result.index as Record<string, unknown>;
+            } catch (e) {
+                console.debug('Electron music scan failed, using index file:', e);
+            }
+        }
+        Object.entries(tagSource).forEach(([folderName, tracks]) => {
+            const normalized = SoundManager.normalizeTracks(tracks);
+            if (normalized.length > 0) tagIndex.set(folderName.toLowerCase(), normalized);
+        });
+        this.musicFolderIndex = tagIndex;
+    }
+
+    /** Ordered list of music tags active for a biome (empty if unknown). */
+    public getBiomeTags(biomeId: string): string[] {
+        return this.musicBiomeTags.get(biomeId.toLowerCase()) ?? [];
     }
 
     public hasTracksForEvent(eventId: string): boolean {

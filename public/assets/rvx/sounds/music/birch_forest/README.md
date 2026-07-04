@@ -1,13 +1,12 @@
-# birch_forest music
+# birch_forest music tag
 
-Drop one or more `.ogg` (or `.mp3`/`.wav`) tracks in this folder to give the
-**birch_forest** biome its own music.
+Drop one or more `.ogg` (or `.mp3`/`.wav`) tracks here. Every biome whose
+`tags.json` includes `birch_forest` can play these songs.
 
-Until this folder has a track, the game automatically falls back to the
-**forest** music pack, so the biome is never silent.
+Used by: birch_forest.
 
-After adding files for the web build, regenerate the music index:
+After adding or removing files, regenerate the index for the web build:
 
     node scripts/generate_music_index.mjs
 
-(The Electron/desktop build scans folders directly and needs no regeneration.)
+(The desktop build scans folders directly.)

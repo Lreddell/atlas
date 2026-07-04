@@ -70,15 +70,15 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.cold": { category: "music", sounds: ["music/cold"], volume: 0.5 }, // Tundra, Frozen Ocean/River
     "music.caves": { category: "music", sounds: ["music/caves"], volume: 0.45 },
     "music.bloodmoon": { category: "music", sounds: ["music/bloodmoon"], volume: 0.48 },
-    "music.cherry": { category: "music", sounds: ["music/cherry"], volume: 0.5 },
-    "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce
+    "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce (shared 'mesa' tag)
     "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 },
     "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 }, // Magnetic Fields biome
     "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 }, // Magnetic Warden fight
 
-    // --- Per-biome music folders. Each biome has its own folder so custom tracks
-    // can be dropped in; until a folder has files it is empty and the biome falls
-    // back to a shared pack (wired in MusicController's MUSIC_PACKS). ---
+    // --- Music tags. Each is a folder of songs (music/<tag>/). Biomes activate a
+    // set of tags via music/biomes/<biome>/tags.json; the game pools songs across
+    // a biome's populated tags (see MusicController). Empty tag folders simply
+    // contribute nothing. ---
     "music.river": { category: "music", sounds: ["music/river"], volume: 0.5 },
     "music.frozen_river": { category: "music", sounds: ["music/frozen_river"], volume: 0.5 },
     "music.frozen_ocean": { category: "music", sounds: ["music/frozen_ocean"], volume: 0.5 },
@@ -96,9 +96,8 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.stone_shore": { category: "music", sounds: ["music/stone_shore"], volume: 0.5 },
     "music.beach": { category: "music", sounds: ["music/beach"], volume: 0.5 },
     "music.cherry_grove": { category: "music", sounds: ["music/cherry_grove"], volume: 0.5 },
-    "music.red_mesa": { category: "music", sounds: ["music/red_mesa"], volume: 0.5 },
-    "music.mesa_bryce": { category: "music", sounds: ["music/mesa_bryce"], volume: 0.5 },
-    // (music.volcanic + music.desert already declared above)
+    // (music.mesa, music.volcanic + music.desert already declared above; red_mesa
+    // and mesa_bryce biomes share the single 'mesa' tag)
     "music.lush_caves": { category: "music", sounds: ["music/lush_caves"], volume: 0.45 },
     "music.dripstone_caves": { category: "music", sounds: ["music/dripstone_caves"], volume: 0.45 },
 

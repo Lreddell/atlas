@@ -13,79 +13,64 @@ const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
 const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935 (−100 cents)
 const FRENZY_PLAYBACK_RATE = 2 ** (1 / 12);  // 1.0594630943592953  (+100 cents, the exact opposite of night)
 
-// Mapping of Game States/Biomes to Music Packs.
+// --- Music tags ---
 //
-// Each biome has its OWN music folder/event ("music.<biomeId>"). The pack lists
-// that own event FIRST, then a shared fallback pack. Track selection prefers the
-// first event in the list that actually has files (see playNextTrack), so a
-// biome plays its own music the moment tracks are dropped into its folder and
-// otherwise falls back to the shared pack until then.
-const MUSIC_PACKS: Record<string, string[]> = {
-    // Menu
-    "MENU": ["music.menu"],
+// A "music tag" is a folder of songs (public/assets/rvx/sounds/music/<tag>/).
+// Each biome activates a set of tags (music/biomes/<biome>/tags.json, loaded via
+// soundManager.getBiomeTags); the game plays a random song pooled from the
+// biome's tags that actually have files, so multiple biomes can share identical
+// music simply by sharing a tag. If a song from a tag is already playing and you
+// cross into another biome that still has that tag, the music keeps playing
+// (see switchContext continuity) — the biome-stability timer still governs when a
+// switch is even considered.
+//
+// Non-biome game states map to a single tag each.
+const STATE_TAGS: Record<string, string[]> = {
+    MENU: ["menu"],
+    DEATH: ["death"],
+    BLOODMOON: ["bloodmoon"],
+    CREATIVE: ["creative"],
+    CAVES: ["caves"],
+    BOSS_MAGNETIC: ["boss_magnetic_warden"],
+    generic: ["plains"],
+};
 
-    // Death
-    "DEATH": ["music.death"],
-
-    // Game States
-    "BLOODMOON": ["music.bloodmoon"],
-    "CREATIVE": ["music.creative"],
-    "CAVES": ["music.caves"],
-
-    // --- Biomes: own folder first, shared fallback second ---
-    // Water / coastal
-    "ocean": ["music.ocean"],
-    "beach": ["music.beach", "music.ocean"],
-    "stone_shore": ["music.stone_shore", "music.ocean"],
-    "river": ["music.river", "music.plains"],
-    "frozen_ocean": ["music.frozen_ocean", "music.cold"],
-    "frozen_river": ["music.frozen_river", "music.cold"],
-
-    // Grasslands
-    "plains": ["music.plains"],
-    "meadow": ["music.meadow", "music.plains"],
-    "savanna": ["music.savanna", "music.plains"],
-
-    // Forest family
-    "forest": ["music.forest"],
-    "birch_forest": ["music.birch_forest", "music.forest"],
-    "flower_forest": ["music.flower_forest", "music.forest"],
-    "dark_forest": ["music.dark_forest", "music.forest"],
-    "jungle": ["music.jungle", "music.forest"],
-    "swamp": ["music.swamp", "music.forest"],
-    "cherry_grove": ["music.cherry_grove", "music.forest"],
-
-    // Cold / snowy (also get auroras via the 'snowy' tag)
-    "tundra": ["music.tundra", "music.cold"],
-    "taiga": ["music.taiga", "music.cold"],
-    "ice_spikes": ["music.ice_spikes", "music.cold"],
-    "mountains": ["music.mountains", "music.cold"],
-
-    // Arid
-    "desert": ["music.desert", "music.plains"],
-    "red_mesa": ["music.red_mesa", "music.plains"],
-    "mesa_bryce": ["music.mesa_bryce", "music.plains"],
-
-    // Volcanic → moody cave music until it has its own
-    "volcanic": ["music.volcanic", "music.caves"],
-
-    // Cave biomes (underground): own folder, falling back to the generic caves pack.
-    // The plain "caves" biome shares the generic caves music.
-    "caves": ["music.caves"],
-    "lush_caves": ["music.lush_caves", "music.caves"],
-    "dripstone_caves": ["music.dripstone_caves", "music.caves"],
-
-    // Magnetic Fields biome ambience + dedicated Magnetic Warden boss track.
-    "magnetic_fields": ["music.magnetic_fields"],
-    "BOSS_MAGNETIC": ["music.boss_magnetic_warden"],
-
-    // Fallback
-    "generic": ["music.plains"]
+// Default biome -> tags. Mirrors the music/biomes/<biome>/tags.json config
+// folders; those override this at runtime once the index loads, but this keeps
+// the game working before load and if a biome is missing a config.
+const BIOME_TAGS: Record<string, string[]> = {
+    plains: ["plains"],
+    meadow: ["plains", "meadow"],
+    savanna: ["plains", "savanna"],
+    river: ["plains", "river"],
+    forest: ["forest"],
+    birch_forest: ["forest", "birch_forest"],
+    flower_forest: ["forest", "flower_forest"],
+    dark_forest: ["forest", "dark_forest"],
+    jungle: ["forest", "jungle"],
+    swamp: ["forest", "swamp"],
+    cherry_grove: ["forest", "cherry_grove"],
+    ocean: ["ocean"],
+    beach: ["ocean", "beach"],
+    stone_shore: ["ocean", "stone_shore"],
+    frozen_ocean: ["cold", "frozen_ocean"],
+    frozen_river: ["cold", "frozen_river"],
+    tundra: ["cold", "tundra"],
+    taiga: ["cold", "taiga"],
+    ice_spikes: ["cold", "ice_spikes"],
+    mountains: ["cold", "mountains"],
+    desert: ["desert"],
+    red_mesa: ["mesa"],
+    mesa_bryce: ["mesa"],
+    volcanic: ["volcanic", "caves"],
+    magnetic_fields: ["magnetic_fields"],
+    caves: ["caves"],
+    lush_caves: ["caves", "lush_caves"],
+    dripstone_caves: ["caves", "dripstone_caves"],
 };
 
 // Cave contexts react faster than surface biome travel and are treated together
-// for transition timing. The generic CAVES state plus the cave biomes that carry
-// their own music.
+// for transition timing. The generic CAVES state plus the cave biomes.
 const CAVE_CONTEXTS = new Set(["CAVES", "lush_caves", "dripstone_caves"]);
 
 // Biome Switch Config
@@ -115,7 +100,11 @@ class MusicController {
     private currentContext: string = "";
     private isPlaying: boolean = false;
     private nextPlayTime: number = 0;
-    
+
+    // The music tag the currently-playing song was drawn from. Used for the
+    // cross-biome continuity check (keep playing if the new biome shares the tag).
+    private currentTrackTag: string | null = null;
+
     // Track when the last track finished to allow live-updating delays
     private lastFinishTime: number = 0;
     
@@ -241,6 +230,19 @@ class MusicController {
         // Applied to the next track that starts; a track already playing is left as-is.
     }
 
+    // The music tags active for a context: a fixed tag for game states, else the
+    // biome's tag list (folder config preferred, code default as a safety net).
+    private tagsForContext(context: string): string[] {
+        if (STATE_TAGS[context]) return STATE_TAGS[context];
+        const fromFolders = soundManager.getBiomeTags(context);
+        if (fromFolders.length > 0) return fromFolders;
+        return BIOME_TAGS[context] ?? [];
+    }
+
+    private isKnownContext(context: string): boolean {
+        return !!STATE_TAGS[context] || this.tagsForContext(context).length > 0;
+    }
+
     public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         this.isDeathSuspended = false;
         // Defensive: entering a world must never inherit a stale frenzy pitch-up
@@ -256,7 +258,7 @@ class MusicController {
             targetContext = 'CREATIVE';
         } else if (inCaves) {
             targetContext = (biomeId === 'lush_caves' || biomeId === 'dripstone_caves') ? biomeId : 'CAVES';
-        } else if (MUSIC_PACKS[biomeId]) {
+        } else if (this.isKnownContext(biomeId)) {
             targetContext = biomeId;
         }
 
@@ -278,8 +280,7 @@ class MusicController {
         if (this.isDeathSuspended) return false;
 
         const context = this.currentContext || this.pendingContext || 'generic';
-        const pack = MUSIC_PACKS[context] || MUSIC_PACKS.generic;
-        if (!pack || pack.length === 0) return false;
+        if (this.tagsForContext(context).length === 0) return false;
 
         this.currentContext = context;
         this.pendingContext = context;
@@ -321,8 +322,8 @@ class MusicController {
             // Cave biomes can carry their own music; otherwise the generic caves pack.
             targetContext = (biomeId === 'lush_caves' || biomeId === 'dripstone_caves') ? biomeId : "CAVES";
         } else {
-            // Use biome ID directly if it exists in our packs, otherwise fallback
-            if (MUSIC_PACKS[biomeId]) {
+            // Use biome ID directly if it maps to tags, otherwise stay generic.
+            if (this.isKnownContext(biomeId)) {
                 targetContext = biomeId;
             }
         }
@@ -390,12 +391,24 @@ class MusicController {
 
     private switchContext(newContext: string, isFast: boolean = false) {
         // Don't stop current music if the new context has no available tracks
-        const newPack = MUSIC_PACKS[newContext] || MUSIC_PACKS['generic'];
-        const hasNewTracks = newPack?.some(eventId => soundManager.hasTracksForEvent(eventId)) ?? false;
+        const newTags = this.tagsForContext(newContext);
+        const hasNewTracks = newTags.some(tag => soundManager.hasTracksForEvent(`music.${tag}`));
         if (!hasNewTracks) {
             console.log(`[Music] Context ${newContext} has no tracks, staying in ${this.currentContext || 'current'}.`);
             this.pendingContext = this.currentContext;
             this.contextStableTime = Date.now();
+            return;
+        }
+
+        // Continuity: if the song currently playing belongs to a tag the new
+        // context still uses (e.g. crossing from tundra to mountains, both 'cold',
+        // or generic caves into a dripstone cave, both 'caves'), keep it playing.
+        // Just adopt the new context so the NEXT song comes from the new pool.
+        if (this.isPlaying && this.currentTrackTag && newTags.includes(this.currentTrackTag)) {
+            console.log(`[Music] Context ${newContext} shares tag '${this.currentTrackTag}', keeping current track.`);
+            this.currentContext = newContext;
+            this.pendingContext = newContext;
+            this.bloodMoonLoopCrossfadePending = false;
             return;
         }
 
@@ -508,20 +521,21 @@ class MusicController {
     }
 
     private playNextTrack(fadeTime = STANDARD_FADE_IN, fadeOutTime: number = fadeTime) {
-        const pack = MUSIC_PACKS[this.currentContext] || MUSIC_PACKS["generic"];
-        if (!pack || pack.length === 0) return Promise.resolve();
-
-        // Prefer the biome's OWN music event (listed first) and fall back to the
-        // shared pack(s) after it: pick the first event in the list that actually
-        // has tracks. So dropping files into a biome's folder makes it play its own
-        // music immediately, and an empty folder transparently uses the fallback.
-        const trackId = pack.find(eventId => soundManager.hasTracksForEvent(eventId));
-        if (!trackId) {
-            // Nothing playable in this pack (all folders empty) — retry later.
+        // Pool the current context's tags and pick one at random among those that
+        // actually have songs (so a biome plays a random song across all of its
+        // populated tags, and empty tags simply drop out).
+        const playableTags = this.tagsForContext(this.currentContext)
+            .filter(tag => soundManager.hasTracksForEvent(`music.${tag}`));
+        if (playableTags.length === 0) {
+            // Nothing playable for this context (all its tag folders empty) — retry later.
             this.isPlaying = false;
             this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 30000);
             return Promise.resolve();
         }
+
+        const tag = playableTags[Math.floor(Math.random() * playableTags.length)];
+        this.currentTrackTag = tag;
+        const trackId = `music.${tag}`;
 
         // Optimistically lock to prevent double triggers
         this.isPlaying = true;

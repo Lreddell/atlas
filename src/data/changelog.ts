@@ -108,7 +108,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                 items: [
                     'Added dedicated Magnetic Fields and Magnetic Warden music, including phase-aware boss intensity, plus a new ocean track.',
                     'Added death music and an optional slower, calmer night soundtrack, enabled by default.',
-                    'Every biome now has its own music folder; biomes without their own tracks yet (jungle, mountains, cave biomes, and more) fall back to a fitting shared pack until music is added.',
+                    'Music is now tag-based: each tag is a folder of songs and every biome lists the tags it plays, so biomes can share identical music, stack multiple tags, and keep a shared song playing across a biome border instead of restarting.',
                     'The Warden encounter includes a summon cinematic, shield beams, fog, particles, camera shake, clearer phase warnings, and distinct combat sounds.',
                     'Rename, confirmation, and boss-warning dialogs now match the main menu style.',
                 ],
