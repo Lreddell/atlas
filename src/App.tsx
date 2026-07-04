@@ -515,7 +515,6 @@ const App: React.FC = () => {
   const deathScreenActiveRef = useRef(false);
   const lockRequestInFlightRef = useRef(false);
   const wantsGameplayRef = useRef(false);
-  const escapeHeldRef = useRef(false);
   const suppressAutoPauseUntilMsRef = useRef(0);
     const pointerLockRetryTimersRef = useRef<number[]>([]);
     const pendingCameraRotationRef = useRef<{ x: number; y: number } | null>(null);
@@ -613,9 +612,18 @@ const App: React.FC = () => {
   // boots can switch the ability off entirely (the N key → polarityPowerOn).
   const controllable = hasPolarityBoots(equipment)
       && (!hasUpgradedPolarityBoots(equipment) || polarityPowerOn);
+  // Upgraded boots shield you from passive magnetism even when their ability is
+  // switched OFF: iron armor no longer drags you around. (Base boots can't turn
+  // off, so they're always 'controlled' when worn.)
+  const magnetShielded = hasUpgradedPolarityBoots(equipment);
   const magneticMode: MagneticMode = controllable
       ? 'controlled'
-      : (isWearingIronArmor(equipment) ? 'ferro' : 'none');
+      : (!magnetShielded && isWearingIronArmor(equipment) ? 'ferro' : 'none');
+  // Polarity boots soften falls while the ability is active; the upgraded pair
+  // softens them further. 1 = no reduction.
+  const fallDamageFactor = magneticMode === 'controlled'
+      ? (hasUpgradedPolarityBoots(equipment) ? 0.25 : 0.5)
+      : 1;
 
   // Signature of the last persisted player/world state (excludes time, which
   // advances every tick) so a periodic autosave can skip a redundant write when
@@ -1258,12 +1266,14 @@ const App: React.FC = () => {
   useEffect(() => {
       const onKeyUp = (e: KeyboardEvent) => {
           if (e.key === 'Escape') {
-              escapeHeldRef.current = false;
-              if (appState !== 'game') return; 
+              if (appState !== 'game') return;
               if (document.pointerLockElement) return;
               if (!wantsGameplayRef.current && !relockWantedRef.current) return;
               relockWantedRef.current = true;
-              suppressAutoPauseFor(350);
+              // Match the keydown resume path's suppression window so the
+              // re-lock on Escape-up survives Chrome's ~1.25s pointer-lock
+              // cooldown without the auto-pause firing underneath it.
+              suppressAutoPauseFor(1500);
               requestPointerLockBurst('escape-up', { force: true });
           }
       };
@@ -2107,8 +2117,11 @@ const App: React.FC = () => {
 
     if (relockWantedRef.current && wantsGameplayRef.current && e.key !== 'Escape') { requestPointerLockBurst('any-key'); }
     if (e.key === 'Escape') {
-        if (escapeHeldRef.current) { e.preventDefault(); e.stopPropagation(); return; }
-        escapeHeldRef.current = true;
+        // Ignore auto-repeat only — never latch on a ref that a missed keyup
+        // could leave stuck true (that was the "sometimes Escape does nothing,
+        // hit it again" bug). e.repeat is set by the browser for held keys and
+        // reset every fresh press, so it can't wedge.
+        if (e.repeat) { e.preventDefault(); e.stopPropagation(); return; }
         e.preventDefault(); e.stopPropagation();
         if (isDead || deathScreenActiveRef.current) return;
         
@@ -3126,6 +3139,7 @@ const App: React.FC = () => {
                             onTakeDamage={applyRawDamage}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
                             magneticMode={magneticMode}
+                            fallDamageFactor={fallDamageFactor}
                             ridingBoatId={ridingBoatId} onExitBoat={handleExitBoat}
                         />
                         <PlayerRefUpdater playerPosRef={playerPosRef} cinematicMode={cinematicMode} />

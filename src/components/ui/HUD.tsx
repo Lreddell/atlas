@@ -117,7 +117,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             
             {/* Health/Hunger - Only in Survival */}
             {gameMode === 'survival' && (
-                <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex gap-16 z-40 p-2 pointer-events-none">
+                <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex items-end gap-16 z-40 p-2 pointer-events-none">
                     <div className="flex flex-col gap-1 items-start">
                         {/* Armor (defense) pips — shown above the hearts while any
                             armor is worn; 1 pip = 2 defense points, matching the

@@ -103,6 +103,8 @@ interface PlayerProps {
   isDead: boolean;
     forcedFov?: number | null;
   magneticMode?: MagneticMode;
+  /** Fall-damage multiplier from gear (polarity boots soften falls). 1 = normal. */
+  fallDamageFactor?: number;
   /** Entity id of the boat being ridden (null = on foot). While riding, the
    *  player's boat physics drives the entity's position/yaw each frame. */
   ridingBoatId?: number | null;
@@ -127,7 +129,7 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
 };
 
 export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
-    position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, 
+    position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, fallDamageFactor = 1,
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
     isDead, forcedFov = null, magneticMode = 'none', ridingBoatId = null, onExitBoat
 }, ref) => {
@@ -521,7 +523,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                     // Magnetic Spikes (and any future hazard surface) amplify the
                     // base fall damage, applied once per landing.
                     const multiplier = getFallDamageMultiplierForLandingBlock(landedBlock);
-                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier));
+                    // Polarity boots cushion the impact (fallDamageFactor < 1 while
+                    // the ability is active; upgraded boots cushion more).
+                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor));
                 }
                 fallDistance.current = 0;
             }

@@ -60,6 +60,18 @@ test('resuming from the pause menu cannot bounce back to a pause', () => {
     assert.match(app, /setIsPaused\(false\); wantsGameplayRef\.current = true; relockWantedRef\.current = true; suppressAutoPauseFor\(1500\)/);
 });
 
+test('Escape uses e.repeat, not a latching ref that a missed keyup can wedge', () => {
+    // The "sometimes Escape does nothing, hit it again" bug was a boolean ref
+    // set on keydown and cleared on keyup: a dropped keyup left it stuck true
+    // and swallowed the next press. e.repeat is browser-managed and resets per
+    // fresh press, so it can't wedge.
+    assert.doesNotMatch(app, /escapeHeldRef/);
+    const esc = app.slice(app.indexOf("if (e.key === 'Escape') {"));
+    assert.match(esc, /if \(e\.repeat\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); return; \}/);
+    // Escape out of a container/inventory returns to gameplay, not the pause menu.
+    assert.match(esc, /if \(openContainer\) \{ closeInventory\(\{ deferPointerLock: true \}\); return; \}/);
+});
+
 test('caves render across the near/mid view, not just a few chunks out', () => {
     assert.match(worldManager, /DARK_CULL_DISTANCE = 8/);
 });

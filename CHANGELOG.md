@@ -139,6 +139,17 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   worlds.
 - A failed save now shows a warning in-game instead of crashing to an error screen
   (including a Windows file-lock case during autosave).
+- Escape now pauses reliably every time — a dropped key event could previously leave
+  it "stuck," so the first press did nothing and you had to press it twice.
+- Escape from a container or inventory returns straight to the game instead of opening
+  the pause menu, and Escape out of the pause menu regains mouse-look without a wait.
+- Fixed a rare camera "spin" where a single mouse event (often on regaining pointer
+  lock) could whip the view a full turn; per-event look deltas are now clamped.
+- Polarity boots now soften fall damage while active (upgraded boots soften it more),
+  and upgraded boots switched off shield you from magnets entirely — iron armor no
+  longer drags you around.
+- The hunger bar no longer drifts upward when wearing armor.
+- Cave biomes (Lush, Dripstone, Caves) now carry their own cave music.
 - The tutorial covers magnetism, the Warden, gear durability, and current commands;
   smoother performance around magnets and during growth ticks.
 - Added an in-game "What's New" screen that appears after updates and can be reopened
