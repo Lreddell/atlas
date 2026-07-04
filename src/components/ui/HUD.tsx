@@ -38,6 +38,90 @@ const ArmorPip: React.FC<{ fill: number }> = ({ fill }) => (
     </div>
 );
 
+// Pixel-art hearts and hunger shanks that match the crisp, drop-shadowed armor
+// style: a dark "container" shape with the filled shape (plus a highlight
+// glint) layered on top, clipped for half values. Bitmaps are 9×9 grids so
+// hearts and shanks scale identically inside a 24px pip.
+const HEART_SHAPE = [
+    '.XX...XX.',
+    'XXXXXXXXX',
+    'XXXXXXXXX',
+    'XXXXXXXXX',
+    '.XXXXXXX.',
+    '..XXXXX..',
+    '...XXX...',
+    '....X....',
+    '.........',
+];
+const HEART_GLINT = [
+    '.........',
+    '.X.......',
+    '.X.......',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+];
+// Drumstick: rounded meat upper-right, bone tapering to the lower-left.
+const HUNGER_SHAPE = [
+    '....XXX..',
+    '...XXXXX.',
+    '..XXXXXX.',
+    '..XXXXXX.',
+    '.XXXXXX..',
+    '.XXXX....',
+    'XXX......',
+    'XX.......',
+    'X........',
+];
+const HUNGER_GLINT = [
+    '.........',
+    '....X....',
+    '....X....',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+    '.........',
+];
+
+const PixelShape: React.FC<{ rows: string[]; color: string; style?: React.CSSProperties }> = ({ rows, color, style }) => (
+    <svg viewBox="0 0 9 9" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full" style={style}>
+        {rows.flatMap((row, y) =>
+            row.split('').map((c, x) => (c === 'X'
+                ? <rect key={`${x}-${y}`} x={x} y={y} width={1.02} height={1.02} fill={color} />
+                : null))
+        )}
+    </svg>
+);
+
+// One stat pip (heart or shank). fill: 0 | 0.5 | 1. `half` picks which side the
+// half-value keeps so the icon's main mass stays visible.
+const StatPip: React.FC<{
+    shape: string[]; glint: string[]; fill: number;
+    color: string; empty: string; shine: string; half: 'left' | 'right';
+}> = ({ shape, glint, fill, color, empty, shine, half }) => (
+    <div className="w-6 h-6 relative drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-hidden>
+        <PixelShape rows={shape} color={empty} />
+        {fill > 0 && (
+            <div className="absolute inset-0"
+                style={fill === 0.5 ? { clipPath: half === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)' } : undefined}>
+                <PixelShape rows={shape} color={color} />
+                <PixelShape rows={glint} color={shine} />
+            </div>
+        )}
+    </div>
+);
+
+const statFill = (value: number, index: number) => {
+    const full = index < Math.floor(value / 2);
+    if (full) return 1;
+    return index === Math.floor(value / 2) && value % 2 === 1 ? 0.5 : 0;
+};
+
 // Equipped-armor readout: one mini slot per worn piece with its durability bar
 // (via Slot) plus a red pulse when a piece is nearly broken. Tooltips carry the
 // exact numbers.
@@ -134,35 +218,16 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                          {/* Health Bar */}
                         <div className="flex gap-1 h-6">
                             {Array.from({length: 10}).map((_, i) => {
-                                const isHalf = i === Math.floor(health / 2);
-                                const isFull = i < Math.floor(health / 2);
-                                // Fix: Use 50% for half heart (1 HP), 100% for full (2 HP)
-                                const fillHeight = isFull ? '100%' : (isHalf ? `${(health%2)*50}%` : '0%');
-                                
-                                // Shake offset for this specific heart
                                 const offsetY = shakeOffset[i] || 0;
-                                const flashClass = isFlashing ? 'brightness-150 contrast-125 sepia-[.3] grayscale-[.2]' : '';
-
+                                const flashClass = isFlashing ? 'brightness-150 contrast-125' : '';
                                 return (
-                                    <div 
-                                        key={i} 
-                                        className={`w-6 h-6 bg-black/40 border border-black/60 relative overflow-hidden rounded-sm transition-transform duration-75 ${flashClass}`}
+                                    <div
+                                        key={i}
+                                        className={`transition-transform duration-75 ${flashClass}`}
                                         style={{ transform: `translateY(${offsetY}px)` }}
                                     >
-                                        {/* Background (Empty Heart) */}
-                                        <div className="absolute inset-0 bg-[#3a0b0b]" /> 
-                                        
-                                        {/* Fill (Full/Half Heart) */}
-                                        <div className="absolute bottom-0 left-0 bg-[#c60000] shadow-[inset_0_2px_4px_rgba(255,100,100,0.3)]" 
-                                             style={{ height: fillHeight, width: '100%' }}>
-                                             {/* Shine detail */}
-                                             <div className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white/30 rounded-full" />
-                                        </div>
-
-                                        {/* Flashing White Overlay (when damaged) */}
-                                        {isFlashing && (fillHeight !== '0%') && (
-                                            <div className="absolute inset-0 bg-white/40 mix-blend-overlay" />
-                                        )}
+                                        <StatPip shape={HEART_SHAPE} glint={HEART_GLINT} fill={statFill(health, i)}
+                                            color="#d81f1f" empty="#3a0b0b" shine="#ff9a9a" half="left" />
                                     </div>
                                 );
                             })}
@@ -182,21 +247,17 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             </div>
                         )}
 
-                        {/* Hunger Bar (Shanks) */}
+                        {/* Hunger Bar (Shanks) — flex-row-reverse, so index 0 is
+                            the RIGHTMOST shank and depletes from the left. */}
                         <div className="flex gap-1 flex-row-reverse h-6">
                             {Array.from({length: 10}).map((_, i) => (
-                                <div 
-                                    key={i} 
-                                    className="w-6 h-6 bg-black/30 border border-black/50 relative overflow-hidden rounded-sm transform transition-transform duration-75"
+                                <div
+                                    key={i}
+                                    className="transition-transform duration-75"
                                     style={{ transform: `translateY(${hungerShake[i] || 0}px)` }}
                                 >
-                                    <div className="absolute inset-0 bg-orange-700/20" />
-                                    {/* Using flex-row-reverse, so this index 0 is actually the RIGHTMOST icon visually */}
-                                    <div className="absolute bottom-0 left-0 bg-[#D35400] shadow-[0_0_5px_rgba(211,84,0,0.5)] transition-all duration-300" 
-                                         style={{ height: i < Math.floor(hunger / 2) ? '100%' : (i === Math.floor(hunger/2) ? `${(hunger%2)*50}%` : '0%'), width: '100%' }}>
-                                         {/* Bone Detail */}
-                                         <div className="absolute top-0 right-1 w-1 h-2 bg-[#F5CBA7] rounded-full opacity-50"></div>
-                                    </div>
+                                    <StatPip shape={HUNGER_SHAPE} glint={HUNGER_GLINT} fill={statFill(hunger, i)}
+                                        color="#D35400" empty="#3a2410" shine="#F5CBA7" half="right" />
                                 </div>
                             ))}
                         </div>
