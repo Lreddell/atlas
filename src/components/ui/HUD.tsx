@@ -23,7 +23,7 @@ interface HUDProps {
 
 // A single armor pip (chestplate silhouette). fill: 0 | 0.5 | 1.
 const ArmorPip: React.FC<{ fill: number }> = ({ fill }) => (
-    <div className="w-6 h-6 relative" aria-hidden>
+    <div className="w-8 h-8 relative" aria-hidden>
         <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
             {/* empty outline */}
             <path d="M3 2 L6 2 L6 4 L10 4 L10 2 L13 2 L14 5 L12 7 L12 14 L4 14 L4 7 L2 5 Z" fill="#3a3a3a" stroke="#141414" strokeWidth="1" />
@@ -65,7 +65,7 @@ const PipSvg: React.FC<{ paths: PipPath[]; style?: React.CSSProperties }> = ({ p
 const StatPip: React.FC<{
     empty: PipPath[]; filled: PipPath[]; fill: number; half: 'left' | 'right';
 }> = ({ empty, filled, fill, half }) => (
-    <div className="w-6 h-6 relative drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-hidden>
+    <div className="w-8 h-8 relative drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-hidden>
         <PipSvg paths={empty} />
         {fill > 0 && (
             <div className="absolute inset-0"
@@ -182,7 +182,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             armor is worn; 1 pip = 2 defense points, matching the
                             applyArmor() reduction the pips represent. */}
                         {equipment && totalDefense(equipment) > 0 && (
-                            <div className="flex gap-1 h-6" title={`${totalDefense(equipment)} armor — reduces combat damage (not falls, fire, or drowning)`}>
+                            <div className="flex gap-1 h-8" title={`${totalDefense(equipment)} armor — reduces combat damage (not falls, fire, or drowning)`}>
                                 {Array.from({ length: 10 }).map((_, i) => {
                                     const def = Math.min(20, totalDefense(equipment));
                                     const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
@@ -191,7 +191,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             </div>
                         )}
                          {/* Health Bar */}
-                        <div className="flex gap-1 h-6">
+                        <div className="flex gap-1 h-8">
                             {Array.from({length: 10}).map((_, i) => {
                                 const offsetY = shakeOffset[i] || 0;
                                 const flashClass = isFlashing ? 'brightness-150 contrast-125' : '';
@@ -211,9 +211,9 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                     <div className="flex flex-col gap-1 items-end relative">
                         {/* Breath Bar (Bubbles) - Positioned ABOVE hunger */}
                         {breath < MAX_BREATH && ( 
-                            <div className="flex gap-1 justify-end absolute bottom-8 right-0">
+                            <div className="flex gap-1 justify-end absolute bottom-10 right-0">
                                 {Array.from({length: 10}).map((_, i) => (
-                                    <div key={i} className="w-6 h-6 bg-black/30 border border-black/50 relative overflow-hidden rounded-full">
+                                    <div key={i} className="w-8 h-8 bg-black/30 border border-black/50 relative overflow-hidden rounded-full">
                                         <div className="absolute inset-0 bg-blue-400/20" />
                                         <div className="absolute bottom-0 left-0 bg-blue-400 shadow-[0_0_5px_rgba(0,191,255,0.5)] transition-all duration-200" style={{ height: i < Math.floor(breath / 30) ? '100%' : (i === Math.floor(breath/30) ? `${(breath%30/30)*100}%` : '0%'), width: '100%' }}></div>
                                     </div>
@@ -223,7 +223,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
 
                         {/* Hunger Bar (Shanks) — flex-row-reverse, so index 0 is
                             the RIGHTMOST shank and depletes from the left. */}
-                        <div className="flex gap-1 flex-row-reverse h-6">
+                        <div className="flex gap-1 flex-row-reverse h-8">
                             {Array.from({length: 10}).map((_, i) => (
                                 <div
                                     key={i}
