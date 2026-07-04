@@ -1,5 +1,6 @@
 
 import { BlockType, ItemStack } from '../types';
+import { BLOCKS } from '../data/blocks';
 import * as WorldTypes from './world/worldTypes';
 import * as WorldStore from './world/worldStore';
 import * as WorldCoords from './world/worldCoords';
@@ -982,6 +983,40 @@ export class WorldManager {
    * It prioritizes finding land (height > 63) in a spiral. 
    * If only water is found, it spawns on the water surface (64).
    */
+  /**
+   * Resolve a genuine standing Y from the ACTUAL placed blocks at a column (not
+   * just the noise height), so a spawn never lands inside a tree, structure, or
+   * overhang. Finds the highest collidable block that has two non-solid cells
+   * above it and returns the cell on top of it. Falls back to noiseHeight+2.
+   * Shared by every spawn (world entry + respawn) so they behave identically.
+   */
+  public resolveClearStandY(x: number, z: number): number {
+      const bx = Math.floor(x), bz = Math.floor(z);
+      this.ensureChunk(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE));
+      const isSolid = (t: BlockType): boolean => {
+          if (t === BlockType.AIR || t === BlockType.WATER || t === BlockType.LAVA) return false;
+          const d = BLOCKS[t];
+          return !!d && !d.noCollision;
+      };
+      // A cell the player can occupy: air, or a non-solid non-hazard (plants).
+      const isFree = (t: BlockType): boolean => {
+          if (t === BlockType.LAVA) return false;
+          if (t === BlockType.AIR || t === BlockType.WATER) return true;
+          const d = BLOCKS[t];
+          return !!d && !!d.noCollision;
+      };
+      const noiseH = WorldGen.getTerrainHeight(bx, bz);
+      const top = Math.min(MAX_Y - 3, noiseH + 48);
+      for (let y = top; y > MIN_Y + 1; y--) {
+          if (isSolid(this.getBlock(bx, y, bz, false))
+              && isFree(this.getBlock(bx, y + 1, bz, false))
+              && isFree(this.getBlock(bx, y + 2, bz, false))) {
+              return y + 1;
+          }
+      }
+      return noiseH + 2;
+  }
+
   public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
       const seaLevel = GenConfig.height.seaLevel;
       const { safeSearchRadius, safeSearchStep } = GenConfig.spawn;
@@ -1054,8 +1089,11 @@ export class WorldManager {
       const pick = scored ?? land;
       if (pick) {
           this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
-          console.log(`[Spawn] Found land at ${pick.x},${pick.y},${pick.z}${scored ? ` (score: ${scored.score})` : ' (fallback land)'}`);
-          return { x: pick.x + 0.5, y: pick.y + 2, z: pick.z + 0.5 };
+          // Snap to a real air gap on top of the actual surface blocks (avoids
+          // spawning inside trees / structures / overhangs the noise height misses).
+          const y = this.resolveClearStandY(pick.x, pick.z);
+          console.log(`[Spawn] Found land at ${pick.x},${y},${pick.z}${scored ? ` (score: ${scored.score})` : ' (fallback land)'}`);
+          return { x: pick.x + 0.5, y, z: pick.z + 0.5 };
       }
 
       if (water) {

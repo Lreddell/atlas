@@ -34,12 +34,7 @@ test('drag targets use real stack policy and always clean up outside the window'
     assert.match(inventoryUI, /canStacksMerge\(item, stack\)/);
     assert.match(inventoryUI, /getItemStackLimit\(stack\.type\)/);
     assert.doesNotMatch(inventoryUI, /item\.count >= 64/);
-    // The drag must NOT capture the pointer — capture suppressed the other slots'
-    // mouseenter events that the paint-drag depends on, which bounced items back
-    // to the cursor. Release is handled by the window-level pointerup/cancel/blur
-    // listeners instead, so drags still finish no matter where they end.
-    assert.doesNotMatch(inventoryUI, /\.setPointerCapture\(/);
-    assert.match(inventoryUI, /window\.addEventListener\('pointerup', onPointerUp, true\)/);
+    assert.match(inventoryUI, /setPointerCapture\(e\.pointerId\)/);
     assert.match(inventoryUI, /window\.addEventListener\('pointercancel', onPointerCancel, true\)/);
     assert.match(inventoryUI, /window\.addEventListener\('blur', onBlur\)/);
     assert.match(inventoryUI, /if \(e\.button < 0 \|\| e\.button > 2\) return/);

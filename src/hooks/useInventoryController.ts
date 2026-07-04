@@ -288,7 +288,11 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
     const handleInventoryAction = useCallback<InventoryActionHandler>((action, collection, index, data?: InventoryActionData) => {
         const currentCursor = cursorRef.current;
 
-        if (action !== 'drop_cursor'
+        // drop_cursor and drag_end are dispatched with collection 'none' (their
+        // real targets live in `data`), so they must skip the per-slot availability
+        // gate — otherwise every drag distribution was silently dropped and the
+        // held stack bounced straight back to the cursor.
+        if (action !== 'drop_cursor' && action !== 'drag_end'
             && (!isCollectionAvailable(collection) || !isSlotIndexValid(collection, index))) return;
         const slotItem = collection === 'output'
             ? syncCraftingOutput()

@@ -8,23 +8,20 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const inventoryUI = read('src/components/ui/InventoryUI.tsx');
+const controller = read('src/hooks/useInventoryController.ts');
 const app = read('src/App.tsx');
 const worldManager = read('src/systems/WorldManager.ts');
 const chunkBase = read('src/components/ui/ChunkBase.tsx');
 
-test('the inventory drag no longer captures the pointer (the real bug)', () => {
-    // setPointerCapture bound the pointer to the origin slot, suppressing the
-    // other slots' mouseenter events that the paint-drag relies on — so drags
-    // "stuck" to one slot and bounced items back to the cursor. Removing it lets
-    // handleSlotEnter → tryAddDragSlot run again. The rest of the hardening
-    // commit (double-click collect, dialog focus, etc.) is intact.
-    assert.doesNotMatch(inventoryUI, /\.setPointerCapture\(/);
-    assert.match(inventoryUI, /tryAddDragSlot/);
-    assert.match(inventoryUI, /dragMovedRef/);
-    // A lone origin (no move) is a click; a real paint distributes via drag_end.
+test('drag_end is exempt from the per-slot availability gate (the real drag bug)', () => {
+    // drag_end (like drop_cursor) is dispatched with collection 'none', so the
+    // controller's availability guard must let it through — otherwise every drag
+    // distribution was dropped and the held stack bounced back to the cursor.
+    assert.match(controller, /action !== 'drop_cursor' && action !== 'drag_end'/);
+    // The UI still drives it: a lone-origin press is a click, a paint is drag_end.
     assert.match(inventoryUI, /if \(!dragMovedRef\.current\)/);
     assert.match(inventoryUI, /handleInventoryAction\('drag_end'/);
-    // Double-click-to-collect-into-cursor is preserved.
+    // Codex's other work is untouched (double-click collect, pointer capture).
     assert.match(inventoryUI, /dispatchSlotAction\('double_click', collection, index\)/);
 });
 
@@ -43,6 +40,24 @@ test('respawn re-centers chunk streaming so the spawn area renders', () => {
     // the world stays streamed around the death location until you walk.
     const respawn = app.slice(app.indexOf('const handleRespawn'), app.indexOf('const handleRespawn') + 3000);
     assert.match(respawn, /worldManager\.ensureChunk\(cx, cz\);\s*\n\s*applyChunkCenter\(cx, cz, true\)/);
+});
+
+test('spawns resolve a real clear standing Y from actual blocks (no spawning in blocks)', () => {
+    // Every spawn (world entry + respawn go through findSafeSpawnPosition) snaps
+    // to a genuine air gap on top of the actual surface, not just noiseHeight+2,
+    // so it can't land inside a tree / structure / overhang.
+    assert.match(worldManager, /public resolveClearStandY\(x: number, z: number\): number/);
+    assert.match(worldManager, /const y = this\.resolveClearStandY\(pick\.x, pick\.z\)/);
+    assert.match(worldManager, /return \{ x: pick\.x \+ 0\.5, y, z: pick\.z \+ 0\.5 \}/);
+});
+
+test('resuming from the pause menu cannot bounce back to a pause', () => {
+    // The pointer-lock-loss auto-pause is suppressed past the browser's ~1.25s
+    // Escape cooldown, so a lock bounce during that window no longer re-pauses.
+    const resume = app.slice(app.indexOf('const resumeFromUserGesture'), app.indexOf('const resumeFromUserGesture') + 900);
+    assert.match(resume, /suppressAutoPauseFor\(1500\)/);
+    // The Escape-unpause path gets the same protection.
+    assert.match(app, /setIsPaused\(false\); wantsGameplayRef\.current = true; relockWantedRef\.current = true; suppressAutoPauseFor\(1500\)/);
 });
 
 test('caves render across the near/mid view, not just a few chunks out', () => {

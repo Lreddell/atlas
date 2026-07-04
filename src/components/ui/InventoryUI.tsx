@@ -434,12 +434,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             dispatchSlotAction('shift_click', collection, index);
             if (collection !== 'creative' && collection !== 'output' && collection !== 'furnace_output') {
                 beginDrag('shift', { collection, index }, null);
-                // NOTE: no setPointerCapture — capturing the pointer to the origin
-                // slot suppresses mouseenter on the other slots, which is exactly
-                // what the paint-drag (handleSlotEnter → tryAddDragSlot) relies on,
-                // so capture made drags "stick" to one slot and bounce items back
-                // to the cursor. The window-level pointerup/blur listeners already
-                // finish the drag no matter where the pointer is released.
+                e.currentTarget.setPointerCapture(e.pointerId);
             }
             return;
         }
@@ -454,8 +449,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
         if (cursorStack) {
             beginDrag(e.button === 2 ? 'one' : 'split', { collection, index }, cursorStack);
-            // No setPointerCapture — see the note above; it broke multi-slot paint
-            // by suppressing the other slots' mouseenter events.
+            e.currentTarget.setPointerCapture(e.pointerId);
             return;
         }
 

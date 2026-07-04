@@ -1272,9 +1272,15 @@ const App: React.FC = () => {
   }, [requestPointerLockBurst, suppressAutoPauseFor, appState]);
 
   const resumeFromUserGesture = useCallback((reason: 'escape' | 'button' | 'respawn') => {
-      soundManager.resume(); 
+      soundManager.resume();
       soundManager.preload(['ui.click', 'ui.open', 'ui.close', 'entity.player.hurt', 'block.grass.step', 'block.stone.step', 'block.wood.step']);
       void lockBrowserShortcuts();
+      // Suppress the pointer-lock-loss auto-pause well past the browser's ~1.25s
+      // cooldown after an Escape-exit. Without this, if the re-lock briefly grabs
+      // and the browser bounces it back during the cooldown, the auto-pause fired
+      // and threw the player straight back into the pause menu — the "it re-pauses
+      // when I click Resume" regression.
+      suppressAutoPauseFor(1500);
       setIsPaused(false);
       setOpenContainer(null);
       setShowCommandInput(false);
@@ -1285,7 +1291,7 @@ const App: React.FC = () => {
       wantsGameplayRef.current = true;
       relockWantedRef.current = true;
       requestPointerLockBurst(reason, { force: true });
-    }, [requestPointerLockBurst, lockBrowserShortcuts, setOpenContainer]);
+    }, [requestPointerLockBurst, lockBrowserShortcuts, setOpenContainer, suppressAutoPauseFor]);
 
   const resumeGame = useCallback((opts?: { deferPointerLock?: boolean }) => {
       setOpenContainer(null);
@@ -2120,7 +2126,7 @@ const App: React.FC = () => {
 
         if (openContainer) { closeInventory({ deferPointerLock: true }); return; }
         if (isSleeping) { setIsSleeping(false); return; } 
-        if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
+        if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(1500); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
         // PAUSE: Save Immediately
         saveGame({ force: true });
