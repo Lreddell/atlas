@@ -161,6 +161,24 @@ export const BIOMES: Record<string, Biome> = {
     MAGNETIC_FIELDS: {
         id: 'magnetic_fields', name: 'Magnetic Fields', surfaceBlock: BlockType.MAGNETITE_BLOCK, subBlock: BlockType.MAGNETITE_BLOCK, waterBlock: BlockType.WATER,
         terrainScale: 4, terrainBase: MF_BASE_HEIGHT, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#5b4a78', vegetationType: 'none', tags: ['magnetic']
+    },
+
+    // --- Cave biomes ---
+    // Underground overlay biomes: they don't shape surface terrain (terrainScale/
+    // Base are unused for them), they classify the rock you're standing in below
+    // the surface. Resolved via getBiomeAt(x, y, z) / caveBiomeAt. Tagged 'cave'
+    // so callers can tell surface biomes from cave biomes.
+    CAVES: {
+        id: 'caves', name: 'Caves', surfaceBlock: BlockType.STONE, subBlock: BlockType.DEEPSLATE, waterBlock: BlockType.WATER,
+        terrainScale: 0, terrainBase: 0, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#5a5a62', vegetationType: 'none', tags: ['cave']
+    },
+    LUSH_CAVES: {
+        id: 'lush_caves', name: 'Lush Caves', surfaceBlock: BlockType.MOSS_BLOCK, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
+        terrainScale: 0, terrainBase: 0, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#5a7a35', vegetationType: 'none', tags: ['cave', 'lush']
+    },
+    DRIPSTONE_CAVES: {
+        id: 'dripstone_caves', name: 'Dripstone Caves', surfaceBlock: BlockType.DRIPSTONE_BLOCK, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
+        terrainScale: 0, terrainBase: 0, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#8a6a55', vegetationType: 'none', tags: ['cave', 'dripstone']
     }
 };
 

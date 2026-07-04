@@ -4,7 +4,7 @@ import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
 import { NEIGHBORS } from './worldConstants';
 import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
-import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
+import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache, BIOMES, type Biome } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
 import {
@@ -208,6 +208,28 @@ function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { 
 
 export function getTerrainHeight(x: number, z: number, noiseSet: NoiseSet = GlobalNoise): number {
     return getTerrainInfo(x, z, noiseSet).height;
+}
+
+/**
+ * Full 3D biome lookup: the surface biome at/above ground, or the underground
+ * CAVE biome (Caves / Lush Caves / Dripstone Caves) once you are well below the
+ * surface. Cave biomes are the same registered BIOMES entries the surface uses,
+ * so the debug screen, commands, and anything else that shows a biome name pick
+ * them up automatically. Magnetic Fields keeps its own identity underground.
+ */
+export function getBiomeAt(x: number, y: number, z: number, noiseSet: NoiseSet = GlobalNoise): Biome {
+    const surface = getBiome(x, z, noiseSet);
+    const cfg = GenConfig.caves;
+    if (!cfg.enabled || surface.id === 'magnetic_fields') return surface;
+    const surfaceH = getTerrainHeight(x, z, noiseSet);
+    if (y > surfaceH - 6) return surface; // at/near the surface → surface biome
+    const region = caveBiomeAt(
+        x + noiseSet.offsets.cave.x, z + noiseSet.offsets.cave.z,
+        (a, b) => noiseSet.cave.noise2D(a, b), cfg,
+    );
+    if (region === 'lush') return BIOMES.LUSH_CAVES;
+    if (region === 'dripstone') return BIOMES.DRIPSTONE_CAVES;
+    return BIOMES.CAVES;
 }
 
 function getStrataBlock(y: number): BlockType {

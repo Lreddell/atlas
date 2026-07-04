@@ -13,6 +13,9 @@ import { createNoiseSet, hashSeed } from '../../utils/noise.ts';
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const chunkGen = read('src/systems/world/chunkGeneration.ts');
+const biomesSrc = read('src/systems/world/biomes.ts');
+const debugScreen = read('src/components/ui/DebugScreen.tsx');
+const worldManagerSrc = read('src/systems/WorldManager.ts');
 const blocks = read('src/data/blocks.ts');
 const types = read('src/types.ts');
 const geometry = read('src/systems/world/geometry.ts');
@@ -167,6 +170,24 @@ test('the new cave blocks exist and the cross-plane ones are cutouts', () => {
         assert.match(textures, new RegExp(`withTile\\(${slot},`), `no tile painted for slot ${slot}`);
         assert.match(mapping, new RegExp(`${slot}:\\s*'blocks/`), `no PNG mapping for slot ${slot}`);
     }
+});
+
+test('cave biomes are real registered biomes surfaced everywhere', () => {
+    // Registered in BIOMES like every surface biome, tagged 'cave'.
+    for (const [id, name] of [['caves', 'Caves'], ['lush_caves', 'Lush Caves'], ['dripstone_caves', 'Dripstone Caves']]) {
+        assert.match(biomesSrc, new RegExp(`id:\\s*'${id}',\\s*name:\\s*'${name}'`), `${id} biome missing`);
+    }
+    assert.match(biomesSrc, /tags:\s*\['cave'\]/);
+    // A 3D biome lookup resolves the underground cave biome (surface otherwise).
+    assert.match(chunkGen, /export function getBiomeAt\(x: number, y: number, z: number/);
+    assert.match(chunkGen, /if \(region === 'lush'\) return BIOMES\.LUSH_CAVES/);
+    assert.match(chunkGen, /if \(region === 'dripstone'\) return BIOMES\.DRIPSTONE_CAVES/);
+    assert.match(chunkGen, /return BIOMES\.CAVES/);
+    // The F3 debug screen shows the Y-aware biome (so caves display underground).
+    assert.match(debugScreen, /getBiomeAt\(bx, by, bz\)/);
+    // /locate finds cave biomes by their region field, not surface climate.
+    assert.match(worldManagerSrc, /lush_caves:\s*'lush', dripstone_caves:\s*'dripstone', caves:\s*'plain'/);
+    assert.match(worldManagerSrc, /caveBiomeAt\(wx \+ caveOx, wz \+ caveOz, caveNoise2D, GenConfig\.caves\) === caveTarget/);
 });
 
 test('the World Editor exposes a CAVES tab and a live cross-section preview', () => {

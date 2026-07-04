@@ -9,6 +9,8 @@ import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
+import { caveBiomeAt, type CaveBiome } from './world/caves';
+import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
@@ -1497,6 +1499,16 @@ export class WorldManager {
   }
   public locateBiome(biomeId: string, startX: number, startZ: number) {
       this.log(`Locating biome: ${biomeId}...`, 'info');
+      // Cave biomes are underground region overlays (caveBiomeAt), not surface
+      // climate biomes, so they're located by their region field and reported at
+      // the surface above the region (dig straight down to reach the cave).
+      const CAVE_REGION: Record<string, CaveBiome> = {
+          lush_caves: 'lush', dripstone_caves: 'dripstone', caves: 'plain',
+      };
+      const caveTarget: CaveBiome | undefined = CAVE_REGION[biomeId];
+      const caveNoise2D = (a: number, b: number) => GlobalNoise.cave.noise2D(a, b);
+      const caveOx = GlobalNoise.offsets.cave.x, caveOz = GlobalNoise.offsets.cave.z;
+
       // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
       // they need a wider search than ordinary biomes to stay reliably findable.
       const isRareBossBiome = biomeId === 'magnetic_fields';
@@ -1510,15 +1522,18 @@ export class WorldManager {
               const angle = (i / circumference) * Math.PI * 2;
               const wx = startX + Math.cos(angle) * r;
               const wz = startZ + Math.sin(angle) * r;
-              const b = getBiome(wx, wz);
-              if (b.id === biomeId) { closestX = wx; closestZ = wz; found = true; break; }
+              const match = caveTarget
+                  ? caveBiomeAt(wx + caveOx, wz + caveOz, caveNoise2D, GenConfig.caves) === caveTarget
+                  : getBiome(wx, wz).id === biomeId;
+              if (match) { closestX = wx; closestZ = wz; found = true; break; }
           }
           if (found) break;
       }
       if (found) {
           const y = this.getTerrainHeight(closestX, closestZ) + 5;
           const tx = Math.floor(closestX); const ty = Math.floor(y); const tz = Math.floor(closestZ);
-          this.log(`Found ${biomeId} at X=${tx}, Z=${tz}`, 'success', `/tp ${tx} ${ty} ${tz}`);
+          const note = caveTarget ? ' (dig down)' : '';
+          this.log(`Found ${biomeId} at X=${tx}, Z=${tz}${note}`, 'success', `/tp ${tx} ${ty} ${tz}`);
       } else { this.log(`Could not find ${biomeId} within ${SEARCH_RADIUS} blocks.`, 'error'); }
   }
 }
