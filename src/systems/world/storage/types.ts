@@ -7,6 +7,23 @@
 
 import type { ItemStack } from '../../../types';
 import type { ProgressionData } from '../../progression/ProgressionStore';
+import type { SavedDataMap } from '../persistence/SavedDataRegistry';
+
+export interface WorldVersions {
+    save: number;
+    generation: number;
+    simulation: number;
+    content: number;
+}
+
+export interface PersistedEntityData {
+    kind: string;
+    x: number; y: number; z: number;
+    vx: number; vy: number; vz: number;
+    yaw: number;
+    hp: number;
+    effects?: Array<{ id: string; duration: number; amplifier: number; elapsed: number }>;
+}
 
 export interface PlayerData {
     position: { x: number, y: number, z: number };
@@ -51,6 +68,13 @@ export interface WorldMetadata {
     // no boats. Same optional-extension pattern as `progression`, so old worlds
     // and v1/v2 exports load unchanged.
     boats?: { x: number; y: number; z: number; yaw: number }[];
+    entities?: PersistedEntityData[];
+    /** Independent compatibility axes; absent means the legacy v1 behavior. */
+    versions?: WorldVersions;
+    /** Stable resource-id to runtime-id mapping used when this world was saved. */
+    contentManifest?: Record<string, number>;
+    /** Namespaced modules; unknown entries are preserved on round-trip. */
+    savedData?: SavedDataMap;
 }
 
 export interface ChunkStorageData {

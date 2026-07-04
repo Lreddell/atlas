@@ -15,6 +15,13 @@ import {
     shouldForgetTarget,
     shouldPreserveKnockback,
 } from './entityBehavior';
+import type { DamageSource } from './combat/DamageSource';
+import { damageSources } from './combat/DamageSource';
+import { addStatusEffect, tickStatusEffects } from './combat/StatusEffects';
+import type { PersistedEntityData } from '../world/storage/types';
+import { worldRules } from '../world/WorldRules';
+import { DeterministicRng, hashSimulationSeed } from '../world/simulation/DeterministicRng';
+import { SpawnDirector } from './SpawnDirector';
 
 export interface SpawnOptions {
     bossId?: string;
@@ -60,6 +67,8 @@ class EntityManager {
     private nextProjectileId = 1;
     private nextShockwaveId = 1;
     private inCombat = false;
+    private naturalSpawnTimer = 0;
+    private spawnDirector = new SpawnDirector();
 
     // Injected by App so entities can chase/damage the player without importing
     // React state.
@@ -173,6 +182,7 @@ class EntityManager {
             shieldCrystalPositions: opts.shieldCrystalPositions,
             maxShieldCrystals: kind.shieldCrystals ?? 0,
             ridden: false,
+            effects: [],
         };
         this.entities.set(entity.id, entity);
         this.notifyStructure();
@@ -228,14 +238,15 @@ class EntityManager {
      * Returns 'blocked' if a shield absorbed it (no damage, no knockback, no hurt
      * flash) so the caller can give distinct feedback, 'damaged' otherwise.
      */
-    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0): 'damaged' | 'blocked' | 'none' {
+    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0, source: DamageSource = damageSources.generic()): 'damaged' | 'blocked' | 'none' {
         const e = this.entities.get(id);
         if (!e || e.hp <= 0) return 'none';
         // Shielded bosses are fully invulnerable until every crystal is broken:
         // no damage, no knockback, no white hurt flash — only a shield shimmer.
         if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
         const hpBefore = e.hp;
-        e.hp -= amount;
+        const effectiveAmount = source.type === 'void' ? Math.max(amount, e.maxHp) : amount;
+        e.hp -= effectiveAmount;
 
         // Phase gate: a hit that would push the boss PAST 50% or 25% is clamped to
         // land EXACTLY on that threshold, so the phase transition fires right at it
@@ -271,6 +282,13 @@ class EntityManager {
         }
         if (e.hp <= 0) this.kill(e);
         return 'damaged';
+    }
+
+    addEffect(id: number, effectId: string, duration: number, amplifier = 0): boolean {
+        const entity = this.entities.get(id);
+        if (!entity) return false;
+        addStatusEffect(entity.effects, effectId, duration, amplifier);
+        return true;
     }
 
     /**
@@ -358,6 +376,36 @@ class EntityManager {
         return out;
     }
 
+    serializePersistentEntities(): PersistedEntityData[] {
+        const output: PersistedEntityData[] = [];
+        for (const entity of this.entities.values()) {
+            if (entity.isBoss || entity.hp <= 0) continue;
+            output.push({
+                kind: entity.kind,
+                x: entity.pos.x, y: entity.pos.y, z: entity.pos.z,
+                vx: entity.vel.x, vy: entity.vel.y, vz: entity.vel.z,
+                yaw: entity.yaw, hp: entity.hp,
+                effects: structuredClone(entity.effects),
+            });
+        }
+        return output;
+    }
+
+    restorePersistentEntities(records: unknown): void {
+        if (!Array.isArray(records)) return;
+        for (const value of records) {
+            if (!value || typeof value !== 'object') continue;
+            const record = value as PersistedEntityData;
+            if (!ENTITY_KINDS[record.kind] || ![record.x, record.y, record.z].every(Number.isFinite)) continue;
+            const entity = this.spawn(record.kind, record.x, record.y, record.z);
+            if (!entity) continue;
+            entity.vel.set(Number(record.vx) || 0, Number(record.vy) || 0, Number(record.vz) || 0);
+            entity.yaw = Number(record.yaw) || 0;
+            entity.hp = Math.max(0.01, Math.min(entity.maxHp, Number(record.hp) || entity.maxHp));
+            entity.effects = Array.isArray(record.effects) ? structuredClone(record.effects) : [];
+        }
+    }
+
     /** Respawn saved boats on world load (tolerates missing/malformed entries). */
     restoreBoats(boats: unknown): void {
         if (!Array.isArray(boats)) return;
@@ -427,6 +475,7 @@ class EntityManager {
     }
 
     tick(dt: number, gameMode: GameMode): void {
+        this.tickNaturalSpawning(dt, gameMode);
         if (this.entities.size === 0) {
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             return;
@@ -438,6 +487,12 @@ class EntityManager {
         for (const e of this.entities.values()) {
             const kind = ENTITY_KINDS[e.kind];
             if (!kind) continue;
+
+            tickStatusEffects(e.effects, dt, {
+                damage: (amount) => { e.hp -= amount; if (e.hp <= 0) this.kill(e); },
+                heal: (amount) => { e.hp = Math.min(e.maxHp, e.hp + amount); },
+            });
+            if (e.hp <= 0) continue;
 
             // --- Passive props/vehicles (boats): no AI, no aggro, no combat ---
             if (kind.passive) {
@@ -571,6 +626,29 @@ class EntityManager {
 
         if (anyAggro && !this.inCombat) { this.inCombat = true; gameEvents.emit('combat:start', {}); }
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
+    }
+
+    private tickNaturalSpawning(dt: number, gameMode: GameMode): void {
+        if (gameMode !== 'survival' || !worldRules.get('mobSpawning')) return;
+        this.naturalSpawnTimer += dt;
+        if (this.naturalSpawnTimer < 10) return;
+        this.naturalSpawnTimer = 0;
+        const player = this.playerPosProvider?.();
+        if (!player) return;
+        const dayTime = ((worldManager.getTime() % 24000) + 24000) % 24000;
+        if (dayTime < 12500 || dayTime > 23500) return;
+        const slimeCount = Array.from(this.entities.values()).filter((entity) => entity.kind === 'slime').length;
+        this.spawnDirector.setCount('hostile', slimeCount);
+        if (!this.spawnDirector.canSpawn({ id: 'hostile', cap: 8, minPlayerDistance: 24, maxPlayerDistance: 48 }, 32)) return;
+        const rng = new DeterministicRng(hashSimulationSeed(worldManager.getSeed(), worldManager.getTime(), 'natural_spawns'));
+        const angle = rng.nextFloat() * Math.PI * 2;
+        const distance = 24 + rng.nextFloat() * 24;
+        const x = Math.floor(player.x + Math.cos(angle) * distance);
+        const z = Math.floor(player.z + Math.sin(angle) * distance);
+        const y = worldManager.getTerrainHeight(x, z) + 1;
+        if (!worldManager.hasChunk(Math.floor(x / 16), Math.floor(z / 16))) return;
+        if (worldManager.getBlock(x, y, z, false) !== BlockType.AIR || worldManager.getBlock(x, y + 1, z, false) !== BlockType.AIR) return;
+        this.spawn('slime', x + 0.5, y, z + 0.5);
     }
 
     // The Magnetic Warden's combat. Polarity keeps swapping throughout. While

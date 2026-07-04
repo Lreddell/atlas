@@ -46,6 +46,11 @@ export function encodeExportedWorld(meta: WorldMetadata, chunks: RawChunk[]): Ex
             worldGenPresetId: meta.worldGenPresetId ?? null,
             worldGenPresetName: meta.worldGenPresetName ?? null,
             progression: meta.progression,
+            boats: meta.boats,
+            entities: meta.entities,
+            versions: meta.versions,
+            contentManifest: meta.contentManifest,
+            savedData: meta.savedData,
         },
         chunks: chunks.map((c) => ({
             cx: c.cx,
@@ -81,6 +86,11 @@ export function decodeExportedWorld(data: ExportedWorldData): DecodedExport {
         worldGenPresetId: m?.worldGenPresetId ?? null,
         worldGenPresetName: m?.worldGenPresetName ?? null,
         progression: m?.progression,
+        boats: m?.boats,
+        entities: m?.entities,
+        versions: m?.versions,
+        contentManifest: m?.contentManifest,
+        savedData: m?.savedData,
     };
 
     const chunks: ChunkBatchEntry[] = [];

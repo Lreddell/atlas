@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { SoundManifest, SoundEventDefinition, SoundOptions } from './soundTypes';
 import { DEFAULT_SOUND_MANIFEST } from './soundDefaults';
+import { subtitleEvents } from './SubtitleEvents';
 
 const SOUND_VOLUME_KEY_PREFIX = 'atlas.sound.volume.';
 const MUSIC_FOLDER_INDEX_PATH = 'assets/rvx/sounds/music-index.json';
@@ -787,6 +788,8 @@ class SoundManager {
                 }
                 if (!def || !def.sounds || def.sounds.length === 0) return;
             }
+
+            if (def.subtitle) subtitleEvents.emit(def.subtitle, pos ?? undefined);
 
             if (this.activeSources.size >= this.MAX_GLOBAL_SOURCES) return; 
             const activeForEvent = this.activeByEvent.get(eventId);

@@ -1,5 +1,6 @@
 
 import { gameEvents } from '../events/GameEvents';
+import { inputBindings } from './InputBindings';
 
 export interface PlayerInputState {
     forward: boolean;
@@ -51,20 +52,35 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
-
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
+    const actions = inputBindings.actionsForCode(code);
     // Intercept game keys to prevent browser/OS shortcuts
-    if (e && GAME_KEYS.has(code)) {
+    if (e && actions.some((action) => action.startsWith('move.'))) {
         e.preventDefault();
         e.stopPropagation();
     }
 
     const now = Date.now();
+    const action = actions[0];
 
+    // Keep the established defaults explicit for shortcut protection and source-level
+    // compatibility; rebound keys use the action cases below.
     switch (code) {
-        case 'KeyW': 
-        case 'ArrowUp':
+        case 'KeyR':
+            if (e && e.repeat) return;
+            if (e && (e.ctrlKey || e.metaKey)) e.preventDefault();
+            inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
+            return;
+        case 'KeyN':
+            if (e && e.repeat) return;
+            inputState.polarityPowerOn = !inputState.polarityPowerOn;
+            gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
+            return;
+    }
+
+    switch (action) {
+        case 'move.forward':
             if (!inputState.forward) { // Edge trigger
                 if (now - lastForwardPressTime < DOUBLE_TAP_WINDOW_MS) {
                     doubleTapSprintActive = true;
@@ -75,19 +91,16 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             // If CTRL is held when W is pressed, latch sprint
             if (inputState.sprint) inputState.sprintLatch = true;
             break;
-        case 'KeyS': 
-        case 'ArrowDown':
+        case 'move.backward':
             inputState.backward = true; 
             break;
-        case 'KeyA': 
-        case 'ArrowLeft':
+        case 'move.left':
             inputState.left = true; 
             break;
-        case 'KeyD': 
-        case 'ArrowRight':
+        case 'move.right':
             inputState.right = true; 
             break;
-        case 'Space': 
+        case 'move.jump':
             if (!inputState.jump) {
                 if (now - lastJumpPressTime < DOUBLE_TAP_WINDOW_MS) {
                     inputState.flyToggleTrigger = true; 
@@ -96,20 +109,18 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             }
             inputState.jump = true; 
             break;
-        case 'ShiftLeft': 
-        case 'ShiftRight':
+        case 'move.sneak':
             inputState.sneak = true;
             doubleTapSprintActive = false;
             inputState.sprintLatch = false; // Sneak cancels sprint
             break;
-        case 'ControlLeft':
-        case 'ControlRight':
+        case 'move.sprint':
             if (e && e.repeat) break;
             inputState.sprint = true;
             // If W is already held when CTRL is pressed, latch sprint
             if (inputState.forward) inputState.sprintLatch = true;
             break;
-        case 'KeyR':
+        case 'ability.polarity':
             if (e && e.repeat) break;
             // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity —
             // the player is usually holding Ctrl (sprint) during a fight, and that
@@ -120,7 +131,7 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
             gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
             break;
-        case 'KeyN':
+        case 'ability.toggle':
             // Toggle the polarity ability on/off (only effective with upgraded boots).
             if (e && e.repeat) break;
             inputState.polarityPowerOn = !inputState.polarityPowerOn;
@@ -130,34 +141,29 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
 };
 
 export const onKeyUp = (code: string) => {
-    switch (code) {
-        case 'KeyW': 
-        case 'ArrowUp':
+    const action = inputBindings.actionsForCode(code)[0];
+    switch (action) {
+        case 'move.forward':
             inputState.forward = false; 
             doubleTapSprintActive = false; // Stop sprinting if forward is released
             inputState.sprintLatch = false; // Reset latch on stop
             break;
-        case 'KeyS': 
-        case 'ArrowDown':
+        case 'move.backward':
             inputState.backward = false; 
             break;
-        case 'KeyA': 
-        case 'ArrowLeft':
+        case 'move.left':
             inputState.left = false; 
             break;
-        case 'KeyD': 
-        case 'ArrowRight':
+        case 'move.right':
             inputState.right = false; 
             break;
-        case 'Space': 
+        case 'move.jump':
             inputState.jump = false; 
             break;
-        case 'ShiftLeft': 
-        case 'ShiftRight':
+        case 'move.sneak':
             inputState.sneak = false; 
             break;
-        case 'ControlLeft': 
-        case 'ControlRight':
+        case 'move.sprint':
             inputState.sprint = false; 
             // Do NOT reset sprintLatch here. That allows letting go of Ctrl while continuing to run.
             break;

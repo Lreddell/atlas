@@ -20,6 +20,16 @@ import { getRegionAt } from './world/regions';
 import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
+import { SavedDataRegistry, type SavedDataMap } from './world/persistence/SavedDataRegistry';
+import { worldRules } from './world/WorldRules';
+import type { ScheduledTickRecord } from './world/simulation/ScheduledTickQueue';
+import type { SerializedBlockEntity } from './world/tileEntities';
+import { blockBehaviors, type BlockBehaviorContext } from './world/blockBehavior';
+import { StructureIndex, type StructureRecord } from './world/structures/StructureIndex';
+import { weatherSystem, type WeatherType } from './world/WeatherSystem';
+import { statistics } from './progression/StatisticsStore';
+import { objectives } from './progression/ObjectiveStore';
+import { mapDataStore } from './world/maps/MapDataStore';
 
 // --- Types ---
 enum ChunkStage {
@@ -110,6 +120,8 @@ type ParticleCallback = (type: BlockType, x: number, y: number, z: number) => vo
 
 export class WorldManager {
   private state: WorldTypes.WorldState;
+  private savedData = new SavedDataRegistry();
+  private structures = new StructureIndex();
   private spawnPoint: { x: number, y: number, z: number } | null = null;
   private worldSpawn: { x: number, y: number, z: number } | null = null;
   
@@ -136,6 +148,8 @@ export class WorldManager {
     private desiredChunkKeys = new Set<string>();
 
   private workers: Worker[] = [];
+  private workerChunkRevisions: Array<Map<string, number>> = [];
+  private chunkRevisions = new Map<string, number>();
   private nextWorkerIndex = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
@@ -180,6 +194,53 @@ export class WorldManager {
 
   constructor() {
     this.state = WorldTypes.createWorldState();
+    this.savedData.register<{ time: number; records: ScheduledTickRecord[] }>({
+      id: 'atlas:scheduled_ticks', version: 1,
+      save: () => ({ time: this.state.simulationTime, records: this.state.scheduledTicks.serialize() }),
+      load: (data) => {
+        const legacy = Array.isArray(data) ? data as ScheduledTickRecord[] : undefined;
+        const value = data && typeof data === 'object' && !legacy ? data as { time?: number; records?: ScheduledTickRecord[] } : undefined;
+        this.state.simulationTime = Number(value?.time) || 0;
+        this.state.scheduledTicks.restore(legacy ?? value?.records);
+      },
+      reset: () => { this.state.simulationTime = 0; this.state.scheduledTicks.clear(); },
+    });
+    this.savedData.register<SerializedBlockEntity[]>({
+      id: 'atlas:block_entities', version: 1,
+      save: () => TileEntities.serializeBlockEntities(this.state),
+      load: (data) => TileEntities.restoreBlockEntities(this.state, Array.isArray(data) ? data as SerializedBlockEntity[] : undefined),
+      reset: () => TileEntities.restoreBlockEntities(this.state, undefined),
+    });
+    this.savedData.register({
+      id: 'atlas:world_rules', version: 1,
+      save: () => worldRules.serialize(),
+      load: (data) => worldRules.restore(data),
+      reset: () => worldRules.restore(undefined),
+    });
+    this.savedData.register<StructureRecord[]>({
+      id: 'atlas:structures', version: 1,
+      save: () => this.structures.serialize(),
+      load: (data) => this.structures.restore(Array.isArray(data) ? data as StructureRecord[] : undefined),
+      reset: () => this.structures.clear(),
+    });
+    this.savedData.register({
+      id: 'atlas:weather', version: 1,
+      save: () => weatherSystem.serialize(),
+      load: (data) => weatherSystem.restore(data),
+      reset: () => weatherSystem.restore(undefined),
+    });
+    this.savedData.register({
+      id: 'atlas:statistics', version: 1,
+      save: () => statistics.serialize(), load: (data) => statistics.restore(data), reset: () => statistics.restore(undefined),
+    });
+    this.savedData.register({
+      id: 'atlas:objectives', version: 1,
+      save: () => objectives.serialize(), load: (data) => objectives.restore(data), reset: () => objectives.restore(undefined),
+    });
+    this.savedData.register({
+      id: 'atlas:maps', version: 1,
+      save: () => mapDataStore.serialize(), load: (data) => mapDataStore.restore(data), reset: () => mapDataStore.restore(undefined),
+    });
 
         const cpuCores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
             ? navigator.hardwareConcurrency
@@ -221,6 +282,7 @@ export class WorldManager {
     this.queuesDirty = false;
     this.knownMissingStorageChunks.clear();
       this.state = WorldTypes.createWorldState();
+      this.savedData.reset();
       this.chunkStages.clear();
       this.meshCache.clear();
       this.meshSubscribers.clear();
@@ -248,6 +310,8 @@ export class WorldManager {
     this.meshStartedAt.clear();
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
+    this.chunkRevisions.clear();
+    for (const revisions of this.workerChunkRevisions) revisions.clear();
 
       if (this.workers.length > 0) {
           this.terminateWorkers();
@@ -282,6 +346,7 @@ export class WorldManager {
 
                 worker.onmessage = (e) => this.handleWorkerMessage(e.data);
                 this.workers.push(worker);
+                this.workerChunkRevisions.push(new Map());
             }
 
             this.syncWorkerWorldGenState();
@@ -300,6 +365,7 @@ export class WorldManager {
         worker.terminate();
     }
     this.workers = [];
+    this.workerChunkRevisions = [];
     this.nextWorkerIndex = 0;
   }
 
@@ -309,6 +375,33 @@ export class WorldManager {
       const worker = this.workers[this.nextWorkerIndex];
       this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
       worker.postMessage(msg);
+  }
+
+  private workerIndexForChunk(cx: number, cz: number): number {
+      if (this.workers.length === 0) return -1;
+      const hash = (Math.imul(cx, 73428767) ^ Math.imul(cz, 912931)) >>> 0;
+      return hash % this.workers.length;
+  }
+
+  private bumpChunkRevision(cx: number, cz: number): number {
+      const key = WorldCoords.getChunkKey(cx, cz);
+      const revision = (this.chunkRevisions.get(key) ?? 0) + 1;
+      this.chunkRevisions.set(key, revision);
+      return revision;
+  }
+
+  private syncChunkToWorker(workerIndex: number, cx: number, cz: number): void {
+      const worker = this.workers[workerIndex];
+      if (!worker) return;
+      const key = WorldCoords.getChunkKey(cx, cz);
+      const revision = this.chunkRevisions.get(key) ?? 0;
+      if (this.workerChunkRevisions[workerIndex]?.get(key) === revision) return;
+      const chunk = WorldStore.getChunkData(this.state, cx, cz);
+      if (!chunk) return;
+      const metaData = WorldStore.getMetadataData(this.state, cx, cz) ?? new Uint8Array(chunk.length);
+      const lights = WorldStore.getLightData(this.state, cx, cz) ?? new Uint8Array(chunk.length);
+      worker.postMessage({ type: 'CACHE_CHUNK', cx, cz, revision, chunk, metaData, lights });
+      this.workerChunkRevisions[workerIndex]?.set(key, revision);
   }
 
     private syncWorkerWorldGenState() {
@@ -366,7 +459,7 @@ export class WorldManager {
   }
 
   private handleWorkerMessage(data: any) {
-      const { type, cx, cz, result, ticket } = data;
+      const { type, cx, cz, result, ticket, revision } = data;
       const key = WorldCoords.getChunkKey(cx, cz);
       
       if (type === 'GEN_DONE') {
@@ -379,12 +472,15 @@ export class WorldManager {
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          this.bumpChunkRevision(cx, cz);
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
+              this.bumpChunkRevision(ncx, ncz);
               if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
                   this.queueMesh(ncx, ncz, 10);
               }
           });
+          this.bumpChunkRevision(cx, cz);
 
           this.setStage(cx, cz, ChunkStage.GENERATED);
           this.queueMesh(cx, cz, 0); 
@@ -396,6 +492,13 @@ export class WorldManager {
           this.activeMeshTickets.delete(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
+
+          if (revision !== undefined && revision !== (this.chunkRevisions.get(key) ?? 0)) {
+              this.setStage(cx, cz, ChunkStage.GENERATED);
+              this.queueMesh(cx, cz, -1000);
+              this.scheduleStreamingPump();
+              return;
+          }
 
           if (!result) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
@@ -697,16 +800,18 @@ export class WorldManager {
               };
 
               if (this.workersEnabled && this.workers.length > 0) {
-                  this.postToPool({
-                      type: 'MESH',
+                  const workerIndex = this.workerIndexForChunk(job.cx, job.cz);
+                  for (const [dx, dz] of [[0, 0], [-1, 0], [1, 0], [0, 1], [0, -1]]) {
+                      this.syncChunkToWorker(workerIndex, job.cx + dx, job.cz + dz);
+                  }
+                  const revision = this.chunkRevisions.get(key) ?? 0;
+                  this.workers[workerIndex].postMessage({
+                      type: 'MESH_CACHED',
                       id: `mesh-${job.cx}-${job.cz}`,
                       cx: job.cx,
                       cz: job.cz,
                       ticket,
-                      chunk: c,
-                      metaData: m,
-                      neighbors,
-                      lights: neighborLights,
+                      revision,
                       cullDarkFaces: cullDark
                   });
               } else {
@@ -903,6 +1008,11 @@ export class WorldManager {
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
+      this.chunkRevisions.delete(key);
+      for (let i = 0; i < this.workers.length; i++) {
+          this.workerChunkRevisions[i]?.delete(key);
+          this.workers[i].postMessage({ type: 'EVICT', cx, cz });
+      }
       // Workers are stateless — no per-chunk eviction message needed.
       return true;
   }
@@ -1228,9 +1338,19 @@ export class WorldManager {
   }
   
   tick(delta: number) {
-      this.state.time++;
+      this.state.simulationTime++;
+      if (worldRules.get('daylightCycle')) this.state.time++;
+      weatherSystem.tick(this.activeSeed, this.state.simulationTime, worldRules.get('weatherCycle'));
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
-      Fluids.processFluids(this.state);
+      const dueTicks = this.state.scheduledTicks.popDue(this.state.simulationTime, 64);
+      Fluids.processFluidTicks(this.state, dueTicks.filter((tick) => tick.kind === 'fluid'));
+      const behaviorContext = this.createBlockBehaviorContext();
+      for (const tick of dueTicks) {
+          if (tick.kind !== 'block') continue;
+          const type = this.getBlock(tick.x, tick.y, tick.z, false);
+          if (type !== tick.blockType) continue;
+          blockBehaviors.get(type)?.scheduledTick?.(behaviorContext, tick);
+      }
       tickPlantGrowth({
           getBlock: (x, y, z) => this.getBlock(x, y, z, false),
           tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
@@ -1239,12 +1359,29 @@ export class WorldManager {
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
           getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
           getTickCenter: () => this.desiredCenter,
-          getSeed: () => this.activeSeed
+          getSeed: () => this.activeSeed,
+          getTime: () => this.state.simulationTime,
       });
   }
 
   getTime(): number { return this.state.time; }
   setTime(t: number) { this.state.time = t; }
+  serializeSavedData(): SavedDataMap { return this.savedData.save(); }
+  restoreSavedData(data: SavedDataMap | undefined): void { this.savedData.load(data); }
+  getStructureIndex(): StructureIndex { return this.structures; }
+  getWeather() { return weatherSystem.get(); }
+  setWeather(type: WeatherType, duration?: number, intensity?: number): void { weatherSystem.set(type, duration, intensity); }
+
+  private createBlockBehaviorContext(): BlockBehaviorContext {
+      return {
+          getBlock: (x, y, z) => this.getBlock(x, y, z, false),
+          setBlock: (x, y, z, type, metadata) => this.setBlock(x, y, z, type, metadata ?? 0),
+          getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+          scheduleTick: (x, y, z, type, delay) => this.state.scheduledTicks.schedule({
+              x, y, z, kind: 'block', blockType: type, dueTick: this.state.simulationTime + Math.max(1, delay | 0),
+          }),
+      };
+  }
   setSpawnPoint(x: number, y: number, z: number, announce: boolean = true, message: string = "Respawn point set") {
       this.spawnPoint = { x, y, z };
       if (announce) this.log(message, 'success');
@@ -1302,6 +1439,7 @@ export class WorldManager {
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
       const meta = WorldStore.ensureMetadata(this.state, cx, cz);
       meta[WorldCoords.index3D(lx, y, lz)] = value;
+      this.bumpChunkRevision(cx, cz);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
   getLoadedChunkKeys(): string[] {
@@ -1328,9 +1466,14 @@ export class WorldManager {
       return false;
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
-  setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }
+  setLight(x: number, y: number, z: number, sky: number, block: number) {
+      Lighting.setLight(this.state, x, y, z, sky, block);
+      const { cx, cz } = WorldCoords.worldToChunk(x, z);
+      this.bumpChunkRevision(cx, cz);
+  }
   updateLightingAround(x: number, y: number, z: number) {
       Lighting.updateLightingAround(this.state, x, y, z, (cx, cz) => {
+          this.bumpChunkRevision(cx, cz);
           WorldStore.notifyChunk(this.state, cx, cz);
           if (this.getStage(cx, cz) >= ChunkStage.GENERATED) this.queueMesh(cx, cz, 10);
       });
@@ -1356,14 +1499,26 @@ export class WorldManager {
     chunk[index] = type;
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;
+    this.bumpChunkRevision(cx, cz);
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
-    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
+    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(this.state, x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
     [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ].forEach(([dx, dy, dz]) => {
          const nx = x+dx; const ny = y+dy; const nz = z+dz;
          const nBlock = this.getBlock(nx, ny, nz, false);
-         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5); }
+         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(this.state, nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5); }
     });
+    if (oldType !== type) {
+        const behaviorContext = this.createBlockBehaviorContext();
+        const pos = { x, y, z };
+        blockBehaviors.get(oldType)?.onRemoved?.(behaviorContext, pos, type);
+        blockBehaviors.get(type)?.onPlaced?.(behaviorContext, pos);
+        for (const [dx, dy, dz] of [[0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
+            const neighbor = { x: x + dx, y: y + dy, z: z + dz };
+            const neighborType = this.getBlock(neighbor.x, neighbor.y, neighbor.z, false);
+            blockBehaviors.get(neighborType)?.onNeighborChanged?.(behaviorContext, neighbor, pos);
+        }
+    }
     if (oldType !== type || oldRotation !== rotation) {
         // Re-resolve stair corner shapes for this cell and its horizontal neighbors
         // BEFORE relighting, so the lighting flood (radius 15) sees the updated
@@ -1421,6 +1576,7 @@ export class WorldManager {
       if (oldType === e.type && oldRot === rot) continue;
       chunk[index] = e.type;
       WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
+      this.bumpChunkRevision(cx, cz);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
       meshChunks.add(`${cx},${cz}`);
       if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);

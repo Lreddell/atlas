@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BlockType } from '../../types';
+import type { ActiveStatusEffect } from './combat/StatusEffects';
 
 // A live entity instance. Positions follow the same convention as the player
 // collision helpers: pos.x/pos.z are the horizontal center, pos.y is the feet
@@ -62,6 +63,8 @@ export interface Entity {
     /** Rideable entities (boats): true while the player is aboard — the player's
      *  physics drives the entity's position/yaw instead of its own tick. */
     ridden: boolean;
+    /** Serializable, data-driven timed effects. */
+    effects: ActiveStatusEffect[];
 }
 
 // An expanding polarity shockwave ring from a slam. Same polarity as the boss;

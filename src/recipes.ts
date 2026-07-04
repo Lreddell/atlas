@@ -1,6 +1,7 @@
 
 import { BlockType } from './types';
 import { STONE_TOOL_MATERIALS, WOOD_FAMILIES } from './systems/registry/blockFamilies';
+import { runtimeRecipeRegistry } from './systems/registry/RecipeRegistry';
 
 export interface Recipe {
     gridSize: 2 | 3;
@@ -412,5 +413,5 @@ export const checkRecipe = (grid: (BlockType | null)[], gridWidth: number): { ty
         }
         if (match) return recipe.output;
     }
-    return null;
+    return runtimeRecipeRegistry.match(grid, gridWidth);
 };

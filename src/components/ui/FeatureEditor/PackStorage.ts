@@ -3,6 +3,7 @@ import { ModPack } from './editorTypes';
 
 const STORAGE_KEY = 'atlas_mod_packs';
 const ACTIVE_KEY = 'atlas_active_pack_id';
+const notifyRuntime = () => window.dispatchEvent(new Event('atlas:packs-changed'));
 
 export const PackStorage = {
     loadAllPacks(): ModPack[] {
@@ -18,6 +19,7 @@ export const PackStorage = {
 
     saveAllPacks(packs: ModPack[]) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(packs));
+        notifyRuntime();
     },
 
     savePack(pack: ModPack) {
@@ -50,6 +52,7 @@ export const PackStorage = {
     setActivePackId(id: string | null) {
         if (id) localStorage.setItem(ACTIVE_KEY, id);
         else localStorage.removeItem(ACTIVE_KEY);
+        notifyRuntime();
     },
 
     exportPack(pack: ModPack) {

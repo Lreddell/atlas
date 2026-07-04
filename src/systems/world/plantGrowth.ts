@@ -1,6 +1,7 @@
 import { BlockType } from '../../types';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import { isSaplingType, getTreeKindForSapling, generateTreeBlocks, isReplaceable, isValidSoil, getMinClearance } from './trees';
+import { DeterministicRng, hashSimulationSeed } from './simulation/DeterministicRng';
 
 // Interval between growth ticks in world ticks (1 tick = 1 call to WorldManager.tick)
 const GROWTH_TICK_INTERVAL = 60; // ~3 seconds at 20 tps
@@ -24,6 +25,7 @@ interface WorldAccess {
     getChunkData(cx: number, cz: number): Uint8Array | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
+    getTime(): number;
 }
 
 let tickAccumulator = 0;
@@ -37,11 +39,7 @@ export function tickPlantGrowth(world: WorldAccess) {
     // Cheap LCG. Growth timing was always wall-clock random (Date.now-based), so this
     // weakens no determinism guarantee — tree SHAPE stays seed-deterministic via
     // generateTreeBlocks(kind, wx, groundY, wz, seed).
-    let rng = ((Date.now() ^ seed) >>> 0) || 1;
-    const nextRand = () => {
-        rng = (rng * 1664525 + 1013904223) >>> 0;
-        return rng;
-    };
+    const rng = new DeterministicRng(hashSimulationSeed(seed, world.getTime(), 'plant_growth'));
 
     const LAYER = CHUNK_SIZE * CHUNK_SIZE;
     const center = world.getTickCenter();
@@ -57,7 +55,7 @@ export function tickPlantGrowth(world: WorldAccess) {
         const layers = chunk.length / LAYER;
 
         for (let i = 0; i < PROBES_PER_CHUNK; i++) {
-            const r = nextRand();
+            const r = rng.nextUint();
             const lx = r & 0xF;
             const lz = (r >> 4) & 0xF;
             const colBase = lz * CHUNK_SIZE + lx;

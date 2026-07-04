@@ -3,6 +3,65 @@ import { WorldState, FurnaceState, ChestState } from './worldTypes';
 import { ItemStack, BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 
+export type SerializedBlockEntity =
+    | { id: 'atlas:furnace'; x: number; y: number; z: number; state: FurnaceState }
+    | { id: 'atlas:chest'; x: number; y: number; z: number; state: ChestState };
+
+const cloneStack = (stack: ItemStack | null): ItemStack | null => stack
+    ? { ...stack, instance: stack.instance ? structuredClone(stack.instance) : undefined }
+    : null;
+
+const parsePosition = (key: string): [number, number, number] | null => {
+    const values = key.split(',').map(Number);
+    return values.length === 3 && values.every(Number.isFinite) ? values as [number, number, number] : null;
+};
+
+export function serializeBlockEntities(state: WorldState): SerializedBlockEntity[] {
+    const out: SerializedBlockEntity[] = [];
+    for (const [key, furnace] of state.furnaces) {
+        const pos = parsePosition(key);
+        if (!pos) continue;
+        out.push({
+            id: 'atlas:furnace', x: pos[0], y: pos[1], z: pos[2],
+            state: {
+                ...furnace,
+                input: cloneStack(furnace.input), fuel: cloneStack(furnace.fuel), output: cloneStack(furnace.output),
+            },
+        });
+    }
+    for (const [key, chest] of state.chests) {
+        const pos = parsePosition(key);
+        if (!pos) continue;
+        out.push({ id: 'atlas:chest', x: pos[0], y: pos[1], z: pos[2], state: { items: chest.items.map(cloneStack) } });
+    }
+    return out;
+}
+
+export function restoreBlockEntities(state: WorldState, records: readonly SerializedBlockEntity[] | undefined): void {
+    state.furnaces.clear();
+    state.chests.clear();
+    if (!records) return;
+    for (const record of records) {
+        if (!record || !Number.isFinite(record.x) || !Number.isFinite(record.y) || !Number.isFinite(record.z)) continue;
+        const key = `${record.x},${record.y},${record.z}`;
+        if (record.id === 'atlas:furnace') {
+            const value = record.state;
+            state.furnaces.set(key, {
+                input: cloneStack(value.input), fuel: cloneStack(value.fuel), output: cloneStack(value.output),
+                burnTime: Number(value.burnTime) || 0,
+                maxBurnTime: Number(value.maxBurnTime) || 0,
+                cookTime: Number(value.cookTime) || 0,
+                maxCookTime: Number(value.maxCookTime) || 10000,
+                lastUpdate: Number(value.lastUpdate) || 0,
+            });
+        } else if (record.id === 'atlas:chest' && Array.isArray(record.state.items)) {
+            const items = record.state.items.slice(0, 27).map(cloneStack);
+            while (items.length < 27) items.push(null);
+            state.chests.set(key, { items });
+        }
+    }
+}
+
 export function getFurnace(state: WorldState, x: number, y: number, z: number): FurnaceState | undefined {
     return state.furnaces.get(`${x},${y},${z}`);
 }

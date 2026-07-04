@@ -11,6 +11,8 @@ import { ParticleManager } from './components/ParticleManager';
 import { FxParticles } from './components/FxParticles';
 import { DayNightCycle, DayNightCycleRef } from './components/world/DayNightCycle';
 import { Clouds } from './components/world/Clouds';
+import { WeatherRenderer } from './components/world/WeatherRenderer';
+import { SubtitleOverlay } from './components/ui/SubtitleOverlay';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
@@ -28,6 +30,12 @@ import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
+import { createContentManifest } from './systems/registry/contentIdentity';
+import { runtimePackManager } from './systems/packs/RuntimePackManager';
+import { worldRules, type WorldRuleValues } from './systems/world/WorldRules';
+import { statistics } from './systems/progression/StatisticsStore';
+import { mapDataStore } from './systems/world/maps/MapDataStore';
+import { inputBindings } from './systems/player/InputBindings';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
 import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
@@ -269,6 +277,13 @@ function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceS
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('menu');
+  useEffect(() => {
+      runtimePackManager.reload();
+      try { inputBindings.restore(JSON.parse(localStorage.getItem('atlas_input_bindings') ?? 'null')); } catch { inputBindings.reset(); }
+      const reloadPacks = () => runtimePackManager.reload();
+      window.addEventListener('atlas:packs-changed', reloadPacks);
+      return () => window.removeEventListener('atlas:packs-changed', reloadPacks);
+  }, []);
     const [bootReady, setBootReady] = useState(false);
   const [loadingState, setLoadingState] = useState({ phase: '', percent: 0, details: '' });
   
@@ -652,10 +667,12 @@ const App: React.FC = () => {
       const worldSpawn = worldManager.getWorldSpawn();
       const progressionData = progression.serialize();
       const boatsData = entityManager.serializeBoats();
+      const entitiesData = entityManager.serializePersistentEntities();
+      const savedData = worldManager.serializeSavedData();
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, entitiesData, savedData });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -683,6 +700,10 @@ const App: React.FC = () => {
               }
           }
           meta.boats = boatsData;
+          meta.entities = entitiesData;
+          meta.versions = { save: 1, generation: 1, simulation: 2, content: 1 };
+          meta.contentManifest = createContentManifest();
+          meta.savedData = savedData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -1704,7 +1725,7 @@ const App: React.FC = () => {
           else if (['off', 'false', '0', 'disable'].includes(arg)) next = false;
           else next = null;
           if (next === null) { logMsg('Usage: /keepinventory [on|off]', 'error'); }
-          else { setKeepInventory(next); logMsg(`Keep inventory on death: ${next ? 'ON' : 'OFF'}`, 'success'); }
+          else { worldRules.set('keepInventory', next); setKeepInventory(next); logMsg(`Keep inventory on death: ${next ? 'ON' : 'OFF'}`, 'success'); }
       } else if (parts[0] === '/music') {
           if (parts[1] === 'skip') {
               const skipped = musicController.skipTrack();
@@ -1778,6 +1799,52 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /time set <value|day|night> or /time add <value>", 'error');
           }
+      } else if (parts[0] === '/weather') {
+          const mode = parts[1]?.toLowerCase();
+          if (mode === 'query') {
+              const weather = worldManager.getWeather();
+              logMsg(`Weather: ${weather.type}, ${weather.remainingTicks} ticks remaining`, 'info');
+          } else if (mode && ['clear', 'rain', 'thunder', 'snow'].includes(mode)) {
+              const duration = Math.max(1, parseInt(parts[2]) || 12000);
+              worldManager.setWeather(mode as 'clear' | 'rain' | 'thunder' | 'snow', duration);
+              logMsg(`Set weather to ${mode} for ${duration} ticks`, 'success');
+          } else {
+              logMsg('Usage: /weather <clear|rain|thunder|snow|query> [duration]', 'error');
+          }
+      } else if (parts[0] === '/gamerule') {
+          const key = parts[1] as keyof WorldRuleValues | undefined;
+          if (!key || !(key in worldRules.serialize())) {
+              logMsg(`Game rules: ${Object.entries(worldRules.serialize()).map(([name, value]) => `${name}=${value}`).join(', ')}`, 'info');
+          } else if (parts[2] === undefined) {
+              logMsg(`${key} = ${worldRules.get(key)}`, 'info');
+          } else {
+              const current = worldRules.get(key);
+              const value = typeof current === 'boolean'
+                  ? ['true', 'on', '1'].includes(parts[2].toLowerCase())
+                  : Number(parts[2]);
+              if (typeof current === 'number' && !Number.isFinite(value)) logMsg(`Invalid value for ${key}`, 'error');
+              else {
+                  worldRules.set(key, value as never);
+                  if (key === 'keepInventory') setKeepInventory(Boolean(value));
+                  logMsg(`${key} = ${worldRules.get(key)}`, 'success');
+              }
+          }
+      } else if (parts[0] === '/map') {
+          const p = playerPosRef.current;
+          if (parts[1] === 'create') {
+              const id = parts[2] || 'primary';
+              mapDataStore.create(id, Math.floor(p.x), Math.floor(p.z));
+              logMsg(`Created map ${id}`, 'success');
+          } else if (parts[1] === 'marker') {
+              const id = parts[2] || 'primary';
+              const label = parts.slice(3).join(' ') || 'Marker';
+              mapDataStore.addMarker(id, { id: `${Math.floor(p.x)},${Math.floor(p.z)}`, x: p.x, z: p.z, label, color: '#ffffff' });
+              logMsg(`Added ${label} to map ${id}`, 'success');
+          } else {
+              logMsg('Usage: /map <create|marker> [mapId] [label]', 'info');
+          }
+      } else if (parts[0] === '/stats') {
+          logMsg(`Bosses defeated: ${statistics.get('boss.magnetic_warden.defeated') + statistics.get('boss.cinder_warden.defeated')}`, 'info');
       } else if (parts[0] === '/phase' && parts[1] === 'set' && parts[2]) {
           const phase = parseInt(parts[2]);
           if (!isNaN(phase) && phase >= 0 && phase <= 7 && dayNightRef.current) {
@@ -2645,7 +2712,8 @@ const App: React.FC = () => {
 
       // Respawn this world's parked boats (entityManager.clear() above removed
       // the previous world's — boats never leak across worlds).
-      entityManager.restoreBoats(meta.boats);
+      if (meta.entities) entityManager.restorePersistentEntities(meta.entities);
+      else entityManager.restoreBoats(meta.boats);
 
       if (meta.worldSpawn) {
           worldManager.setWorldSpawn(meta.worldSpawn.x, meta.worldSpawn.y, meta.worldSpawn.z);
@@ -2656,6 +2724,8 @@ const App: React.FC = () => {
       
       setGameMode(meta.gameMode);
       worldManager.setTime(meta.time);
+      worldManager.restoreSavedData(meta.savedData);
+      setKeepInventory(worldRules.get('keepInventory'));
 
       // 3. Restore Player State (if exists)
       if (meta.player) {
@@ -3040,6 +3110,7 @@ const App: React.FC = () => {
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
+                <WeatherRenderer isPaused={worldPaused} />
                 
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
@@ -3088,6 +3159,7 @@ const App: React.FC = () => {
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>
+            <SubtitleOverlay />
 
             {isCapturingPanorama && (
                 <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">

@@ -7,12 +7,17 @@ export interface CommandAutocompleteOptions {
     entities: string[];
     sounds: string[];
 }
+import { commandRegistry } from '../systems/commands/CommandRegistry.ts';
 
 export const COMMANDS = [
     '/help',
     '/gamemode',
     '/keepinventory',
     '/time',
+    '/weather',
+    '/gamerule',
+    '/map',
+    '/stats',
     '/phase',
     '/locate',
     '/tp',
@@ -38,6 +43,10 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/gamemode': ['survival', 'creative', 'spectator'],
     '/keepinventory': ['on', 'off'],
     '/time': ['set', 'add', 'query'],
+    '/weather': ['clear', 'rain', 'thunder', 'snow', 'query'],
+    '/gamerule': ['keepInventory', 'daylightCycle', 'weatherCycle', 'mobSpawning', 'fireSpread', 'blockDrops', 'naturalRegeneration', 'randomTickSpeed'],
+    '/map': ['create', 'marker', 'query'],
+    '/stats': [],
     '/phase': ['set'],
     '/locate': ['biome'],
     '/tp': [], // Coordinates usually
@@ -67,6 +76,15 @@ export const ARGUMENT_OPTIONS: Record<string, string[]> = {
     '/bloodmoon clear': ['current', 'next'],
     '/sound volume': ['0', '0.25', '0.5', '0.75', '1'],
 };
+
+for (const name of COMMANDS) {
+    commandRegistry.register({
+        name: name as `/${string}`,
+        summary: `Atlas ${name.slice(1)} command`,
+        usage: `${name}${(SUBCOMMANDS[name]?.length ?? 0) > 0 ? ` <${SUBCOMMANDS[name].join('|')}>` : ''}`,
+        subcommands: SUBCOMMANDS[name] ?? [],
+    });
+}
 
 const GIVE_COUNTS = ['1', '16', '32', '64'];
 

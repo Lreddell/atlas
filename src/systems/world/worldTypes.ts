@@ -1,5 +1,6 @@
 
 import { ItemStack } from '../../types';
+import { ScheduledTickQueue } from './simulation/ScheduledTickQueue';
 
 export type ChunkUpdateCallback = () => void;
 
@@ -25,6 +26,8 @@ export interface WorldState {
     listeners: Map<string, Set<ChunkUpdateCallback>>;
     furnaces: Map<string, FurnaceState>;
     chests: Map<string, ChestState>;
+    scheduledTicks: ScheduledTickQueue;
+    simulationTime: number;
     time: number; // Global ticks (0-24000 cycle)
 }
 
@@ -35,5 +38,7 @@ export const createWorldState = (): WorldState => ({
     listeners: new Map(),
     furnaces: new Map(),
     chests: new Map(),
+    scheduledTicks: new ScheduledTickQueue(),
+    simulationTime: 0,
     time: 1000 // Start at Day
 });

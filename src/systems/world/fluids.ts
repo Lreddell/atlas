@@ -7,26 +7,18 @@ import { worldToChunk, index3D } from './worldCoords';
 import { MIN_Y, MAX_Y } from '../../constants';
 import { worldManager } from '../WorldManager';
 import { isWashable } from './blockProps';
+import type { ScheduledTickRecord } from './simulation/ScheduledTickQueue';
 
 const MAX_WATER_SPREAD = 7;
 const MAX_LAVA_SPREAD = 3;
 
-interface FluidUpdate {
-    x: number; y: number; z: number;
-    type: BlockType;
-    tickAt: number;
-}
-
-const fluidQueueMap = new Map<string, FluidUpdate>();
-
-export function scheduleFluidUpdate(x: number, y: number, z: number, type: BlockType, delayTicks: number) {
-    const key = `${x},${y},${z}`;
-    const tickAt = Date.now() + (delayTicks * 50);
-    
-    const existing = fluidQueueMap.get(key);
-    if (!existing || tickAt < existing.tickAt) {
-        fluidQueueMap.set(key, { x, y, z, type, tickAt });
-    }
+export function scheduleFluidUpdate(state: WorldState, x: number, y: number, z: number, type: BlockType, delayTicks: number) {
+    state.scheduledTicks.schedule({
+        x, y, z,
+        kind: 'fluid',
+        blockType: type,
+        dueTick: state.simulationTime + Math.max(1, delayTicks | 0),
+    });
 }
 
 function getBlockAndMeta(state: WorldState, x: number, y: number, z: number) {
@@ -93,25 +85,12 @@ function trySpreadTo(state: WorldState, x: number, y: number, z: number, type: B
 
     worldManager.setBlock(x, y, z, type, newMeta);
     const delay = type === BlockType.LAVA ? 30 : 5;
-    scheduleFluidUpdate(x, y, z, type, delay);
+    scheduleFluidUpdate(state, x, y, z, type, delay);
 }
 
-export function processFluids(state: WorldState) {
-    const now = Date.now();
-    const updatesToProcess: FluidUpdate[] = [];
-    let processCount = 0;
-    const MAX_UPDATES_PER_TICK = 32; 
-    
-    for (const [key, update] of fluidQueueMap) {
-        if (now >= update.tickAt) {
-            updatesToProcess.push(update);
-            fluidQueueMap.delete(key);
-            processCount++;
-            if (processCount >= MAX_UPDATES_PER_TICK) break;
-        }
-    }
-
-    for (const { x, y, z, type } of updatesToProcess) {
+export function processFluidTicks(state: WorldState, updatesToProcess: readonly ScheduledTickRecord[]) {
+    for (const { x, y, z, blockType } of updatesToProcess) {
+        const type = blockType as BlockType;
         const { type: currentType, meta: currentMeta } = getBlockAndMeta(state, x, y, z);
         if (currentType !== type) continue;
 
@@ -175,7 +154,7 @@ export function processFluids(state: WorldState) {
                 if (supportedMeta > currentMeta) {
                     // Supply weakened — downgrade and re-check next update.
                     worldManager.setBlock(x, y, z, type, supportedMeta);
-                    scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
+                    scheduleFluidUpdate(state, x, y, z, type, type === BlockType.LAVA ? 30 : 5);
                     continue;
                 }
             }

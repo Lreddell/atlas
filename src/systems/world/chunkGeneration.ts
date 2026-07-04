@@ -1,4 +1,5 @@
 import { BlockType } from '../../types';
+import { runGenerationStages } from './generationPipeline';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
@@ -283,7 +284,9 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
 export function generateChunk(cx: number, cz: number) {
     beginGenerationCaches(GlobalNoise);
     try {
-        return generateChunkInner(cx, cz);
+        const result = generateChunkInner(cx, cz);
+        runGenerationStages('lighting', { cx, cz, ...result });
+        return result;
     } finally {
         endGenerationCaches();
     }

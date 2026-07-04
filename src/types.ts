@@ -329,6 +329,8 @@ export interface ItemInstance {
   stats?: ItemStats;
   /** Freeform tags, e.g. build-archetype affinity ('mobility', 'relic'). */
   tags?: string[];
+  /** Data-driven enchantment/modifier list. Unknown modifiers remain serialized. */
+  modifiers?: Array<{ id: string; level: number }>;
 }
 
 export interface ItemStats {
