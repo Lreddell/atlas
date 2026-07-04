@@ -503,7 +503,9 @@ const App: React.FC = () => {
       gameMode, 
       setDrops, 
       playerPosRef, 
-      cameraRef: controlsRef 
+      cameraRef: controlsRef,
+      equipment,
+      setEquipment,
   });
 
   const isInventoryOpenRef = useRef(false);
@@ -862,11 +864,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const handleContextMenu = (e: MouseEvent) => {
+          if (appState !== 'game' || isEditableElement(e.target)) return;
           e.preventDefault();
       };
       window.addEventListener('contextmenu', handleContextMenu);
       return () => window.removeEventListener('contextmenu', handleContextMenu);
-  }, []);
+  }, [appState]);
 
   useEffect(() => {
       const TICK_MS = 1000;
@@ -1162,10 +1165,15 @@ const App: React.FC = () => {
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
   const handleCollect = useCallback((id: string, stack: ItemStack) => {
-    if (health <= 0) return; 
-    addToInventory(stack);
+    if (health <= 0) return false;
+    const remainder = addToInventory(stack);
+    const pickedUp = stack.count - (remainder?.count ?? 0);
+    if (pickedUp <= 0) return false;
     soundManager.play("entity.item.pickup"); 
-    setDrops(prev => prev.filter(d => d.id !== id));
+    setDrops(prev => remainder
+        ? prev.map(drop => drop.id === id ? { ...drop, count: remainder.count } : drop)
+        : prev.filter(drop => drop.id !== id));
+    return remainder === null;
   }, [addToInventory, health]);
 
   const handleDestroy = useCallback((id: string) => {
@@ -1372,15 +1380,37 @@ const App: React.FC = () => {
       };
   }, [tryRecoverPointerLock]);
 
+  const dropInventoryOverflow = useCallback((item: ItemStack) => {
+    const position = playerPosRef.current;
+    setDrops(prev => [...prev, {
+      id: Math.random().toString(),
+      type: item.type,
+      count: item.count,
+      instance: item.instance ? structuredClone(item.instance) : undefined,
+      position: [position.x, position.y + 1, position.z],
+      velocity: [(Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2],
+      createdAt: Date.now(),
+      pickupDelay: Date.now() + 1500,
+      age: 0,
+    }]);
+  }, []);
+
   const closeInventory = useCallback((opts?: { deferPointerLock?: boolean }) => {
     soundManager.play("ui.close"); 
     const grids = [...craftingGrid2x2, ...craftingGrid3x3];
-    grids.forEach(item => { if (item) addToInventory(item); });
-    if (cursorStack && gameMode !== 'creative') addToInventory(cursorStack);
+    grids.forEach(item => {
+      if (!item) return;
+      const remainder = addToInventory(item);
+      if (remainder) dropInventoryOverflow(remainder);
+    });
+    if (cursorStack && gameMode !== 'creative') {
+      const remainder = addToInventory(cursorStack);
+      if (remainder) dropInventoryOverflow(remainder);
+    }
     setCraftingGrid2x2(Array(4).fill(null)); setCraftingGrid3x3(Array(9).fill(null));
     setCursorStack(null); 
     resumeGame(opts);
-  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
+  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, dropInventoryOverflow, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
 
   const openInventory = useCallback(() => {
     soundManager.play("ui.open"); 
@@ -1892,13 +1922,17 @@ const App: React.FC = () => {
           else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
           else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
       } else if (parts[0] === '/unequip' && parts[1]) {
-          const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
+              const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
           if (!slot) { logMsg('Usage: /unequip <helmet|chestplate|leggings|boots|accessory>', 'error'); }
           else {
               setEquipment(prev => {
                   const it = prev[slot];
                   if (!it) { logMsg(`Nothing equipped in ${slot}`, 'error'); return prev; }
-                  addToInventory(it);
+                  const remainder = addToInventory(it);
+                  if (remainder) {
+                      logMsg('Inventory is full.', 'error');
+                      return prev;
+                  }
                   logMsg(`Unequipped ${BLOCKS[it.type].name}`, 'success');
                   return { ...prev, [slot]: null };
               });
@@ -1983,13 +2017,15 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    if (e.code === 'F4') { 
-        e.preventDefault(); 
+    if (e.code === 'F4') {
         if (showAtlasViewer) {
+            e.preventDefault();
             setShowAtlasViewer(false);
             isAtlasViewerOpenRef.current = false;
             resumeGame();
-        } else {
+        } else if (appState === 'game' && !isEditableTarget && !openContainer && !isPaused
+            && !showCommandInput && !isDead && !isSleeping && !isCapturingPanorama) {
+            e.preventDefault();
             setShowAtlasViewer(true);
             isAtlasViewerOpenRef.current = true;
             enterUIMode();
@@ -2959,7 +2995,7 @@ const App: React.FC = () => {
                     )}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} setEquipment={setEquipment} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
                             bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : openContainer.bossId}
@@ -3018,7 +3054,8 @@ const App: React.FC = () => {
                         acCandidates={acCandidates} 
                         acIndex={acIndex} 
                         onMessageClick={(action) => executeCommand(action)} 
-                        showSuggestions={showSuggestions} 
+                        showSuggestions={showSuggestions}
+                        interactionsDisabled={!!openContainer || isPaused || showAtlasViewer || showDeathScreen}
                     />
                 </>
             )}
