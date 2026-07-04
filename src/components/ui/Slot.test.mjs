@@ -16,10 +16,11 @@ test('GUI item sprites stay on a synchronous 16px integer grid', () => {
     assert.match(slot, /imageRendering:\s*'pixelated'/);
 });
 
-test('creative tabs render a bare icon and center fifteen-slot rows', () => {
+test('creative tabs render a bare icon and left-align fifteen-slot rows', () => {
     assert.match(inventory, /openContainer\.type === 'creative' \? 'w-\[852px\]'/);
     assert.match(inventory, /<Slot item=\{\{ type: tab\.icon, count: 1 \}\} size="small" bare \/>/);
-    assert.match(inventory, /flex flex-wrap justify-center gap-1 content-start/);
+    assert.match(inventory, /flex flex-wrap gap-1 content-start/);
+    assert.doesNotMatch(inventory, /flex flex-wrap justify-center/);
     assert.doesNotMatch(inventory, /scrollbar-gutter/);
     assert.match(inventory, /b\.id !== BlockType\.DEBUG_CROSS/);
     assert.doesNotMatch(inventory, /backdrop-blur/);

@@ -581,7 +581,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     
                     {openContainer.type === 'creative' && (
                         <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
-                             <div className="flex flex-wrap justify-center gap-1 content-start">
+                             <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
                                      <div key={`c-${i}`} onMouseDown={(e) => handleSlotMouseDown('creative', i, e)}>
                                          <Slot 
