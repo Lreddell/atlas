@@ -515,6 +515,7 @@ const App: React.FC = () => {
   const deathScreenActiveRef = useRef(false);
   const lockRequestInFlightRef = useRef(false);
   const wantsGameplayRef = useRef(false);
+  const escapeHeldRef = useRef(false);
   const suppressAutoPauseUntilMsRef = useRef(0);
     const pointerLockRetryTimersRef = useRef<number[]>([]);
     const pendingCameraRotationRef = useRef<{ x: number; y: number } | null>(null);
@@ -1266,14 +1267,12 @@ const App: React.FC = () => {
   useEffect(() => {
       const onKeyUp = (e: KeyboardEvent) => {
           if (e.key === 'Escape') {
+              escapeHeldRef.current = false;
               if (appState !== 'game') return;
               if (document.pointerLockElement) return;
               if (!wantsGameplayRef.current && !relockWantedRef.current) return;
               relockWantedRef.current = true;
-              // Match the keydown resume path's suppression window so the
-              // re-lock on Escape-up survives Chrome's ~1.25s pointer-lock
-              // cooldown without the auto-pause firing underneath it.
-              suppressAutoPauseFor(1500);
+              suppressAutoPauseFor(350);
               requestPointerLockBurst('escape-up', { force: true });
           }
       };
@@ -1285,12 +1284,6 @@ const App: React.FC = () => {
       soundManager.resume();
       soundManager.preload(['ui.click', 'ui.open', 'ui.close', 'entity.player.hurt', 'block.grass.step', 'block.stone.step', 'block.wood.step']);
       void lockBrowserShortcuts();
-      // Suppress the pointer-lock-loss auto-pause well past the browser's ~1.25s
-      // cooldown after an Escape-exit. Without this, if the re-lock briefly grabs
-      // and the browser bounces it back during the cooldown, the auto-pause fired
-      // and threw the player straight back into the pause menu — the "it re-pauses
-      // when I click Resume" regression.
-      suppressAutoPauseFor(1500);
       setIsPaused(false);
       setOpenContainer(null);
       setShowCommandInput(false);
@@ -1301,7 +1294,7 @@ const App: React.FC = () => {
       wantsGameplayRef.current = true;
       relockWantedRef.current = true;
       requestPointerLockBurst(reason, { force: true });
-    }, [requestPointerLockBurst, lockBrowserShortcuts, setOpenContainer, suppressAutoPauseFor]);
+    }, [requestPointerLockBurst, lockBrowserShortcuts, setOpenContainer]);
 
   const resumeGame = useCallback((opts?: { deferPointerLock?: boolean }) => {
       setOpenContainer(null);
@@ -2117,11 +2110,8 @@ const App: React.FC = () => {
 
     if (relockWantedRef.current && wantsGameplayRef.current && e.key !== 'Escape') { requestPointerLockBurst('any-key'); }
     if (e.key === 'Escape') {
-        // Ignore auto-repeat only — never latch on a ref that a missed keyup
-        // could leave stuck true (that was the "sometimes Escape does nothing,
-        // hit it again" bug). e.repeat is set by the browser for held keys and
-        // reset every fresh press, so it can't wedge.
-        if (e.repeat) { e.preventDefault(); e.stopPropagation(); return; }
+        if (escapeHeldRef.current) { e.preventDefault(); e.stopPropagation(); return; }
+        escapeHeldRef.current = true;
         e.preventDefault(); e.stopPropagation();
         if (isDead || deathScreenActiveRef.current) return;
         
@@ -2139,7 +2129,7 @@ const App: React.FC = () => {
 
         if (openContainer) { closeInventory({ deferPointerLock: true }); return; }
         if (isSleeping) { setIsSleeping(false); return; } 
-        if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(1500); requestPointerLockBurst('pause-escape', { force: true }); return; }
+        if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
         // PAUSE: Save Immediately
         saveGame({ force: true });

@@ -51,24 +51,20 @@ test('spawns resolve a real clear standing Y from actual blocks (no spawning in 
     assert.match(worldManager, /return \{ x: pick\.x \+ 0\.5, y, z: pick\.z \+ 0\.5 \}/);
 });
 
-test('resuming from the pause menu cannot bounce back to a pause', () => {
-    // The pointer-lock-loss auto-pause is suppressed past the browser's ~1.25s
-    // Escape cooldown, so a lock bounce during that window no longer re-pauses.
+test('unpausing re-locks the pointer immediately, with no long look-input stall', () => {
+    // Rolled back to the pre-01224ea (v1.1.0 "two days ago") pause behavior: the
+    // resume path does NOT slap a long auto-pause suppression window on, which
+    // was making the mouse feel frozen for ~a second after Resume. Only the
+    // short 350ms grace remains on the Escape re-lock paths.
     const resume = app.slice(app.indexOf('const resumeFromUserGesture'), app.indexOf('const resumeFromUserGesture') + 900);
-    assert.match(resume, /suppressAutoPauseFor\(1500\)/);
-    // The Escape-unpause path gets the same protection.
-    assert.match(app, /setIsPaused\(false\); wantsGameplayRef\.current = true; relockWantedRef\.current = true; suppressAutoPauseFor\(1500\)/);
+    assert.doesNotMatch(resume, /suppressAutoPauseFor\(1500\)/);
+    assert.doesNotMatch(app, /suppressAutoPauseFor\(1500\)/);
+    // The Escape-unpause path uses the short grace, not the long one.
+    assert.match(app, /setIsPaused\(false\); wantsGameplayRef\.current = true; relockWantedRef\.current = true; suppressAutoPauseFor\(350\)/);
 });
 
-test('Escape uses e.repeat, not a latching ref that a missed keyup can wedge', () => {
-    // The "sometimes Escape does nothing, hit it again" bug was a boolean ref
-    // set on keydown and cleared on keyup: a dropped keyup left it stuck true
-    // and swallowed the next press. e.repeat is browser-managed and resets per
-    // fresh press, so it can't wedge.
-    assert.doesNotMatch(app, /escapeHeldRef/);
+test('Escape out of a container/inventory returns to gameplay, not the pause menu', () => {
     const esc = app.slice(app.indexOf("if (e.key === 'Escape') {"));
-    assert.match(esc, /if \(e\.repeat\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); return; \}/);
-    // Escape out of a container/inventory returns to gameplay, not the pause menu.
     assert.match(esc, /if \(openContainer\) \{ closeInventory\(\{ deferPointerLock: true \}\); return; \}/);
 });
 

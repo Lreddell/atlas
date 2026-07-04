@@ -122,7 +122,6 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Fixed rare save/session bugs: stalled chunk loading after long fast travel, an edit lost during an autosave flush, stack-spreading destroying overflow items, and mining costs charging the wrong tool.',
                     'Boss loot and arena rebuilds no longer leak into the next world when quitting right after a victory, and item drops no longer carry over between worlds.',
                     'A failed save now warns in-game instead of crashing to an error screen.',
-                    'Escape now pauses reliably on the first press, returns straight to the game from a container or inventory, and regains mouse-look without a wait when leaving the pause menu.',
                     'Fixed a rare camera "spin" where regaining pointer lock could whip the view a full turn.',
                     'Polarity boots now soften fall damage while active (upgraded boots even more), and upgraded boots switched off shield you from magnets entirely — iron armor no longer drags you around.',
                     'The hunger bar no longer drifts upward when wearing armor, and cave biomes now carry their own music.',
