@@ -68,7 +68,7 @@ test('placement consumes the item in survival only; boarding is a right-click', 
 
 test('boat placement is a traversal exception to the sealed-region edit policy', () => {
     // Boats are traversal, not terrain editing: placing one on water is exempt
-    // from canPlayerEdit, unlike block placement — so a boat can be launched
+    // from canPlayerEdit, unlike block placement, so a boat can be launched
     // on sealed water (e.g. inside an unsolved Magnetic Fields region).
     const placeIdx = interaction.indexOf("held?.type === BlockType.BOAT && onPlaceBoat");
     const block = interaction.slice(placeIdx, placeIdx + 400);

@@ -114,7 +114,7 @@ interface PlayerProps {
 export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3>; cinematicMode?: boolean }> = ({ playerPosRef, cinematicMode = false }) => {
   useFrame(({ camera }) => {
     // During the summon cutscene the camera belongs to the cinematic (it flies far
-    // out around the arena), so don't track it — that would teleport the player's
+    // out around the arena), so don't track it, that would teleport the player's
     // saved position to wherever the camera ended up. Leave playerPosRef frozen at
     // the spot they were standing when the cutscene began. We check BOTH the live
     // cinematic flag (covers the moment control hands back, before the player camera
@@ -292,7 +292,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       a.detachReason = reason;
       a.detachCooldownUntil = Date.now() + ADHESION_REATTACH_COOLDOWN_MS;
       // Snapshot the look direction so the un-roll preserves where the player is
-      // looking — only the up-vector rotates back to world-up.
+      // looking, only the up-vector rotates back to world-up.
       const dir = wallViewDir(a, _wallView);
       const pitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
       const yaw = Math.atan2(-dir.x, -dir.z);
@@ -731,7 +731,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     // Camera orientation. While latched to a magnetic wall the "up" vector rolls
     // to the surface normal and look is around that normal; on detach it eases
     // back to world-up before handing control back to the FPS mouse-look. Only a
-    // real attachment rolls the camera — being pulled through the air does not.
+    // real attachment rolls the camera, being pulled through the air does not.
     const aCam = adhesion.current;
     if (aCam.active) {
         lookBridge.active = true;
@@ -748,7 +748,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             rollT.current = Math.min(1, rollT.current + dt / ROLL_TIME);
             camera.quaternion.slerpQuaternions(rollFrom.current, _wallTarget, easeOutCubic(rollT.current));
         } else {
-            camera.quaternion.copy(_wallTarget); // tracked directly — zero drag
+            camera.quaternion.copy(_wallTarget); // tracked directly, zero drag
         }
     } else if (unrolling.current) {
         // Ease the roll back to world-up, then hand look control to the FPS mouse.

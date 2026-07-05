@@ -1,9 +1,9 @@
-# river — active music tags
+# river: active music tags
 
 `tags.json` lists the music tags that play in the **river** biome:
 
-- `plains` — songs from `music/plains/`
-- `river` — songs from `music/river/`
+- `plains`: songs from `music/plains/`
+- `river`: songs from `music/river/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

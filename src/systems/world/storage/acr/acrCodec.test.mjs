@@ -179,7 +179,7 @@ test('a future chunk body schema fails safely on read', () => {
     assert.throws(() => decodeChunkBody(body), /schema/);
 });
 
-test('rewriting a slot with the SAME sector count relocates — never overwrites the committed sectors', async () => {
+test('rewriting a slot with the SAME sector count relocates, never overwrites the committed sectors', async () => {
     const f = new MemFile();
     const rf = new RegionFile(f, null); // raw => deterministic sizes
     await rf.open();
@@ -194,7 +194,7 @@ test('rewriting a slot with the SAME sector count relocates — never overwrites
     await rf.writeChunk(0, { ...b, timestamp: 2 });
     const loc1 = rf.location(0);
     assert.equal(loc1.count, 1);
-    // (1) the committed offset moved — the old run was NOT overwritten in place.
+    // (1) the committed offset moved, the old run was NOT overwritten in place.
     assert.notEqual(loc1.offset, loc0.offset);
     // committed on-disk location table agrees with the in-memory location.
     assert.equal(readU32(f.buf, LOCATION_TABLE_OFFSET + 0 * 8), loc1.offset);

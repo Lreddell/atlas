@@ -37,7 +37,7 @@ export const DEFAULTS = {
     },
     biomes: {
         ocean: { continentalnessMax: -0.30, base: 38, scale: 8 },
-        // Beach — the sandy coastal band bridging ocean and inland terrain. Its
+        // Beach, the sandy coastal band bridging ocean and inland terrain. Its
         // base/scale also flatten the coast strip so dry beaches are wide.
         beach: { continentalnessMax: -0.25, base: 66, scale: 5 },
         tundra: { maxTemp: -0.7, base: 75, scale: 35 }, // Tundra Land Settings & Water Freezing Threshold
@@ -66,7 +66,7 @@ export const DEFAULTS = {
         taiga: { maxTemp: -0.7, minWeird: 0.35, maxWeird: 1.0, base: 74, scale: 30 },
         iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.50, base: 72, scale: 8 },
         mountains: { minWeird: 0.58, base: 145, scale: 120 },
-        // Swamp — warm/wet lowland marsh. Spans the cherry+forest temp bands in
+        // Swamp, warm/wet lowland marsh. Spans the cherry+forest temp bands in
         // the 0.42..0.58 weirdness slot (capped by darkForest.minWeird in the
         // forest band), flattened to hover right at sea level for water pools.
         swamp: { minTemp: -0.7, maxTemp: 0.0, minWeird: 0.42, maxWeird: 0.58, base: 63, scale: 5 },
@@ -86,20 +86,20 @@ export const DEFAULTS = {
         breachFreq: 0.015,         // low-freq mask: where cave mouths are allowed to breach daylight
         breachThreshold: 0.05,
 
-        // Spaghetti / worm caves — the primary long winding tunnels.
+        // Spaghetti / worm caves, the primary long winding tunnels.
         wormEnabled: true,
         wormFreq: 0.02,            // smaller = larger, smoother tunnels
         wormThreshold: 0.15,       // larger = wider/more tunnels
         wormYScale: 1.2,           // vertical frequency multiplier (>1 = flatter tunnels)
 
-        // Cheese caverns — big open rooms, gated to deeper rock by a coarse mask.
+        // Cheese caverns, big open rooms, gated to deeper rock by a coarse mask.
         cavernEnabled: true,
         cavernMinDepth: 15,        // no caverns until this deep below the surface
         cavernMaskThreshold: 0.5,  // coarse mask gate (larger = rarer caverns)
         cavernFreq: 0.012,
         cavernThreshold: 0.25,     // larger = bigger caverns
 
-        // Noodle caves — thin secondary tunnels threading between the big ones.
+        // Noodle caves, thin secondary tunnels threading between the big ones.
         noodleEnabled: true,
         noodleFreq: 0.05,
         noodleMaskThreshold: 0.2,
@@ -113,11 +113,11 @@ export const DEFAULTS = {
 
         lavaLevel: 10,             // carved cells at/below MIN_Y + this flood with lava
 
-        // Deepslate band — stone turns to deepslate with a jagged blend.
+        // Deepslate band, stone turns to deepslate with a jagged blend.
         deepslateStartY: 8,        // stone above this Y stays stone
         deepslateFullY: -4,        // fully deepslate at/below this Y
 
-        // Decoration pass — cave-biome regions + feature densities. Lush and
+        // Decoration pass, cave-biome regions + feature densities. Lush and
         // dripstone are real cave biomes: large, coherent, and rare (low region
         // frequency = big blobs; high threshold = uncommon), so most caves are
         // plain and stumbling into a lush or dripstone one feels like a find.
@@ -154,7 +154,7 @@ export const DEFAULTS = {
     // magneticFields.ts; they are now editable config (World Editor > Biomes >
     // Magnetic Fields) with the old constants kept as compatibility defaults.
     // NOTE: cell / fieldFreq / fieldThreshold determine WHERE instances (and
-    // their arenas) land — changing them relocates every Magnetic Field in an
+    // their arenas) land, changing them relocates every Magnetic Field in an
     // existing world. The other values only reshape terrain around the same
     // deterministic centers.
     bossDomains: {

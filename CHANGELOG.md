@@ -1,16 +1,13 @@
 # Changelog
 
 All notable changes to Atlas are documented here. This file is the single
-source of truth — mirror it into the in-game "What's New" popup
+source of truth; mirror it into the in-game "What's New" popup
 (`src/data/changelog.ts`) and the GitHub release notes when you publish.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
-## [Unreleased] — v1.1.0-alpha
-
-> Draft. Not yet published to the website or tagged. Accumulate notes here as
-> the update is built, then publish when ready.
+## [v1.1.0-alpha]: 2026-07-05
 
 ### Highlights
 - Explore the new Magnetic Fields, master polarity traversal, and defeat the
@@ -55,7 +52,7 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Lush and dripstone cave biomes are large, coherent regions (~130 blocks across) but
   rare, so stumbling into one is a find. Deepslate uses a lighter palette that remains
   readable under low cave light.
-- Every ore — coal, iron, copper, gold, lapis, diamond, emerald — has a deepslate
+- Every ore (coal, iron, copper, gold, lapis, diamond, emerald) has a deepslate
   variant that generates in the deep band, with its own texture and matching drops.
 - New foods: bananas drop rarely from jungle leaves, glowing Lumen Berries can be
   foraged from cave glow lichen, and the three combine into a hearty Forager's Bowl at
@@ -114,22 +111,22 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Regaining pointer lock cannot turn a single mouse event into a full camera spin.
 - Distant ocean floors remain visible instead of opening see-through gaps in the world.
 
-## [v1.0.2-alpha] — 2026-06-15
+## [v1.0.2-alpha]: 2026-06-15
 
 A large stability, performance, and content update. See the
 [full release notes](https://github.com/Lreddell/atlas/releases/tag/v1.0.2-alpha).
 
 ### Highlights
-- Chunk streaming moved to a unified Web Worker pool — no more severe frame
+- Chunk streaming moved to a unified Web Worker pool; no more severe frame
   drops at high render distance.
 - Physics-based movement rebuild with real momentum, sprint-jumping, and auto-step.
 - First slabs & stairs for 9 material families, with full placement control.
 - New tools, sandstone crafting, and recipes for every new block.
 
-## [v1.0.1-alpha] — 2026-05-15
+## [v1.0.1-alpha]: 2026-05-15
 
 - Windows installer release.
 
-[Unreleased]: https://github.com/Lreddell/atlas/compare/v1.0.2-alpha...main
+[v1.1.0-alpha]: https://github.com/Lreddell/atlas/compare/v1.0.2-alpha...release/v1.1.0-alpha
 [v1.0.2-alpha]: https://github.com/Lreddell/atlas/releases/tag/v1.0.2-alpha
 [v1.0.1-alpha]: https://github.com/Lreddell/atlas/releases/tag/v1.0.1-alpha

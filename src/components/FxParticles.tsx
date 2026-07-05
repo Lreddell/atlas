@@ -9,7 +9,7 @@ import { bossPhaseState } from '../systems/boss/bossPhaseState';
 // Renders the glowing additive "effect" particles fired through `particleFx`
 // (combat sparks, slam rings, the summon cutscene) PLUS a steady drift of gray
 // and purple ambient motes while the player stands in the Magnetic Fields biome
-// — the charged, "this place is humming with energy" atmosphere.
+//, the charged, "this place is humming with energy" atmosphere.
 
 const MAX_FX = 2600;
 
@@ -141,7 +141,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
         const dt = Math.min(delta, 0.05);
         const arr = pool.current;
 
-        // Ambient motes while standing in the Magnetic Fields biome — they whip up
+        // Ambient motes while standing in the Magnetic Fields biome, they whip up
         // into a denser, faster, more purple "polarity storm" per boss phase.
         // Ease the storm density + frenzy vortex in/out so phase changes don't snap.
         stormBlend.current = THREE.MathUtils.damp(stormBlend.current, bossPhaseState.intensity, 1.5, dt);

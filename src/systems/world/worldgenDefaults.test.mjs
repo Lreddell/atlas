@@ -86,7 +86,7 @@ test('old presets without the new biome keys still load safely', () => {
     // ...and keys the preset never knew about keep working defaults.
     assert.ok(GenConfig.biomes.beach);
     assert.equal(typeof GenConfig.biomes.beach.continentalnessMax, 'number');
-    // A pre-1.1.0 preset has no bossDomains block at all — the Magnetic Fields
+    // A pre-1.1.0 preset has no bossDomains block at all, the Magnetic Fields
     // config must remain fully populated (enabled, placement, shape, arena).
     const mf = GenConfig.bossDomains.magneticFields;
     assert.equal(mf.enabled, true);

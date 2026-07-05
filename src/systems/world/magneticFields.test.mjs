@@ -321,7 +321,7 @@ test('shape detection is data-driven (future-proof), not a hardcoded list', () =
 
 test('arena tweaks: brick towers by default, magnets placed only for a fight', () => {
     const a = read('src/systems/world/magneticArena.ts');
-    // The towers are plain brick by default — no magnets baked into the shaft.
+    // The towers are plain brick by default, no magnets baked into the shaft.
     const towers = a.match(/function buildMagneticPillarTowers[\s\S]*?\n}/)[0];
     assert.doesNotMatch(towers, /POSITIVE_MAGNET|NEGATIVE_MAGNET/);
     assert.doesNotMatch(towers, /% 6 === 0/); // no horizontal trim bands breaking the (placed) climb
@@ -447,7 +447,7 @@ test('only the crystals are mineable while sealed', () => {
     assert.match(src, /POSITIVE_MAGNETITE_CRYSTAL/);
     assert.match(src, /NEGATIVE_MAGNETITE_CRYSTAL/);
     assert.match(src, /MAGNETIC_SHIELD_CRYSTAL/);
-    // Exactly the three crystals — the two craftable resource crystals plus the
+    // Exactly the three crystals, the two craftable resource crystals plus the
     // boss shield crystals; no other terrain becomes mineable while sealed.
     const inside = src.match(/new Set\(\[([\s\S]*?)\]\)/)[1];
     assert.equal((inside.match(/BlockType\./g) || []).length, 3);

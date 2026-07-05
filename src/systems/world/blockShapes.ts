@@ -6,7 +6,7 @@ import { BLOCKS } from '../../data/blocks';
 export type ShapeBox = [number, number, number, number, number, number];
 
 // Shape detection is data-driven from each block's `shape` field, so any new slab/
-// stair block is recognized automatically — no hardcoded list to keep in sync.
+// stair block is recognized automatically, no hardcoded list to keep in sync.
 export const isSlab = (t: BlockType): boolean => BLOCKS[t]?.shape === 'slab';
 export const isStairs = (t: BlockType): boolean => BLOCKS[t]?.shape === 'stairs';
 export const isShaped = (t: BlockType): boolean => {
@@ -15,7 +15,7 @@ export const isShaped = (t: BlockType): boolean => {
 };
 
 // Metadata layout for shaped blocks (8-bit value per voxel). Backwards compatible
-// with worlds saved before double slabs / stair corners existed — the bits added
+// with worlds saved before double slabs / stair corners existed, the bits added
 // here default to 0, which is exactly the old bottom-slab / straight-stair state.
 //
 //   Slab:   bit0  = half (0 = bottom, 1 = top)
@@ -24,7 +24,7 @@ export const isShaped = (t: BlockType): boolean => {
 //   Stairs: bits0-1 = facing of the LOW/open side (0:+Z 1:-Z 2:+X 3:-X)
 //           bit2    = upside-down (placed against a ceiling)
 //           bits3-5 = corner shape (0 straight, 1 inner-left, 2 inner-right,
-//                                   3 outer-left, 4 outer-right) — RESOLVED from
+//                                   3 outer-left, 4 outer-right), RESOLVED from
 //                                   neighboring stairs and stored, so getShapeBoxes
 //                                   stays a pure local lookup for every consumer.
 export const STAIR_FACE_POS_Z = 0;
@@ -171,7 +171,7 @@ export function stairBackDir(meta: number): number {
 }
 
 // Cross-rendered plants (kept in sync with IS_CROSS in geometry.ts). Their billboards
-// span the whole cell, so a full-cube selection box reads as a solid block — give them
+// span the whole cell, so a full-cube selection box reads as a solid block, give them
 // a smaller, plant-sized box instead.
 const CROSS_PLANT_TYPES: ReadonlySet<BlockType> = new Set([
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,

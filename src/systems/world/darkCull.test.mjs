@@ -3,7 +3,7 @@ import test from 'node:test';
 import { loadTs } from './storage/bundleTs.mjs';
 
 // The mesher graph reaches src/constants.ts, which reads vite's compile-time
-// defines — stub them before the bundled module is imported.
+// defines, stub them before the bundled module is imported.
 globalThis.__APP_VERSION__ = 'test';
 globalThis.__APP_DISPLAY_VERSION__ = 'test';
 
@@ -30,7 +30,7 @@ const countTopFacesAt = (res, worldY) => {
 
 test('far-chunk dark culling keeps deep-ocean floors visible through water', () => {
     // Stone floor at y=0 under 12 blocks of water. Skylight attenuates through
-    // the water, so the floor and the water facing it sit at light 0 — but the
+    // the water, so the floor and the water facing it sit at light 0, but the
     // floor is still visible THROUGH the water column. Regression: these faces
     // were dark-culled in far chunks, so distant oceans rendered see-through
     // until the player walked close enough to trigger a full remesh.
@@ -44,7 +44,7 @@ test('far-chunk dark culling keeps deep-ocean floors visible through water', () 
         }
     }
     const res = generateGeometryData(0, 0, chunk, undefined, {}, { center: light }, true);
-    // Top face of the y=0 stone layer sits at worldY=1 — all 16x16 must be present.
+    // Top face of the y=0 stone layer sits at worldY=1, all 16x16 must be present.
     assert.equal(countTopFacesAt(res, 1), CHUNK_SIZE * CHUNK_SIZE);
 });
 

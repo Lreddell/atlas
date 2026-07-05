@@ -1,6 +1,6 @@
 // Static item-stats registry: the single source of truth for combat-relevant
 // item properties (attack, durability now; defense/slot for armor). This is the
-// data layer the build-archetype system grows into — add a weapon/armor's stats
+// data layer the build-archetype system grows into, add a weapon/armor's stats
 // here, or override per-instance via ItemStack.instance.stats.
 
 import { BlockType, type ItemStats, type ItemStack } from '../../types';
@@ -56,7 +56,7 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.GOLD_HOE]: tool(1, 'gold'),
     [BlockType.DIAMOND_HOE]: tool(1, 'diamond'),
 
-    // Armor — reference defense points + per-piece durability (factor × 11/16/15/13
+    // Armor, reference defense points + per-piece durability (factor × 11/16/15/13
     // for helmet/chestplate/leggings/boots). Copper is non-standard: between gold
     // and iron. Polarity boots are unbreakable (key traversal item).
     // Iron (factor 15)
@@ -79,9 +79,9 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.COPPER_CHESTPLATE]: { defense: 4, slot: 'chestplate', maxDurability: 176 },
     [BlockType.COPPER_LEGGINGS]:   { defense: 4, slot: 'leggings',   maxDurability: 165 },
     [BlockType.COPPER_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 143 },
-    // Polarity boots — controllable polarity; unbreakable.
+    // Polarity boots, controllable polarity; unbreakable.
     [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
-    // Upgraded polarity boots — adds an on/off toggle (N); unbreakable.
+    // Upgraded polarity boots, adds an on/off toggle (N); unbreakable.
     [BlockType.UPGRADED_POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
 };
 

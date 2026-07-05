@@ -1,4 +1,4 @@
-// Magnetic Fields biome — config-driven deterministic helpers.
+// Magnetic Fields biome, config-driven deterministic helpers.
 //
 // The Magnetic Fields biome is a RARE, HUGE, TIERED magnetic-convergence biome.
 // It is NOT a crater. Terrain organizes inward toward a single deterministic
@@ -206,7 +206,7 @@ export interface MagneticFieldColumn {
  * boundary (for edge blending). Returns null outside the biome.
  *
  * Because each tier maps to one near-flat Y and adjacent tiers differ by
- * tierHeight, the band edges become vertical magnetite walls — natural shelves
+ * tierHeight, the band edges become vertical magnetite walls, natural shelves
  * separated by tall climb walls, converging on the arena.
  */
 export function getMagneticFieldColumn(
@@ -262,7 +262,7 @@ export function getMagnetiteWallPolarity(wx: number, wz: number, worldSeed: numb
  *   - vein:       charged-magnetite decorative vein patches on the shelf
  *   - spikes:     hazard patches that multiply fall damage (avoid when launching)
  *   - launchPad:  3×3 polarity pad flush with the shelf: hold the SAME polarity
- *                 to be flung upward/away, the OPPOSITE to be pulled in — the
+ *                 to be flung upward/away, the OPPOSITE to be pulled in, the
  *                 traversal lesson for the arena, taught tier by tier
  *   - pylon:      broken/intact magnetite-brick pylons with a charged beacon top
  *                 (landmarks that read as a route toward the center)
@@ -296,7 +296,7 @@ export function getMagneticFeature(rootWx: number, rootWz: number, worldSeed: nu
 
 /**
  * Deterministic loot for a Magnetic Fields cache chest at (x, y, z). Returns
- * item ids/counts as plain numbers (no BlockType import) — the caller maps them.
+ * item ids/counts as plain numbers (no BlockType import), the caller maps them.
  * Slots are chosen deterministically so a cache always contains the same loot
  * for the same world seed.
  */
@@ -378,7 +378,7 @@ export function getArenaCenter(
 
 /**
  * The nearest ACTIVE Magnetic Fields center to (wx, wz) within `searchRadius`
- * blocks, or null. Scans candidate grid cells outward — cheap (one hash + one
+ * blocks, or null. Scans candidate grid cells outward, cheap (one hash + one
  * noise sample per cell) even for very large search radii.
  */
 export function findNearestMagneticField(

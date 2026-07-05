@@ -20,7 +20,7 @@ const zlibCompressor = {
 };
 
 // Node FileHandle adapter implementing acrCore's abstract handle. Never opens
-// with 'a' (append) — Linux ignores the position arg in append mode.
+// with 'a' (append), Linux ignores the position arg in append mode.
 class NodeFileHandle {
     constructor(fh) { this.fh = fh; }
     async size() { const st = await this.fh.stat(); return st.size; }

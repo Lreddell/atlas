@@ -72,7 +72,7 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
             // Defensively handle movement values to prevent NaN propagation, and
             // CLAMP each event's delta. On pointer-lock re-acquisition (and via the
             // occasional OS/browser glitch) a single mousemove can carry a huge
-            // accumulated delta — a movementX of ~1500 is a full 180° spin — which
+            // accumulated delta (a movementX of ~1500 is a full 180° spin) which
             // was the "camera randomly turns around" bug. A real flick between
             // frames never exceeds a couple hundred pixels, so clamp to that.
             const MAX_LOOK_DELTA = 250;
@@ -80,7 +80,7 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
             const mx = clamp(e.movementX);
             const my = clamp(e.movementY);
 
-            // While latched to a magnetic wall, look is around the wall normal —
+            // While latched to a magnetic wall, look is around the wall normal :
             // Player owns the camera orientation, so just hand it the raw deltas
             // instead of mutating the world-up Euler camera.
             if (lookBridge.active) {

@@ -73,7 +73,7 @@ const ResetBtn = ({ onClick }: { onClick: () => void }) => (
 // Vertical cave cross-section preview. Samples the REAL cave functions
 // (systems/world/caves.ts) along an X strip at the map centre's Z, from y=140
 // down to the world floor, so tuning a cave slider immediately shows how the
-// carve changes. Same math the generator runs — this is a faithful side view.
+// carve changes. Same math the generator runs, this is a faithful side view.
 const CROSS_TOP_Y = 140;
 const CaveCrossSection: React.FC<{
     centerX: number;
@@ -93,7 +93,7 @@ const CaveCrossSection: React.FC<{
         if (!ctx) return;
 
         // Coalesce redraws to one per frame (via rAF, cancelling any pending) so
-        // dragging a slider — which bumps `version` on every mousemove — never
+        // dragging a slider (which bumps `version` on every mousemove) never
         // runs this ~thousands-of-samples pass more than once a frame. The
         // component only mounts on the CAVES tab, so it never costs anything on
         // the other editor tabs.
@@ -105,7 +105,7 @@ const CaveCrossSection: React.FC<{
         const caveOz = noiseSet.offsets.cave.z;
         const caveNoise2D = (px: number, pz: number) => noiseSet.cave.noise2D(px, pz);
         const caveNoise3D = (px: number, py: number, pz: number) => noiseSet.cave.noise3D(px, py, pz);
-        // Cheap deterministic hash for the deepslate blend (illustrative — the
+        // Cheap deterministic hash for the deepslate blend (illustrative, the
         // carve shape above is exact; the speckled boundary need only look right).
         const hash01 = (x: number, y: number, z: number) => {
             let h = Math.imul(x ^ 0x9e3779b9, 374761393);
@@ -891,7 +891,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     {/* --- BIOMES SECTION --- */}
                     {activeSection === 'biomes' && (
                         <div className="border-t border-white/10 pt-2 flex flex-col gap-3">
-                            {/* Magnetic Fields — a boss-domain biome, rendered as a
+                            {/* Magnetic Fields, a boss-domain biome, rendered as a
                                 standard biome accordion row (same header/swatch/chevron
                                 and body styling as the others). Its expanded body just
                                 carries the extra boss-domain tools + parameters. */}
@@ -953,7 +953,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                                     <input type="checkbox" checked={mf.enabled} onChange={(e) => { mf.enabled = e.target.checked; commitChange(); }} className="w-4 h-4 rounded accent-blue-500" />
                                                     <span className="text-xs text-gray-300">Generate Magnetic Fields</span>
                                                 </label>
-                                                <div className="text-[10px] text-gray-500 leading-relaxed">Placed by the dedicated Boss Field noise layer — enable that map layer to preview instances. Hover the map for tier / arena / center readouts.</div>
+                                                <div className="text-[10px] text-gray-500 leading-relaxed">Placed by the dedicated Boss Field noise layer; enable that map layer to preview instances. Hover the map for tier / arena / center readouts.</div>
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <button
                                                         onClick={handleFindNearestMf}
@@ -1077,7 +1077,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                         <div className="text-sm font-bold text-amber-400">Cave Cross-Section</div>
                                         <div className="text-[9px] text-gray-500 font-mono">x={center.x} · z={center.z}</div>
                                     </div>
-                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses — tune a slider and watch the caves change.</div>
+                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
                                     <CaveCrossSection centerX={center.x} centerZ={center.z} noiseSet={previewNoiseSet} version={configVersion} width={Math.max(200, sidebarWidth - 56)} />
                                     <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono"><span>◼ stone</span><span>◼ deepslate</span><span>◼ cave</span><span>◼ lava</span></div>
                                 </div>
@@ -1207,7 +1207,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <span className="text-gray-400">Rain:</span> <span>{hoverInfo.riverVal.toFixed(3)}</span>
                                     <span className="text-gray-400">Cont:</span> <span>{hoverInfo.continentalness.toFixed(3)}</span>
                                     <span className="text-gray-400">Weird:</span> <span>{hoverInfo.weirdness.toFixed(3)}</span>
-                                    <span className="text-gray-400">Cave Biome:</span> <span className={hoverInfo.caveBiome === 'lush' ? 'text-green-400' : hoverInfo.caveBiome === 'dripstone' ? 'text-amber-400' : 'text-gray-300'}>{hoverInfo.caveBiome ?? '—'}</span>
+                                    <span className="text-gray-400">Cave Biome:</span> <span className={hoverInfo.caveBiome === 'lush' ? 'text-green-400' : hoverInfo.caveBiome === 'dripstone' ? 'text-amber-400' : 'text-gray-300'}>{hoverInfo.caveBiome ?? 'N/A'}</span>
                                     <span className="text-gray-400">Boss Field:</span> <span className="text-purple-300">{hoverInfo.mfFieldVal?.toFixed(3)}</span>
                                     {hoverInfo.mfCol && (
                                         <>

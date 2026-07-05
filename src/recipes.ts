@@ -353,20 +353,20 @@ for (const a of ARMOR_SETS) {
     push(3, [null, null, null, M, null, M, M, null, M], a.boots, 1);
 }
 
-// Wool from woven plant fiber — wheat seeds were a dead-end drop and wool (the
+// Wool from woven plant fiber, wheat seeds were a dead-end drop and wool (the
 // bed ingredient, i.e. respawn anchors) had no survival source at all.
 push(2, [BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS], BlockType.WOOL, 1);
 
 // Packed ice from ice (Ice Spikes material, otherwise creative-only to build with).
 push(2, [BlockType.ICE, BlockType.ICE, BlockType.ICE, BlockType.ICE], BlockType.PACKED_ICE, 1);
 
-// Boat — classic hull silhouette (5 planks), one recipe per wood family.
+// Boat, classic hull silhouette (5 planks), one recipe per wood family.
 for (const { planks } of WOOD_FAMILIES) {
     push(3, [null, null, null, planks, null, planks, planks, planks, planks], BlockType.BOAT, 1);
 }
 
 // --- Foods ---
-// Forager's Bowl — the three foraged fruits together (apple + banana + lumen
+// Forager's Bowl, the three foraged fruits together (apple + banana + lumen
 // berry), in a row or column, any order, so it's easy to stumble onto.
 const BOWL_PERMS: BlockType[][] = (() => {
     const [a, b, c] = [BlockType.APPLE, BlockType.BANANA, BlockType.LUMEN_BERRY];
@@ -415,7 +415,7 @@ export const checkRecipe = (grid: (BlockType | null)[], gridWidth: number): { ty
         const r = trimGrid(recipe.pattern, recipe.gridSize);
         if (!r) continue;
 
-        // Exact shape match (width AND height), not just cell count — otherwise a
+        // Exact shape match (width AND height), not just cell count, otherwise a
         // 1x3 column and a 3x1 row both "match" (e.g. stacked planks -> slabs).
         if (input.w !== r.w || input.h !== r.h) continue;
 

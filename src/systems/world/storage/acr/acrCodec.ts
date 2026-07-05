@@ -1,4 +1,4 @@
-// Pure-TypeScript .acr region codec. No Node, DOM, React, or Electron deps — it
+// Pure-TypeScript .acr region codec. No Node, DOM, React, or Electron deps, it
 // drives an abstract RandomAccessFile and an injectable Compressor, so the same
 // code can run over a Node file handle, an OPFS sync-access handle (future), or
 // an in-memory buffer (tests). The Electron main process ships a byte-identical
@@ -39,7 +39,7 @@ export interface RandomAccessFile {
 /**
  * Optional payload compression. Omit to store raw (compression type 0).
  * compress/decompress may be sync (Node zlib) OR async (browser CompressionStream)
- * — the codec awaits the result either way.
+ *, the codec awaits the result either way.
  */
 export interface Compressor {
     compress(data: Uint8Array): Uint8Array | Promise<Uint8Array>;
@@ -95,7 +95,7 @@ export function encodeChunkBody(
 /**
  * Parse a chunk body back into ChunkStorageData with STRICT framing: the body
  * must be at least the header size, carry a supported schema, and be EXACTLY the
- * length its declared section sizes imply — no missing bytes, no trailing
+ * length its declared section sizes imply, no missing bytes, no trailing
  * garbage. Anything else throws rather than silently returning wrong/short data.
  */
 export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
@@ -304,7 +304,7 @@ export class RegionFile {
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
 
-        // ALWAYS allocate a fresh sector run — never overwrite the sectors the
+        // ALWAYS allocate a fresh sector run, never overwrite the sectors the
         // committed header currently points at, even when the sector count is
         // unchanged. The old run is freed only AFTER the header commit (see
         // writeChunkBatch), so a crash mid-write leaves the committed chunk fully

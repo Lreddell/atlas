@@ -53,7 +53,7 @@ class EntityManager {
     private projectiles: Projectile[] = [];
     private shockwaves: Shockwave[] = [];
     // Pending boss-loot drop (fires BOSS_DEFEAT_ALTAR_DELAY_MS after a kill).
-    // Tracked so clear() (world unload) can cancel it — otherwise the timer
+    // Tracked so clear() (world unload) can cancel it, otherwise the timer
     // would spawn the Warden's loot into whatever world is loaded next.
     private lootDropTimer: ReturnType<typeof setTimeout> | null = null;
     private nextId = 1;
@@ -125,7 +125,7 @@ class EntityManager {
     getEntity(id: number): Entity | undefined {
         return this.entities.get(id);
     }
-    /** First entity matching pred — iterates the live map, so per-frame callers
+    /** First entity matching pred, iterates the live map, so per-frame callers
      *  (e.g. the boss beam renderer) don't allocate a fresh entity array. */
     findEntity(pred: (e: Entity) => boolean): Entity | undefined {
         for (const e of this.entities.values()) if (pred(e)) return e;
@@ -232,7 +232,7 @@ class EntityManager {
         const e = this.entities.get(id);
         if (!e || e.hp <= 0) return 'none';
         // Shielded bosses are fully invulnerable until every crystal is broken:
-        // no damage, no knockback, no white hurt flash — only a shield shimmer.
+        // no damage, no knockback, no white hurt flash, only a shield shimmer.
         if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
         const hpBefore = e.hp;
         e.hp -= amount;
@@ -274,7 +274,7 @@ class EntityManager {
     }
 
     /**
-     * Despawn every boss and clear the boss bar. Used when the player dies — the
+     * Despawn every boss and clear the boss bar. Used when the player dies, the
      * fight ends, the boss leaves, and it can be re-summoned at the altar. Its
      * shield crystals are restored so the next attempt starts clean.
      */
@@ -293,7 +293,7 @@ class EntityManager {
     }
 
     // Remove a boss (NOT a defeat: no drops, no region cleanse) and clear any of
-    // its still-standing shield crystals — the arena is empty until re-summoned.
+    // its still-standing shield crystals, the arena is empty until re-summoned.
     private despawnBoss(e: Entity): void {
         for (const c of e.shieldCrystalPositions ?? []) {
             if (worldManager.hasChunk(Math.floor(c.x / 16), Math.floor(c.z / 16))
@@ -310,7 +310,7 @@ class EntityManager {
     /**
      * Passive prop/vehicle simulation (boats). While ridden the player's physics
      * drives pos/yaw directly, so the tick does nothing. Unridden, a floating
-     * kind bobs at the water surface (buoyancy + heavy vertical damping — the
+     * kind bobs at the water surface (buoyancy + heavy vertical damping, the
      * same profile as the ridden boat physics) and drifts to a stop; otherwise
      * it just falls and settles.
      */
@@ -397,7 +397,7 @@ class EntityManager {
             particleFx.burst({ x: cx, y: cy, z: cz, color: col, color2: [1, 1, 1], count: 80, speed: 13, upBias: 4, spread: 1, size: 0.34, life: 1.3, gravity: 7, drag: 0.8 });
             particleFx.burst({ x: cx, y: cy, z: cz, color: FX_CHARGED, color2: [1, 0.9, 1], count: 60, speed: 7, upBias: 6, spread: 1, size: 0.28, life: 1.6, gravity: 2, drag: 0.6 });
             addTrauma(1.0);
-            // The fight is over — clear every bolt and shockwave so the dead Warden's
+            // The fight is over, clear every bolt and shockwave so the dead Warden's
             // attacks can't keep hitting the player during the victory moment.
             this.projectiles = [];
             this.shockwaves = [];
@@ -446,7 +446,7 @@ class EntityManager {
             }
 
             // A boss whose fight the player has abandoned (wandered far from the
-            // arena, or died) despawns — the bar clears and it can be re-summoned.
+            // arena, or died) despawns, the bar clears and it can be re-summoned.
             if (e.isBoss && e.home) {
                 const far = !pp || Math.hypot(pp.x - e.home.x, pp.z - e.home.z) > BOSS_DESPAWN_RADIUS;
                 if (far) {
@@ -526,7 +526,7 @@ class EntityManager {
             if (shieldHover && pp) {
                 // Floaty levitation while shielded: ease vertical velocity toward a
                 // gentle drift that tracks the climbing player's height, capped low
-                // so the Warden rises and settles like it's weightless — no snappy
+                // so the Warden rises and settles like it's weightless, no snappy
                 // elevator. The slow approach (dt-scaled lerp) is what reads as float.
                 const dyTarget = (pp.y + 0.5) - e.pos.y;
                 const want = THREE.MathUtils.clamp(dyTarget * 1.8, -3, 4);
@@ -576,7 +576,7 @@ class EntityManager {
     // The Magnetic Warden's combat. Polarity keeps swapping throughout. While
     // SHIELDED it lays down a dodge barrage (you break the pillar crystals). Once
     // VULNERABLE it loops: a timed dodge barrage, then it stops and fires a single
-    // deflectable purple "parry" bolt — hit that back to deal ~1/12 of its HP.
+    // deflectable purple "parry" bolt, hit that back to deal ~1/12 of its HP.
     // Below the frenzy threshold it speeds everything up but still gives parries.
     private tickBossMechanics(
         e: Entity, kind: EntityKind,
@@ -590,13 +590,13 @@ class EntityManager {
             if (e.polarityTimer <= 0) {
                 e.polarity *= -1;
                 // Last phase keeps the SAME average cadence as the other phases, but
-                // jitters the interval (0.6x–1.5x) so the player can't time the swaps —
+                // jitters the interval (0.6x–1.5x) so the player can't time the swaps :
                 // less predictable, not faster.
                 e.polarityTimer = frenzy
                     ? kind.polaritySwapInterval * (0.6 + Math.random() * 0.9)
                     : kind.polaritySwapInterval;
                 if (e.bossId) gameEvents.emit('boss:polarity', { bossId: e.bossId, entityId: e.id, polarity: e.polarity });
-                // No shove/hop on a polarity swap — it was nudging the player every
+                // No shove/hop on a polarity swap, it was nudging the player every
                 // few seconds anywhere in the arena and wrecking pillar jumps. The
                 // dodge mechanic is the SLAM shockwave (which still launches), and the
                 // boss's continuous field still pulls the player like a magnet block.
@@ -605,7 +605,7 @@ class EntityManager {
 
         if (!kind.projectileInterval) return;
 
-        // Last phase (frenzy): no barrage windows, no fire-holds — it keeps up a
+        // Last phase (frenzy): no barrage windows, no fire-holds, it keeps up a
         // continuous, rapid volley while still weaving in the deflectable parry bolt
         // (the only way to damage it) on a short cadence. Relentless, like the
         // original implementation.
@@ -653,7 +653,7 @@ class EntityManager {
 
         e.barrageTimer -= dt;
         if (e.barrageTimer > 0) {
-            // Dodge barrage — faster and wider during the frenzy.
+            // Dodge barrage, faster and wider during the frenzy.
             e.projectileTimer -= dt;
             if (e.projectileTimer <= 0) {
                 e.projectileTimer = kind.projectileInterval * (frenzy ? 0.5 : 1);
@@ -711,7 +711,7 @@ class EntityManager {
 
         const boss = best.sourceId != null ? this.entities.get(best.sourceId) : undefined;
         // Deflect parry: the bolt flies straight back along the player's aim
-        // direction — NOT homing on the boss. To land a hit you must be looking
+        // direction, NOT homing on the boss. To land a hit you must be looking
         // through the boss at the moment you strike the bolt.
         const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
         const speed = 30;
@@ -736,7 +736,7 @@ class EntityManager {
         const dx = pp.x - ox, dy = (pp.y + PLAYER_HEIGHT * 0.9) - oy, dz = pp.z - oz; // aim at the head
         const d = Math.hypot(dx, dy, dz) || 1;
         const speed = enraged ? 23 : 18;
-        // A dense 5-bolt fan, widening to 7 once enraged — heavy pressure on a
+        // A dense 5-bolt fan, widening to 7 once enraged, heavy pressure on a
         // player exposed on a pillar.
         const spreads = enraged
             ? [-0.45, -0.3, -0.15, 0, 0.15, 0.3, 0.45]
@@ -768,7 +768,7 @@ class EntityManager {
         // Iterate a captured reference: a deflected bolt can be the killing blow,
         // and kill() clears this.projectiles so the dead Warden's airborne volley
         // stops. Without the guards below, this loop would keep walking the stale
-        // array and the final assignment would resurrect those bolts — letting a
+        // array and the final assignment would resurrect those bolts, letting a
         // boss that is already dead keep hitting the player during the victory.
         const list = this.projectiles;
         const survivors: Projectile[] = [];
@@ -778,7 +778,7 @@ class EntityManager {
             p.pos.y += p.vel.y * dt;
             p.pos.z += p.vel.z * dt;
             if (p.ttl <= 0) continue;
-            // Only solid blocks stop a bolt — water landing pools and foliage don't.
+            // Only solid blocks stop a bolt, water landing pools and foliage don't.
             if (isSolid(worldManager, Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) continue;
 
             if (p.owner === 'player') {
@@ -867,7 +867,7 @@ class EntityManager {
         const col = polarityFxColor(e.polarity);
 
         if (e.slamState === 'charging') {
-            // Crouch + gather: energy streams UP into the boss off the ground — the
+            // Crouch + gather: energy streams UP into the boss off the ground, the
             // "he's about to launch" tell (effects, not UI).
             e.slamPhaseTimer -= dt;
             if (Math.random() < 0.6) {
@@ -906,7 +906,7 @@ class EntityManager {
             }
         } else if (e.slamState === 'hanging') {
             // Track toward the player, then LOCK the target (the indicator stops moving
-            // and flashes) for a good beat before it falls — AFK players get caught,
+            // and flashes) for a good beat before it falls, AFK players get caught,
             // but there's clearly time to read it and sidestep the locked spot.
             if (pp && e.slamPhaseTimer > 0.45) this.slamTrack(e, pp, track * 0.9, dt);
             e.slamPhaseTimer -= dt;
@@ -940,7 +940,7 @@ class EntityManager {
                     });
                 }
                 // Hold the boss's polarity steady briefly after the slam (it stays
-                // whatever it slammed with — including a feint flip) and give a short
+                // whatever it slammed with, including a feint flip) and give a short
                 // breather before it resumes firing. The first slam phase recovers a
                 // touch faster than before so it gets back to swapping/shooting sooner;
                 // the relentless frenzy barely pauses at all.
@@ -980,7 +980,7 @@ class EntityManager {
             if (!s.hit && targetable && pp) {
                 const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
                 // Resolve once the ring's edge sweeps over the player (and they're
-                // near the floor — a player already airborne above it is skipped).
+                // near the floor, a player already airborne above it is skipped).
                 if (s.radius >= dist && Math.abs(pp.y - s.y) < 3.5) {
                     s.hit = true;
                     const playerPol = inputState.magneticPolarity >= 0 ? 1 : -1;
@@ -1053,7 +1053,7 @@ class EntityManager {
      * Whether the entity can stand at (x,z) with feet near feetY: there is solid
      * support within a step below (so it won't walk off a ledge into the moat),
      * and it isn't stepping onto lava. Lava is non-solid so it yields no support,
-     * which already reads as a ledge — the explicit check guards flush lava too.
+     * which already reads as a ledge, the explicit check guards flush lava too.
      */
     private isSafeGround(x: number, feetY: number, z: number, w: number): boolean {
         if (worldManager.getBlock(Math.floor(x), Math.floor(feetY), Math.floor(z), false) === BlockType.LAVA) {

@@ -301,7 +301,7 @@ const App: React.FC = () => {
   // True while handleStartGame is running (guards against double-click double-open).
   const startingWorldRef = useRef(false);
   // True while the towers' magnet climb faces are present (placed for a fight, until
-  // stripped at 50% or on reset) — so we never strip/place redundantly.
+  // stripped at 50% or on reset), so we never strip/place redundantly.
   const climbMagnetsActiveRef = useRef(false);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
@@ -570,7 +570,7 @@ const App: React.FC = () => {
   // --- AUTO SAVE LOGIC ---
   // Unified player damage entry point (fall/fire/drown via Player, plus entity
   // contact damage routed through the EntityManager hooks below).
-  // Raw damage that bypasses armor — for environmental sources (fall, fire,
+  // Raw damage that bypasses armor, for environmental sources (fall, fire,
   // drowning), which armor does not reduce.
   const applyRawDamage = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
@@ -581,7 +581,7 @@ const App: React.FC = () => {
       });
   }, [gameMode]);
 
-  // Combat damage (entity contact/attacks) — reduced by armor, and wears it down.
+  // Combat damage (entity contact/attacks), reduced by armor, and wears it down.
   const damagePlayer = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
       applyRawDamage(Math.max(0, Math.ceil(applyArmor(d, equipment))));
@@ -598,7 +598,7 @@ const App: React.FC = () => {
               damagePlayer(amount);
               const length = Math.hypot(knockX, knockZ) || 1;
               // Knockback scales with hit strength, so heavy boss attacks (projectiles,
-              // slams) really throw the player around — not just a nudge.
+              // slams) really throw the player around, not just a nudge.
               const kb = 6 + amount * 0.8;
               const up = 3 + amount * 0.25;
               playerRef.current?.applyImpulse((knockX / length) * kb, up, (knockZ / length) * kb);
@@ -673,7 +673,7 @@ const App: React.FC = () => {
 
       // A save failure must never crash the session: every caller fires this
       // forget-style, so a thrown error would become an unhandled rejection and
-      // trip the fatal-error overlay — forcing a reload that loses more progress
+      // trip the fatal-error overlay, forcing a reload that loses more progress
       // than the failed save did. Catch here, warn the player once (until a save
       // succeeds again), and resolve normally so quit/respawn flows still proceed.
       try {
@@ -704,14 +704,14 @@ const App: React.FC = () => {
           if (!saveErrorNotifiedRef.current) {
               saveErrorNotifiedRef.current = true;
               const msg = e instanceof Error ? e.message : String(e);
-              worldManager.log(`World save failed — your latest progress may not be saved. (${msg})`, 'error');
+              worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
       }
   }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
-  // auto-save during active play — go through a latest-value ref instead.
+  // auto-save during active play, go through a latest-value ref instead.
   const saveGameRef = useRef(saveGame);
   useEffect(() => { saveGameRef.current = saveGame; }, [saveGame]);
 
@@ -887,7 +887,7 @@ const App: React.FC = () => {
           // Drop-aging rule: an item entity only counts down its 5-minute despawn timer
           // while its chunk is loaded (i.e. near the player). Drops the player has
           // wandered away from keep their timer paused and persist, so going far away
-          // never makes them "gone forever" — they resume aging when you return.
+          // never makes them "gone forever", they resume aging when you return.
           const px = playerPosRef.current.x, pz = playerPosRef.current.z;
           const loadedRange = renderDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
           const loadedR2 = loadedRange * loadedRange;
@@ -895,7 +895,7 @@ const App: React.FC = () => {
               let anyExpired = false;
               for (const d of currentDrops) {
                   const dx = d.position[0] - px, dz = d.position[2] - pz;
-                  // Mutated in place — these Drop objects are already mutated by the
+                  // Mutated in place, these Drop objects are already mutated by the
                   // physics loop (DropManager), so this stays consistent and cheap.
                   if (dx * dx + dz * dz <= loadedR2) d.age += TICK_MS;
                   if (d.age >= DROP_LIFETIME_MS) anyExpired = true;
@@ -930,7 +930,7 @@ const App: React.FC = () => {
             || craftingGrid2x2.some(i => i !== null)
             || craftingGrid3x3.some(i => i !== null)
             || EQUIPMENT_SLOTS.some(slot => equipment[slot] !== null);
-        // /keepinventory keeps everything through death — skip the drop entirely.
+        // /keepinventory keeps everything through death, skip the drop entirely.
         if (hasItems && !keepInventory) {
             const extractedEquipment = extractEquipmentItems(equipment);
             setDrops(prev => {
@@ -1002,7 +1002,7 @@ const App: React.FC = () => {
       if (daisDelayMs > 0) {
           // Tracked (id + the restore itself) so quitting the world inside the
           // delay can flush it synchronously into the OLD world before the final
-          // save — a stale timer firing later would setBlocks into whatever world
+          // save, a stale timer firing later would setBlocks into whatever world
           // is loaded next, and cancelling without flushing would save an arena
           // with no dais/altar to re-summon at.
           if (daisRestoreRef.current) clearTimeout(daisRestoreRef.current.id);
@@ -1022,7 +1022,7 @@ const App: React.FC = () => {
   // the saved + in-memory arena is clean for the next visit). Works whether we are
   // mid-cutscene (no boss spawned yet) or mid-fight: cancels the cutscene, despawns
   // the boss, clears any standing crystals, and rebuilds the dais/altar + bridges
-  // synchronously (no delay — we are about to save).
+  // synchronously (no delay, we are about to save).
   const resetSummonArena = useCallback(() => {
       // A defeat's delayed dais rebuild may still be pending: flush it into the
       // current world NOW (we are about to save/leave) instead of letting the
@@ -1063,7 +1063,7 @@ const App: React.FC = () => {
           lastDeniedAt = now;
           const region = regionId ? getRegionById(regionId) : undefined;
           const where = region ? region.displayName : 'this region';
-          worldManager.log(`${where} is sealed — defeat its guardian to reshape it.`, 'error');
+          worldManager.log(`${where} is sealed; defeat its guardian to reshape it.`, 'error');
           soundManager.play('ui.click', { volume: 0.3, pitch: 0.6 });
       });
       const offCleansed = gameEvents.on('region:cleansed', ({ regionId }) => {
@@ -1086,7 +1086,7 @@ const App: React.FC = () => {
       const offCineEnd = gameEvents.on('cinematic:end', () => {
           setCinematicMode(false);
           // Hand the player back at the cutscene's return spot (farther from the
-          // altar) looking straight at the energy ball — room to run before it blows.
+          // altar) looking straight at the energy ball, room to run before it blows.
           const rp = bossSummon.returnPos;
           const feet = new THREE.Vector3(rp.x, playerPosRef.current.y, rp.z);
           playerRef.current?.teleport(feet);
@@ -1096,11 +1096,11 @@ const App: React.FC = () => {
       });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
-      // The boss launched a deflectable parry bolt — telegraph it with a cue.
+      // The boss launched a deflectable parry bolt, telegraph it with a cue.
       const offParry = gameEvents.on('boss:parry', () => {
           soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
       });
-      // The Warden took a hit (a deflected bolt landing, etc.) — a hurt grunt.
+      // The Warden took a hit (a deflected bolt landing, etc.), a hurt grunt.
       const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
       });
@@ -1128,7 +1128,7 @@ const App: React.FC = () => {
       const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
       // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
-      // its tracking beam dissipates — BossCinematic handles the visual).
+      // its tracking beam dissipates, BossCinematic handles the visual).
       const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
           entityManager.onShieldCrystalBroken(regionId);
           soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
@@ -1204,7 +1204,7 @@ const App: React.FC = () => {
 
   // Apply durability damage to a tool/weapon in a slot. Durability is lazy-init
   // from the registry on first use; the item breaks (disappears) at 0. Only in
-  // survival — creative/spectator never wear tools down.
+  // survival, creative/spectator never wear tools down.
   const damageHeldItem = useCallback((slot: number, amount: number) => {
     if (gameMode !== 'survival') return;
     setInventory(prev => {
@@ -1896,7 +1896,7 @@ const App: React.FC = () => {
               logMsg('You are in ordinary, editable terrain (no region).', 'info');
           } else {
               const state = progression.isRegionCleansed(region.id) ? 'cleansed (editable)' : 'sealed (read-only)';
-              logMsg(`Region: ${region.displayName} [${region.id}] — ${state}. Guardian: ${region.bossId}.`, 'info');
+              logMsg(`Region: ${region.displayName} [${region.id}]; ${state}. Guardian: ${region.bossId}.`, 'info');
           }
       } else if (parts[0] === '/cleanse') {
           const p = playerPosRef.current;
@@ -1990,12 +1990,12 @@ const App: React.FC = () => {
           }
       } else if (parts[0] === '/help') {
           // Grouped, compact command listing (autocomplete carries the details).
-          logMsg('Commands — world: /tp /locate /setspawn /spawn /time /phase', 'info');
+          logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
           logMsg('Progression: /boss /region /cleanse /seal /magfields', 'info');
           logMsg('Player: /gamemode /giveitem /equip /unequip /keepinventory', 'info');
           logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
           logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
-      } else { logMsg(`Unknown command: ${parts[0]} — try /help`, 'error'); }
+      } else { logMsg(`Unknown command: ${parts[0]}; try /help`, 'error'); }
       if (commandValue.trim()) {
           commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
           setHistoryIndex(-1);
@@ -2379,7 +2379,7 @@ const App: React.FC = () => {
 
       // Suppress browser keyboard shortcuts (Ctrl/Cmd/Alt combos: reload, find,
       // save-page, print, bookmark, downloads, history, zoom, etc.) EVERYWHERE in
-      // the app — menu, loading, and in-world alike. The one exception is when a
+      // the app, menu, loading, and in-world alike. The one exception is when a
       // text field is focused, where Ctrl+A/C/V/X/Z must keep working for editing.
       // Plain keys with no modifier (F11/F12 fullscreen/devtools) are never touched.
       const blockBrowserShortcut = (event: KeyboardEvent) => {
@@ -2403,7 +2403,7 @@ const App: React.FC = () => {
   }, [isElectron]);
 
   // Guard against accidentally closing/reloading the tab (Ctrl+W, Ctrl+R, browser
-  // back, etc.) — the destructive shortcuts that keydown preventDefault can't stop.
+  // back, etc.), the destructive shortcuts that keydown preventDefault can't stop.
   // Active everywhere (menu included) so a stray Ctrl+W becomes a confirm prompt
   // instead of instantly killing the app.
   useEffect(() => {
@@ -2535,7 +2535,7 @@ const App: React.FC = () => {
     });
     // Persist the post-death state immediately (cleared bed spawn, new position,
     // reset health/inventory) so a crash before the next autosave can't revert it.
-    // The vitals reset above hasn't committed yet, so pass it explicitly — the
+    // The vitals reset above hasn't committed yet, so pass it explicitly, the
     // captured closure would otherwise save the death-render's health of 0.
     void saveGameRef.current({
         force: true,
@@ -2545,8 +2545,8 @@ const App: React.FC = () => {
   };
 
   // --- Boat riding (real world entities; persisted in WorldMetadata.boats) ---
-  // Place: use a Boat item on a water cell — spawns a boat entity (the item is
-  // consumed in survival). Board: right-click the boat. Dismount: sneak — the
+  // Place: use a Boat item on a water cell, spawns a boat entity (the item is
+  // consumed in survival). Board: right-click the boat. Dismount: sneak, the
   // boat stays where you left it. Break: punch it; it drops its Boat item.
   const handlePlaceBoat = useCallback((x: number, y: number, z: number) => {
       // Spawn slightly above the clicked water cell; hull buoyancy settles it.
@@ -2643,8 +2643,8 @@ const App: React.FC = () => {
 
       // Acquire the world for writing: a filesystem session lock on desktop, a
       // sync-access-handle lock in the OPFS worker, a no-op on IndexedDB. A locked
-      // world (already open in another window/tab) must NOT be entered as writable —
-      // two writers would corrupt the save — so abort back to the menu with a clear
+      // world (already open in another window/tab) must NOT be entered as writable :
+      // two writers would corrupt the save, so abort back to the menu with a clear
       // message. Other (non-lock) open errors are logged and entry proceeds.
       try {
           await WorldStorage.openWorld(worldId);
@@ -2657,7 +2657,7 @@ const App: React.FC = () => {
           }
           console.warn('[Saves] Could not acquire world lock:', lockErr);
       }
-      // Entering a world is a user gesture — ask the browser to keep our storage
+      // Entering a world is a user gesture, ask the browser to keep our storage
       // persistent so worlds aren't auto-evicted under storage pressure (no-op on
       // desktop / when already granted).
       void requestPersistentStorage();
@@ -2684,7 +2684,7 @@ const App: React.FC = () => {
       setCinematicMode(false);
       summonArenaRef.current = null;
       // Per-world React state: item entities and chat/log lines belong to the
-      // previous session — without this, World A's ground drops render (and are
+      // previous session, without this, World A's ground drops render (and are
       // collectible) at their old coordinates inside World B.
       setDrops([]);
       setMessages([]);
@@ -2694,7 +2694,7 @@ const App: React.FC = () => {
       progression.load(meta.progression);
 
       // Respawn this world's parked boats (entityManager.clear() above removed
-      // the previous world's — boats never leak across worlds).
+      // the previous world's, boats never leak across worlds).
       entityManager.restoreBoats(meta.boats);
 
       if (meta.worldSpawn) {
@@ -2828,7 +2828,7 @@ const App: React.FC = () => {
       worldManager.spawnDrop(stackOrType, x, y, z);
   }, []);
 
-  // Stable identity — an inline arrow here re-bound InteractionController's
+  // Stable identity, an inline arrow here re-bound InteractionController's
   // window mouse listeners on every App render.
   const handleSleepInBed = useCallback((x: number, y: number, z: number) => {
       pendingBedSpawnRef.current = { x, y, z };

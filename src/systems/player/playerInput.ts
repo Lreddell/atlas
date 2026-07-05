@@ -111,7 +111,7 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             break;
         case 'KeyR':
             if (e && e.repeat) break;
-            // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity —
+            // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity :
             // the player is usually holding Ctrl (sprint) during a fight, and that
             // must not eat the polarity swap. (The global shortcut block also stops
             // reload; this is belt-and-suspenders.)

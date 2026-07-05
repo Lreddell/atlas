@@ -21,7 +21,7 @@ Place replacement sound effects in this folder using these exact names:
 Accepted formats: .ogg (preferred), .mp3, .wav. Use the exact base name above;
 the extension is resolved automatically (.ogg first).
 
-The files are optional — the slot is simply silent while a file is missing,
+The files are optional; the slot is simply silent while a file is missing,
 empty, or undecodable. (The boss music itself lives in ../music/.)
 
 After replacing a file during development, run:

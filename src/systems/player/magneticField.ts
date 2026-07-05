@@ -231,7 +231,7 @@ export function sampleRawMagneticField(
 // --- Boss magnetic field -----------------------------------------------------
 // The Magnetic Warden emits a polarity field across the whole arena. With
 // controllable polarity (boots), the SAME sign as the boss repels the player
-// (pushed away) and the OPPOSITE attracts (pulled in) — so the player must keep
+// (pushed away) and the OPPOSITE attracts (pulled in), so the player must keep
 // flipping polarity as the boss swaps its own. Unlike the block field this is a
 // strong, arena-scale force, so it is clamped (as an acceleration) to stay fair
 // and is applied with the player's velocity in hand so jumps are never capped.
@@ -295,7 +295,7 @@ export function bossFieldVelocityDelta(
         const uz = (sign * ez) / dist;
 
         // Ramp the player's speed along the push direction up to the target
-        // drift, but never decelerate or overshoot — that is what makes it
+        // drift, but never decelerate or overshoot, that is what makes it
         // air-safe. `force` controls how fast it ramps (blocks/s²).
         const target = BOSS_FIELD_MAX_DRIFT * falloff;
         const along = vx * ux + vy * uy + vz * uz;

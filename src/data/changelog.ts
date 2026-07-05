@@ -31,7 +31,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     {
         version: 'v1.1.0-alpha',
         displayVersion: 'Alpha 1.1.0',
-        date: '',
+        date: '2026-07-05',
         tagline: 'A magnetic boss adventure, expanded world generation, boats, and safer local saves.',
         highlights: [
             'Explore the new Magnetic Fields, master polarity traversal, and defeat the Magnetic Warden in a multi-stage arena fight.',
@@ -62,7 +62,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Added jungle, dark oak, and acacia trees with matching planks, saplings, slabs, stairs, crafting recipes, and dedicated textures.',
                     'Added layered tunnel and cavern generation across deepslate depths, with dripstone caverns, glowing lush hollows, and rare amethyst geodes.',
                     'Lush and dripstone cave biomes are large, coherent regions (~130 blocks across) but rare, so stumbling into one is a find. Deepslate uses a lighter palette that remains readable under low cave light.',
-                    'Every ore — coal, iron, copper, gold, lapis, diamond, emerald — has a deepslate variant that generates in the deep band, with its own texture and matching drops.',
+                    'Every ore (coal, iron, copper, gold, lapis, diamond, emerald) has a deepslate variant that generates in the deep band, with its own texture and matching drops.',
                     "New foods: bananas drop rarely from jungle leaves, glowing Lumen Berries can be foraged from cave glow lichen, and the three combine into a hearty Forager's Bowl at a crafting table. Dark oak leaves can drop apples like other oaks.",
                     'A new World Editor Caves tab exposes carving layers, the deepslate band, and decoration densities over a live vertical cross-section preview.',
                 ],
@@ -119,7 +119,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: '2026-06-15',
         tagline: 'A large stability, performance, and content update.',
         highlights: [
-            'Chunk streaming moved to a unified Web Worker pool — no more severe frame drops at high render distance.',
+            'Chunk streaming moved to a unified Web Worker pool; no more severe frame drops at high render distance.',
             'Physics-based movement rebuild with real momentum, sprint-jumping, and auto-step.',
             'First slabs & stairs for 9 material families, with full placement control.',
             'New tools, sandstone crafting, and recipes for every new block.',

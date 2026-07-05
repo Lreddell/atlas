@@ -3,7 +3,7 @@
 // its boss is defeated.
 //
 // MVP: a region is derived directly from the biome at a position (deterministic,
-// needs no per-chunk storage — biomes are noise-derived via getBiome). The
+// needs no per-chunk storage, biomes are noise-derived via getBiome). The
 // REGION_DEFS table marks which biomes are sealed-by-default and ties each to a
 // boss. This is intentionally pluggable: a future version can resolve regions
 // from authored bounding boxes / structures instead of biome id without changing

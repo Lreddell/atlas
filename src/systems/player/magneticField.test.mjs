@@ -150,7 +150,7 @@ test('boss field: zero outside range, stronger up close, drift-capped (air-safe)
     assert.equal(farPush, 0, 'far field has already reached its lower drift cap');
 
     // Velocity-aware: a player already drifting at/over the target receives no
-    // further push — this is what stops an airborne player being flung.
+    // further push, this is what stops an airborne player being flung.
     const atTarget = bossFieldVelocityDelta(src, 3, 0, 0, BOSS_FIELD_MAX_DRIFT + 5, 0, 0, 1, dt);
     assert.equal(atTarget.x, 0, 'should never push past the drift cap');
 

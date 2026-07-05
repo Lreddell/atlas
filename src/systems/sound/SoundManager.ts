@@ -90,7 +90,7 @@ class SoundManager {
 
     public async init() {
         if (this.ctx) {
-            // Already initialized — just resume if suspended, don't reload the folder index
+            // Already initialized, just resume if suspended, don't reload the folder index
             // (reloading clears the index causing a brief gap where tracks appear missing)
             if (this.ctx.state === 'suspended') {
                 this.ctx.resume().catch(() => {});
@@ -487,7 +487,7 @@ class SoundManager {
             nextDeck.src = fullUrl;
             nextDeck.load();
             // Playback rate < 1 slows the track and (with pitch-preservation off) lowers
-            // its pitch too — used for the subtle "night" effect. Disable preservesPitch
+            // its pitch too, used for the subtle "night" effect. Disable preservesPitch
             // across vendor prefixes so the pitch actually drops with the speed.
             const rateDeck = nextDeck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
             rateDeck.preservesPitch = false;
@@ -536,10 +536,10 @@ class SoundManager {
             prevGain.gain.setValueAtTime(prevGain.gain.value, now);
             prevGain.gain.linearRampToValueAtTime(0, now + fadeOutTime);
 
-            // Pause the retired deck once its fade completes — UNLESS a newer
+            // Pause the retired deck once its fade completes, UNLESS a newer
             // transition has made it the live deck again in the meantime. (This
-            // guard used to be inverted: it never paused retired decks — they
-            // kept streaming silently at gain 0 — and on a quick A→B→A reuse it
+            // guard used to be inverted: it never paused retired decks, they
+            // kept streaming silently at gain 0, and on a quick A→B→A reuse it
             // paused the deck that was actively playing, which is exactly the
             // intermittent "music cuts out" stutter, menu included.)
             // The timeout is tracked in the per-deck stop slot so both stopMusic

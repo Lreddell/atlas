@@ -1,9 +1,9 @@
-# birch_forest — active music tags
+# birch_forest: active music tags
 
 `tags.json` lists the music tags that play in the **birch_forest** biome:
 
-- `forest` — songs from `music/forest/`
-- `birch_forest` — songs from `music/birch_forest/`
+- `forest`: songs from `music/forest/`
+- `birch_forest`: songs from `music/birch_forest/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

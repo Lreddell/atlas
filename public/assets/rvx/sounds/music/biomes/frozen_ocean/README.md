@@ -1,9 +1,9 @@
-# frozen_ocean — active music tags
+# frozen_ocean: active music tags
 
 `tags.json` lists the music tags that play in the **frozen_ocean** biome:
 
-- `cold` — songs from `music/cold/`
-- `frozen_ocean` — songs from `music/frozen_ocean/`
+- `cold`: songs from `music/cold/`
+- `frozen_ocean`: songs from `music/frozen_ocean/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

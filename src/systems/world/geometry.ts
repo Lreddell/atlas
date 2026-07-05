@@ -266,7 +266,7 @@ export function generateGeometryData(
     lights: NeighborLight,
     // When true (far chunks), faces whose facing cell has zero sky AND zero block
     // light are skipped entirely. Enclosed cave geometry is only ever visible from
-    // inside the cave — i.e. when the chunk is near — so distant chunks don't need
+    // inside the cave (i.e. when the chunk is near) so distant chunks don't need
     // it. This typically halves or better the triangle count of a full-depth chunk.
     cullDarkFaces: boolean = false
 ): GeometryResult {
@@ -328,7 +328,7 @@ export function generateGeometryData(
     };
 
     // Slabs/stairs attenuate light by shape (getDirectionalOpacity), so getOpacity no
-    // longer flags them as occluders — but they're still solid partial geometry, so
+    // longer flags them as occluders, but they're still solid partial geometry, so
     // they must darken neighbouring AO corners. Treat any shaped block as an occluder.
     const isAOOccluder = (type: BlockType) =>
         type !== BlockType.AIR && (IS_SHAPED[type] === 1 || getOpacity(type) >= 2);
@@ -365,7 +365,7 @@ export function generateGeometryData(
                     continue;
                 }
 
-                // Note: shaped blocks intentionally ignore cullDarkFaces — they are
+                // Note: shaped blocks intentionally ignore cullDarkFaces, they are
                 // rare, player-placed, and small, so far-chunk dark-face culling would
                 // risk punching visible holes in them for negligible triangle savings.
                 //
@@ -416,7 +416,7 @@ export function generateGeometryData(
                     // A perpendicular neighbour only borders this vertex if the box actually
                     // reaches the cell edge in that direction. A sub-box edge that stops
                     // mid-cell (e.g. a stair step's underside at y=0.5) has no neighbour
-                    // there, so it must not pick up AO/dark light from the cell beyond —
+                    // there, so it must not pick up AO/dark light from the cell beyond :
                     // that over-reach was darkening the tops of stairs.
                     const av = face.aoVectors[k];
                     const a1 = av[0], a2 = av[1];
@@ -636,7 +636,7 @@ export function generateGeometryData(
         }
     };
 
-    // Bound meshing to the occupied Y range — skips the empty sky above terrain,
+    // Bound meshing to the occupied Y range, skips the empty sky above terrain,
     // which is most of the 384-block column for typical chunks.
     const LAYER_SIZE = CHUNK_SIZE * CHUNK_SIZE;
     let minOccY = -1;
@@ -650,7 +650,7 @@ export function generateGeometryData(
         if (occupied) { minOccY = y; break; }
     }
     if (minOccY === -1) {
-        // Entirely air — nothing to mesh.
+        // Entirely air, nothing to mesh.
         return {
             opaque: opaqueBuffer.slice(),
             cutout: cutoutBuffer.slice(),

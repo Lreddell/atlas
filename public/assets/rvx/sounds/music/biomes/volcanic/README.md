@@ -1,9 +1,9 @@
-# volcanic — active music tags
+# volcanic: active music tags
 
 `tags.json` lists the music tags that play in the **volcanic** biome:
 
-- `volcanic` — songs from `music/volcanic/`
-- `caves` — songs from `music/caves/`
+- `volcanic`: songs from `music/volcanic/`
+- `caves`: songs from `music/caves/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

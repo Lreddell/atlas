@@ -1,7 +1,7 @@
 // Browser storage durability helpers. OPFS + IndexedDB share one per-origin quota
 // and one persistence mode; requesting "persistent" stops the browser from
 // auto-evicting worlds under storage pressure. (It does NOT survive the user
-// clearing site data — that's what the export-to-disk path is for.)
+// clearing site data, that's what the export-to-disk path is for.)
 
 /** Ask the browser to make this origin's storage persistent. Best-effort + idempotent. */
 export async function requestPersistentStorage(): Promise<boolean> {

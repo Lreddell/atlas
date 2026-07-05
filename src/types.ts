@@ -177,7 +177,7 @@ export enum BlockType {
   POLARITY_BOOTS_UPGRADE = 167,
   UPGRADED_POLARITY_BOOTS = 168,
 
-  // Boat — rideable water-traversal item (see systems/player/boat). Inventory
+  // Boat, rideable water-traversal item (see systems/player/boat). Inventory
   // item only; the ridden boat is not a placed block.
   BOAT = 169,
 

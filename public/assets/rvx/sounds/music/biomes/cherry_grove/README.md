@@ -1,9 +1,9 @@
-# cherry_grove — active music tags
+# cherry_grove: active music tags
 
 `tags.json` lists the music tags that play in the **cherry_grove** biome:
 
-- `forest` — songs from `music/forest/`
-- `cherry_grove` — songs from `music/cherry_grove/`
+- `forest`: songs from `music/forest/`
+- `cherry_grove`: songs from `music/cherry_grove/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

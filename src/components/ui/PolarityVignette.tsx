@@ -3,7 +3,7 @@ import { gameEvents } from '../../systems/events/GameEvents';
 import { inputState } from '../../systems/player/playerInput';
 
 // A screen-edge colour rim showing the player's current magnetic polarity
-// (red = positive, blue = negative). Ambient, no-HUD feedback — it pulses
+// (red = positive, blue = negative). Ambient, no-HUD feedback, it pulses
 // brighter for a moment on each polarity flip.
 export const PolarityVignette: React.FC = () => {
     const [positive, setPositive] = useState(inputState.magneticPolarity > 0);

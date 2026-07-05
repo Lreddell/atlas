@@ -1,8 +1,8 @@
-# desert — active music tags
+# desert: active music tags
 
 `tags.json` lists the music tags that play in the **desert** biome:
 
-- `desert` — songs from `music/desert/`
+- `desert`: songs from `music/desert/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

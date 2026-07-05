@@ -21,7 +21,7 @@ const SAFE_WALK_WIDTH = PLAYER_WIDTH;
 const _inputVec = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
 
-// Consecutive slow-sprint ticks (single player — module state is fine)
+// Consecutive slow-sprint ticks (single player, module state is fine)
 let sprintSlowTicks = 0;
 
 export interface SimulationResult {
@@ -177,7 +177,7 @@ export function simulateStep(
         newVel.y *= BOAT_VERTICAL_DAMP;
         if (inWater) newVel.y += BOAT_BUOYANCY * dt;
         else if (newVel.y < 0) newVel.y = Math.max(newVel.y, -0.5);
-        // No jumping out of the hull — sneak is the dismount.
+        // No jumping out of the hull, sneak is the dismount.
     } else if (inFluid) {
         newVel.y *= inLava ? 0.8 : 0.9;
         
@@ -208,7 +208,7 @@ export function simulateStep(
     // --- Integration & Collision Resolution ---
 
     // Auto-step: when a horizontal move is blocked while grounded (and not jumping),
-    // lift over a low obstacle — slabs, stair steps, a single half-block. Flat-ground
+    // lift over a low obstacle, slabs, stair steps, a single half-block. Flat-ground
     // walking never collides horizontally, so normal movement feel is unaffected.
     const STEP_HEIGHT = 0.55;
     const tryStepUp = (): boolean => {
@@ -272,7 +272,7 @@ export function simulateStep(
                 // the reverted position sits in the air ABOVE it and getSupportTop
                 // (which only looks ~1 block down) misses. Sweep the feet down to
                 // the real surface, otherwise the player "lands" floating in the
-                // air — which, over a 1-deep water pool, also robs the landing of
+                // air, which, over a 1-deep water pool, also robs the landing of
                 // its fall-damage immunity and can be fatal.
                 let by = Math.floor(newPos.y);
                 const limit = by - Math.ceil(Math.abs(dy)) - 2;
@@ -305,8 +305,8 @@ export function simulateStep(
     }
 
     // --- Lenient Sprint Stop Check ---
-    // Only evaluated while grounded. A jump never cancels your sprint —
-    // sprint-jumping is a core movement tech — so airborne ticks neither cancel nor
+    // Only evaluated while grounded. A jump never cancels your sprint :
+    // sprint-jumping is a core movement tech, so airborne ticks neither cancel nor
     // accumulate toward a cancel. On the ground, a genuine wall bump (sustained low
     // speed) still ends the sprint after the grace window; a momentum direction flip
     // recovers before then.

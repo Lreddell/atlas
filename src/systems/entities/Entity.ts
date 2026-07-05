@@ -59,7 +59,7 @@ export interface Entity {
     slamGroundY: number;
     /** Seconds of post-spawn grace: present (music/bar) but passive, no attacks. */
     aggroGrace: number;
-    /** Rideable entities (boats): true while the player is aboard — the player's
+    /** Rideable entities (boats): true while the player is aboard, the player's
      *  physics drives the entity's position/yaw instead of its own tick. */
     ridden: boolean;
 }
@@ -175,7 +175,7 @@ export interface EntityKind {
 }
 
 export const ENTITY_KINDS: Record<string, EntityKind> = {
-    // Boat — a rideable, passive water vehicle. Placed by using a Boat item on
+    // Boat, a rideable, passive water vehicle. Placed by using a Boat item on
     // water; boarded with a right click; broken (a few punches) it drops its
     // item back. Unridden it floats and bobs at the surface; ridden, the
     // player's boat physics drives it. Persisted per world (WorldMetadata.boats).
@@ -228,7 +228,7 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         // Large enough to stay engaged with a player on the arena pillars across
         // the lava moat (forget range is 1.5×, covering the whole arena).
         aggroRange: 40,
-        contactDamage: 16,   // a DIRECT hit from the Warden hurts a lot — keep your distance
+        contactDamage: 16,   // a DIRECT hit from the Warden hurts a lot, keep your distance
         attackCooldown: 1.0,
         color: 0x8e24aa,
         isBoss: true,
@@ -237,11 +237,11 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         polaritySwapInterval: 6,
         // Heavy projectile pressure so climbing the pillars is a real gauntlet.
         projectileInterval: 1.5,
-        // Bolts hit softer now (and armor mitigates them) — the threat is volume.
+        // Bolts hit softer now (and armor mitigates them), the threat is volume.
         projectileDamage: 2,
         // Confined to the central platform so it never paths into the moat.
         leashRadius: 19,
-        // Platform-scale attract/repel field — deliberately short of the pillars
+        // Platform-scale attract/repel field, deliberately short of the pillars
         // (radius ~35) so it can't drag a climber off a tower.
         magneticFieldRange: 18,
         magneticFieldForce: 40,

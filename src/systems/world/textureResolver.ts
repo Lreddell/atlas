@@ -108,7 +108,7 @@ export function resolveTexture(
     }
     // 6. Chest
     else if (type === BlockType.CHEST) {
-        // Front Face Logic (Same as Furnace). Mask to the facing bits — natural
+        // Front Face Logic (Same as Furnace). Mask to the facing bits, natural
         // loot caches carry the 0x40 "unopened" flag in the same metadata byte.
         const facing = rotation & 0x3;
         let isFront = false;

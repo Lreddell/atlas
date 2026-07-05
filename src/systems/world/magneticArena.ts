@@ -1,4 +1,4 @@
-// Magnetic Warden arena — a dedicated, deterministic voxel-structure generator.
+// Magnetic Warden arena, a dedicated, deterministic voxel-structure generator.
 //
 // The arena is the monumental centre of every Magnetic Fields biome instance: a
 // large octagonal magnetite fortress whose battlemented outer wall is broken up by
@@ -98,7 +98,7 @@ export function generateMagneticWardenArena(
     buildBossSummoner(centerX, centerZ, baseY, ctx);
 }
 
-// Glowing Magnetite Shards for night visibility — a ring along the wall top, a
+// Glowing Magnetite Shards for night visibility, a ring along the wall top, a
 // sparse terrace ring, and a few by the centre. Kept modest (not overdone).
 function buildArenaLights(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     const ring = (r: number, n: number, y: number, off: number): void => {
@@ -299,7 +299,7 @@ function buildLaunchRoutes(centerX: number, centerZ: number, baseY: number, ctx:
 // 9b. Flush water landing pools on the platform edge facing each tower, so a
 //     player descending a pillar has a safe place to drop without taking heavy
 //     fall damage. The pool sits at the arena floor (1 deep over solid
-//     foundation), so it is flush — never floating or in an inescapable hole.
+//     foundation), so it is flush, never floating or in an inescapable hole.
 function buildPillarLandingPools(centerX: number, centerZ: number, baseY: number, ctx: ArenaCtx): void {
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         const c = arenaPillarCenter(centerX, centerZ, i);
@@ -339,7 +339,7 @@ function buildMagneticPillarTowers(centerX: number, centerZ: number, baseY: numb
                     continue;
                 }
                 // All-brick shaft by default (chiseled corners for shape). The two
-                // centre-facing MAGNET climb faces are NOT here — they're placed only
+                // centre-facing MAGNET climb faces are NOT here, they're placed only
                 // for the duration of a fight (during the summon cutscene), so the
                 // tower is plain/unclimbable otherwise.
                 const isCorner = Math.abs(ox) === 3 && Math.abs(oz) === 3;
@@ -370,7 +370,7 @@ function buildShieldCrystalPedestals(centerX: number, centerZ: number, baseY: nu
             }
         }
         // Raised pedestal (the crystal stands ABOVE the rim). The crystal block
-        // itself is NOT generated here — it is spawned by the summon cutscene at
+        // itself is NOT generated here, it is spawned by the summon cutscene at
         // top+2 (getShieldCrystalPositions) so the arena is empty until you fight.
         if (inChunk(ctx, c.x, c.z)) {
             ctx.setBlock(c.x, top + 1, c.z, BlockType.CHISELED_MAGNETITE);
@@ -408,7 +408,7 @@ export function flattenArenaDais(
     setBlocks(DAIS_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: BlockType.AIR })));
 }
 
-/** Rebuild the dais + summoner altar (boss gone — re-summonable). */
+/** Rebuild the dais + summoner altar (boss gone, re-summonable). */
 export function restoreArenaDais(
     centerX: number, centerZ: number, baseY: number,
     setBlocks: (edits: ArenaEdit[]) => void,
@@ -417,7 +417,7 @@ export function restoreArenaDais(
 }
 
 // --- Bridge lifecycle: the four cardinal causeways across the lava moat are
-//     removed while the boss is alive (sealing the player on the central island —
+//     removed while the boss is alive (sealing the player on the central island :
 //     they must climb the towers / use polarity), and rebuilt once the boss is
 //     gone or the player leaves/dies. Only the spans OVER the moat are toggled;
 //     the inner terrace stays solid so the player never drops out of the world. ---
@@ -443,7 +443,7 @@ const BRIDGE_CELLS: { dx: number; dy: number; dz: number; type: BlockType }[] = 
     return cells;
 })();
 
-/** Drop the four causeways into the lava (boss is active — player is sealed in). */
+/** Drop the four causeways into the lava (boss is active, player is sealed in). */
 export function flattenArenaBridges(
     centerX: number, centerZ: number, baseY: number,
     setBlocks: (edits: ArenaEdit[]) => void,
@@ -451,7 +451,7 @@ export function flattenArenaBridges(
     setBlocks(BRIDGE_CELLS.map((c) => ({ x: centerX + c.dx, y: baseY + c.dy, z: centerZ + c.dz, type: BlockType.AIR })));
 }
 
-/** Rebuild the four causeways (boss gone / player left — arena is open again). */
+/** Rebuild the four causeways (boss gone / player left, arena is open again). */
 export function restoreArenaBridges(
     centerX: number, centerZ: number, baseY: number,
     setBlocks: (edits: ArenaEdit[]) => void,
@@ -462,7 +462,7 @@ export function restoreArenaBridges(
 // --- Pillar climb-face lifecycle: the towers are plain brick by default. The two
 //     centre-facing MAGNET climb faces are PLACED only for a fight (during the summon
 //     cutscene) so the player can climb to break the shield crystals, then STRIPPED
-//     back to brick once the boss is past 50% (anti-cheese) AND on any arena reset —
+//     back to brick once the boss is past 50% (anti-cheese) AND on any arena reset :
 //     so the magnets are never left on the walls after a fight. Cheap: solid→solid,
 //     no lighting flood, only a remesh. ---
 

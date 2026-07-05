@@ -1,8 +1,8 @@
-# forest — active music tags
+# forest: active music tags
 
 `tags.json` lists the music tags that play in the **forest** biome:
 
-- `forest` — songs from `music/forest/`
+- `forest`: songs from `music/forest/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

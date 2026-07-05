@@ -19,7 +19,7 @@ export const SNEAK_MULTIPLIER = 0.3;    // -> 1.295 b/s
 // One-time forward impulse (blocks/sec) added on the tick you jump while sprinting.
 // This impulse, preserved by the high air friction, is what makes sprint-jumping
 // the fastest way to travel (~27% faster than flat sprinting). Tuned so the
-// sprint-jump cycle averages ~7.1 b/s vs 5.612 sprinting — matching that 27% gap —
+// sprint-jump cycle averages ~7.1 b/s vs 5.612 sprinting (matching that 27% gap),
 // rather than copying a raw internal engine value.
 export const SPRINT_JUMP_BOOST = 2.0;
 
@@ -64,11 +64,11 @@ export const FLUID_FRICTION = 0.80;     // water/lava drag
 // (1 - AIR_FRICTION): pairing 20% of ground accel with the high 0.91 air retention
 // makes the air terminal speed land right at your ground speed, so sprint speed
 // carries cleanly through a jump and you can still steer onto a block. (The prior
-// 0.15-of-air-amplitude reading made air accel ~7x too weak — speed bled to a crawl,
+// 0.15-of-air-amplitude reading made air accel ~7x too weak, speed bled to a crawl,
 // which both killed sprint-jumps and made blocks hard to mount.)
 export const AIR_CONTROL = 0.20;
 
-// Sprint auto-cancel needs this many consecutive slow ticks — a momentum-based
+// Sprint auto-cancel needs this many consecutive slow ticks, a momentum-based
 // direction flip passes through low speed for 1-2 ticks and must not cancel
 // sprint; a genuine wall bump stays slow and cancels after ~150ms.
 export const SPRINT_STOP_GRACE_TICKS = 3;

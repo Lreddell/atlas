@@ -1,5 +1,5 @@
 // =============================================================================
-// Atlas Chunk Region (.acr) file format — v1   (THE authoritative layout)
+// Atlas Chunk Region (.acr) file format, v1   (THE authoritative layout)
 // =============================================================================
 //
 // An .acr file packs a 32x32 = 1024-chunk grid into one file, using a classic

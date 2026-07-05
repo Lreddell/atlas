@@ -536,7 +536,7 @@ for (const [slot, piece, material] of ARMOR_TEXTURES) {
 
 // --- 1.1.0 additions ---
 Object.assign(PR19_TEXTURE_TILES, {
-    // 215: Polarity Boots Upgrade — the Warden's drop: a violet core module in a
+    // 215: Polarity Boots Upgrade, the Warden's drop: a violet core module in a
     // dark housing with red/blue polarity pins. (Previously reused the Charged
     // Magnetite block tile, which made the drop read as a building block.)
     215: tile(
@@ -548,7 +548,7 @@ Object.assign(PR19_TEXTURE_TILES, {
         layer('#3060ff', [[12, 5, 1, 2], [3, 9, 1, 2]]),
         layer('#8a7fd6', [[6, 13, 4, 1]]),
     ),
-    // 216: Boat — wooden hull with a lighter rim, seat plank, and keel shadow.
+    // 216: Boat, wooden hull with a lighter rim, seat plank, and keel shadow.
     216: tile(
         layer('#a1887f', [[1, 7, 2, 1], [13, 7, 2, 1]]),
         layer('#6d4c33', [[1, 8, 14, 2]]),
@@ -557,21 +557,21 @@ Object.assign(PR19_TEXTURE_TILES, {
         layer('#3e2723', [[4, 9, 8, 1]]),
         layer('#c9a877', [[7, 9, 2, 1]]),
     ),
-    // 234: Banana — a yellow crescent with browned tips.
+    // 234: Banana, a yellow crescent with browned tips.
     234: tile(
         layer('#7a5a1a', [[3, 11], [12, 4]]),
         layer('#e0b93a', [[3, 10, 2, 2], [4, 9, 2, 2], [5, 8, 2, 2], [6, 7, 2, 2], [7, 6, 2, 2], [9, 5, 2, 2], [11, 5, 2, 2]]),
         layer('#ffd54f', [[3, 9, 2, 2], [4, 8, 2, 2], [5, 7, 2, 2], [6, 6, 2, 2], [7, 5, 2, 2], [9, 4, 2, 2], [11, 4, 2, 2]]),
         layer('#fff2b0', [[5, 7], [6, 6], [7, 5], [9, 4]]),
     ),
-    // 235: Lumen Berry — a glowing teal berry cluster with a leafed stem.
+    // 235: Lumen Berry, a glowing teal berry cluster with a leafed stem.
     235: tile(
         layer('#2f7f5a', [[8, 4, 1, 2], [9, 4, 2, 1]]),
         layer('#3ab88f', [[5, 7, 5, 5], [10, 9, 3, 3]]),
         layer('#66e6c0', [[6, 8, 3, 3], [11, 10, 1, 1]]),
         layer('#d6fff0', [[7, 9, 2, 2], [11, 10, 1, 1]]),
     ),
-    // 236: Forager's Bowl — a wooden bowl with apple, banana, and berry on top.
+    // 236: Forager's Bowl, a wooden bowl with apple, banana, and berry on top.
     236: tile(
         layer('#d81f1f', [[4, 6, 2, 2]]),
         layer('#ffd54f', [[7, 5, 3, 1], [8, 4, 2, 1]]),

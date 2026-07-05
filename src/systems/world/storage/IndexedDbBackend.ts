@@ -1,4 +1,4 @@
-// IndexedDB StorageBackend — the original AtlasDB persistence, unchanged on the
+// IndexedDB StorageBackend, the original AtlasDB persistence, unchanged on the
 // wire (same DB name/version, same object stores, same key scheme) so worlds
 // saved before this refactor load exactly as before. It is the web backend and
 // the migration source for the desktop filesystem backend.

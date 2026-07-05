@@ -290,7 +290,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
         // drop_cursor and drag_end are dispatched with collection 'none' (their
         // real targets live in `data`), so they must skip the per-slot availability
-        // gate — otherwise every drag distribution was silently dropped and the
+        // gate, otherwise every drag distribution was silently dropped and the
         // held stack bounced straight back to the cursor.
         if (action !== 'drop_cursor' && action !== 'drag_end'
             && (!isCollectionAvailable(collection) || !isSlotIndexValid(collection, index))) return;
@@ -510,7 +510,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                     for (let i=rangeStart; i<rangeEnd && rem>0; i++) {
                         if (newInv[i] && canStacksMerge(newInv[i]!, slotItem) && newInv[i]!.count < max) {
                             const add = Math.min(max - newInv[i]!.count, rem);
-                            // Clone before changing count — the stack object is shared
+                            // Clone before changing count, the stack object is shared
                             // with the previous React state array.
                             newInv[i] = cloneItemStack(newInv[i]!, newInv[i]!.count + add);
                             rem -= add;
@@ -554,7 +554,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
                 
                 slots.forEach(slot => {
                     if (remainder <= 0) return;
-                    // Output slots are result-only — never deposit into them (matches 'split' mode).
+                    // Output slots are result-only, never deposit into them (matches 'split' mode).
                     if (!canPlaceInSlot(slot.collection, slot.index, startStack)) return;
                     const sItem = getSlot(slot.collection, slot.index);
                     if (!sItem) {

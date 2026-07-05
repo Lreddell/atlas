@@ -95,7 +95,7 @@ test('the Warden field is exposed to the player physics and applied with clampin
 });
 
 test('polarity swaps do NOT shove the player, and the boss frenzies at low HP', () => {
-    // A polarity swap no longer nudges/hops the player (no per-swap shockwave) — it
+    // A polarity swap no longer nudges/hops the player (no per-swap shockwave), it
     // was ruining pillar jumps. The dodge mechanic is the slam shockwave instead.
     assert.doesNotMatch(manager, /emitPolarityShockwave/);
     // Frenzy below the HP threshold speeds barrages/swaps up.
@@ -109,7 +109,7 @@ test('projectiles aim at the head, boss flies up while shielded, bolts clear on 
     assert.match(manager, /fireVolley[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
     assert.match(manager, /fireParryBolt[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
     // While shielded the boss floats UP toward the climbing player to shoot at
-    // them — eased (not snapped) toward a low, weightless drift speed.
+    // them, eased (not snapped) toward a low, weightless drift speed.
     assert.match(manager, /e\.shielded && e\.aggro && pp && targetable/);
     assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.8, -3, 4\)/);
     assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 3\.2\)/);
@@ -124,7 +124,7 @@ test('vulnerable phase loops dodge-barrage then a deflectable parry bolt', () =>
     assert.match(manager, /fireParryBolt/);
     assert.match(manager, /'boss:parry'/);
     // While a parry bolt is live, all NEW fire is held (awaitingParry), but the
-    // barrage bolts already in flight are NOT wiped — they stay live until ttl/hit.
+    // barrage bolts already in flight are NOT wiped, they stay live until ttl/hit.
     assert.match(manager, /e\.awaitingParry = true/);
     assert.doesNotMatch(manager, /this\.projectiles = this\.projectiles\.filter\(\(p\) => p\.owner === 'player'\)/);
     // The deflectable bolt is purple, slow, boss-owned.
@@ -240,7 +240,7 @@ test('the arena has water landing pools and a removable dais; crystals spawn lat
     const arena = read('src/systems/world/magneticArena.ts');
     assert.match(arena, /buildPillarLandingPools/);
     assert.match(arena, /BlockType\.WATER/);
-    // Crystals are NOT generated with the arena — the summon cutscene spawns them
+    // Crystals are NOT generated with the arena, the summon cutscene spawns them
     // at top+2 (getShieldCrystalPositions), so the arena is empty until you fight.
     assert.match(arena, /getShieldCrystalPositions/);
     assert.doesNotMatch(arena, /ctx\.setBlock\(c\.x, top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL\)/);
@@ -282,7 +282,7 @@ test('deleting a world uses an in-app modal, not a blocking native confirm', () 
 
 test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts', () => {
     const input = read('src/systems/player/playerInput.ts');
-    // KeyR no longer bails when Ctrl/Cmd is held — it suppresses reload but STILL
+    // KeyR no longer bails when Ctrl/Cmd is held, it suppresses reload but STILL
     // flips polarity (you are usually holding Ctrl to sprint during the fight).
     assert.match(input, /case 'KeyR':[\s\S]*?if \(e && \(e\.ctrlKey \|\| e\.metaKey\)\) e\.preventDefault\(\);[\s\S]*?inputState\.magneticPolarity = inputState\.magneticPolarity >= 0 \? -1 : 1/);
     // The old early-return guard (which ate the swap while sprinting) is gone.
@@ -372,14 +372,14 @@ test('boss fight ambiance: polarity vignette + per-phase storm', () => {
     assert.match(phase, /get intensity/);
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /bossPhaseState\.intensity/);
-    // Fog tightens harder per phase — really thick at frenzy (storm 1.0), and the
+    // Fog tightens harder per phase, really thick at frenzy (storm 1.0), and the
     // storm intensity is damped so the change eases in gradually (no snap).
     assert.match(dn, /fogNear = THREE\.MathUtils\.lerp\(fogNear, 12 - 8 \* storm, mag\)/);
     assert.match(dn, /stormBlendRef\.current = THREE\.MathUtils\.damp/);
     const fx = read('src/components/FxParticles.tsx');
     assert.match(fx, /bossPhaseState\.intensity/);
     // Frenzy: ambient motes ease into a rising spiral column (smoothed frenzyBlend),
-    // and the whole ambient field — including existing motes — orbits the player.
+    // and the whole ambient field (including existing motes) orbits the player.
     assert.match(fx, /bossPhaseState\.isFrenzy/);
     assert.match(fx, /frenzyBlend\.current = THREE\.MathUtils\.damp/);
     assert.match(fx, /const frenzySwirl = 2\.0 \* fb/);
@@ -419,7 +419,7 @@ test('a direct boss hit hurts a lot and knockback scales with hit strength', () 
 });
 
 test('the last phase is relentless: continuous fire + rapid polarity, parry kept', () => {
-    // Frenzy bypasses the barrage/parry-hold gating — it fires continuously and
+    // Frenzy bypasses the barrage/parry-hold gating, it fires continuously and
     // still weaves in the deflectable parry bolt so it stays damageable.
     assert.match(manager, /if \(frenzy\) {[\s\S]*?this\.fireVolley\(e, kind, pp, true\)[\s\S]*?fireParryBolt/);
     // Polarity keeps the same average cadence as other phases but jitters the
@@ -437,7 +437,7 @@ test('climb magnets are placed per-pillar, stripped at 50% and on reset; beams p
     assert.match(summon, /placePillarClimbMagnets\(p\.centerX, p\.centerZ, p\.baseY, i/);
     // Stripped when the slam phase begins (≤50%) and on reset.
     assert.match(app, /phase >= 2 && a && climbMagnetsActiveRef\.current[\s\S]*?stripArenaClimbMagnets/);
-    // Never restored — the walls stay plain brick after a fight.
+    // Never restored, the walls stay plain brick after a fight.
     assert.doesNotMatch(app, /restoreArenaPillars/);
     // Slams come every ~8s (frenzy faster).
     assert.match(entity, /slamInterval: 8/);
@@ -461,7 +461,7 @@ test('boss loot erupts above the altar and the altar re-forms after a delay', ()
     // Boss loot drops one block above the altar (summoner at baseY+4 = home.y+3),
     // deferred until the altar re-forms.
     assert.match(manager, /e\.home\.y \+ 4/);
-    // The drop timer is TRACKED (lootDropTimer) so world unload can cancel it —
+    // The drop timer is TRACKED (lootDropTimer) so world unload can cancel it :
     // an untracked timeout used to spawn the loot into the next loaded world.
     assert.match(manager, /this\.lootDropTimer = setTimeout\([\s\S]*?spawnDrops\(hx, hy, hz\);[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
     assert.match(manager, /clear\(\): void \{[\s\S]*?clearTimeout\(this\.lootDropTimer\)/);

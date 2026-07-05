@@ -1,8 +1,8 @@
 // Item tooltip/stat lines for the inventory UI and hotbar readout.
 //
 // Single source of truth: everything here is DERIVED from the same registries
-// the gameplay code reads — ITEM_STATS (attack/defense/durability, via
-// getItemStats) and BLOCKS (tool type/tier/speed, food, fuel) — so the numbers
+// the gameplay code reads, ITEM_STATS (attack/defense/durability, via
+// getItemStats) and BLOCKS (tool type/tier/speed, food, fuel), so the numbers
 // shown always match actual combat/mining/armor behavior. No magic numbers.
 
 import type { ItemStack } from '../../types';
@@ -21,7 +21,7 @@ export interface ItemTooltip {
 
 // Mining-tool display names. Hoes are deliberately absent: Atlas has no
 // tilling/farmland system, so hoes carry no toolType/toolSpeed in BLOCKS and
-// have no mining stat to show — they still display Attack and Durability via
+// have no mining stat to show, they still display Attack and Durability via
 // ITEM_STATS like any other weapon-ish tool.
 const TOOL_NAMES: Record<string, string> = {
     pickaxe: 'Pickaxe',
@@ -47,7 +47,7 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
     }
 
     // Mining: tool class and mining power (the raw registry
-    // toolSpeed the break-speed math uses — presented as a stat, not a "×N"
+    // toolSpeed the break-speed math uses, presented as a stat, not a "×N"
     // multiplier, which wrongly implied "times some baseline").
     if (def.toolType && def.toolType !== 'none') {
         const parts = [TOOL_NAMES[def.toolType] ?? def.toolType];
@@ -71,7 +71,7 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
     }
 
     // Food: hunger + saturation restored (matches the eating code).
-    // (Fuel burn time is deliberately NOT shown — furnace behavior is unchanged,
+    // (Fuel burn time is deliberately NOT shown, furnace behavior is unchanged,
     // it's just not a player-facing tooltip stat.)
     if (def.nutrition) {
         const saturation = def.nutrition * (def.saturationModifier ?? 0) * 2;

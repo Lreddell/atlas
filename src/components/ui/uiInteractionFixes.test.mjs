@@ -15,7 +15,7 @@ const chunkBase = read('src/components/ui/ChunkBase.tsx');
 
 test('drag_end is exempt from the per-slot availability gate (the real drag bug)', () => {
     // drag_end (like drop_cursor) is dispatched with collection 'none', so the
-    // controller's availability guard must let it through — otherwise every drag
+    // controller's availability guard must let it through, otherwise every drag
     // distribution was dropped and the held stack bounced back to the cursor.
     assert.match(controller, /action !== 'drop_cursor' && action !== 'drag_end'/);
     // The UI still drives it: a lone-origin press is a click, a paint is drag_end.

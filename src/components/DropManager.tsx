@@ -306,7 +306,7 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
     );
 };
 
-// Scratch vectors reused across all drops and steps — this loop runs per drop per
+// Scratch vectors reused across all drops and steps, this loop runs per drop per
 // 60 Hz fixed step, and allocating Vector3s here was a steady GC churn source.
 const _dropOldPos = new THREE.Vector3();
 const _dropNewPos = new THREE.Vector3();

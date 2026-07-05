@@ -26,7 +26,7 @@ const BLOCK_TEXTURED_ITEMS = new Set([
     'JUNGLE_SAPLING',
     'DARK_OAK_SAPLING',
     'ACACIA_SAPLING',
-    // Reuses the polarity-boots item tile (slot 155) — the upgrade module and
+    // Reuses the polarity-boots item tile (slot 155), the upgrade module and
     // the boat now have their own dedicated PNGs (215/216).
     'UPGRADED_POLARITY_BOOTS',
 ]);

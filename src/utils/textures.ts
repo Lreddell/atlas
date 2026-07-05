@@ -774,7 +774,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         withTile(slot, () => paintPixelTile(ctx, PR19_TEXTURE_TILES[slot]));
     });
 
-    // 169: Packed Ice — denser, more crystalline ice for the Ice Spikes biome.
+    // 169: Packed Ice, denser, more crystalline ice for the Ice Spikes biome.
     withTile(169, () => {
         fill('#b3e5fc');
         ctx.fillStyle = '#81d4fa';
@@ -879,7 +879,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     };
     const saplingFallback = (slot: number, leafCol: string, stemCol: string) => {
         withTile(slot, () => {
-            // transparent bg — only draw stem + canopy
+            // transparent bg, only draw stem + canopy
             ctx.fillStyle = stemCol;
             ctx.fillRect(7, 11, 2, 4);
             ctx.fillStyle = leafCol;
@@ -896,7 +896,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     logTopFallback(200, '#aa8255', '#694e34'); logSideFallback(201, '#694e34'); planksFallback(202, '#aa8255'); leavesFallback(203, '#6e8c32'); saplingFallback(204, '#6e8c32', '#694e34');
 
     // ===== Magnetic Fields biome tiles (Magnetic Warden content) =====
-    // 205: Magnetite Block — gray metallic with dark flecks + subtle purple sheen.
+    // 205: Magnetite Block, gray metallic with dark flecks + subtle purple sheen.
     withTile(205, () => {
         fill('#4a4a55');
         ctx.fillStyle = '#2e2e36';
@@ -931,7 +931,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     crystalTile(210, '#b388ff', '#e0ccff', '#6a3fb0'); // Magnetic Shield Crystal (violet glow)
     crystalTile(212, '#7fe0ff', '#d6f7ff', '#3aa8d0'); // Magnetite Shard (bright cyan contrast)
 
-    // 211: Charged Magnetite — lighter emissive accent with glowing purple veins.
+    // 211: Charged Magnetite, lighter emissive accent with glowing purple veins.
     withTile(211, () => {
         fill('#5a5470');
         ctx.fillStyle = '#3a3550';
@@ -942,7 +942,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(3, 3, 2, 1); ctx.fillRect(10, 6, 2, 1); ctx.fillRect(6, 11, 2, 1); ctx.fillRect(12, 12, 1, 2);
     });
 
-    // 208: Magnetic Spike — dark metal spikes on transparent background.
+    // 208: Magnetic Spike, dark metal spikes on transparent background.
     withTile(208, () => {
         const tri = (cx: number, baseY: number, h: number, color: string) => {
             ctx.fillStyle = color;
@@ -957,7 +957,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(8, 3, 1, 2); ctx.fillRect(3, 7, 1, 1); ctx.fillRect(12, 8, 1, 1);
     });
 
-    // 209: Magnetic Boss Summoner — purple housing with a red/blue polarity core.
+    // 209: Magnetic Boss Summoner, purple housing with a red/blue polarity core.
     withTile(209, () => {
         fill('#3a1054');
         ctx.fillStyle = '#7b1fa2';
@@ -969,7 +969,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#e0ccff'; ctx.fillRect(7, 4, 2, 8);
     });
 
-    // 213: Magnetite Bricks — dark metallic brick courses with offset joints.
+    // 213: Magnetite Bricks, dark metallic brick courses with offset joints.
     withTile(213, () => {
         fill('#43434f');
         ctx.fillStyle = '#2c2c36';
@@ -981,7 +981,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(3, 1, 1, 1); ctx.fillRect(11, 9, 1, 1);
     });
 
-    // 215: Polarity Boots Upgrade — Warden drop module: a violet core in a dark
+    // 215: Polarity Boots Upgrade, Warden drop module: a violet core in a dark
     // housing with red/blue polarity pins. (Item icon; previously collided with
     // the Charged Magnetite block tile at 211.)
     withTile(215, () => {
@@ -995,7 +995,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         set(6, 13, 4, 1, '#8a7fd6');           // base contact strip
     });
 
-    // 216: Boat — wooden hull item icon (oak planks with a lighter rim + seat).
+    // 216: Boat, wooden hull item icon (oak planks with a lighter rim + seat).
     withTile(216, () => {
         const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
         set(1, 8, 14, 2, '#6d4c33');           // hull rim
@@ -1006,7 +1006,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         set(7, 9, 2, 1, '#c9a877');            // seat plank
     });
 
-    // 214: Chiseled Magnetite — framed panel with an engraved polarity sigil.
+    // 214: Chiseled Magnetite, framed panel with an engraved polarity sigil.
     withTile(214, () => {
         fill('#4a4a58');
         ctx.fillStyle = '#2c2c36';
@@ -1025,7 +1025,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         for (let i = 0; i < n; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
     };
 
-    // 217: Deepslate — bluish deep-stone with a faint banded grain. Lightened
+    // 217: Deepslate, bluish deep-stone with a faint banded grain. Lightened
     // from the original near-black so it reads clearly under low cave light.
     withTile(217, () => {
         fill('#585862');
@@ -1034,7 +1034,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#484850';
         for (let y = 2; y < 16; y += 5) ctx.fillRect(0, y, 16, 1);
     });
-    // 218: Cobbled Deepslate — deepslate-toned cobble cells with dark mortar
+    // 218: Cobbled Deepslate, deepslate-toned cobble cells with dark mortar
     // (lightened to match the base deepslate).
     withTile(218, () => {
         fill('#4c4c55');
@@ -1043,7 +1043,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         speckle('#63636e', 16);
         speckle('#38383f', 12);
     });
-    // 219: Dripstone Block — warm mottled brown with vertical drip streaks.
+    // 219: Dripstone Block, warm mottled brown with vertical drip streaks.
     withTile(219, () => {
         fill('#8a6a55');
         speckle('#6e5040', 26);
@@ -1051,7 +1051,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#6e5040';
         ctx.fillRect(4, 0, 1, 7); ctx.fillRect(10, 3, 1, 9); ctx.fillRect(13, 0, 1, 5);
     });
-    // 220: Pointed Dripstone — cross-plane spindle (points at both ends so it
+    // 220: Pointed Dripstone, cross-plane spindle (points at both ends so it
     // reads whether hung as a stalactite or stood up as a stalagmite).
     withTile(220, () => {
         const set = (x: number, y: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); };
@@ -1062,14 +1062,14 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         for (const [x, y, w] of spans) { for (let i = 0; i < w; i++) set(x + i, y, '#9a745c'); }
         for (const [x, y, w] of spans) { set(x, y, '#b89478'); set(x + w - 1, y, '#6e5040'); }
     });
-    // 221: Moss Block — fuzzy lush green.
+    // 221: Moss Block, fuzzy lush green.
     withTile(221, () => {
         fill('#5a7a35');
         speckle('#3f5a22', 34);
         speckle('#7fa04a', 26);
         speckle('#87ad52', 10);
     });
-    // 222: Glow Lichen — sparse emissive lichen network on a transparent tile.
+    // 222: Glow Lichen, sparse emissive lichen network on a transparent tile.
     withTile(222, () => {
         const dots: [number, number][] = [
             [2, 3], [3, 3], [3, 4], [4, 4], [2, 5], [7, 2], [8, 2], [8, 3], [9, 3], [13, 4], [12, 4], [13, 5],
@@ -1082,7 +1082,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#b6f2d4';
         for (const [x, y] of dots) if (Math.random() < 0.28) ctx.fillRect(x, y, 1, 1);
     });
-    // 223: Amethyst Block — faceted purple with bright glints.
+    // 223: Amethyst Block, faceted purple with bright glints.
     withTile(223, () => {
         fill('#8b5fc9');
         ctx.fillStyle = '#6a3fb0';
@@ -1090,7 +1090,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         speckle('#a97fe0', 18);
         ctx.fillStyle = '#e6d4ff'; ctx.fillRect(3, 3, 2, 2); ctx.fillRect(10, 9, 2, 2); ctx.fillRect(8, 4, 1, 1);
     });
-    // 224: Budding Amethyst — darker amethyst with four growing bud nubs.
+    // 224: Budding Amethyst, darker amethyst with four growing bud nubs.
     withTile(224, () => {
         fill('#7a4fb8');
         speckle('#5a3298', 22);
@@ -1098,7 +1098,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillRect(2, 2, 2, 2); ctx.fillRect(12, 3, 2, 2); ctx.fillRect(3, 12, 2, 2); ctx.fillRect(11, 11, 3, 3);
         ctx.fillStyle = '#efe0ff'; ctx.fillRect(12, 12, 1, 1); ctx.fillRect(2, 2, 1, 1);
     });
-    // 225: Amethyst Cluster — cross-plane clump of upright faceted crystals.
+    // 225: Amethyst Cluster, cross-plane clump of upright faceted crystals.
     withTile(225, () => {
         const shard = (cx: number, baseY: number, h: number) => {
             for (let r = 0; r < h; r++) {
@@ -1112,7 +1112,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         };
         shard(4, 15, 8); shard(8, 15, 12); shard(11, 15, 7); shard(13, 15, 5);
     });
-    // 226: Calcite — bright near-white with faint gray mottle.
+    // 226: Calcite, bright near-white with faint gray mottle.
     withTile(226, () => {
         fill('#dcdcd6');
         speckle('#c2c2ba', 26);

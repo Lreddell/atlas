@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { MenuButton } from './mainMenu/MainMenuControls';
 
-// In-app rename dialog. Renames a world's display name only — the world id (and
+// In-app rename dialog. Renames a world's display name only, the world id (and
 // its save folder) stay the same. Styled to match the menus (raised panel +
 // MenuButton), like WhatsNewModal.
 

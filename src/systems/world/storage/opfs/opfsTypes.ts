@@ -3,7 +3,7 @@
 // Node test fake implement exactly this shape, and documents the surface we depend
 // on. The real FileSystemDirectoryHandle / FileSystemFileHandle satisfy it.
 
-/** Synchronous random-access file handle — Web Worker only in real OPFS. */
+/** Synchronous random-access file handle, Web Worker only in real OPFS. */
 export interface OpfsSyncAccessHandle {
     read(buffer: Uint8Array, options?: { at?: number }): number;
     write(buffer: Uint8Array, options?: { at?: number }): number;

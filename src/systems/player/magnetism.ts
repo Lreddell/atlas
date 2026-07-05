@@ -21,7 +21,7 @@ import { PLAYER_HEIGHT, PLAYER_WIDTH } from './playerConstants';
 // player is pushed/pulled each tick. Susceptibility comes from equipment:
 //  - 'ferro'      (iron armor): positive repels and negative attracts.
 //  - 'controlled' (polarity boots): player picks a polarity (R); same sign as a
-//                  block repels, opposite attracts — for launch/stick traversal.
+//                  block repels, opposite attracts, for launch/stick traversal.
 //  - 'none':       no effect.
 // Forces are inverse-square within a small radius, then the magnetic contribution
 // is clamped so it feels like an assisted dash rather than raw physics.
@@ -42,13 +42,13 @@ const _bodySample = { x: 0, y: 0, z: 0 };
 
 // The magnet scan sweeps an ~11x13x11 block volume (~1,500 getBlock calls).
 // Running it every physics substep (up to 4 per frame) whenever iron armor or
-// polarity boots are equipped dominated the movement hot path — even with no
+// polarity boots are equipped dominated the movement hot path, even with no
 // magnet anywhere near. Magnets are static blocks, so the volume is rescanned
 // only when the player enters a new block cell or every RESCAN_MS; each substep
 // then integrates forces from this (tiny, usually empty) cached list. The
 // direction axis (from adjacent iron blocks) is cached per magnet too. Worst
 // case, a magnet placed or broken right next to the player takes RESCAN_MS to
-// register — imperceptible for an assist-style force.
+// register, imperceptible for an assist-style force.
 interface CachedMagnet {
     x: number; y: number; z: number;
     polarity: 1 | -1;
@@ -73,7 +73,7 @@ export function applyMagneticForce(
     playerPolarity: number,
     dt: number,
     bodyHeight = PLAYER_HEIGHT,
-    /** Scales the pull — lowered while grounded so standing on/near magnet
+    /** Scales the pull, lowered while grounded so standing on/near magnet
      *  blocks isn't slippery and you can walk to a block's edge. */
     strengthScale = 1,
 ): void {

@@ -68,7 +68,7 @@ export const BossCinematic: React.FC = () => {
         wasActive.current = active;
 
         // Beams: during the cutscene they feed the energy ball (crystal → altar).
-        // Once the boss spawns they re-target the BOSS and track it — each beam
+        // Once the boss spawns they re-target the BOSS and track it, each beam
         // a tether lasting until its crystal is destroyed, then dissipating
         // with a burst (and a sound, played in App on crystal:broken).
         const cutsceneProg = bossSummon.beamProgress;

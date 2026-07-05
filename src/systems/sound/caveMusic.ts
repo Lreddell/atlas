@@ -16,7 +16,7 @@ export const shouldUseCaveMusic = (x: number, y: number, z: number) => {
     }
 
     // Being in a real cave biome (Lush / Dripstone / Caves) is enough on its own
-    // — those are the underground regions and should always carry cave music,
+    //, those are the underground regions and should always carry cave music,
     // even where glow lichen / clusters light the room up.
     const biome = getBiomeAt(Math.floor(x), Math.floor(y), Math.floor(z));
     if (biome.tags?.includes('cave')) return true;

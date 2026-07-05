@@ -165,7 +165,7 @@ export class WorldManager {
   private knownMissingStorageChunks = new Set<string>();
 
   // Dark-face culling: chunks beyond this chebyshev distance are meshed without
-  // fully-unlit (cave) faces — enclosed geometry is only visible from inside the
+  // fully-unlit (cave) faces, enclosed geometry is only visible from inside the
   // cave, i.e. when the chunk is near. Tracks which READY meshes were built
   // culled so they can be remeshed in full when the player approaches.
   // Kept large enough that caves render across the near/mid view (they were
@@ -532,7 +532,7 @@ export class WorldManager {
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
-              // Player approached a chunk meshed with dark-face culling — rebuild the
+              // Player approached a chunk meshed with dark-face culling, rebuild the
               // full mesh (with cave interiors) before they can see inside.
               const distCheb = Math.max(Math.abs(cx - center.cx), Math.abs(cz - center.cz));
               if (distCheb <= WorldManager.DARK_CULL_DISTANCE - 1) {
@@ -860,7 +860,7 @@ export class WorldManager {
           for (const s of savedKeys) {
               this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
               // Clear the flag only if no NEW edit landed while the write was in
-              // flight — an edit made after the snapshot may have missed the
+              // flight, an edit made after the snapshot may have missed the
               // backend's copy, so the chunk stays dirty and re-saves next pass.
               if ((this.dirtyEditVersion.get(s.key) ?? 0) === s.version) {
                   this.dirtyChunks.delete(s.key);
@@ -876,7 +876,7 @@ export class WorldManager {
 
   /**
    * Unload a chunk from memory. Returns false (and unloads NOTHING) if the chunk
-   * still has unsaved edits — we never drop a dirty chunk, because a failed save
+   * still has unsaved edits, we never drop a dirty chunk, because a failed save
    * would then lose those edits with no copy left in memory to retry from. The
    * chunk stays loaded + dirty; processSaveQueue() persists it (clearing the dirty
    * flag only on success, exactly like the normal batch path), after which a later
@@ -886,7 +886,7 @@ export class WorldManager {
       const key = WorldCoords.getChunkKey(cx, cz);
 
       if (this.dirtyChunks.has(key)) {
-          return false; // defer — keep the dirty key + chunk data until confirmed persisted
+          return false; // defer, keep the dirty key + chunk data until confirmed persisted
       }
 
       WorldStore.evictChunk(this.state, cx, cz);
@@ -900,7 +900,7 @@ export class WorldManager {
       this.meshStartedAt.delete(key);
       // An in-flight gen/mesh for this chunk can never complete once its ticket
       // is deleted (handleWorkerMessage early-returns before its decrement), so
-      // release the worker slot here — mirroring the repair-timeout path. Without
+      // release the worker slot here, mirroring the repair-timeout path. Without
       // this, every eviction of an in-flight chunk permanently burned a slot and
       // fast traversal eventually stalled streaming at MAX_*_IN_FLIGHT.
       if (this.activeGenTickets.delete(key)) this.inFlightGen = Math.max(0, this.inFlightGen - 1);
@@ -908,7 +908,7 @@ export class WorldManager {
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
-      // Workers are stateless — no per-chunk eviction message needed.
+      // Workers are stateless, no per-chunk eviction message needed.
       return true;
   }
 
@@ -1102,7 +1102,7 @@ export class WorldManager {
           return { x: water.x + 0.5, y: seaLevel + 1.5, z: water.z + 0.5 };
       }
 
-      // Emergency fallback — nothing scanned at all
+      // Emergency fallback, nothing scanned at all
       console.warn("[Spawn] No candidates found, emergency fallback to target.");
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
   }
@@ -1178,7 +1178,7 @@ export class WorldManager {
                   bestZ = z;
               }
 
-              // Good enough — stop early
+              // Good enough, stop early
               if (bestScore >= GenConfig.spawn.earlyAcceptScore) {
                   return this.findSafeSpawnPosition(bestX, bestZ);
               }
@@ -1361,7 +1361,7 @@ export class WorldManager {
       // Sealed-region exception: in the Magnetic Fields, the two magnetite
       // crystals are the only blocks a player may mine while the region is still
       // sealed (so Polarity Boots can be crafted before the boss). This targets
-      // BREAKING a crystal — placement targets are AIR (never a crystal), so
+      // BREAKING a crystal, placement targets are AIR (never a crystal), so
       // placing stays denied, and other sealed regions are unaffected.
       if (region.id === MAGNETIC_FIELDS_REGION_ID) {
           const here = this.getBlock(x, y, z);
@@ -1380,7 +1380,7 @@ export class WorldManager {
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
     // NOTE: the sealed-region edit check is enforced at the player-interaction
-    // layer (InteractionController), NOT here — setBlock is also the chokepoint
+    // layer (InteractionController), NOT here, setBlock is also the chokepoint
     // for internal world simulation (fluids, plant growth, support cascades),
     // which must keep running inside sealed regions.
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
@@ -1441,7 +1441,7 @@ export class WorldManager {
 
   /**
    * Batch structural edits (the arena dais / shield crystals): write every block,
-   * then relight and remesh ONCE rather than per block — restoring the ~100-block
+   * then relight and remesh ONCE rather than per block, restoring the ~100-block
    * dais was triggering ~100 full chunk remeshes and lighting floods, which lagged.
    * Skips fluid / tile-entity / support cascades, so it is for solid structural
    * blocks only, not interactive or fluid edits.

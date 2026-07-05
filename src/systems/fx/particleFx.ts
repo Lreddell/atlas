@@ -1,4 +1,4 @@
-// Lightweight "effect" particle system — glowing, additively-blended sparks and
+// Lightweight "effect" particle system, glowing, additively-blended sparks and
 // motes (NOT block-texture debris like worldManager.spawnParticles). A tiny
 // pub/sub bridge so non-React singletons (EntityManager, bossSummon) can fire
 // effects that the in-Canvas <FxParticles> renderer simulates and draws.

@@ -1,11 +1,11 @@
 // Magnetic wall adhesion (Phase 10). With Polarity Boots active, a player who is
 // attracted to a magnetite magnet face and is touching (or within a tiny snap
-// distance of) it latches onto the surface and can walk/climb along it — the
+// distance of) it latches onto the surface and can walk/climb along it, the
 // camera "up" rolling to the wall normal only AFTER a real attachment, never
 // while merely being pulled through the air.
 //
 // This module is intentionally pure: plain {x,y,z} vectors, numeric block ids
-// passed via samplers, no THREE and no BlockType import — so the geometry
+// passed via samplers, no THREE and no BlockType import, so the geometry
 // (candidate finding, face selection, local basis, input projection, eye offset,
 // detach impulse, detach conditions) is deterministic and unit-testable. The
 // THREE-specific camera reorientation lives in Player.tsx.
@@ -57,7 +57,7 @@ export interface AdhesionState {
     detachCooldownUntil: number;
     detachReason: string | null;
     // Camera orientation transition
-    transition: number; // 0..1 — eases the up-vector roll on/off the wall
+    transition: number; // 0..1, eases the up-vector roll on/off the wall
     prevUp: Vec3;
     targetUp: Vec3;
     // Look while attached (yaw around localUp, pitch around localRight)
@@ -130,7 +130,7 @@ const vscale = (a: Vec3, s: number): Vec3 => ({ x: a.x * s, y: a.y * s, z: a.z *
 const vadd = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
 const vsub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 
-/** With controllable (boots) polarity, opposite signs attract — that is what latches. */
+/** With controllable (boots) polarity, opposite signs attract, that is what latches. */
 export const isAttractive = (playerPolarity: number, blockPolarity: number): boolean =>
     blockPolarity !== 0 && Math.sign(playerPolarity) !== Math.sign(blockPolarity);
 
@@ -173,7 +173,7 @@ function clampToFace(point: Vec3, blockCenter: Vec3, normal: Vec3): Vec3 {
 
 /**
  * Find the best magnet face to latch onto near the player body center. Returns
- * null when there is no attractive, exposed, nearby face — meaning the camera
+ * null when there is no attractive, exposed, nearby face, meaning the camera
  * must stay world-up (the player is only being pulled through the air).
  *
  * @param getPolarity  block magnet polarity (+1 / -1, or 0 if not a magnet)
@@ -301,7 +301,7 @@ export function detachImpulse(
 /**
  * Decide whether a soft condition should release the adhesion. Hard triggers
  * (jump, polarity flip, flying, death, teleport) are handled by the caller; this
- * covers attraction loss, lost surface, and the failsafe — all gated by the
+ * covers attraction loss, lost surface, and the failsafe, all gated by the
  * minimum-attach time and the detach grace period.
  *
  * @returns a detach reason string, or null to stay attached.

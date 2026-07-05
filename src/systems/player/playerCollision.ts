@@ -80,7 +80,7 @@ export function checkCollision(wm: WorldManager, pos: {x:number, y:number, z:num
 }
 
 // Highest block top at or below the player's feet within the footprint.
-// Used to snap correctly after a downward collision — flooring to an integer
+// Used to snap correctly after a downward collision, flooring to an integer
 // assumed full-height blocks and embedded the player into beds (height 0.5).
 export function getSupportTop(wm: WorldManager, pos: {x:number, y:number, z:number}, width: number): number | null {
     const minX = Math.floor(pos.x - width / 2 + CONTACT_EPS);

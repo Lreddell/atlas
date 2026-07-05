@@ -46,7 +46,7 @@ test('sealed Magnetic Fields allow mining progression crystals AND shield crysta
 test('the denial toast requires a deliberate, dwelling mining attempt', () => {
     const ic = read('src/components/controllers/InteractionController.tsx');
     // The denied event fires only after LMB is held on the SAME sealed block
-    // for a beat — a missed combat swing sweeping across sealed terrain during
+    // for a beat, a missed combat swing sweeping across sealed terrain during
     // the Warden fight must not toast "defeat its guardian" at the player.
     assert.match(ic, /deniedDwellRef/);
     assert.match(ic, /d\.heldFor >= 0\.25/);

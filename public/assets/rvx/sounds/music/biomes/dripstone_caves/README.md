@@ -1,9 +1,9 @@
-# dripstone_caves — active music tags
+# dripstone_caves: active music tags
 
 `tags.json` lists the music tags that play in the **dripstone_caves** biome:
 
-- `caves` — songs from `music/caves/`
-- `dripstone_caves` — songs from `music/dripstone_caves/`
+- `caves`: songs from `music/caves/`
+- `dripstone_caves`: songs from `music/dripstone_caves/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

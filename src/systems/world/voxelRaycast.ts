@@ -90,7 +90,7 @@ function nearestBoxHit(
  * ~3 × reach blocks and also lets chunk geometry drop its CPU-side arrays.
  *
  * Semantics match the old mesh raycast for gameplay purposes: the first non-air
- * voxel along the ray is the target (water/lava included — callers filter them,
+ * voxel along the ray is the target (water/lava included, callers filter them,
  * as before). Unloaded chunks are passed through, like missing meshes were.
  * The starting voxel is never reported.
  */
@@ -140,7 +140,7 @@ export function voxelRaycast(
         if (t > maxDist) return null;
 
         const type = worldManager.tryGetBlock(vx, vy, vz);
-        if (type === null) continue; // unloaded chunk — pass through, like a missing mesh
+        if (type === null) continue; // unloaded chunk, pass through, like a missing mesh
         if (type !== BlockType.AIR) {
             // Full-cell blocks (the common case): the cell boundary the DDA crossed
             // is the hit, with the entry-face normal.
@@ -148,14 +148,14 @@ export function voxelRaycast(
                 return { bx: vx, by: vy, bz: vz, nx, ny, nz, distance: t };
             }
             // Partial shapes (slabs/stairs/torches/plants/beds): only a hit if the ray
-            // actually intersects one of the block's selection boxes — otherwise the ray
+            // actually intersects one of the block's selection boxes, otherwise the ray
             // passes through the empty part of the cell to whatever is behind it.
             const boxes = getSelectionBoxes(type, worldManager.getMetadata(vx, vy, vz));
             const bh = nearestBoxHit(ox, oy, oz, dx, dy, dz, vx, vy, vz, boxes, maxDist);
             if (bh) {
                 return { bx: vx, by: vy, bz: vz, nx: bh.nx, ny: bh.ny, nz: bh.nz, distance: bh.t };
             }
-            // missed the shape — keep stepping
+            // missed the shape, keep stepping
         }
     }
     return null;

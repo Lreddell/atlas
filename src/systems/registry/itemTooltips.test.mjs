@@ -26,7 +26,7 @@ test('tooltip stats derive from the live gameplay registries, not magic numbers'
     assert.match(tooltips, /Unbreakable/);
 });
 
-test('mining power is a quantified stat from toolSpeed — no multiplier wording, no fuel line', () => {
+test('mining power is a quantified stat from toolSpeed, no multiplier wording, no fuel line', () => {
     // "Mining power 6.0" (the raw registry toolSpeed), never "×6 speed".
     assert.match(tooltips, /Mining power \$\{def\.toolSpeed\.toFixed\(1\)\}/);
     assert.match(tooltips, /Power \$\{def\.toolSpeed\.toFixed\(1\)\}/); // hotbar summary

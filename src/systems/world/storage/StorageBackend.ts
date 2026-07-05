@@ -5,7 +5,7 @@
 //
 // Everything above WorldStorage (WorldManager, App.tsx, the world menu) is
 // unaware of which backend is active. Adding OPFS/worker backends later means
-// implementing this interface — nothing else changes.
+// implementing this interface, nothing else changes.
 
 import type {
     ChunkBatchEntry,

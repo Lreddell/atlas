@@ -7,9 +7,9 @@
 //      explosion + shake + sound (slow intervals)
 //   4. thick humming beams grow slowly from every crystal to the altar
 //   5. the camera pushes in slowly toward the altar as the beams arrive
-//   6. the beams collapse into an ENERGY BALL at the altar — control returns to the
+//   6. the beams collapse into an ENERGY BALL at the altar, control returns to the
 //      player here, and the ball swells (this is the grace window to run away)
-//   7. the ball explodes with a rumble and the boss spawns AGGRO — the fight is on.
+//   7. the ball explodes with a rumble and the boss spawns AGGRO, the fight is on.
 //
 // Per-frame state (camera / beams / ball / fade) is read by the in-Canvas
 // <BossCinematic/> and the DOM <CinematicOverlay/>. Block edits / particles /
@@ -84,7 +84,7 @@ class BossSummon {
     crystals: { x: number; y: number; z: number }[] = [];
     readonly altar = new THREE.Vector3();
     readonly ballMaxRadius = BALL_MAX_R;
-    /** The player's view orientation at summon time — restored on handback. */
+    /** The player's view orientation at summon time, restored on handback. */
     readonly playerStartQuat = new THREE.Quaternion();
     /** Where the player is handed back to: farther from the altar, facing the ball. */
     readonly returnPos = new THREE.Vector3();
@@ -143,7 +143,7 @@ class BossSummon {
 
         // Return spot: pushed ~12 blocks FARTHER from the altar than the player
         // started (capped to stay on the platform), at the same height, and angled
-        // to look straight at the energy ball — so they hand back with room to run.
+        // to look straight at the energy ball, so they hand back with room to run.
         let dx = params.startPos.x - this.altar.x, dz = params.startPos.z - this.altar.z;
         let hd = Math.hypot(dx, dz);
         if (hd < 0.5) { dx = 1; dz = 0; hd = 1; } // degenerate: summoned right on the altar
@@ -200,7 +200,7 @@ class BossSummon {
             } else {
                 // Fly back to the RETURN spot (farther from the altar, room to run)
                 // while keeping the camera trained on the energy ball the WHOLE time
-                // — it never snaps to the player's old angle. At k=1 the camera sits
+                //, it never snaps to the player's old angle. At k=1 the camera sits
                 // exactly where control resumes (returnPos, looking at the ball).
                 this.orbitPos(START_ANGLE + ORBIT_RATE * (T_PUSH - T_ORBIT), this._eye);
                 const k = smooth(Math.min(1, (t - T_PUSH) / (T_CONTROL - T_PUSH)));
@@ -238,7 +238,7 @@ class BossSummon {
                 soundManager.play('entity.magnetic_warden.charge', { volume: 0.85 });
             }
             this.ballScale = (t - T_FLYBACK) / (T_IMPACT - T_FLYBACK);
-            // Building rumble + crackle — but NOT a jolt right as control returns.
+            // Building rumble + crackle, but NOT a jolt right as control returns.
             if (t > T_CONTROL + 0.4 && t - this.lastChargePulse > 0.4) {
                 this.lastChargePulse = t;
                 addTrauma(0.04 + 0.18 * this.ballScale);
@@ -271,7 +271,7 @@ class BossSummon {
             particleFx.burst({ x: ax, y: ay, z: az, color: [1, 1, 1], color2: FX_CHARGED, count: 120, speed: 18, upBias: 5, spread: 1, size: 0.4, life: 1.2, gravity: 8, drag: 0.7 });
             particleFx.burst({ x: ax, y: ay, z: az, color: FX_POSITIVE, color2: FX_NEGATIVE, count: 90, speed: 10, upBias: 7, spread: 1, size: 0.3, life: 1.8, gravity: 3, drag: 0.5 });
             flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
-            // Drop the four causeways into the lava — the player is now sealed on
+            // Drop the four causeways into the lava, the player is now sealed on
             // the central island for the duration of the fight.
             flattenArenaBridges(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             p.onSpawnBoss();

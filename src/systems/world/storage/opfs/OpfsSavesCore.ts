@@ -5,7 +5,7 @@
 // close), a sync-access-handle session lock, and an LRU of open region handles.
 //
 // It operates on injectable OPFS handles (opfsTypes) so it can be unit-tested in
-// Node against an in-memory fake — the real Web Worker passes the live OPFS root.
+// Node against an in-memory fake, the real Web Worker passes the live OPFS root.
 
 import { RegionFile, type Compressor } from '../acr/acrCodec';
 import { REGION_EDGE } from '../acr/acrFormat';

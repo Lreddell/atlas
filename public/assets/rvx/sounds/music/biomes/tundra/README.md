@@ -1,9 +1,9 @@
-# tundra — active music tags
+# tundra: active music tags
 
 `tags.json` lists the music tags that play in the **tundra** biome:
 
-- `cold` — songs from `music/cold/`
-- `tundra` — songs from `music/tundra/`
+- `cold`: songs from `music/cold/`
+- `tundra`: songs from `music/tundra/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

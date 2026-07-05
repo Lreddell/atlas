@@ -95,67 +95,67 @@ export const BIOMES: Record<string, Biome> = {
 
     // ===== NEW BIOMES (Task ID 4) =====
 
-    // Birch Forest — cool temperate forest dominated by white-barked birch.
+    // Birch Forest, cool temperate forest dominated by white-barked birch.
     BIRCH_FOREST: {
         id: 'birch_forest', name: 'Birch Forest', surfaceBlock: BlockType.MOSSY_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 22, terrainBase: 73, treeChance: 0.06, treeType: 'birch', vegetationChance: 0.22, color: '#c8e6c9', vegetationType: 'forest'
     },
-    // Flower Forest — temperate forest clearing bursting with flowers.
+    // Flower Forest, temperate forest clearing bursting with flowers.
     FLOWER_FOREST: {
         id: 'flower_forest', name: 'Flower Forest', surfaceBlock: BlockType.LUSH_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 24, terrainBase: 73, treeChance: 0.018, treeType: 'mixed_forest', vegetationChance: 0.45, color: '#e91e63', vegetationType: 'flowers'
     },
-    // Dark Forest — dense canopy of dark oak, gloomy floor with little undergrowth.
+    // Dark Forest, dense canopy of dark oak, gloomy floor with little undergrowth.
     DARK_FOREST: {
         id: 'dark_forest', name: 'Dark Forest', surfaceBlock: BlockType.DARK_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 28, terrainBase: 74, treeChance: 0.085, treeType: 'dark_oak', vegetationChance: 0.06, color: '#1b5e20', vegetationType: 'sparse'
     },
-    // Meadow — cool, flat, open grassland with sparse birch and tall grass.
+    // Meadow, cool, flat, open grassland with sparse birch and tall grass.
     MEADOW: {
         id: 'meadow', name: 'Meadow', surfaceBlock: BlockType.MEADOW_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 14, terrainBase: 80, treeChance: 0.004, treeType: 'birch', vegetationChance: 0.5, color: '#aed581', vegetationType: 'flowers'
     },
-    // Savanna — warm dry grassland with sparse acacia trees and tall grass.
+    // Savanna, warm dry grassland with sparse acacia trees and tall grass.
     SAVANNA: {
         id: 'savanna', name: 'Savanna', surfaceBlock: BlockType.SAVANNA_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 12, terrainBase: 71, treeChance: 0.005, treeType: 'acacia', vegetationChance: 0.4, color: '#c0ca33', vegetationType: 'savanna'
     },
-    // Jungle — hot, humid, dense jungle trees with lush undergrowth.
+    // Jungle, hot, humid, dense jungle trees with lush undergrowth.
     JUNGLE: {
         id: 'jungle', name: 'Jungle', surfaceBlock: BlockType.JUNGLE_GRASS, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 30, terrainBase: 74, treeChance: 0.09, treeType: 'jungle', vegetationChance: 0.5, color: '#2e7d32', vegetationType: 'jungle'
     },
-    // Taiga — cold snowy conifer forest, denser than Tundra.
+    // Taiga, cold snowy conifer forest, denser than Tundra.
     TAIGA: {
         id: 'taiga', name: 'Taiga', surfaceBlock: BlockType.PODZOL, subBlock: BlockType.DIRT, waterBlock: BlockType.ICE,
         terrainScale: 30, terrainBase: 74, treeChance: 0.055, treeType: 'spruce', vegetationChance: 0.08, color: '#90a4ae', vegetationType: 'taiga', tags: ['snowy']
     },
-    // Ice Spikes — rare frozen plains packed with towering ice pillars.
+    // Ice Spikes, rare frozen plains packed with towering ice pillars.
     ICE_SPIKES: {
         id: 'ice_spikes', name: 'Ice Spikes', surfaceBlock: BlockType.SNOW_BLOCK, subBlock: BlockType.PACKED_ICE, waterBlock: BlockType.ICE,
         terrainScale: 8, terrainBase: 72, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#e1f5fe', vegetationType: 'none', tags: ['snowy']
     },
-    // Mountains — soaring stone peaks with snow caps and spruce foothills.
+    // Mountains, soaring stone peaks with snow caps and spruce foothills.
     MOUNTAINS: {
         id: 'mountains', name: 'Mountains', surfaceBlock: BlockType.ANDESITE, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
         terrainScale: 70, terrainBase: 110, treeChance: 0.01, treeType: 'spruce', vegetationChance: 0.05, color: '#9e9e9e', vegetationType: 'sparse', tags: ['snowy']
     },
-    // Swamp — low-lying, waterlogged dirtland with dead bushes and sparse oak.
+    // Swamp, low-lying, waterlogged dirtland with dead bushes and sparse oak.
     SWAMP: {
         id: 'swamp', name: 'Swamp', surfaceBlock: BlockType.MUD, subBlock: BlockType.DIRT, waterBlock: BlockType.WATER,
         terrainScale: 8, terrainBase: 64, treeChance: 0.014, treeType: 'oak', vegetationChance: 0.3, color: '#4e6e58', vegetationType: 'swamp'
     },
-    // Beach — sandy coastal band bridging ocean and inland terrain.
+    // Beach, sandy coastal band bridging ocean and inland terrain.
     BEACH: {
         id: 'beach', name: 'Beach', surfaceBlock: BlockType.SAND, subBlock: BlockType.SANDSTONE, waterBlock: BlockType.WATER,
         terrainScale: 5, terrainBase: 66, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#efe0a5', vegetationType: 'none'
     },
-    // Stone Shore — barren rocky coast, no vegetation.
+    // Stone Shore, barren rocky coast, no vegetation.
     STONE_SHORE: {
         id: 'stone_shore', name: 'Stone Shore', surfaceBlock: BlockType.MOSSY_COBBLESTONE, subBlock: BlockType.STONE, waterBlock: BlockType.WATER,
         terrainScale: 10, terrainBase: 62, treeChance: 0, treeType: 'none', vegetationChance: 0, color: '#757575', vegetationType: 'none'
     },
-    // Magnetic Fields — rare, huge, tiered magnetic-convergence biome (sealed boss
+    // Magnetic Fields, rare, huge, tiered magnetic-convergence biome (sealed boss
     // region). Terrain/structure is driven by the deterministic instance system in
     // magneticFields.ts, not by ordinary noise; surface is metallic Magnetite.
     MAGNETIC_FIELDS: {
@@ -339,7 +339,7 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
     const ts = GenConfig.terrainShape;
 
     // Land mask, computed up front so biome-specific shaping (mountains, mesa,
-    // volcanic) can be constrained to land and blend out toward the ocean —
+    // volcanic) can be constrained to land and blend out toward the ocean :
     // oceans must never inherit mountain/mesa terrain artifacts.
     const OCEAN_START = b.ocean.continentalnessMax;
     const LAND_FULL   = OCEAN_START + ts.landOffset;
@@ -397,7 +397,7 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
         targetScale = THREE.MathUtils.lerp(targetScale, b.volcanic.scale, volcanicFactor);
     }
 
-    // Mountains — very high weirdness raises the land into soaring peaks. This
+    // Mountains, very high weirdness raises the land into soaring peaks. This
     // factor mirrors the biome-selection rule so MOUNTAINS columns actually get
     // mountainous terrain instead of their temp band's default height.
     // The ramp starts just below the biome threshold for a foothills transition
@@ -413,7 +413,7 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
         }
     }
 
-    // Swamp — warm/wet band flattened and lowered into a waterlogged marsh that
+    // Swamp, warm/wet band flattened and lowered into a waterlogged marsh that
     // hovers right at sea level. Mirrors the selection band (minTemp..maxTemp ×
     // minWeird..maxWeird) with soft edges so it blends into its neighbours.
     if (b.swamp && typeof b.swamp.minWeird === 'number' && typeof b.swamp.maxWeird === 'number') {
@@ -429,7 +429,7 @@ export function getBiomeHeightInfo(x: number, z: number, noiseSet: NoiseSet = Gl
         }
     }
 
-    // Coastal flattening — pull the coast strip toward the beach profile so dry
+    // Coastal flattening, pull the coast strip toward the beach profile so dry
     // beaches are wide and mountain/mesa shaping fades out before the waterline.
     if (b.beach) {
         const beachFactor = (1.0 - THREE.MathUtils.smoothstep(cont, OCEAN_START + 0.05, LAND_FULL + 0.04))
@@ -489,7 +489,7 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
         return BIOMES.RIVER;
     }
 
-    // Stone Shore — a narrow rocky coastal band just inland of the ocean
+    // Stone Shore, a narrow rocky coastal band just inland of the ocean
     // threshold. Uses its own continentalnessMax so it hugs the coastline.
     if (b.stoneShore && typeof b.stoneShore.continentalnessMax === 'number'
         && continentalness < b.stoneShore.continentalnessMax
@@ -497,7 +497,7 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
         return BIOMES.STONE_SHORE;
     }
 
-    // Beach — the sandy coastal band bridging ocean and inland terrain (rocky
+    // Beach, the sandy coastal band bridging ocean and inland terrain (rocky
     // high-weirdness coasts became Stone Shore above; frozen coasts stay tundra).
     if (b.beach && typeof b.beach.continentalnessMax === 'number'
         && continentalness < b.beach.continentalnessMax
@@ -509,7 +509,7 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
     if (temp > b.volcanic.minTemp && weirdness > b.volcanic.minWeird) return BIOMES.VOLCANIC;
     if (temp > b.mesaBryce.minTemp && weirdness > b.mesaBryce.minWeird && weirdness <= b.mesaBryce.maxWeird) return BIOMES.MESA_BRYCE;
 
-    // Mountains — very high weirdness across temperate bands raises soaring peaks.
+    // Mountains, very high weirdness across temperate bands raises soaring peaks.
     // The threshold sits ABOVE every temperate sub-band (swamp/jungle/dark forest
     // all end at or below it), so those biomes are never shadowed by mountains.
     if (b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird && temp > b.tundra.maxTemp) {
@@ -518,12 +518,12 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Cold band (temp < tundra.maxTemp) =====
     if (temp < b.tundra.maxTemp) {
-        // Ice Spikes — very low weirdness (rare frozen variant)
+        // Ice Spikes, very low weirdness (rare frozen variant)
         if (b.iceSpikes && typeof b.iceSpikes.minWeird === 'number' && typeof b.iceSpikes.maxWeird === 'number'
             && weirdness >= b.iceSpikes.minWeird && weirdness <= b.iceSpikes.maxWeird) {
             return BIOMES.ICE_SPIKES;
         }
-        // Taiga — high weirdness (denser snowy conifer forest)
+        // Taiga, high weirdness (denser snowy conifer forest)
         if (b.taiga && typeof b.taiga.minWeird === 'number' && weirdness > b.taiga.minWeird) {
             return BIOMES.TAIGA;
         }
@@ -535,7 +535,7 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Desert band =====
     if (temp > b.desert.minTemp) {
-        // Savanna — low weirdness (warm dry grassland transition)
+        // Savanna, low weirdness (warm dry grassland transition)
         if (b.savanna && typeof b.savanna.minWeird === 'number' && typeof b.savanna.maxWeird === 'number'
             && weirdness >= b.savanna.minWeird && weirdness <= b.savanna.maxWeird) {
             return BIOMES.SAVANNA;
@@ -545,11 +545,11 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Plains band (temperate warm) =====
     if (temp > b.plains.minTemp) {
-        // Jungle — high weirdness (dense hot forest)
+        // Jungle, high weirdness (dense hot forest)
         if (b.jungle && typeof b.jungle.minWeird === 'number' && weirdness > b.jungle.minWeird) {
             return BIOMES.JUNGLE;
         }
-        // Savanna — low weirdness (warm dry). Uses maxWeird as the threshold
+        // Savanna, low weirdness (warm dry). Uses maxWeird as the threshold
         // so the widened band (minWeird now -1.0) selects the full low range.
         if (b.savanna && typeof b.savanna.maxWeird === 'number' && weirdness <= b.savanna.maxWeird) {
             return BIOMES.SAVANNA;
@@ -559,22 +559,22 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Forest band (temperate) =====
     if (temp > b.forest.minTemp) {
-        // Dark Forest — the upper high-weirdness slot (below mountains)
+        // Dark Forest, the upper high-weirdness slot (below mountains)
         if (b.darkForest && typeof b.darkForest.minWeird === 'number' && typeof b.darkForest.maxWeird === 'number'
             && weirdness > b.darkForest.minWeird && weirdness <= b.darkForest.maxWeird) {
             return BIOMES.DARK_FOREST;
         }
-        // Swamp — warm/wet lowland marsh in the slot under dark forest
+        // Swamp, warm/wet lowland marsh in the slot under dark forest
         if (b.swamp && typeof b.swamp.minWeird === 'number' && typeof b.darkForest?.minWeird === 'number'
             && weirdness > b.swamp.minWeird && weirdness <= Math.min(b.swamp.maxWeird ?? 1, b.darkForest.minWeird)) {
             return BIOMES.SWAMP;
         }
-        // Flower Forest — mid weirdness
+        // Flower Forest, mid weirdness
         if (b.flowerForest && typeof b.flowerForest.minWeird === 'number' && typeof b.flowerForest.maxWeird === 'number'
             && weirdness > b.flowerForest.minWeird && weirdness <= b.flowerForest.maxWeird) {
             return BIOMES.FLOWER_FOREST;
         }
-        // Birch Forest — low-mid weirdness
+        // Birch Forest, low-mid weirdness
         if (b.birchForest && typeof b.birchForest.minWeird === 'number' && typeof b.birchForest.maxWeird === 'number'
             && weirdness > b.birchForest.minWeird && weirdness <= b.birchForest.maxWeird) {
             return BIOMES.BIRCH_FOREST;
@@ -584,12 +584,12 @@ export function getBiome(x: number, z: number, noiseSet: NoiseSet = GlobalNoise)
 
     // ===== Cherry band (cool temperate) =====
     if (temp > b.cherry.minTemp) {
-        // Swamp — the full high-weirdness slot below mountains (lowland marsh)
+        // Swamp, the full high-weirdness slot below mountains (lowland marsh)
         if (b.swamp && typeof b.swamp.minWeird === 'number'
             && weirdness > b.swamp.minWeird && weirdness <= (b.swamp.maxWeird ?? 1)) {
             return BIOMES.SWAMP;
         }
-        // Meadow — low weirdness (flat open grassland)
+        // Meadow, low weirdness (flat open grassland)
         if (b.meadow && typeof b.meadow.minWeird === 'number' && typeof b.meadow.maxWeird === 'number'
             && weirdness > b.meadow.minWeird && weirdness <= b.meadow.maxWeird) {
             return BIOMES.MEADOW;

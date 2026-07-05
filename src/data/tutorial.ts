@@ -13,7 +13,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'What Atlas is about',
         paragraphs: [
             'Atlas is a voxel action-adventure about exploring procedurally generated worlds, gearing up, and breaking the seal on corrupted regions.',
-            'Somewhere out there lie the rare Magnetic Fields — sealed against mining and building until you defeat their guardian, the Magnetic Warden.',
+            'Somewhere out there lie the rare Magnetic Fields: sealed against mining and building until you defeat their guardian, the Magnetic Warden.',
             'You can play in survival, creative, or spectator mode, and shape terrain with the built-in World Editor when you want to author worlds instead of adventuring in them. Every world can be saved, renamed, imported, and exported from the main menu.'
         ],
         bullets: [
@@ -78,9 +78,9 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         bullets: [
             'Day/night affects visibility and atmosphere.',
             'Health and hunger shape survival pacing; armor reduces combat damage (not falls, fire, or drowning).',
-            'Tools and weapons show durability bars and break at zero — tiers (wood to diamond) differ in damage and lifespan.',
+            'Tools and weapons show durability bars and break at zero; tiers (wood to diamond) differ in damage and lifespan.',
             'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen. All four sets (iron, gold, diamond, copper) are craftable.',
-            'While armor is worn, the HUD shows your defense pips above the hearts and each piece\'s durability at the bottom-left — a piece pulses red when close to breaking.',
+            'While armor is worn, the HUD shows your defense pips above the hearts and each piece\'s durability at the bottom-left; a piece pulses red when close to breaking.',
             'Craft a Boat (5 planks) and use it on water to launch it. Right-click boards it, Sneak hops out, and a punch or two breaks it back into the item. Boats stay where you park them and are saved with the world.',
             'Biome context influences visuals and soundscape.'
         ]
@@ -92,12 +92,12 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         paragraphs: [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
             'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
-            'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones — enough to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
+            'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones, providing enough force to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
             'Summon the Magnetic Warden at the central altar. Break its four shield crystals, strike its deflectable bolts back at it, and survive the slam and frenzy phases to cleanse the region.'
         ],
         bullets: [
             'Press R to flip your polarity; press N to switch the ability off entirely (upgraded boots).',
-            'Same polarity repels, opposite attracts — use repulsion to launch and attraction to stick.',
+            'Same polarity repels, opposite attracts; use repulsion to launch and attraction to stick.',
             'Iron armor is ferromagnetic: without boots it drags you toward every magnet, with no control.',
             'Ruin caches hold magnetite building materials, crystals, and sometimes rarer metals.',
             'The Warden drops a boot upgrade, and defeating it permanently unlocks the region.',
@@ -113,15 +113,15 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Autocomplete is available in command input, and many commands have subcommands.'
         ],
         bullets: [
-            '/help — list every command group',
+            '/help: list every command group',
             '/gamemode <survival|creative|spectator>',
-            '/setspawn — set your respawn point where you stand',
-            '/keepinventory <on|off> — keep items on death',
+            '/setspawn: set your respawn point where you stand',
+            '/keepinventory <on|off>: keep items on death',
             '/giveitem <id> [count] and /equip <armor id>',
             '/time set <day|night|value> and /time add <value>',
             '/tp <x> <y> <z>',
             '/locate biome <name>',
-            '/boss <spawn|kill> and /magfields <on|off|toggle> — encounter testing',
+            '/boss <spawn|kill> and /magfields <on|off|toggle>: encounter testing',
             '/playsound <id>, /sound volume <value>, /music skip',
             'Tip: use Options and Panorama Settings to tune visuals and menu presentation.'
         ]

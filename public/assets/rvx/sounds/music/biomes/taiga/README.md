@@ -1,9 +1,9 @@
-# taiga — active music tags
+# taiga: active music tags
 
 `tags.json` lists the music tags that play in the **taiga** biome:
 
-- `cold` — songs from `music/cold/`
-- `taiga` — songs from `music/taiga/`
+- `cold`: songs from `music/cold/`
+- `taiga`: songs from `music/taiga/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

@@ -113,7 +113,7 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
                 const cur = item.instance?.durability ?? max;
                 const frac = max !== undefined && cur !== undefined ? cur / max : 1;
                 const low = max !== undefined && frac < 0.15;
-                const title = `${BLOCKS[item.type].name} — ${stats?.defense ?? 0} defense`
+                const title = `${BLOCKS[item.type].name}: ${stats?.defense ?? 0} defense`
                     + (max !== undefined ? `, ${cur}/${max} durability` : ', unbreakable');
                 return (
                     <div key={slot} title={title}
@@ -178,11 +178,11 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {gameMode === 'survival' && (
                 <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex items-end gap-16 z-40 p-2 pointer-events-none">
                     <div className="flex flex-col gap-1 items-start">
-                        {/* Armor (defense) pips — shown above the hearts while any
+                        {/* Armor (defense) pips, shown above the hearts while any
                             armor is worn; 1 pip = 2 defense points, matching the
                             applyArmor() reduction the pips represent. */}
                         {equipment && totalDefense(equipment) > 0 && (
-                            <div className="flex gap-1 h-7" title={`${totalDefense(equipment)} armor — reduces combat damage (not falls, fire, or drowning)`}>
+                            <div className="flex gap-1 h-7" title={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
                                 {Array.from({ length: 10 }).map((_, i) => {
                                     const def = Math.min(20, totalDefense(equipment));
                                     const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
@@ -221,7 +221,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             </div>
                         )}
 
-                        {/* Hunger Bar (Shanks) — flex-row-reverse, so index 0 is
+                        {/* Hunger Bar (Shanks), flex-row-reverse, so index 0 is
                             the RIGHTMOST shank and depletes from the left. */}
                         <div className="flex gap-1 flex-row-reverse h-7">
                             {Array.from({length: 10}).map((_, i) => (

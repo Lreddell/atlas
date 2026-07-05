@@ -1,7 +1,7 @@
 // Enum-free cave sampler shared by the chunk generator and the World Editor
 // cross-section preview. These are pure functions of position + noise + config
 // (no BlockType, no NoiseSet type), so they are directly unit-testable under
-// Node's type-stripping runner AND guaranteed identical in both call sites — the
+// Node's type-stripping runner AND guaranteed identical in both call sites, the
 // editor preview shows exactly what the generator will carve.
 
 export interface CaveConfig {
@@ -71,7 +71,7 @@ export function caveSurfaceTaper(depth: number, isBreach: boolean, cfg: CaveConf
 /**
  * True when this cell should be carved out (air, or lava below the lava level).
  * Layered: spaghetti/worm tunnels, cheese caverns, noodle threads, and deep
- * swiss-cheese holes — each independently toggleable and tunable via config.
+ * swiss-cheese holes, each independently toggleable and tunable via config.
  */
 export function isCaveCarved(
     cwx: number, y: number, cwz: number,
@@ -80,7 +80,7 @@ export function isCaveCarved(
 ): boolean {
     if (!cfg.enabled) return false;
 
-    // Spaghetti / worm caves — magnitude of a 2-channel 3D field near zero traces
+    // Spaghetti / worm caves, magnitude of a 2-channel 3D field near zero traces
     // long winding tubes.
     if (cfg.wormEnabled) {
         const f = cfg.wormFreq;
@@ -92,7 +92,7 @@ export function isCaveCarved(
         }
     }
 
-    // Cheese caverns — large open rooms, gated to deeper rock by a coarse mask.
+    // Cheese caverns, large open rooms, gated to deeper rock by a coarse mask.
     if (cfg.cavernEnabled && depth > cfg.cavernMinDepth) {
         const mask = caveNoise3D(cwx * 0.005, y * 0.02, cwz * 0.005);
         if (mask > cfg.cavernMaskThreshold) {
@@ -106,7 +106,7 @@ export function isCaveCarved(
         }
     }
 
-    // Noodle caves — thin secondary tunnels threading between the big features.
+    // Noodle caves, thin secondary tunnels threading between the big features.
     if (cfg.noodleEnabled) {
         const mask = caveNoise3D(cwx * 0.01 + 222, y * 0.01, cwz * 0.01 + 222);
         if (mask > cfg.noodleMaskThreshold) {

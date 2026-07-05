@@ -108,7 +108,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             side: THREE.DoubleSide,
             // Depth-test/write enabled so multi-box shapes (slabs/stairs) self-occlude
             // instead of drawing back/interior faces over front ones. The held model
-            // sits ~0.8u from the camera — closer than world geometry — so it still
+            // sits ~0.8u from the camera (closer than world geometry) so it still
             // renders on top (only clips when the player is face-planted into a block).
             depthTest: true,
             depthWrite: true
@@ -141,7 +141,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 return;
             }
             // Left-click drives the continuous mine/attack swing. Right-click no
-            // longer animates here — placement swings come from the
+            // longer animates here, placement swings come from the
             // 'atlas:block-placed' event and eating from inputState.eating.
             if (e.button === 0) isLeftMouseDown.current = true;
         };
@@ -276,7 +276,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
 
             // Continuous swing comes from left-click (mining/attacking) or an active
-            // bite (eating). Right-click placement/use does NOT auto-swing — a swing
+            // bite (eating). Right-click placement/use does NOT auto-swing, a swing
             // only fires when something actually happens (the 'atlas:block-placed'
             // event below), so a failed/no-op right-click no longer animates.
             const isAction = (isLeftMouseDown.current || inputState.eating) && isLocked;

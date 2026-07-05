@@ -254,7 +254,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.POLARITY_BOOTS_UPGRADE]: { id: BlockType.POLARITY_BOOTS_UPGRADE, color: '#8a7fd6', name: 'Polarity Boots Upgrade', textureSlot: 215, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.UPGRADED_POLARITY_BOOTS]: { id: BlockType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
-  // Boat — use on water to place a boat entity; right-click it to board, sneak
+  // Boat, use on water to place a boat entity; right-click it to board, sneak
   // to hop out (it stays parked). Breaking the boat drops this item back.
   [BlockType.BOAT]: { id: BlockType.BOAT, color: '#8d6e63', name: 'Boat', textureSlot: 216, hardness: 0, isItem: true, isFuel: true, fuelValue: 20000, category: 'functional' },
   [BlockType.GOLD_HELMET]: { id: BlockType.GOLD_HELMET, color: '#fbc02d', name: 'Gold Helmet', textureSlot: 157, hardness: 0, isItem: true, category: 'tools' },
@@ -270,7 +270,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.COPPER_LEGGINGS]: { id: BlockType.COPPER_LEGGINGS, color: '#e67e22', name: 'Copper Leggings', textureSlot: 167, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.COPPER_BOOTS]: { id: BlockType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 168, hardness: 0, isItem: true, category: 'tools' },
 
-  // Packed Ice — denser ice for the Ice Spikes biome
+  // Packed Ice, denser ice for the Ice Spikes biome
   [BlockType.PACKED_ICE]: { id: BlockType.PACKED_ICE, color: '#4fc3f7', name: 'Packed Ice', textureSlot: 169, hardness: 1.0, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.PACKED_ICE, chance: 1, min: 1, max: 1 }] },
 
   // ===== Biome-specific surface blocks (Task ID 5) =====
@@ -340,36 +340,36 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // ===== Magnetic Fields biome content =====
-  // Magnetite Block — signature gray metallic terrain (shelves, walls, pillars,
+  // Magnetite Block, signature gray metallic terrain (shelves, walls, pillars,
   // arena). Solid, opaque, NOT a magnetic source by itself.
   [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
 
-  // Resource crystals — cross-plane, red (positive) / blue (negative). Not
+  // Resource crystals, cross-plane, red (positive) / blue (negative). Not
   // magnetic sources this pass; used to craft Polarity Boots and magnetite blocks.
   [BlockType.POSITIVE_MAGNETITE_CRYSTAL]: { id: BlockType.POSITIVE_MAGNETITE_CRYSTAL, color: '#ff4030', name: 'Positive Magnetite Crystal', textureSlot: 206, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POSITIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
   [BlockType.NEGATIVE_MAGNETITE_CRYSTAL]: { id: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, color: '#3060ff', name: 'Negative Magnetite Crystal', textureSlot: 207, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
 
-  // Magnetic Spike — cross-plane hazard rendered as sharp spikes but with solid
+  // Magnetic Spike, cross-plane hazard rendered as sharp spikes but with solid
   // collision so the player lands on it; multiplies fall damage (see Player.tsx +
   // getFallDamageMultiplierForLandingBlock).
   [BlockType.MAGNETIC_SPIKE]: { id: BlockType.MAGNETIC_SPIKE, color: '#2b2b30', name: 'Magnetic Spike', textureSlot: 208, hardness: 1.5, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETIC_SPIKE, chance: 1, min: 1, max: 1 }] },
 
-  // Magnetic Boss Summoner — placed at arena center; right-click summons the
+  // Magnetic Boss Summoner, placed at arena center; right-click summons the
   // Magnetic Warden (interaction wired in InteractionController).
   [BlockType.MAGNETIC_BOSS_SUMMONER]: { id: BlockType.MAGNETIC_BOSS_SUMMONER, color: '#7b1fa2', name: 'Magnetic Boss Summoner', textureSlot: 209, hardness: 4.0, preferredTool: 'pickaxe', minHarvestTier: 2, lightLevel: 7, category: 'functional', drops: [{ type: BlockType.MAGNETIC_BOSS_SUMMONER, chance: 1, min: 1, max: 1 }] },
 
-  // Magnetic Shield Crystal — cross-plane breakable crystal atop each arena
+  // Magnetic Shield Crystal, cross-plane breakable crystal atop each arena
   // pillar; breaking all of them drops the Magnetic Warden's shield.
   [BlockType.MAGNETIC_SHIELD_CRYSTAL]: { id: BlockType.MAGNETIC_SHIELD_CRYSTAL, color: '#b388ff', name: 'Magnetic Shield Crystal', textureSlot: 210, hardness: 0.8, transparent: true, noCollision: true, lightLevel: 9, category: 'functional', drops: [] },
 
-  // Charged Magnetite — emissive lighter accent block for contrast against the
+  // Charged Magnetite, emissive lighter accent block for contrast against the
   // dark magnetite terrain (decorative veins on shelves).
   [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: BlockType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
 
-  // Magnetite Shard — bright cross-plane crystal cluster for contrast decoration.
+  // Magnetite Shard, bright cross-plane crystal cluster for contrast decoration.
   [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 12, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
 
-  // Magnetite building set — for the arena (and player builds). Bricks + chiseled
+  // Magnetite building set, for the arena (and player builds). Bricks + chiseled
   // get their own textures; slabs/stairs reuse a parent texture via textureParent.
   [BlockType.MAGNETITE_BRICKS]: { id: BlockType.MAGNETITE_BRICKS, color: '#43434f', name: 'Magnetite Bricks', textureSlot: 213, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICKS, chance: 1, min: 1, max: 1 }] },
   [BlockType.CHISELED_MAGNETITE]: { id: BlockType.CHISELED_MAGNETITE, color: '#4a4a58', name: 'Chiseled Magnetite', textureSlot: 214, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CHISELED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
@@ -379,21 +379,21 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // ===== Cave content (deep-stone, dripstone, lush, amethyst) =====
-  // Deepslate — the harder deep-stone that replaces stone below the deepslate
+  // Deepslate, the harder deep-stone that replaces stone below the deepslate
   // band; mines into cobbled deepslate exactly like stone → cobblestone.
   [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#585862', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
   [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#4c4c55', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.DEEPSLATE, category: 'building', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
 
-  // Dripstone caves — lumpy dripstone bedrock + cross-plane pointed dripstone
+  // Dripstone caves, lumpy dripstone bedrock + cross-plane pointed dripstone
   // (stalactites hang, stalagmites stand). Pointed dripstone keeps collision.
   [BlockType.DRIPSTONE_BLOCK]: { id: BlockType.DRIPSTONE_BLOCK, color: '#8a6a55', name: 'Dripstone Block', textureSlot: 219, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.DRIPSTONE_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.POINTED_DRIPSTONE]: { id: BlockType.POINTED_DRIPSTONE, color: '#9a745c', name: 'Pointed Dripstone', textureSlot: 220, transparent: true, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POINTED_DRIPSTONE, chance: 1, min: 1, max: 1 }] },
 
-  // Lush caves — moss carpeting + emissive glow lichen that lights caves softly.
+  // Lush caves, moss carpeting + emissive glow lichen that lights caves softly.
   [BlockType.MOSS_BLOCK]: { id: BlockType.MOSS_BLOCK, color: '#5a7a35', name: 'Moss Block', textureSlot: 221, hardness: 0.3, preferredTool: 'shovel', category: 'natural', drops: [{ type: BlockType.MOSS_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: BlockType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }, { type: BlockType.LUMEN_BERRY, chance: 0.25, min: 1, max: 1 }] },
 
-  // Amethyst geodes — calcite shell, amethyst lining, budding cores that grow
+  // Amethyst geodes, calcite shell, amethyst lining, budding cores that grow
   // faceted (emissive) clusters. Budding amethyst can't be harvested (drops []).
   [BlockType.AMETHYST_BLOCK]: { id: BlockType.AMETHYST_BLOCK, color: '#8b5fc9', name: 'Amethyst Block', textureSlot: 223, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.AMETHYST_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.BUDDING_AMETHYST]: { id: BlockType.BUDDING_AMETHYST, color: '#9264d0', name: 'Budding Amethyst', textureSlot: 224, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [] },
@@ -412,12 +412,12 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.DEEPSLATE_EMERALD_ORE]: { id: BlockType.DEEPSLATE_EMERALD_ORE, color: '#2ba85e', name: 'Deepslate Emerald Ore', textureSlot: 233, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural' },
 
   // ===== Foods (Atlas-original) =====
-  // Banana — a rare drop from jungle leaves; a quick, filling snack.
+  // Banana, a rare drop from jungle leaves; a quick, filling snack.
   [BlockType.BANANA]: { id: BlockType.BANANA, color: '#ffd54f', name: 'Banana', textureSlot: 234, hardness: 0, isItem: true, category: 'food', nutrition: 5, saturationModifier: 0.3 },
-  // Lumen Berry — a faintly glowing berry foraged from cave glow lichen. Light
+  // Lumen Berry, a faintly glowing berry foraged from cave glow lichen. Light
   // snack; carries a soft glow as a dropped item.
   [BlockType.LUMEN_BERRY]: { id: BlockType.LUMEN_BERRY, color: '#8ef0d0', name: 'Lumen Berry', textureSlot: 235, hardness: 0, isItem: true, lightLevel: 4, category: 'food', nutrition: 3, saturationModifier: 0.3 },
-  // Forager's Bowl — a hearty crafted meal (apple + banana + lumen berry). The
+  // Forager's Bowl, a hearty crafted meal (apple + banana + lumen berry). The
   // best hunger restore available without farming.
   [BlockType.FORAGERS_BOWL]: { id: BlockType.FORAGERS_BOWL, color: '#c98a3c', name: "Forager's Bowl", textureSlot: 236, hardness: 0, isItem: true, category: 'food', nutrition: 9, saturationModifier: 0.6 }
 };

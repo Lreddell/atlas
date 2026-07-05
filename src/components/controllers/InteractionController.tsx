@@ -283,7 +283,7 @@ export const InteractionController = ({
             if (targetType === BlockType.WATER || targetType === BlockType.LAVA) {
                 // Placing: using a held Boat item on a water cell spawns a boat
                 // entity there. Survival consumes the item; creative doesn't.
-                // Boats are a traversal item, not terrain editing — placement is
+                // Boats are a traversal item, not terrain editing, placement is
                 // exempt from the sealed-region edit gate (unlike block placement),
                 // so a boat can be launched on sealed water same as anywhere else.
                 const held = inventoryRef.current[selectedSlotRef.current] as { type: BlockType } | null;
@@ -513,7 +513,7 @@ export const InteractionController = ({
         const dmg = getAttackDamage(held);
         const targetKind = entityManager.getEntity(hit.id)?.kind;
         const result = entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
-        // A shield absorbs the blow: a metallic "clink", no hurt cry — so it is
+        // A shield absorbs the blow: a metallic "clink", no hurt cry, so it is
         // obvious the boss is invulnerable until its crystals are gone.
         if (result === 'blocked') {
             soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
@@ -633,7 +633,7 @@ export const InteractionController = ({
         if (isLeftMouseDown.current && hit && !worldManager.canEditBlock(hit.bx, hit.by, hit.bz)) {
             // Sealed region: can't mine. Clear any in-progress break, and notify
             // only after the player has held the button on the SAME sealed block
-            // for a beat — a missed combat swing that sweeps across sealed terrain
+            // for a beat, a missed combat swing that sweeps across sealed terrain
             // (constant during the Warden fight) must not toast "defeat its
             // guardian" at the player who is doing exactly that. A deliberate
             // mining attempt still gets clear feedback almost immediately.
@@ -777,7 +777,7 @@ export const InteractionController = ({
                         }
                     }
 
-                    // A double slab is one block but yields two slabs — capture its meta
+                    // A double slab is one block but yields two slabs, capture its meta
                     // before the cell is cleared.
                     const isDoubleSlab = isSlab(targetType) && (worldManager.getMetadata(bx, by, bz) & SLAB_DOUBLE) !== 0;
                     // Breaking a Magnetic Shield Crystal weakens the Magnetic Warden's shield.
@@ -840,7 +840,7 @@ export const InteractionController = ({
                     eatingTimer.current += delta * 20;
                     // Drive the eat animation only while a bite is actively charging
                     // (timer >= 0). During the brief post-bite pause (timer < 0) the
-                    // hand lowers, then the next bite charges — repeating while held.
+                    // hand lowers, then the next bite charges, repeating while held.
                     inputState.eating = eatingTimer.current >= 0;
                     if (eatingTimer.current >= 32) {
                         const def = BLOCKS[heldItem.type as BlockType];

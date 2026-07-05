@@ -14,7 +14,7 @@ const LEAF_TYPES = new Set<BlockType>([
     BlockType.ACACIA_LEAVES
 ]);
 
-// getOpacity is called per voxel in the lighting BFS and the mesher AO loops —
+// getOpacity is called per voxel in the lighting BFS and the mesher AO loops :
 // precompute every block id into a flat typed array so the hot path is one load.
 const MAX_OPACITY_ID = Math.max(
     ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
@@ -54,7 +54,7 @@ function computeOpacity(type: BlockType): number {
 // only fill part of their cell. Whether they block light depends on which face the
 // light crosses: a top slab seals its +Y face (skylight can't pass down through it)
 // while leaving its sides/bottom open. getDirectionalOpacity answers, for light
-// moving in a given direction into a cell, how much that cell attenuates it — using
+// moving in a given direction into a cell, how much that cell attenuates it, using
 // the same shape boxes the mesher and collision use, so visuals/physics/light agree.
 
 // Fast "is this a shaped block" lookup mirroring OPACITY_TABLE (lighting hot path).
@@ -151,7 +151,7 @@ function getFaceCoverMask(type: BlockType, meta: number): number {
 
 /**
  * Attenuation a cell applies to light entering it as that light moves in
- * direction (dx,dy,dz) — exactly one of which is ±1. For ordinary blocks this is
+ * direction (dx,dy,dz), exactly one of which is ±1. For ordinary blocks this is
  * direction-independent and delegates to getOpacity. For slabs/stairs it depends on
  * the entry face: light enters through the face whose outward normal is -(dx,dy,dz),
  * so if the shape fully seals that face the light is blocked like the solid material,
@@ -195,7 +195,7 @@ function pairedFaceSealed(
 
 /**
  * Attenuation for light crossing from a source cell into a target cell moving in
- * direction (dx,dy,dz) — the BFS propagation rule. Extends getDirectionalOpacity
+ * direction (dx,dy,dz), the BFS propagation rule. Extends getDirectionalOpacity
  * (target entry face) with the SOURCE's exit face and, when both blocks are shaped,
  * with PAIRED coverage: two partial faces whose projections together tile the shared
  * boundary seal it even though neither does alone (e.g. a bottom slab beside a top

@@ -1,8 +1,8 @@
-# plains — active music tags
+# plains: active music tags
 
 `tags.json` lists the music tags that play in the **plains** biome:
 
-- `plains` — songs from `music/plains/`
+- `plains`: songs from `music/plains/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

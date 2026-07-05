@@ -12,7 +12,7 @@ const mc = read('src/systems/sound/MusicController.ts');
 const app = read('src/App.tsx');
 
 test('crossfade cleanup pauses retired decks, never the live one', () => {
-    // The guard must skip the pause when the deck has become live again — the
+    // The guard must skip the pause when the deck has become live again, the
     // old inverted guard paused the ACTIVE deck on a quick A→B→A reuse (the
     // intermittent "music cuts out" stutter) and never cleaned up retired decks.
     assert.match(sm, /if \(this\.activeDeck === prevDeckId\) return;/);
@@ -56,7 +56,7 @@ test('the sound manifest only reloads from the explicit /sound reload command', 
     const context = app.slice(Math.max(0, idx - 400), idx);
     assert.match(context, /'\/sound'/, 'reloadManifest must sit inside the /sound command handler');
     // init() must not re-run the manifest/folder-index load once initialized.
-    assert.match(sm, /Already initialized — just resume if suspended/);
+    assert.match(sm, /Already initialized, just resume if suspended/);
 });
 
 test('every biome has a tag config, and every tag has a folder + manifest event', () => {

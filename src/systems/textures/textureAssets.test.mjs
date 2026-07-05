@@ -7,7 +7,7 @@ import { TEXTURE_PATHS } from './textureMapping.ts';
 
 // Guard against broken texture overrides: a present-but-empty or non-PNG file
 // would make the atlas loader log errors and fall back mid-session. Missing
-// files are FINE (the procedural atlas is the designed fallback) — but any file
+// files are FINE (the procedural atlas is the designed fallback), but any file
 // that exists must be a real PNG.
 const root = path.resolve(import.meta.dirname, '../../..');
 const texRoot = path.join(root, 'public/assets/textures');

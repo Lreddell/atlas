@@ -1,9 +1,9 @@
-# swamp — active music tags
+# swamp: active music tags
 
 `tags.json` lists the music tags that play in the **swamp** biome:
 
-- `forest` — songs from `music/forest/`
-- `swamp` — songs from `music/swamp/`
+- `forest`: songs from `music/forest/`
+- `swamp`: songs from `music/swamp/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

@@ -141,7 +141,7 @@ const disposeFadeMaterials = (mats: FadeMaterials) => {
 };
 
 // ── Global fade ticker ──
-// Previously every chunk registered its own useFrame callback to animate fades —
+// Previously every chunk registered its own useFrame callback to animate fades :
 // ~7,200 per-frame callbacks at render distance 48, almost all idle. Instead,
 // fading chunks register here and a single ticker (mounted once in App's Canvas)
 // drives only the handful of active animations.
@@ -203,7 +203,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
 
   // Replaced geometries are disposed only AFTER the new state commits. Disposing
   // before commit let Three render the disposed geometry for one frame, silently
-  // re-uploading its GPU buffers — a leak (and a crash if arrays were released).
+  // re-uploading its GPU buffers, a leak (and a crash if arrays were released).
   const pendingDisposeRef = useRef<Geometries[]>([]);
   const queueDispose = useCallback((value: Geometries) => {
     if (value.opaque || value.cutout || value.transparent) {
@@ -289,12 +289,12 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         startFade('out');
       }
     } else if (fadeModeRef.current === 'out') {
-      // Chunk returned to active — cancel fade-out, back to shared materials
+      // Chunk returned to active, cancel fade-out, back to shared materials
       stopFade();
     }
   }, [fadingOut, fadeInEnabled, startFade, stopFade]);
 
-  // Fade disabled — drop any running animation
+  // Fade disabled, drop any running animation
   useEffect(() => {
     if (fadeInEnabled) return;
     stopFade();
@@ -328,9 +328,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         const buildGeo = (buff: any) => {
             if (!buff || buff.positions.length === 0) return null;
             const geo = new THREE.BufferGeometry();
-            // Buffers arrive transferred from the worker and are never mutated again —
+            // Buffers arrive transferred from the worker and are never mutated again :
             // wrap them directly (Float32BufferAttribute would copy every array).
-            // NOTE: do NOT release the CPU arrays after GPU upload — WorldManager's
+            // NOTE: do NOT release the CPU arrays after GPU upload, WorldManager's
             // meshCache hands these same buffers to chunks that remount later.
             geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
             geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));

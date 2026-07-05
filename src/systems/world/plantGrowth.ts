@@ -12,7 +12,7 @@ const PROBES_PER_CHUNK = 3;
 const GROWTH_THRESHOLD = 7; // metadata stage threshold to trigger tree growth attempt
 // Only tick chunks near the player (a bounded random-tick range). At render
 // distance 48 there are ~7,200 loaded chunks; scanning them all every growth tick
-// is wasted work — saplings more than this far away can grow when you come back.
+// is wasted work, saplings more than this far away can grow when you come back.
 const GROWTH_TICK_RADIUS = 8;
 
 interface WorldAccess {
@@ -35,7 +35,7 @@ export function tickPlantGrowth(world: WorldAccess) {
 
     const seed = world.getSeed();
     // Cheap LCG. Growth timing was always wall-clock random (Date.now-based), so this
-    // weakens no determinism guarantee — tree SHAPE stays seed-deterministic via
+    // weakens no determinism guarantee, tree SHAPE stays seed-deterministic via
     // generateTreeBlocks(kind, wx, groundY, wz, seed).
     let rng = ((Date.now() ^ seed) >>> 0) || 1;
     const nextRand = () => {
@@ -46,7 +46,7 @@ export function tickPlantGrowth(world: WorldAccess) {
     const LAYER = CHUNK_SIZE * CHUNK_SIZE;
     const center = world.getTickCenter();
 
-    // Iterate the radius box around the player directly — enumerating (and
+    // Iterate the radius box around the player directly, enumerating (and
     // allocating) the FULL loaded-chunk key list just to discard everything
     // outside the radius scaled with render distance (~7,200 keys at RD 48)
     // instead of with the constant 17x17 tick neighbourhood.
@@ -64,7 +64,7 @@ export function tickPlantGrowth(world: WorldAccess) {
             const wx = cx * CHUNK_SIZE + lx;
             const wz = cz * CHUNK_SIZE + lz;
 
-            // Direct typed-array scan over the full world column — saplings can sit on
+            // Direct typed-array scan over the full world column, saplings can sit on
             // soil at any height (the old 64..199 window silently excluded everything else).
             for (let yi = 0; yi < layers; yi++) {
                 const block = chunk[yi * LAYER + colBase] as BlockType;
@@ -72,7 +72,7 @@ export function tickPlantGrowth(world: WorldAccess) {
 
                 const y = yi + MIN_Y;
 
-                // Found a sapling — process growth
+                // Found a sapling, process growth
                 const stage = world.getMetadata(wx, y, wz);
 
                 // Check valid soil below
@@ -103,8 +103,8 @@ function attemptTreeGrowth(world: WorldAccess, saplingType: BlockType, wx: numbe
     // Quick vertical clearance check
     for (let h = 1; h <= clearance; h++) {
         const above = world.tryGetBlock(wx, wy + h, wz);
-        if (above === null) return; // chunk not loaded above — skip
-        if (!isReplaceable(above)) return; // blocked — give up this attempt
+        if (above === null) return; // chunk not loaded above, skip
+        if (!isReplaceable(above)) return; // blocked, give up this attempt
     }
 
     const seed = world.getSeed();
@@ -115,7 +115,7 @@ function attemptTreeGrowth(world: WorldAccess, saplingType: BlockType, wx: numbe
         if (!tb.isTrunk) continue;
         const existing = world.tryGetBlock(tb.wx, tb.wy, tb.wz);
         if (existing === null) return; // chunk boundary not loaded
-        if (!isReplaceable(existing)) return; // trunk blocked — abort entirely
+        if (!isReplaceable(existing)) return; // trunk blocked, abort entirely
     }
 
     // Phase 2: remove sapling and place tree
@@ -129,7 +129,7 @@ function attemptTreeGrowth(world: WorldAccess, saplingType: BlockType, wx: numbe
                 world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
             }
         } else {
-            // Leaf — permissive, only place in air or existing leaves
+            // Leaf, permissive, only place in air or existing leaves
             if (isReplaceable(existing)) {
                 world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
             }

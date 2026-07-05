@@ -1,8 +1,8 @@
-# ocean — active music tags
+# ocean: active music tags
 
 `tags.json` lists the music tags that play in the **ocean** biome:
 
-- `ocean` — songs from `music/ocean/`
+- `ocean`: songs from `music/ocean/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

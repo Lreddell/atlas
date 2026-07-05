@@ -1,5 +1,5 @@
 // Browser-native deflate for .acr payloads, via CompressionStream/DecompressionStream
-// (async — the codec's Compressor interface awaits the result). Used by the OPFS
+// (async, the codec's Compressor interface awaits the result). Used by the OPFS
 // SaveWorker. Falls back handled by the caller via streamCompressorAvailable().
 
 import type { Compressor } from './acrCodec';

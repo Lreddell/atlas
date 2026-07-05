@@ -203,7 +203,7 @@ const AuroraCurtainFragmentShader = `
         // Whitish-green brightening at core
         col = mix(col, vec3(0.85, 1.0, 0.90), core * 0.5);
 
-        // Dynamic colour shift along the ribbon length — stronger effect
+        // Dynamic colour shift along the ribbon length, stronger effect
         float cShift = sin(vUv.x * 5.0 + uTime * 0.035 + uPhase) * 0.5 + 0.5;
         col = mix(col, mix(uColorB, uColorC, cShift), 0.25);
 
@@ -353,7 +353,7 @@ export interface DayNightCycleRef {
     setPhase: (phaseIndex: number) => void;
 }
 
-// Hoisted constants and scratch objects — the day/night useFrame previously allocated
+// Hoisted constants and scratch objects, the day/night useFrame previously allocated
 // ~20 objects per frame (Colors, Vector3 clones, theme arrays), causing GC pressure.
 // A single DayNightCycle instance exists, so module-level scratch is safe.
 const COL_NIGHT_ZENITH = new THREE.Color(0x000005);
@@ -588,7 +588,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
         // --- Orbit Logic ---
         const radius = 400;
-        // (cos, sin, 0) is already unit length — no normalize/alloc needed
+        // (cos, sin, 0) is already unit length, no normalize/alloc needed
         const sunDir = scratchSunDir.set(Math.cos(phi), Math.sin(phi), 0);
         const moonDir = scratchMoonDir.set(-Math.cos(phi), -Math.sin(phi), 0);
         const h = sunDir.y;
@@ -670,7 +670,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // The Magnetic Fields biome is hazy and charged: pull the fog in close and
         // tint it dusky purple. Damped so crossing the border eases in/out. The haze
         // is fully suppressed during the summon cutscene (the orbit looks at the
-        // arena from far away — thick fog would hide it) and fades back in the moment
+        // arena from far away, thick fog would hide it) and fades back in the moment
         // the player regains control.
         const inMagnetic = (getBiome(camera.position.x, camera.position.z) as { id?: string } | undefined)?.id === MAGNETIC_FIELDS_BIOME_ID;
         if (bossSummon.isActive()) {
@@ -692,7 +692,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         let fogNear = Math.max(30, renderDistance * CHUNK_SIZE * 0.3);
         let fogFar = renderDistance * CHUNK_SIZE - 5;
         if (mag > 0.001) {
-            // Roughly halve the visible range inside the biome for a thick haze — and
+            // Roughly halve the visible range inside the biome for a thick haze, and
             // clamp it down hard during the boss storm: noticeably thicker once the
             // slam phase begins (storm 0.65), and a near-blinding murk at frenzy
             // (storm 1.0, when the music speeds up).
@@ -813,7 +813,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             starsRef.current.visible = starOpacity > 0.01;
         }
 
-        // Fast path: full daylight with the biome blend already settled at zero —
+        // Fast path: full daylight with the biome blend already settled at zero :
         // skip the per-frame biome noise lookup and 18 setHSL uniform writes.
         if (auroraGroupRef.current && dayFactor >= 0.2 && auroraBiomeBlendRef.current < 0.001) {
             auroraGroupRef.current.visible = false;

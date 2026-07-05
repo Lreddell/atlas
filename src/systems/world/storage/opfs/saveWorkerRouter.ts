@@ -1,4 +1,4 @@
-// Pure request dispatch for the SaveWorker — separated from the worker globals so
+// Pure request dispatch for the SaveWorker, separated from the worker globals so
 // it can be unit-tested against an OpfsSavesCore backed by a fake OPFS.
 
 import type { OpfsSavesCore } from './OpfsSavesCore';

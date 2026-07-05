@@ -21,7 +21,7 @@ const FRENZY_PLAYBACK_RATE = 2 ** (1 / 12);  // 1.0594630943592953  (+100 cents,
 // biome's tags that actually have files, so multiple biomes can share identical
 // music simply by sharing a tag. If a song from a tag is already playing and you
 // cross into another biome that still has that tag, the music keeps playing
-// (see switchContext continuity) — the biome-stability timer still governs when a
+// (see switchContext continuity), the biome-stability timer still governs when a
 // switch is even considered.
 //
 // Non-biome game states map to a single tag each.
@@ -131,7 +131,7 @@ class MusicController {
     // Boss-music override. The dedicated boss track plays only while the Magnetic
     // Warden is alive AND the player is actively in combat (aggro'd). So it stops
     // when the boss dies, when the player dies, or when the player leaves / loses
-    // aggro — but survives a brief loss of line-of-sight and resumes on re-engage.
+    // aggro, but survives a brief loss of line-of-sight and resumes on re-engage.
     private bossAlive: boolean = false;
     private inCombat: boolean = false;
 
@@ -216,7 +216,7 @@ class MusicController {
             soundManager.setMusicPlaybackRate(FRENZY_PLAYBACK_RATE);
         }
         // Turning OFF (boss defeated / player died / fight cleared): do NOT snap the
-        // playing track's rate back down — that pitch drop is clearly audible while the
+        // playing track's rate back down, that pitch drop is clearly audible while the
         // track is fading out and sounds like a glitch. Leave the fading track at its
         // raised pitch; whatever plays next (death music, world music) starts fresh at
         // 1.0 via playNextTrack(), so nothing else is left pitched.
@@ -345,11 +345,11 @@ class MusicController {
         const isCaveSwitch = CAVE_CONTEXTS.has(targetContext) || CAVE_CONTEXTS.has(this.currentContext);
         const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC';
         // A game-mode change (into or out of CREATIVE) is a deliberate action, not a
-        // biome wander — switch promptly instead of waiting out the biome debounce,
+        // biome wander, switch promptly instead of waiting out the biome debounce,
         // so the right track starts even when nothing is currently playing.
         const isCreativeSwitch = targetContext === 'CREATIVE' || this.currentContext === 'CREATIVE';
         // Leaving the boss track while the boss is STILL ALIVE is usually an aggro
-        // flicker (a beat of combat:stop mid-fight), not the fight ending — debounce
+        // flicker (a beat of combat:stop mid-fight), not the fight ending, debounce
         // it so the music doesn't thrash boss↔biome. A real end (boss dead/cleared,
         // player dead, quitting to menu) switches away instantly as before.
         const leavingLiveBossFlicker = this.currentContext === 'BOSS_MAGNETIC'
@@ -465,7 +465,7 @@ class MusicController {
         // the boss track on respawn).
         this.bossAlive = false;
         this.inCombat = false;
-        if (this.isDeathSuspended) return; // already in death music — don't restart it
+        if (this.isDeathSuspended) return; // already in death music, don't restart it
 
         this.isDeathSuspended = true;
         this.isTransitioning = false;
@@ -527,7 +527,7 @@ class MusicController {
         const playableTags = this.tagsForContext(this.currentContext)
             .filter(tag => soundManager.hasTracksForEvent(`music.${tag}`));
         if (playableTags.length === 0) {
-            // Nothing playable for this context (all its tag folders empty) — retry later.
+            // Nothing playable for this context (all its tag folders empty), retry later.
             this.isPlaying = false;
             this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 30000);
             return Promise.resolve();
@@ -569,7 +569,7 @@ class MusicController {
         this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = Date.now();
         if (this.isDeathSuspended) {
-            // Death music plays once — after it ends, stay silent until respawn / menu.
+            // Death music plays once, after it ends, stay silent until respawn / menu.
             this.nextPlayTime = Number.POSITIVE_INFINITY;
             return;
         }

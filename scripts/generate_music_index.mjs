@@ -6,7 +6,7 @@
 //     node scripts/generate_music_index.mjs
 //
 // Layout:
-//   music/<tag>/*.ogg              song folders — each folder is a "music tag"
+//   music/<tag>/*.ogg              song folders, each folder is a "music tag"
 //   music/biomes/<biome>/tags.json the list of tags active for that biome
 //
 // Output shape:

@@ -1,8 +1,8 @@
-# red_mesa — active music tags
+# red_mesa: active music tags
 
 `tags.json` lists the music tags that play in the **red_mesa** biome:
 
-- `mesa` — songs from `music/mesa/`
+- `mesa`: songs from `music/mesa/`
 
 Songs live in the tag folders (`public/assets/rvx/sounds/music/<tag>/`), not
 here. A biome plays a random song pooled from all of its tags that have files;

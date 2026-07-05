@@ -1,7 +1,7 @@
 // CommonJS port of the pure-TS .acr codec (src/systems/world/storage/acr/).
 // The Electron main process can't import the TS sources (no transpile step), so
 // this mirrors the EXACT byte layout from acrFormat.ts / acrCodec.ts. They are
-// kept byte-identical by acrCrossCompat.test.mjs — if you change one, change both.
+// kept byte-identical by acrCrossCompat.test.mjs, if you change one, change both.
 //
 // See src/systems/world/storage/acr/acrFormat.ts for the authoritative layout.
 
@@ -62,7 +62,7 @@ function encodeChunkBody(blocks, light, meta, timestampMs) {
 
 function decodeChunkBody(body) {
     // STRICT framing (mirror of acrCodec.ts): min length, supported schema, and an
-    // exact total length — no missing bytes, no trailing garbage.
+    // exact total length, no missing bytes, no trailing garbage.
     if (body.length < BODY_HEADER_BYTES) {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
@@ -224,7 +224,7 @@ class RegionFile {
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
-        // ALWAYS allocate a fresh run — never overwrite the committed sectors, even
+        // ALWAYS allocate a fresh run, never overwrite the committed sectors, even
         // when the sector count is unchanged. The old run is freed only after the
         // header commit (see writeChunkBatch), so a crash mid-write keeps the
         // committed chunk intact. (Mirror of acrCodec.ts.)

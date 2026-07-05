@@ -8,12 +8,12 @@ import { soundManager } from '../../systems/sound/SoundManager';
 // it has no direct dependency on the entity or combat systems.
 
 // Phase thresholds (fraction of max HP) where the boss escalates. The bar draws a
-// segment marker at each so players can read upcoming phase changes — modular:
+// segment marker at each so players can read upcoming phase changes, modular:
 // extend this list (or, later, feed it per-boss from boss:spawned) for any number
 // of phases. Magnetic Warden: slam phase at 50%, frenzy at 25%.
 const PHASE_MARKERS = [0.5, 0.25];
 
-// A small Atlas-pixel diamond pip that divides the bar at a phase threshold —
+// A small Atlas-pixel diamond pip that divides the bar at a phase threshold :
 // a segmented health-bar marker, kept crisp (shapeRendering=crispEdges) and
 // beveled to match the chunky Atlas UI. Spans the full bar height so it reads as
 // a notch through the fill, shield, and empty track alike.
@@ -25,7 +25,7 @@ const PhaseMarker: React.FC<{ at: number }> = ({ at }) => (
         <svg width="10" height="16" viewBox="0 0 10 16" shapeRendering="crispEdges" className="block h-full">
             {/* hard near-black outline (the segment cut) */}
             <polygon points="5,0 10,8 5,16 0,8" fill="#08080c" />
-            {/* bone-white diamond face — reads on red, blue, and purple fills */}
+            {/* bone-white diamond face, reads on red, blue, and purple fills */}
             <polygon points="5,2 8,8 5,14 2,8" fill="#f3ead4" />
             {/* top bevel highlight */}
             <polygon points="5,2 8,8 2,8" fill="#ffffff" fillOpacity="0.5" />
@@ -38,7 +38,7 @@ export const BossBar: React.FC = () => {
     // Shield crystals remaining and the starting count, so the bar can draw a
     // purple shield layer that recedes a quarter at a time as crystals break.
     const [shield, setShield] = React.useState<{ crystals: number; max: number }>({ crystals: 0, max: 0 });
-    // Boss polarity (+1 red / -1 blue / 0 unknown) — tints the health bar.
+    // Boss polarity (+1 red / -1 blue / 0 unknown), tints the health bar.
     const [polarity, setPolarity] = React.useState(0);
     // Brief white pulse when the boss crosses a phase threshold (50% / 25%).
     const [phasePulse, setPhasePulse] = React.useState(false);
@@ -121,7 +121,7 @@ export const BossBar: React.FC = () => {
                     />
                 )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
-                    threshold — the slam phase at 50% HP, frenzy at 25%. */}
+                    threshold, the slam phase at 50% HP, frenzy at 25%. */}
                 {PHASE_MARKERS.map((at) => <PhaseMarker key={at} at={at} />)}
                 {/* White flash when a phase threshold is crossed. */}
                 <div

@@ -105,10 +105,10 @@ export const EntityRenderer: React.FC = () => {
                 sm.opacity = now < e.shieldHitUntil ? 0.85 : 0.35;
             }
             // Magnetic field aura: a flat ring at the boss's feet, coloured by
-            // polarity, gently pulsing — and flaring out on each polarity swap.
+            // polarity, gently pulsing, and flaring out on each polarity swap.
             const aura = auraRefs.current.get(e.id);
             if (aura) {
-                // Hidden during the opening shielded/flying phase — the ring would
+                // Hidden during the opening shielded/flying phase, the ring would
                 // otherwise float in mid-air under the levitating Warden's feet.
                 const showField = e.aggro && !!kind.magneticFieldRange && !e.shielded;
                 aura.visible = showField;

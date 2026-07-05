@@ -165,7 +165,7 @@ export abstract class RegionBackendBase implements StorageBackend {
             created: now,
             lastPlayed: now,
         };
-        // Chunks FIRST, create (level.json) LAST as the commit point — the same
+        // Chunks FIRST, create (level.json) LAST as the commit point, the same
         // ordering as migration. A failure partway through then leaves no visible
         // world, instead of a committed world with only a prefix of its chunks
         // (whose missing chunks would silently regenerate from the seed).

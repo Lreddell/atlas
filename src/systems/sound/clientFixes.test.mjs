@@ -9,8 +9,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
 test('use/place animation only plays on success, and eating repeats while held', () => {
     const held = read('src/components/HeldItem.tsx');
-    // The continuous swing is gated on left-click (mine/attack) or an active bite —
-    // NOT raw right-mouse — so a failed/no-op right-click no longer animates.
+    // The continuous swing is gated on left-click (mine/attack) or an active bite :
+    // NOT raw right-mouse, so a failed/no-op right-click no longer animates.
     assert.match(held, /const isAction = \(isLeftMouseDown\.current \|\| inputState\.eating\) && isLocked/);
     assert.doesNotMatch(held, /const isAction = \(isLeftMouseDown\.current \|\| isRightMouseDown\.current\) && isLocked/);
 

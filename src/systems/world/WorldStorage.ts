@@ -34,7 +34,7 @@ class WorldStorageSystem {
 
     /** Pick + initialize the backend once. Desktop filesystem when the bridge
      *  exists, OPFS in supported browsers, and IndexedDB otherwise. Feature
-     *  detection only — never a userAgent sniff. */
+     *  detection only, never a userAgent sniff. */
     private getBackend(): Promise<StorageBackend> {
         if (this.backendPromise) return this.backendPromise;
         this.backendPromise = (async () => {
@@ -101,7 +101,7 @@ class WorldStorageSystem {
         worldGenPresetName?: string | null,
     ): Promise<WorldMetadata> {
         const id = crypto.randomUUID();
-        // Seed hashing is part of the world's deterministic identity — unchanged.
+        // Seed hashing is part of the world's deterministic identity, unchanged.
         let seedNum = 0;
         if (!seedInput || seedInput.trim() === '') {
             const randomSeed = new Uint32Array(1);

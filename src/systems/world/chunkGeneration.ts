@@ -40,7 +40,7 @@ const isGrassySurface = (t: BlockType) => GRASSY_SURFACES.has(t);
 import { generateTreeBlocks, isValidSoil } from './trees';
 import type { TreeKind } from './trees';
 
-// Companion cache to beginGenParamsCache — getTerrainInfo is itself called several
+// Companion cache to beginGenParamsCache, getTerrainInfo is itself called several
 // times per column during generateChunk (terrain pass, beach probes, tree pass).
 let terrainInfoCache: Map<number, { height: number, baseHeight: number }> | null = null;
 let terrainInfoCacheNoiseSet: NoiseSet | null = null;
@@ -142,7 +142,7 @@ function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { 
     // --- MOUNTAIN JAGGED PEAKS ---
     // Adds sharp, high-frequency peak detail so mountains read as jagged peaks
     // rather than smooth rounded hills. Only applied at the mountain CORE (high
-    // weirdness), NOT in the foothills transition zone — so the gradual climb
+    // weirdness), NOT in the foothills transition zone, so the gradual climb
     // stays smooth while the summit is jagged and dramatic.
     if (landFactor > 0 && b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird) {
         const peakBlend = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird, b.mountains.minWeird + 0.20);
@@ -264,7 +264,7 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
-    // Mountains — elevation-banded surface (matches the terrain pass): grass
+    // Mountains, elevation-banded surface (matches the terrain pass): grass
     // foothills, stone-variant slopes, snow caps. Trees only root in the grass band.
     if (biome.id === 'mountains') {
         if (height > 150) {
@@ -279,7 +279,7 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
-    // Beach zone detection — matches terrain pass
+    // Beach zone detection, matches terrain pass
     const params = getGenerationParams(wx, wz, noiseSet);
     const contVal = params.continentalness;
     const riverVal = Math.abs(params.riverVal);
@@ -320,7 +320,7 @@ export function generateChunk(cx: number, cz: number) {
     }
 }
 
-// Scratch reused across generateChunk calls (sync per context — main thread
+// Scratch reused across generateChunk calls (sync per context, main thread
 // fallback or one worker). Allocating the 786KB queue per chunk was GC churn.
 const genLightQueueScratch = new Int32Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT * 2);
 const genHeightmapScratch = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
@@ -470,7 +470,7 @@ function generateChunkInner(cx: number, cz: number) {
                         else if (lavaNoise > 0.3) type = BlockType.MAGMA;
                     }
 
-                    // Mountains — elevation-banded surface: grass foothills,
+                    // Mountains, elevation-banded surface: grass foothills,
                     // bare stone-variant slopes (andesite/diorite/granite), snow caps.
                     if (biome.id === 'mountains' && y === height) {
                         if (height > 150) {
@@ -668,7 +668,7 @@ function generateChunkInner(cx: number, cz: number) {
                 // identically when this root is processed by neighboring chunks. An
                 // actual-block check only worked for in-chunk roots, so a tree could
                 // be skipped by its home chunk while neighbors still placed its
-                // canopy — orphan leaves floating across borders.
+                // canopy, orphan leaves floating across borders.
 
                 let treeKind: TreeKind;
                 if (biome.treeType === 'mixed_forest') {
@@ -682,7 +682,7 @@ function generateChunkInner(cx: number, cz: number) {
                     placeIfInChunk(tb.wx, tb.wy, tb.wz, tb.type, !tb.isTrunk);
                 }
             } else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
-                // Vegetation plants remain chunk-local — only process roots inside the
+                // Vegetation plants remain chunk-local, only process roots inside the
                 // current chunk. Placement is a single block (or vertical cactus), so the
                 // full 0..15 range is safe; the old 3-block margin left visible barren
                 // strips along every 16-block grid line.
@@ -718,7 +718,7 @@ function generateChunkInner(cx: number, cz: number) {
                                     markH();
                                 }
                             } else if (plantRnd < 0.05) {
-                                // Terracotta strata (mesa/bryce) — occasional dead bush.
+                                // Terracotta strata (mesa/bryce), occasional dead bush.
                                 blocks[upIdx] = BlockType.DEAD_BUSH;
                                 markH();
                             }
@@ -783,7 +783,7 @@ function generateChunkInner(cx: number, cz: number) {
                 }
             }
 
-            // Ice Spikes — rare towering packed-ice pillars rising from the snow.
+            // Ice Spikes, rare towering packed-ice pillars rising from the snow.
             if (biome.id === 'ice_spikes') {
                 const rootLx = rootWx - worldX;
                 const rootLz = rootWz - worldZ;
@@ -799,7 +799,7 @@ function generateChunkInner(cx: number, cz: number) {
                                     const cy = terrainY + h;
                                     if (cy > MAX_Y) break;
                                     // Plus-shaped base for the bottom 3 layers, single column above,
-                                    // with a tapered tip — reads as a sharp icicle from a distance.
+                                    // with a tapered tip, reads as a sharp icicle from a distance.
                                     const isBase = h <= 3;
                                     const isTip = h >= spikeH - 1;
                                     const placeIce = (lx: number, lz: number) => {
@@ -828,7 +828,7 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2b. Magnetic Fields feature pass — exploration content between the biome
+    // 2b. Magnetic Fields feature pass, exploration content between the biome
     // boundary and the arena, rooted in world space (so features crossing chunk
     // borders place cleanly): crystal/shard clusters, charged veins, spike hazard
     // patches, polarity launch pads, pylon landmarks, and collapsed ruins with
@@ -894,7 +894,7 @@ function generateChunkInner(cx: number, cz: number) {
                 }
             } else if (feature.kind === 'launchPad') {
                 // 3×3 polarity pad embedded flush in the shelf: repels a player
-                // holding the SAME polarity (launch), attracts the opposite —
+                // holding the SAME polarity (launch), attracts the opposite :
                 // teaches arena traversal tier by tier. A shard marks each corner.
                 if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
                 const pad = feature.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
@@ -963,7 +963,7 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2c. Magnetic Fields arena — the monumental Magnetic Warden structure at each
+    // 2c. Magnetic Fields arena, the monumental Magnetic Warden structure at each
     // instance center. The dedicated generator fills/reserves its whole volume (no
     // caves cut through) and only builds the slice overlapping this chunk.
     if (arenaCenters.length > 0) {
@@ -986,7 +986,7 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2d. Cave decoration pass — dripstone, glow lichen, and moss keyed by the
+    // 2d. Cave decoration pass, dripstone, glow lichen, and moss keyed by the
     // cave-biome region for a column. Runs before the light scan so emissive
     // lichen seeds block light. Chunk-local, deterministic (hash + noise).
     const YZ_STRIDE = CHUNK_SIZE * CHUNK_SIZE;
@@ -1014,7 +1014,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const r = (salt: number) => seededRand01(wx, y, wz, salt);
                     const isPlainRock = (t: BlockType) => t === BlockType.STONE || t === BlockType.DEEPSLATE;
 
-                    // Ambient glow lichen (all regions) — a little natural cave light.
+                    // Ambient glow lichen (all regions), a little natural cave light.
                     if (onCeil && r(90) < caveCfg.glowLichenChance) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
 
                     if (region === 'dripstone') {
@@ -1041,7 +1041,7 @@ function generateChunkInner(cx: number, cz: number) {
         }
     }
 
-    // 2e. Amethyst geodes — rare hollow calcite/amethyst pockets deep underground.
+    // 2e. Amethyst geodes, rare hollow calcite/amethyst pockets deep underground.
     // Rooted on a coarse world grid (so a geode crossing a chunk border is built
     // identically by every overlapping chunk) and only overwriting plain rock/air.
     if (caveCfg.enabled && caveCfg.decorate && caveCfg.geodeRarity > 0) {
@@ -1102,7 +1102,7 @@ function generateChunkInner(cx: number, cz: number) {
             for (let y = maxHeight; y >= MIN_Y; y--) {
                 const index = index3D(x, y, z);
                 const type = blocks[index];
-                // Skylight falls straight down — probe the top (downward-entry) face so
+                // Skylight falls straight down, probe the top (downward-entry) face so
                 // shaped blocks occlude by shape, identical to the edit-time scan.
                 const opacity = getDirectionalOpacity(type, meta[index], 0, -1, 0);
 
@@ -1123,7 +1123,7 @@ function generateChunkInner(cx: number, cz: number) {
 
     // 3b. Seed horizontal skylight spreading. Sunlit air above each column was
     // filled with sky=15 but never enqueued, so light never spread sideways into
-    // cave mouths, breach shafts, or carved notches — they rendered pitch black
+    // cave mouths, breach shafts, or carved notches, they rendered pitch black
     // except near chunk borders (where reconcileChunkBorders happened to fix it).
     // For every column, enqueue the sunlit cells in the band between its own
     // heightmap and the tallest in-chunk horizontal neighbor column.

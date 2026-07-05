@@ -30,7 +30,7 @@ function isAlive(pid) {
 
 // Windows intermittently fails rename/copy/unlink with EPERM/EACCES/EBUSY when an
 // antivirus scanner, the search indexer, or a cloud-sync agent (OneDrive) holds a
-// brief handle on the file. These are transient — retry a few times with a short
+// brief handle on the file. These are transient, retry a few times with a short
 // backoff before giving up. (This is what surfaced as the crash:
 // `writeMeta failed: EPERM ... rename level.json -> level.json.bak`.)
 const TRANSIENT_FS_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY']);
@@ -77,7 +77,7 @@ class SavesManager {
     // --- atomic metadata write (write tmp -> fsync -> copy live aside as .bak -> rename -> fsync dir) ---
     // The previous metadata is copied (not renamed) to level.json.bak so the live
     // level.json is never momentarily absent and the backup never collides on a
-    // pre-existing target — Windows fails rename-to-existing with EPERM, which was
+    // pre-existing target, Windows fails rename-to-existing with EPERM, which was
     // the source of the crash. The copy and the commit rename are both retried to
     // ride out transient antivirus / indexer / cloud-sync locks. If the commit
     // ultimately fails, level.json is left intact (still the prior good copy).
@@ -182,7 +182,7 @@ class SavesManager {
                 return;
             } catch (e) {
                 if (e.code !== 'EEXIST') throw e;
-                // Lock exists — is it stale (owner dead) or ours?
+                // Lock exists, is it stale (owner dead) or ours?
                 let info = null;
                 try { info = JSON.parse(await fsp.readFile(lockPath, 'utf8')); } catch { /* unreadable */ }
                 if (info && info.pid === process.pid) return; // we already own it
