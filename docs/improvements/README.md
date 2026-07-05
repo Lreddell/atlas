@@ -1,6 +1,6 @@
 # Atlas Improvement Roadmap
 
-This directory turns the follow-up findings in `docs/clauderesp.md` into
+This directory turns the follow-up findings in `docs/audit-2026-06-12.md` into
 implementation-ready work. The audit is useful historical context, but several of
 its render-distance recommendations have already been completed in the current
 codebase.

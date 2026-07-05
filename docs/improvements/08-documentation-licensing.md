@@ -10,7 +10,7 @@ Progress note, 2026-06-16:
 - `LICENSE-ASSETS.md` no longer claims the missing source-code `LICENSE` exists.
 - `CLAUDE.md` now points to the actual
   `docs/atlas-performance-upgrades-md-updated/` directory.
-- `docs/clauderesp.md` now identifies itself as a historical audit and points to
+- `docs/audit-2026-06-12.md` now identifies itself as a historical audit and points to
   the active roadmap.
 - `THIRD_PARTY_NOTICES.md` no longer infers a missing MIT source-code license.
 - `public/assets/rvx/README_SOUNDS.md` now reflects automatic
@@ -120,7 +120,7 @@ can run without starting Vite.
 
 ## Audit and Roadmap Documentation
 
-`docs/clauderesp.md` is now marked as a dated historical report with an audit
+`docs/audit-2026-06-12.md` is now marked as a dated historical report with an audit
 date, source commit, implementation-status warning, and link to the active
 roadmap.
 
