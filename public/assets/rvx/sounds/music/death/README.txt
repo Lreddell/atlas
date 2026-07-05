@@ -7,6 +7,7 @@ This music plays on the death screen: the current track fades out quickly, then 
 track from this folder plays once. After it ends there is silence until you act. On
 respawn or returning to the menu it fades out quickly and the normal music resumes.
 
-NOTE: the desktop (Electron) build scans this folder automatically. For the web
-build, also add the file paths to assets/rvx/sounds/music-index.json under a
-"death" key (see the other entries there for the format).
+The desktop build scans this folder automatically. For browser builds, regenerate
+the music index after changing tracks:
+
+  node scripts/generate_music_index.mjs

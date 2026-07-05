@@ -58,7 +58,7 @@ const LOADING_TIPS = [
     "Grass plants have a chance to drop wheat seeds when broken.",
     "Leaves can drop saplings, sticks, and sometimes apples depending on the tree type.",
     "The first version of this game was made in Google AI Studio. Crazy, right?",
-    "Atlas is open source! Check out the GitHub repo at github.com/Lreddell/atlas.",
+    "Atlas source is available at github.com/Lreddell/atlas.",
     "The world editor supports custom terrain generation, so you can create your own unique presets and share them with friends!",
 ];
 

@@ -7,7 +7,7 @@ To override the default procedural textures with custom .png files:
    - `blocks/` for block textures (e.g., `dirt.png`)
    - `items/` for item textures (e.g., `wood_pickaxe.png`)
 
-2. Ensure the filename matches the entry in `systems/textures/textureMapping.ts`.
+2. Ensure the filename matches the entry in `src/systems/textures/textureMapping.ts`.
    By default, the mapping expects files like:
    - blocks/dirt.png
    - blocks/grass_top.png

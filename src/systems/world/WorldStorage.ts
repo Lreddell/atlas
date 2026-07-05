@@ -1,5 +1,6 @@
 // WorldStorage is the stable facade the rest of the app talks to. It owns the
-// backend SELECTION (filesystem on desktop, IndexedDB on web) and delegates every
+// backend SELECTION (filesystem on desktop, OPFS in supported browsers, IndexedDB
+// fallback) and delegates every
 // operation to the active StorageBackend. The public surface is unchanged from
 // the original IndexedDB-only implementation (plus a few additive methods:
 // saveChunks, openWorld, closeWorld, renameWorld), so existing callers in
@@ -31,8 +32,9 @@ export type {
 class WorldStorageSystem {
     private backendPromise: Promise<StorageBackend> | null = null;
 
-    /** Pick + initialize the backend once. Desktop (filesystem) when the bridge
-     *  exists; IndexedDB otherwise. Feature detection — never a userAgent sniff. */
+    /** Pick + initialize the backend once. Desktop filesystem when the bridge
+     *  exists, OPFS in supported browsers, and IndexedDB otherwise. Feature
+     *  detection only — never a userAgent sniff. */
     private getBackend(): Promise<StorageBackend> {
         if (this.backendPromise) return this.backendPromise;
         this.backendPromise = (async () => {
