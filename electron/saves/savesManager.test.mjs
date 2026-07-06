@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
@@ -150,8 +151,9 @@ test('session lock: a live foreign owner blocks open (LOCKED); a dead owner is r
     const sm = new SavesManager(root);
     await sm.create(meta('w1'));
 
-    // Foreign, alive owner (pid 1 / init is always alive) -> LOCKED.
-    await fs.writeFile(path.join(root, 'w1', 'session.lock'), JSON.stringify({ pid: 1, startedAt: 1 }), 'utf8');
+    // The parent process is a live foreign owner on every supported platform.
+    // PID 1 is not portable: Windows does not have a Unix-style init process.
+    await fs.writeFile(path.join(root, 'w1', 'session.lock'), JSON.stringify({ pid: process.ppid, startedAt: 1 }), 'utf8');
     await assert.rejects(() => sm.open('w1'), (e) => e.code === 'LOCKED');
 
     // Dead owner (an almost-certainly-unused pid) -> stale, reclaimed.
