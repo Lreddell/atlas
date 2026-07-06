@@ -3,7 +3,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        minecraft: ['var(--atlas-minecraft-font-family)'],
+        pixel: ['var(--atlas-pixel-font-family)'],
         sans: ['var(--atlas-ui-font-family)'],
         mono: ['var(--atlas-mono-font-family)'],
       },

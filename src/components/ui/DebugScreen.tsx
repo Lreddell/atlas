@@ -2,7 +2,8 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
-import { getBiome, getClimateDebugInfo } from '../../systems/world/biomes';
+import { getClimateDebugInfo } from '../../systems/world/biomes';
+import { getBiomeAt } from '../../systems/world/chunkGeneration';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE } from '../../constants';
 import { APP_DISPLAY_VERSION } from '../../constants';
@@ -86,7 +87,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                     const cz = Math.floor(bz / CHUNK_SIZE);
                     
                     const light = worldManager.getLight(bx, by, bz);
-                    const biome = getBiome(bx, bz);
+                    const biome = getBiomeAt(bx, by, bz);
                     const climate = getClimateDebugInfo(bx, bz);
                     const eyePos = pos.clone().add(new THREE.Vector3(0, 1.62, 0));
                     const target = getTargetBlock(eyePos, dir, 5.0);

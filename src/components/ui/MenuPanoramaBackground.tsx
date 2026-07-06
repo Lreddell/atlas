@@ -256,7 +256,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
 
         // Size only needs to be "large"; the camera sits at the center. Reading the
         // window directly (instead of viewport state) keeps resizes from re-running
-        // this effect — recreating the WebGLRenderer per resize event was expensive.
+        // this effect, recreating the WebGLRenderer per resize event was expensive.
         const boxSize = Math.max(window.innerWidth, window.innerHeight) * 4;
         const skybox = new THREE.Mesh(new THREE.BoxGeometry(boxSize, boxSize, boxSize), materials);
         scene.add(skybox);

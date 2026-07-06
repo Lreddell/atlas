@@ -27,8 +27,17 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
     if (variant === 'danger') colors = 'bg-red-700 border-red-400 border-b-red-950 border-r-red-950 text-white';
 
     return (
-        <div className="relative">
+        <div
+            className="relative"
+            onMouseEnter={() => {
+                setIsHovered(true);
+                if (!disabled) soundManager.play('ui.hover', { volume: 0.2, pitch: 2.0 });
+            }}
+            onMouseLeave={() => setIsHovered(false)}
+        >
             <button
+                disabled={disabled}
+                aria-disabled={disabled}
                 onClick={(event) => {
                     event.stopPropagation();
                     if (!disabled && onClick) {
@@ -36,15 +45,10 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
                         onClick();
                     }
                 }}
-                onMouseEnter={() => {
-                    setIsHovered(true);
-                    if (!disabled) soundManager.play('ui.hover', { volume: 0.2, pitch: 2.0 });
-                }}
-                onMouseLeave={() => setIsHovered(false)}
                 className={`
                     ${width} ${small ? 'h-8 text-sm' : 'h-10'} relative border-2 select-none outline-none group
                     ${colors}
-                    font-minecraft [text-shadow:1px_1px_0px_#3f3f3f]
+                    font-pixel [text-shadow:1px_1px_0px_#3f3f3f]
                     ${disabled ? 'opacity-70 cursor-not-allowed grayscale' : 'hover:brightness-110 active:border-white active:border-b-white active:border-r-white'}
                 `}
                 title={tooltip}
@@ -53,7 +57,7 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
                 <span className="relative top-0 group-active:top-[1px]">{label}</span>
             </button>
             {disabled && isHovered && tooltip && (
-                <div className="absolute left-[105%] top-1/2 z-50 -translate-y-1/2 whitespace-nowrap border-2 border-[#2a0b4d] bg-[#100010] px-2 py-1 text-sm text-white font-minecraft">
+                <div className="absolute left-[105%] top-1/2 z-50 -translate-y-1/2 whitespace-nowrap border-2 border-[#2a0b4d] bg-[#100010] px-2 py-1 text-sm text-white font-pixel">
                     {tooltip}
                 </div>
             )}
@@ -108,7 +112,7 @@ export const MenuSlider: React.FC<MenuSliderProps> = ({
                     style={{ width: `${percentage}%` }}
                 />
             </div>
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center font-minecraft text-white [text-shadow:1px_1px_0px_#3f3f3f]">
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center font-pixel text-white [text-shadow:1px_1px_0px_#3f3f3f]">
                 {label}: {formatValue ? formatValue(value) : `${Math.round(percentage)}%`}
             </div>
         </div>

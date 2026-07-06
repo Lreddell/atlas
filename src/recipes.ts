@@ -1,5 +1,6 @@
 
 import { BlockType } from './types';
+import { STONE_TOOL_MATERIALS, WOOD_FAMILIES } from './systems/registry/blockFamilies';
 
 export interface Recipe {
     gridSize: 2 | 3;
@@ -13,21 +14,33 @@ export const RECIPES: Recipe[] = [
     { gridSize: 2, pattern: [BlockType.SPRUCE_LOG, null, null, null], output: { type: BlockType.SPRUCE_PLANKS, count: 4 } },
     { gridSize: 2, pattern: [BlockType.CHERRY_LOG, null, null, null], output: { type: BlockType.CHERRY_PLANKS, count: 4 } },
     { gridSize: 2, pattern: [BlockType.BIRCH_LOG, null, null, null], output: { type: BlockType.BIRCH_PLANKS, count: 4 } },
-    
+    { gridSize: 2, pattern: [BlockType.JUNGLE_LOG, null, null, null], output: { type: BlockType.JUNGLE_PLANKS, count: 4 } },
+    { gridSize: 2, pattern: [BlockType.DARK_OAK_LOG, null, null, null], output: { type: BlockType.DARK_OAK_PLANKS, count: 4 } },
+    { gridSize: 2, pattern: [BlockType.ACACIA_LOG, null, null, null], output: { type: BlockType.ACACIA_PLANKS, count: 4 } },
+
     { gridSize: 2, pattern: [BlockType.OAK_PLANKS, null, BlockType.OAK_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
     { gridSize: 2, pattern: [BlockType.SPRUCE_PLANKS, null, BlockType.SPRUCE_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
     { gridSize: 2, pattern: [BlockType.CHERRY_PLANKS, null, BlockType.CHERRY_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
     { gridSize: 2, pattern: [BlockType.BIRCH_PLANKS, null, BlockType.BIRCH_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
-    
+    { gridSize: 2, pattern: [BlockType.JUNGLE_PLANKS, null, BlockType.JUNGLE_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
+    { gridSize: 2, pattern: [BlockType.DARK_OAK_PLANKS, null, BlockType.DARK_OAK_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
+    { gridSize: 2, pattern: [BlockType.ACACIA_PLANKS, null, BlockType.ACACIA_PLANKS, null], output: { type: BlockType.STICK, count: 4 } },
+
     { gridSize: 2, pattern: [BlockType.OAK_PLANKS, BlockType.OAK_PLANKS, BlockType.OAK_PLANKS, BlockType.OAK_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
-    
+    { gridSize: 2, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
+    { gridSize: 2, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
+    { gridSize: 2, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS], output: { type: BlockType.CRAFTING_TABLE, count: 1 } },
+
     { gridSize: 2, pattern: [BlockType.OAK_PLANKS, BlockType.OAK_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 2, pattern: [BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
+    { gridSize: 2, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
+    { gridSize: 2, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
+    { gridSize: 2, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.STICK, BlockType.STICK], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     
     // Torch
     { gridSize: 2, pattern: [BlockType.COAL, null, BlockType.STICK, null], output: { type: BlockType.TORCH, count: 4 } },
@@ -81,6 +94,33 @@ export const RECIPES: Recipe[] = [
         ],
         output: { type: BlockType.CHEST, count: 1 }
     },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS,
+            BlockType.JUNGLE_PLANKS, null,             BlockType.JUNGLE_PLANKS,
+            BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS
+        ],
+        output: { type: BlockType.CHEST, count: 1 }
+    },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS,
+            BlockType.DARK_OAK_PLANKS, null,             BlockType.DARK_OAK_PLANKS,
+            BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS
+        ],
+        output: { type: BlockType.CHEST, count: 1 }
+    },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS,
+            BlockType.ACACIA_PLANKS, null,             BlockType.ACACIA_PLANKS,
+            BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS
+        ],
+        output: { type: BlockType.CHEST, count: 1 }
+    },
     // Bed
     {
         gridSize: 3,
@@ -118,6 +158,33 @@ export const RECIPES: Recipe[] = [
         ],
         output: { type: BlockType.BED_ITEM, count: 1 }
     },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.WOOL, BlockType.WOOL, BlockType.WOOL,
+            BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS,
+            null, null, null
+        ],
+        output: { type: BlockType.BED_ITEM, count: 1 }
+    },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.WOOL, BlockType.WOOL, BlockType.WOOL,
+            BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS,
+            null, null, null
+        ],
+        output: { type: BlockType.BED_ITEM, count: 1 }
+    },
+    {
+        gridSize: 3,
+        pattern: [
+            BlockType.WOOL, BlockType.WOOL, BlockType.WOOL,
+            BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS,
+            null, null, null
+        ],
+        output: { type: BlockType.BED_ITEM, count: 1 }
+    },
 
     // TOOLS 3x3
     // Pickaxes
@@ -125,7 +192,9 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_PICKAXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_PICKAXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_PICKAXE, count: 1 } },
     
@@ -134,7 +203,9 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, null, BlockType.SPRUCE_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, null, BlockType.CHERRY_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, null, BlockType.BIRCH_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, BlockType.COBBLESTONE, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, BlockType.JUNGLE_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, BlockType.DARK_OAK_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, BlockType.ACACIA_PLANKS, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, BlockType.IRON_INGOT, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, BlockType.COPPER_INGOT, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_AXE, count: 1 } },
 
@@ -143,7 +214,9 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [BlockType.SPRUCE_PLANKS, BlockType.SPRUCE_PLANKS, null, null, BlockType.SPRUCE_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.CHERRY_PLANKS, BlockType.CHERRY_PLANKS, null, null, BlockType.CHERRY_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.BIRCH_PLANKS, BlockType.BIRCH_PLANKS, null, null, BlockType.BIRCH_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
-    { gridSize: 3, pattern: [BlockType.COBBLESTONE, BlockType.COBBLESTONE, null, null, BlockType.COBBLESTONE, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.STONE_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.JUNGLE_PLANKS, BlockType.JUNGLE_PLANKS, null, null, BlockType.JUNGLE_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.DARK_OAK_PLANKS, BlockType.DARK_OAK_PLANKS, null, null, BlockType.DARK_OAK_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
+    { gridSize: 3, pattern: [BlockType.ACACIA_PLANKS, BlockType.ACACIA_PLANKS, null, null, BlockType.ACACIA_PLANKS, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.WOOD_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.IRON_INGOT, BlockType.IRON_INGOT, null, null, BlockType.IRON_INGOT, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.IRON_AXE, count: 1 } },
     { gridSize: 3, pattern: [BlockType.COPPER_INGOT, BlockType.COPPER_INGOT, null, null, BlockType.COPPER_INGOT, BlockType.STICK, null, BlockType.STICK, null], output: { type: BlockType.COPPER_AXE, count: 1 } },
 
@@ -152,7 +225,9 @@ export const RECIPES: Recipe[] = [
     { gridSize: 3, pattern: [null, BlockType.SPRUCE_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.CHERRY_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.BIRCH_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
-    { gridSize: 3, pattern: [null, BlockType.COBBLESTONE, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.STONE_SHOVEL, count: 1 } },
+    { gridSize: 3, pattern: [null, BlockType.JUNGLE_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
+    { gridSize: 3, pattern: [null, BlockType.DARK_OAK_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
+    { gridSize: 3, pattern: [null, BlockType.ACACIA_PLANKS, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.WOOD_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.IRON_INGOT, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.IRON_SHOVEL, count: 1 } },
     { gridSize: 3, pattern: [null, BlockType.COPPER_INGOT, null, null, BlockType.STICK, null, null, BlockType.STICK, null], output: { type: BlockType.COPPER_SHOVEL, count: 1 } },
 ];
@@ -162,17 +237,23 @@ const S = BlockType.STICK;
 const push = (gridSize: 2 | 3, pattern: (BlockType | null)[], type: BlockType, count: number) =>
     RECIPES.push({ gridSize, pattern, output: { type, count } });
 
+push(3, [
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+    BlockType.IRON_INGOT, BlockType.IRON_INGOT, BlockType.IRON_INGOT,
+], BlockType.IRON_BLOCK, 1);
+push(2, [BlockType.IRON_BLOCK, null, null, null], BlockType.IRON_INGOT, 9);
+
 // Stairs (6 blocks -> 4, both handedness) + slabs (3 in a row -> 6)
 const SHAPE_FAMILIES: { mat: BlockType, slab: BlockType, stairs: BlockType }[] = [
-    { mat: BlockType.OAK_PLANKS, slab: BlockType.OAK_SLAB, stairs: BlockType.OAK_STAIRS },
-    { mat: BlockType.SPRUCE_PLANKS, slab: BlockType.SPRUCE_SLAB, stairs: BlockType.SPRUCE_STAIRS },
-    { mat: BlockType.BIRCH_PLANKS, slab: BlockType.BIRCH_SLAB, stairs: BlockType.BIRCH_STAIRS },
-    { mat: BlockType.CHERRY_PLANKS, slab: BlockType.CHERRY_SLAB, stairs: BlockType.CHERRY_STAIRS },
+    ...WOOD_FAMILIES.map(({ planks, slab, stairs }) => ({ mat: planks, slab, stairs })),
     { mat: BlockType.COBBLESTONE, slab: BlockType.COBBLESTONE_SLAB, stairs: BlockType.COBBLESTONE_STAIRS },
     { mat: BlockType.STONE, slab: BlockType.STONE_SLAB, stairs: BlockType.STONE_STAIRS },
     { mat: BlockType.SANDSTONE, slab: BlockType.SANDSTONE_SLAB, stairs: BlockType.SANDSTONE_STAIRS },
     { mat: BlockType.RED_SANDSTONE, slab: BlockType.RED_SANDSTONE_SLAB, stairs: BlockType.RED_SANDSTONE_STAIRS },
     { mat: BlockType.BRICK, slab: BlockType.BRICK_SLAB, stairs: BlockType.BRICK_STAIRS },
+    { mat: BlockType.MAGNETITE_BLOCK, slab: BlockType.MAGNETITE_SLAB, stairs: BlockType.MAGNETITE_STAIRS },
+    { mat: BlockType.MAGNETITE_BRICKS, slab: BlockType.MAGNETITE_BRICK_SLAB, stairs: BlockType.MAGNETITE_BRICK_STAIRS },
 ];
 for (const f of SHAPE_FAMILIES) {
     push(3, [null, null, null, f.mat, f.mat, f.mat, null, null, null], f.slab, 6);
@@ -182,7 +263,6 @@ for (const f of SHAPE_FAMILIES) {
 
 // Swords (2 material + stick) and hoes (2 material + 2 sticks, both handedness)
 const SWORD_HOE: { mat: BlockType, sword: BlockType, hoe: BlockType }[] = [
-    { mat: BlockType.COBBLESTONE, sword: BlockType.STONE_SWORD, hoe: BlockType.STONE_HOE },
     { mat: BlockType.IRON_INGOT, sword: BlockType.IRON_SWORD, hoe: BlockType.IRON_HOE },
     { mat: BlockType.COPPER_INGOT, sword: BlockType.COPPER_SWORD, hoe: BlockType.COPPER_HOE },
     { mat: BlockType.GOLD_INGOT, sword: BlockType.GOLD_SWORD, hoe: BlockType.GOLD_HOE },
@@ -193,11 +273,21 @@ for (const t of SWORD_HOE) {
     push(3, [t.mat, t.mat, null, null, S, null, null, S, null], t.hoe, 1);
     push(3, [null, t.mat, t.mat, null, S, null, null, S, null], t.hoe, 1);
 }
-// Wooden swords/hoes (one per plank type)
-for (const p of [BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS]) {
-    push(3, [null, p, null, null, p, null, null, S, null], BlockType.WOOD_SWORD, 1);
-    push(3, [p, p, null, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
-    push(3, [null, p, p, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+// Wooden swords/hoes (one per plank family)
+for (const { planks } of WOOD_FAMILIES) {
+    push(3, [null, planks, null, null, planks, null, null, S, null], BlockType.WOOD_SWORD, 1);
+    push(3, [planks, planks, null, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+    push(3, [null, planks, planks, null, S, null, null, S, null], BlockType.WOOD_HOE, 1);
+}
+
+for (const material of STONE_TOOL_MATERIALS) {
+    push(3, [material, material, material, null, S, null, null, S, null], BlockType.STONE_PICKAXE, 1);
+    push(3, [material, material, null, material, S, null, null, S, null], BlockType.STONE_AXE, 1);
+    push(3, [material, material, null, null, material, S, null, S, null], BlockType.STONE_AXE, 1);
+    push(3, [null, material, null, null, S, null, null, S, null], BlockType.STONE_SHOVEL, 1);
+    push(3, [null, material, null, null, material, null, null, S, null], BlockType.STONE_SWORD, 1);
+    push(3, [material, material, null, null, S, null, null, S, null], BlockType.STONE_HOE, 1);
+    push(3, [null, material, material, null, S, null, null, S, null], BlockType.STONE_HOE, 1);
 }
 
 // Gold & Diamond pickaxe / axe / shovel (the other tiers already existed)
@@ -215,6 +305,78 @@ for (const t of HEAVY) {
 // Sandstone from sand (2x2)
 push(2, [BlockType.SAND, BlockType.SAND, BlockType.SAND, BlockType.SAND], BlockType.SANDSTONE, 1);
 push(2, [BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND, BlockType.RED_SAND], BlockType.RED_SANDSTONE, 1);
+
+// --- Magnetic Fields: magnetite traversal blocks + Polarity Boots ---
+// Positive/Negative Magnetite Block: eight matching crystals around one iron ingot.
+const PC = BlockType.POSITIVE_MAGNETITE_CRYSTAL;
+const NC = BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+const FE = BlockType.IRON_INGOT;
+push(3, [PC, PC, PC, PC, FE, PC, PC, PC, PC], BlockType.POSITIVE_MAGNET, 1);
+push(3, [NC, NC, NC, NC, FE, NC, NC, NC, NC], BlockType.NEGATIVE_MAGNET, 1);
+
+// Polarity Boots: boots silhouette (iron sides) with one crystal of each polarity
+// in the bottom corners. Mirrored so crystal order doesn't matter.
+push(3, [null, null, null, FE, null, FE, PC, null, NC], BlockType.POLARITY_BOOTS, 1);
+push(3, [null, null, null, FE, null, FE, NC, null, PC], BlockType.POLARITY_BOOTS, 1);
+
+// Upgraded Polarity Boots: combine the boots with the Magnetic Warden's upgrade
+// drop (either order, placed side by side).
+push(2, [BlockType.POLARITY_BOOTS, BlockType.POLARITY_BOOTS_UPGRADE, null, null], BlockType.UPGRADED_POLARITY_BOOTS, 1);
+push(2, [BlockType.POLARITY_BOOTS_UPGRADE, BlockType.POLARITY_BOOTS, null, null], BlockType.UPGRADED_POLARITY_BOOTS, 1);
+
+// Magnetite building set: bricks (2x2 → 4), chiseled (2 slabs stacked → 1).
+const MAG = BlockType.MAGNETITE_BLOCK;
+push(2, [MAG, MAG, MAG, MAG], BlockType.MAGNETITE_BRICKS, 4);
+push(2, [BlockType.MAGNETITE_SLAB, null, BlockType.MAGNETITE_SLAB, null], BlockType.CHISELED_MAGNETITE, 1);
+
+// Charged Magnetite (emissive building light): a shard set into a magnetite block.
+const SH = BlockType.MAGNETITE_SHARD;
+push(2, [SH, null, MAG, null], BlockType.CHARGED_MAGNETITE, 1);
+
+// Magnetic Spikes (fall-damage hazard): a shard crown over a magnetite base.
+push(3, [null, null, null, SH, null, SH, MAG, MAG, MAG], BlockType.MAGNETIC_SPIKE, 4);
+
+// --- Armor (iron / gold / diamond / copper) ---
+// Helmet, chestplate, leggings, boots use the classic silhouettes. These were
+// missing entirely, which made every armor set creative-only.
+const ARMOR_SETS: { mat: BlockType; helmet: BlockType; chestplate: BlockType; leggings: BlockType; boots: BlockType }[] = [
+    { mat: BlockType.IRON_INGOT, helmet: BlockType.IRON_HELMET, chestplate: BlockType.IRON_CHESTPLATE, leggings: BlockType.IRON_LEGGINGS, boots: BlockType.IRON_BOOTS },
+    { mat: BlockType.GOLD_INGOT, helmet: BlockType.GOLD_HELMET, chestplate: BlockType.GOLD_CHESTPLATE, leggings: BlockType.GOLD_LEGGINGS, boots: BlockType.GOLD_BOOTS },
+    { mat: BlockType.DIAMOND, helmet: BlockType.DIAMOND_HELMET, chestplate: BlockType.DIAMOND_CHESTPLATE, leggings: BlockType.DIAMOND_LEGGINGS, boots: BlockType.DIAMOND_BOOTS },
+    { mat: BlockType.COPPER_INGOT, helmet: BlockType.COPPER_HELMET, chestplate: BlockType.COPPER_CHESTPLATE, leggings: BlockType.COPPER_LEGGINGS, boots: BlockType.COPPER_BOOTS },
+];
+for (const a of ARMOR_SETS) {
+    const M = a.mat;
+    push(3, [M, M, M, M, null, M, null, null, null], a.helmet, 1);
+    push(3, [M, null, M, M, M, M, M, M, M], a.chestplate, 1);
+    push(3, [M, M, M, M, null, M, M, null, M], a.leggings, 1);
+    push(3, [null, null, null, M, null, M, M, null, M], a.boots, 1);
+}
+
+// Wool from woven plant fiber, wheat seeds were a dead-end drop and wool (the
+// bed ingredient, i.e. respawn anchors) had no survival source at all.
+push(2, [BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS], BlockType.WOOL, 1);
+
+// Packed ice from ice (Ice Spikes material, otherwise creative-only to build with).
+push(2, [BlockType.ICE, BlockType.ICE, BlockType.ICE, BlockType.ICE], BlockType.PACKED_ICE, 1);
+
+// Boat, classic hull silhouette (5 planks), one recipe per wood family.
+for (const { planks } of WOOD_FAMILIES) {
+    push(3, [null, null, null, planks, null, planks, planks, planks, planks], BlockType.BOAT, 1);
+}
+
+// --- Foods ---
+// Forager's Bowl, the three foraged fruits together (apple + banana + lumen
+// berry), in a row or column, any order, so it's easy to stumble onto.
+const BOWL_PERMS: BlockType[][] = (() => {
+    const [a, b, c] = [BlockType.APPLE, BlockType.BANANA, BlockType.LUMEN_BERRY];
+    return [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]];
+})();
+for (const [p, q, r] of BOWL_PERMS) {
+    // Horizontal row and vertical column variants.
+    push(3, [null, null, null, p, q, r, null, null, null], BlockType.FORAGERS_BOWL, 1);
+    push(3, [p, null, null, q, null, null, r, null, null], BlockType.FORAGERS_BOWL, 1);
+}
 
 interface TrimmedGrid {
     cells: (BlockType | null)[];
@@ -253,7 +415,7 @@ export const checkRecipe = (grid: (BlockType | null)[], gridWidth: number): { ty
         const r = trimGrid(recipe.pattern, recipe.gridSize);
         if (!r) continue;
 
-        // Exact shape match (width AND height), not just cell count — otherwise a
+        // Exact shape match (width AND height), not just cell count, otherwise a
         // 1x3 column and a 3x1 row both "match" (e.g. stacked planks -> slabs).
         if (input.w !== r.w || input.h !== r.h) continue;
 

@@ -21,7 +21,7 @@ export interface NoiseParams {
 export const DEFAULTS = {
     noise: {
         temperature: { scale: 0.0006, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.5 },
-        weirdness: { scale: 0.002, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, amplification: 1.0 },
+        weirdness: { scale: 0.0012, type: 'perlin' as NoiseType, octaves: 2, lacunarity: 2.0, gain: 0.4, amplification: 1.45 },
         continentalness: { scale: 0.001, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, offset: -0.15 },
         river: { scale: 0.004, type: 'perlin' as NoiseType, octaves: 1, lacunarity: 2.0, gain: 0.5, jitter: 0.5 },
         // Terrain uses manual octaves in chunkGeneration, but we expose base params here
@@ -29,33 +29,116 @@ export const DEFAULTS = {
     },
     // Blending and Coastline Shapes
     terrainShape: {
-        coastPower: 2.2,       // Curve sharpness for ocean-to-land slope
-        landOffset: 0.12,      // How much continentalness past "coast" is required for full land height
+        coastPower: 1.8,       // Curve sharpness for ocean-to-land slope
+        landOffset: 0.14,      // How much continentalness past "coast" is required for full land height
         oceanBaseDepth: 38,    // Shallow ocean floor base Y
         oceanDeepBase: 26,     // Deep ocean floor base Y
         oceanScale: 8,         // Terrain noise scale underwater
     },
     biomes: {
-        ocean: { continentalnessMax: -0.30, base: 38, scale: 8 }, 
+        ocean: { continentalnessMax: -0.30, base: 38, scale: 8 },
+        // Beach, the sandy coastal band bridging ocean and inland terrain. Its
+        // base/scale also flatten the coast strip so dry beaches are wide.
+        beach: { continentalnessMax: -0.25, base: 66, scale: 5 },
         tundra: { maxTemp: -0.7, base: 75, scale: 35 }, // Tundra Land Settings & Water Freezing Threshold
         river: { width: 0.012, base: 58, scale: 5 },
-        
-        volcanic: { minTemp: 0.80, minWeird: 0.50, base: 80, scale: 85 },
+
+        volcanic: { minTemp: 0.72, minWeird: 0.45, base: 80, scale: 85 },
         mesaBryce: { minTemp: 0.65, minWeird: 0.30, maxWeird: 0.45, base: 72, scale: 10 },
         mesa: { minTemp: 0.6, base: 72, scale: 10 },
         desert: { minTemp: 0.35, base: 72, scale: 15 },
         plains: { minTemp: 0.0, base: 70, scale: 20 },
         forest: { minTemp: -0.4, base: 72, scale: 25 },
         cherry: { minTemp: -0.7, base: 85, scale: 45 },
+
+        // --- Weirdness sub-bands within each temperature band ---
+        // minWeird/maxWeird select the variant; base/scale shape terrain height
+        // blending. The bands are disjoint from the mountains threshold below so
+        // no temperate variant is shadowed by the mountain rule (the old 0.40
+        // mountain threshold silently swallowed every weirdness > 0.40 biome:
+        // swamps, jungles, and dark forests never generated).
+        birchForest: { minTemp: -0.4, minWeird: -0.55, maxWeird: -0.25, base: 73, scale: 22 },
+        flowerForest: { minTemp: -0.4, minWeird: 0.25, maxWeird: 0.42, base: 73, scale: 24 },
+        darkForest: { minTemp: -0.4, minWeird: 0.50, maxWeird: 0.58, base: 74, scale: 28 },
+        meadow: { minTemp: -0.7, minWeird: -0.30, maxWeird: 0.25, base: 80, scale: 14 },
+        savanna: { minTemp: 0.0, minWeird: -1.0, maxWeird: -0.30, base: 71, scale: 12 },
+        jungle: { minTemp: 0.0, minWeird: 0.42, maxWeird: 0.58, base: 74, scale: 30 },
+        taiga: { maxTemp: -0.7, minWeird: 0.35, maxWeird: 1.0, base: 74, scale: 30 },
+        iceSpikes: { maxTemp: -0.7, minWeird: -1.0, maxWeird: -0.50, base: 72, scale: 8 },
+        mountains: { minWeird: 0.58, base: 145, scale: 120 },
+        // Swamp, warm/wet lowland marsh. Spans the cherry+forest temp bands in
+        // the 0.42..0.58 weirdness slot (capped by darkForest.minWeird in the
+        // forest band), flattened to hover right at sea level for water pools.
+        swamp: { minTemp: -0.7, maxTemp: 0.0, minWeird: 0.42, maxWeird: 0.58, base: 63, scale: 5 },
+        stoneShore: { continentalnessMax: -0.18, base: 62, scale: 10 },
     },
     height: {
         globalScale: 1.0,
         seaLevel: 63
     },
+    // Cave system. Every carving + decoration knob the generator reads lives here
+    // (previously hardcoded in chunkGeneration.ts) so the World Editor can expose
+    // and preview all of it. See systems/world/caves.ts for the sampler that both
+    // the generator and the editor cross-section preview call.
+    caves: {
+        enabled: true,             // master toggle: off = solid underground (no carving)
+        surfaceTaperDepth: 20,     // caves fade in over the first N blocks below the surface
+        breachFreq: 0.015,         // low-freq mask: where cave mouths are allowed to breach daylight
+        breachThreshold: 0.05,
+
+        // Spaghetti / worm caves, the primary long winding tunnels.
+        wormEnabled: true,
+        wormFreq: 0.02,            // smaller = larger, smoother tunnels
+        wormThreshold: 0.15,       // larger = wider/more tunnels
+        wormYScale: 1.2,           // vertical frequency multiplier (>1 = flatter tunnels)
+
+        // Cheese caverns, big open rooms, gated to deeper rock by a coarse mask.
+        cavernEnabled: true,
+        cavernMinDepth: 15,        // no caverns until this deep below the surface
+        cavernMaskThreshold: 0.5,  // coarse mask gate (larger = rarer caverns)
+        cavernFreq: 0.012,
+        cavernThreshold: 0.25,     // larger = bigger caverns
+
+        // Noodle caves, thin secondary tunnels threading between the big ones.
+        noodleEnabled: true,
+        noodleFreq: 0.05,
+        noodleMaskThreshold: 0.2,
+        noodleThreshold: 0.08,
+
+        // Deep "swiss cheese" holes near the world floor.
+        deepCheeseEnabled: true,
+        deepCheeseMaxY: 0,         // only below this Y
+        deepCheeseFreq: 0.03,
+        deepCheeseThreshold: 0.45, // larger = fewer holes
+
+        lavaLevel: 10,             // carved cells at/below MIN_Y + this flood with lava
+
+        // Deepslate band, stone turns to deepslate with a jagged blend.
+        deepslateStartY: 8,        // stone above this Y stays stone
+        deepslateFullY: -4,        // fully deepslate at/below this Y
+
+        // Decoration pass, cave-biome regions + feature densities. Lush and
+        // dripstone are real cave biomes: large, coherent, and rare (low region
+        // frequency = big blobs; high threshold = uncommon), so most caves are
+        // plain and stumbling into a lush or dripstone one feels like a find.
+        decorate: true,            // master toggle for all cave decoration below
+        lushFreq: 0.0022,          // lush-cave region noise (lower = larger biomes: ~130-block regions)
+        lushThreshold: 0.55,       // higher = rarer lush biomes (~2.8% of underground)
+        dripstoneFreq: 0.0022,     // dripstone-cave region noise
+        dripstoneThreshold: 0.5,   // higher = rarer dripstone biomes
+        glowLichenChance: 0.01,    // emissive lichen on cave ceilings (kept sparse)
+        mossChance: 0.55,          // moss coverage on lush-biome cave floors
+        dripstoneChance: 0.16,     // pointed dripstone frequency in dripstone biomes
+        geodeRarity: 0.0016,       // amethyst-geode chance per deep candidate column
+    },
+    // Domain warp applied to every climate channel's sample coordinates. Enabled
+    // by default so biome borders and coastlines read as organic, fractal edges
+    // instead of smooth single-octave blobs. Old exported presets carry their own
+    // climateWarp block, so loading them restores their original look.
     climateWarp: {
-        enabled: false,
-        frequency: 0.0005,
-        amplitude: 80
+        enabled: true,
+        frequency: 0.004,
+        amplitude: 18
     },
     spawn: {
         searchRadius: 1024,
@@ -66,10 +149,40 @@ export const DEFAULTS = {
         safeSearchRadius: 128,
         safeSearchStep: 16,
         earlyAcceptScore: 120
+    },
+    // Boss-domain worldgen. These used to be hardcoded constants in
+    // magneticFields.ts; they are now editable config (World Editor > Biomes >
+    // Magnetic Fields) with the old constants kept as compatibility defaults.
+    // NOTE: cell / fieldFreq / fieldThreshold determine WHERE instances (and
+    // their arenas) land, changing them relocates every Magnetic Field in an
+    // existing world. The other values only reshape terrain around the same
+    // deterministic centers.
+    bossDomains: {
+        magneticFields: {
+            enabled: true,
+            cell: 2560,            // grid spacing between candidate centers (blocks)
+            radius: 384,           // base biome radius before edge warping
+            fieldFreq: 0.0009,     // boss-field noise frequency for center activation
+            fieldThreshold: 0.55,  // center activates only where the field peaks (rare)
+            edgeFreq: 0.011,       // boundary wobble frequency
+            edgeAmp: 0.28,         // boundary radius varies by ±28% → organic outline
+            tierWarpFreq: 0.02,    // cliff-ring wobble frequency
+            tierWarpAmp: 16,       // cliff rings shift in/out by up to 16 blocks
+            shelfJitterFreq: 0.075,
+            shelfJitterAmp: 1.8,   // ≈ ±2 blocks of bumpiness on shelves
+            tierCount: 6,          // shelves: tier 0 (outer) .. tierCount-1 (plateau rim)
+            tierHeight: 12,        // vertical rise of each magnetite wall
+            arenaRadius: 80,       // flat plateau the arena sits on
+            arenaFloorY: 132,      // world Y of the plateau / arena base
+            baseHeight: 70,        // outer shelf surface (world Y of tier 0)
+            apron: 64,             // edge band that ramps down into ambient terrain
+            apronMinY: 60,         // apron never ramps below this (soft rocky shore)
+        }
     }
 };
 
-type GenConfigState = typeof DEFAULTS;
+export type WorldGenConfigSnapshot = typeof DEFAULTS;
+type GenConfigState = WorldGenConfigSnapshot;
 type NoiseKey = keyof GenConfigState['noise'];
 type BiomeKey = keyof GenConfigState['biomes'];
 
@@ -97,35 +210,50 @@ function clone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
 }
 
+const mergeKnownShape = (base: unknown, incoming: unknown): unknown => {
+    if (!isRecord(base) || !isRecord(incoming)) return clone(base);
+
+    const result = clone(base) as Record<string, unknown>;
+    Object.keys(result).forEach((key) => {
+        const incomingValue = incoming[key];
+        if (incomingValue === undefined) return;
+
+        const currentValue = result[key];
+        if (isRecord(currentValue)) {
+            if (isRecord(incomingValue)) {
+                result[key] = mergeKnownShape(currentValue, incomingValue);
+            }
+            return;
+        }
+
+        if (!isRecord(incomingValue)) {
+            result[key] = clone(incomingValue);
+        }
+    });
+    return result;
+};
+
+export const normalizeGenConfigSnapshot = (
+    data: unknown,
+    base: WorldGenConfigSnapshot = DEFAULTS,
+): WorldGenConfigSnapshot | null => {
+    if (!isRecord(data)) return null;
+
+    const normalized = mergeKnownShape(base, data) as WorldGenConfigSnapshot;
+    const incomingNoise = isRecord(data.noise) ? data.noise : {};
+    (Object.keys(normalized.noise) as NoiseKey[]).forEach((key) => {
+        const incoming = incomingNoise[key];
+        if (!isRecord(incoming) || !('type' in incoming)) return;
+        normalized.noise[key].type = normalizeNoiseType(incoming.type) ?? base.noise[key].type;
+    });
+    return normalized;
+};
+
 export const GenConfig = clone(DEFAULTS);
 
 // Internal helper to apply a state object to the mutable GenConfig
 function applyState(source: typeof DEFAULTS) {
-    // Noise
-    GenConfig.noise.temperature = clone(source.noise.temperature);
-    GenConfig.noise.weirdness = clone(source.noise.weirdness);
-    GenConfig.noise.continentalness = clone(source.noise.continentalness);
-    GenConfig.noise.river = clone(source.noise.river);
-    GenConfig.noise.terrain = clone(source.noise.terrain);
-
-    // Terrain Shape
-    GenConfig.terrainShape = clone(source.terrainShape);
-
-    // Biomes
-    const keys = Object.keys(source.biomes) as BiomeKey[];
-    keys.forEach(k => {
-        Object.assign(GenConfig.biomes[k], clone(source.biomes[k]));
-    });
-
-    // Height
-    GenConfig.height.globalScale = source.height.globalScale;
-    GenConfig.height.seaLevel = source.height.seaLevel;
-
-    // Climate Warp
-    GenConfig.climateWarp = clone(source.climateWarp);
-
-    // Spawn
-    GenConfig.spawn = clone(source.spawn);
+    Object.assign(GenConfig, clone(source));
 }
 
 // Helper to reset to defaults if needed
@@ -199,43 +327,10 @@ export const randomizeGenConfig = () => {
 
 // Load config from JSON object
 export const loadGenConfig = (data: unknown) => {
-    if (!isRecord(data)) return false;
     try {
-        const temp = clone(GenConfig);
-        
-        if (isRecord(data.noise)) {
-            const noiseData = data.noise;
-            Object.keys(noiseData).forEach((k) => {
-                if (!(k in temp.noise)) return;
-                const key = k as NoiseKey;
-                const incomingNoise = noiseData[k];
-                if (!isRecord(incomingNoise)) return;
-                const nextNoise = { ...incomingNoise };
-                const normalizedType = normalizeNoiseType(nextNoise.type);
-                if (normalizedType) {
-                    nextNoise.type = normalizedType;
-                } else {
-                    delete nextNoise.type;
-                }
-                Object.assign(temp.noise[key], nextNoise);
-            });
-        }
-        if (isRecord(data.terrainShape)) Object.assign(temp.terrainShape, data.terrainShape);
-        if (isRecord(data.biomes)) {
-            const biomeData = data.biomes;
-            Object.keys(biomeData).forEach((k) => {
-                if (!(k in temp.biomes)) return;
-                const key = k as BiomeKey;
-                const incomingBiome = biomeData[k];
-                if (!isRecord(incomingBiome)) return;
-                Object.assign(temp.biomes[key], incomingBiome);
-            });
-        }
-        if (isRecord(data.height)) Object.assign(temp.height, data.height);
-        if (isRecord(data.climateWarp)) Object.assign(temp.climateWarp, data.climateWarp);
-        if (isRecord(data.spawn)) Object.assign(temp.spawn, data.spawn);
-        
-        applyState(temp);
+        const normalized = normalizeGenConfigSnapshot(data, GenConfig);
+        if (!normalized) return false;
+        applyState(normalized);
         return true;
     } catch (e) {
         console.error("Failed to load config:", e);

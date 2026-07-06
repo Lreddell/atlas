@@ -12,7 +12,7 @@ export const FPSLimiter = ({ limit }: { limit: number }) => {
     const intervalMs = 1000 / clampedLimit;
 
     // Schedule against an absolute timeline so setTimeout overshoot doesn't
-    // accumulate — the previous frame-cost-only compensation consistently
+    // accumulate, the previous frame-cost-only compensation consistently
     // undershot the target FPS.
     let nextFrameAt = performance.now();
 

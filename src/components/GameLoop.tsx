@@ -2,6 +2,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
+import { entityManager } from '../systems/entities/EntityManager';
 import { FIXED_DT, MAX_SUBSTEPS } from '../systems/player/playerConstants';
 import { tickFood, FoodState } from '../systems/player/playerFood';
 
@@ -27,11 +28,12 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
         accumulator.current += Math.min(delta, 0.25);
 
         let steps = 0;
-        // Track health locally across substeps — the render-captured prop is stale
+        // Track health locally across substeps, the render-captured prop is stale
         // after the first substep, which made hunger damage/regen frame-rate dependent.
         let currentHealth = health;
         while (accumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
             worldManager.tick(FIXED_DT);
+            entityManager.tick(FIXED_DT, gameMode);
 
             if (foodStateRef.current) {
                 const newHealth = tickFood(foodStateRef.current, currentHealth, gameMode, isDead);

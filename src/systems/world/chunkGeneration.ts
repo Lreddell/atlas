@@ -4,14 +4,43 @@ import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { GlobalNoise, NoiseSet } from '../../utils/noise';
 import { NEIGHBORS } from './worldConstants';
 import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
-import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache } from './biomes';
+import { getBiome, getBiomeHeightInfo, getGenerationParams, sample, beginGenParamsCache, endGenParamsCache, BIOMES, type Biome } from './biomes';
 import * as THREE from 'three';
 import { GenConfig } from './genConfig';
+import {
+    getMagneticFieldColumn,
+    getMagnetiteWallPolarity,
+    getMagneticFeature,
+    getMagneticFieldsConfig,
+    magneticFieldsTouchBox,
+    getActiveCenters,
+} from './magneticFields';
+import { generateMagneticWardenArena, ARENA_PROTECTED_RADIUS } from './magneticArena';
 import { index3D } from './worldCoords';
+import {
+    isBreachColumn,
+    caveSurfaceTaper,
+    isCaveCarved,
+    caveBiomeAt,
+    isDeepslateAt,
+    type Noise2D,
+    type Noise3D,
+} from './caves';
+
+// Grassy-surface test: true for all grass-topped biome surface blocks (so
+// vegetation placement works on mossy/lush/dark/meadow/savanna/jungle grass,
+// podzol, plus the original grass/snowy-grass).
+const GRASSY_SURFACES = new Set<BlockType>([
+    BlockType.GRASS, BlockType.SNOWY_GRASS,
+    BlockType.MOSSY_GRASS, BlockType.LUSH_GRASS, BlockType.DARK_GRASS,
+    BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS,
+    BlockType.PODZOL,
+]);
+const isGrassySurface = (t: BlockType) => GRASSY_SURFACES.has(t);
 import { generateTreeBlocks, isValidSoil } from './trees';
 import type { TreeKind } from './trees';
 
-// Companion cache to beginGenParamsCache — getTerrainInfo is itself called several
+// Companion cache to beginGenParamsCache, getTerrainInfo is itself called several
 // times per column during generateChunk (terrain pass, beach probes, tree pass).
 let terrainInfoCache: Map<number, { height: number, baseHeight: number }> | null = null;
 let terrainInfoCacheNoiseSet: NoiseSet | null = null;
@@ -40,7 +69,32 @@ export function getTerrainInfo(x: number, z: number, noiseSet: NoiseSet = Global
     return computeTerrainInfo(x, z, noiseSet);
 }
 
+function mfNoise2D(noiseSet: NoiseSet): (px: number, pz: number) => number {
+    return (px, pz) => noiseSet.bossBiome.noise2D(px, pz);
+}
+
 function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
+    // Magnetic Fields: deterministic, naturally-bumpy tiered shelves separated by
+    // tall magnetite walls, converging inward on the central arena. Replaces the
+    // ordinary noise terrain, and its outer apron blends down into the surrounding
+    // land (kept above sea level) so the biome reads as a structure embedded in
+    // terrain rather than a hard-walled disc.
+    const mf = getMagneticFieldColumn(x, z, noiseSet.seed | 0, mfNoise2D(noiseSet));
+    if (mf) {
+        const mfc = getMagneticFieldsConfig();
+        let surfaceY = mf.surfaceY;
+        if (mf.tier === 0 && mf.edgeDistance < mfc.apron) {
+            const ambient = computeAmbientTerrainInfo(x, z, noiseSet).height;
+            const target = Math.max(ambient, mfc.apronMinY);
+            const t = THREE.MathUtils.smoothstep(mf.edgeDistance, 0, mfc.apron); // 0 at edge → 1 inside
+            surfaceY = Math.round(THREE.MathUtils.lerp(target, surfaceY, t));
+        }
+        return { height: surfaceY, baseHeight: surfaceY };
+    }
+    return computeAmbientTerrainInfo(x, z, noiseSet);
+}
+
+function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {
     const { terrainBase, terrainScale } = getBiomeHeightInfo(x, z, noiseSet);
     
     const nc = GenConfig.noise.terrain;
@@ -60,24 +114,54 @@ function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height:
 
     const params = getGenerationParams(x, z, noiseSet);
     const { temp, weirdness, jitter } = params;
-    
+
     const b = GenConfig.biomes;
+    const ts = GenConfig.terrainShape;
+
+    // Land mask (mirrors getBiomeHeightInfo): the additive biome modifiers below
+    // (volcanic jitter, mountain ridges, mesa plateaus) are land shaping and must
+    // fade to zero over oceans and coasts, or high-weirdness/hot oceans grow
+    // mountain and plateau artifacts rising from the sea floor.
+    const landFactor = Math.pow(
+        THREE.MathUtils.smoothstep(params.continentalness, b.ocean.continentalnessMax, b.ocean.continentalnessMax + ts.landOffset),
+        ts.coastPower,
+    );
 
     // --- VOLCANIC JITTER ---
-    if (temp > b.volcanic.minTemp - 0.1 && weirdness > b.volcanic.minWeird - 0.05) {
+    if (landFactor > 0 && temp > b.volcanic.minTemp - 0.1 && weirdness > b.volcanic.minWeird - 0.05) {
         const tFactor = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const wFactor = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
-        const volcanicFactor = tFactor * wFactor;
-        
+        const volcanicFactor = tFactor * wFactor * landFactor;
+
         const jagged = Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.15, (z + toz) * 0.15));
         const jaggedLow = noiseSet.weirdness.noise2D((x + tox) * 0.03, (z + toz) * 0.03);
-        
+
         elevation += (jagged * 12 + jaggedLow * 6) * volcanicFactor;
     }
 
+    // --- MOUNTAIN JAGGED PEAKS ---
+    // Adds sharp, high-frequency peak detail so mountains read as jagged peaks
+    // rather than smooth rounded hills. Only applied at the mountain CORE (high
+    // weirdness), NOT in the foothills transition zone, so the gradual climb
+    // stays smooth while the summit is jagged and dramatic.
+    if (landFactor > 0 && b.mountains && typeof b.mountains.minWeird === 'number' && weirdness > b.mountains.minWeird) {
+        const peakBlend = THREE.MathUtils.smoothstep(weirdness, b.mountains.minWeird, b.mountains.minWeird + 0.20);
+        // Suppress where volcanic dominates
+        const volTemp = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
+        const volWeird = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
+        const mtnFactor = peakBlend * (1.0 - volTemp * volWeird) * landFactor;
+        if (mtnFactor > 0) {
+            // Ridge noise: sharp peaks at noise zero-crossings
+            const ridge = 1.0 - Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.08, (z + toz) * 0.08));
+            const ridge2 = 1.0 - Math.abs(noiseSet.weirdness.noise2D((x + tox) * 0.02 + 50, (z + toz) * 0.02 + 50));
+            // Large-scale peak boost + fine ridge detail
+            elevation += (ridge * ridge * 35 + ridge2 * 20) * mtnFactor;
+        }
+    }
+
     // --- MESA & BRYCE PLATEAU LOGIC ---
-    if (temp > b.mesa.minTemp - 0.1) {
-        const edgeFactor = THREE.MathUtils.smoothstep(temp, b.mesa.minTemp - 0.1, b.mesa.minTemp);
+    if (landFactor > 0 && temp > b.mesa.minTemp - 0.1) {
+        const edgeFactor = THREE.MathUtils.smoothstep(temp, b.mesa.minTemp - 0.1, b.mesa.minTemp) * landFactor;
         
         const volcanicTemp = THREE.MathUtils.smoothstep(temp, b.volcanic.minTemp - 0.1, b.volcanic.minTemp);
         const volcanicWeird = THREE.MathUtils.smoothstep(weirdness, b.volcanic.minWeird - 0.05, b.volcanic.minWeird + 0.1);
@@ -126,6 +210,28 @@ export function getTerrainHeight(x: number, z: number, noiseSet: NoiseSet = Glob
     return getTerrainInfo(x, z, noiseSet).height;
 }
 
+/**
+ * Full 3D biome lookup: the surface biome at/above ground, or the underground
+ * CAVE biome (Caves / Lush Caves / Dripstone Caves) once you are well below the
+ * surface. Cave biomes are the same registered BIOMES entries the surface uses,
+ * so the debug screen, commands, and anything else that shows a biome name pick
+ * them up automatically. Magnetic Fields keeps its own identity underground.
+ */
+export function getBiomeAt(x: number, y: number, z: number, noiseSet: NoiseSet = GlobalNoise): Biome {
+    const surface = getBiome(x, z, noiseSet);
+    const cfg = GenConfig.caves;
+    if (!cfg.enabled || surface.id === 'magnetic_fields') return surface;
+    const surfaceH = getTerrainHeight(x, z, noiseSet);
+    if (y > surfaceH - 6) return surface; // at/near the surface → surface biome
+    const region = caveBiomeAt(
+        x + noiseSet.offsets.cave.x, z + noiseSet.offsets.cave.z,
+        (a, b) => noiseSet.cave.noise2D(a, b), cfg,
+    );
+    if (region === 'lush') return BIOMES.LUSH_CAVES;
+    if (region === 'dripstone') return BIOMES.DRIPSTONE_CAVES;
+    return BIOMES.CAVES;
+}
+
 function getStrataBlock(y: number): BlockType {
     const pattern = [
         BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_ORANGE,
@@ -158,7 +264,22 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
-    // Beach zone detection — matches terrain pass
+    // Mountains, elevation-banded surface (matches the terrain pass): grass
+    // foothills, stone-variant slopes, snow caps. Trees only root in the grass band.
+    if (biome.id === 'mountains') {
+        if (height > 150) {
+            surface = BlockType.SNOW_BLOCK;
+        } else if (height > 110) {
+            // Approximate the terrain-pass stone-variant pick. The exact per-column
+            // noise choice isn't re-evaluated here; ANDESITE is a safe default that
+            // passes isValidSoil=false (so trees won't root on bare rock, correct).
+            surface = BlockType.ANDESITE;
+        } else {
+            surface = BlockType.GRASS;
+        }
+    }
+
+    // Beach zone detection, matches terrain pass
     const params = getGenerationParams(wx, wz, noiseSet);
     const contVal = params.continentalness;
     const riverVal = Math.abs(params.riverVal);
@@ -178,7 +299,7 @@ function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalN
         }
     }
 
-    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce') {
+    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce' && biome.id !== 'stone_shore' && biome.id !== 'mountains') {
         surface = BlockType.SAND;
     }
 
@@ -199,7 +320,7 @@ export function generateChunk(cx: number, cz: number) {
     }
 }
 
-// Scratch reused across generateChunk calls (sync per context — main thread
+// Scratch reused across generateChunk calls (sync per context, main thread
 // fallback or one worker). Allocating the 786KB queue per chunk was GC churn.
 const genLightQueueScratch = new Int32Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT * 2);
 const genHeightmapScratch = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
@@ -222,6 +343,12 @@ function generateChunkInner(cx: number, cz: number) {
     const worldSeed = noiseSet.seed | 0;
     const caveOx = noiseSet.offsets.cave.x;
     const caveOz = noiseSet.offsets.cave.z;
+
+    // Cave config + bound noise samplers, shared with the World Editor preview via
+    // systems/world/caves.ts (identical carving math in both places).
+    const caveCfg = GenConfig.caves;
+    const caveNoise2D: Noise2D = (px, pz) => noiseSet.cave.noise2D(px, pz);
+    const caveNoise3D: Noise3D = (px, py, pz) => noiseSet.cave.noise3D(px, py, pz);
 
     const seededRand01 = (x: number, y: number, z: number, salt: number): number => {
         let h = Math.imul((x | 0) ^ worldSeed, 374761393);
@@ -258,7 +385,24 @@ function generateChunkInner(cx: number, cz: number) {
             
             const biome = getBiome(wx, wz, noiseSet);
             const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
-            
+
+            // Magnetic Fields cliff walls: a column whose lowest 4-neighbour sits a
+            // full tier below is a wall face. On ~40% of walls (in clusters) we embed
+            // a magnetite magnet block of one polarity, so the player must wrap around
+            // a spire to find a climbable route rather than scaling any face.
+            let mfWallFloor = height;
+            let mfWallPolarity = 0;
+            if (biome.id === 'magnetic_fields') {
+                const nMin = Math.min(
+                    getTerrainHeight(wx + 1, wz, noiseSet), getTerrainHeight(wx - 1, wz, noiseSet),
+                    getTerrainHeight(wx, wz + 1, noiseSet), getTerrainHeight(wx, wz - 1, noiseSet),
+                );
+                if (nMin <= height - 4) {
+                    mfWallFloor = nMin;
+                    mfWallPolarity = getMagnetiteWallPolarity(wx, wz, noiseSet.seed | 0);
+                }
+            }
+
             const params = getGenerationParams(wx, wz, noiseSet);
             const contVal = params.continentalness;
             const riverVal = Math.abs(params.riverVal);
@@ -282,8 +426,7 @@ function generateChunkInner(cx: number, cz: number) {
             const cwz = wz + caveOz;
             const wdx = wx + noiseSet.offsets.weirdness.x;
             const wdz = wz + noiseSet.offsets.weirdness.z;
-            const breachNoise = noiseSet.cave.noise2D(cwx * 0.015, cwz * 0.015);
-            const isBreachZone = breachNoise > 0.05; 
+            const isBreachZone = isBreachColumn(cwx, cwz, caveNoise2D, caveCfg);
 
             // Loop from top (MAX_Y) down to bottom (MIN_Y)
             for (let y = MAX_Y; y >= MIN_Y; y--) {
@@ -298,6 +441,15 @@ function generateChunkInner(cx: number, cz: number) {
                         type = biome.subBlock;
                     } else {
                         type = biome.surfaceBlock;
+                    }
+
+                    // Magnetic Fields: solid magnetite all the way down so the tier
+                    // walls read as full metallic cliffs; embed polarity magnets on
+                    // the exposed wall band where this column is a magnetized wall.
+                    if (biome.id === 'magnetic_fields') {
+                        type = (mfWallPolarity !== 0 && y > mfWallFloor)
+                            ? (mfWallPolarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET)
+                            : BlockType.MAGNETITE_BLOCK;
                     }
 
                     if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
@@ -318,7 +470,24 @@ function generateChunkInner(cx: number, cz: number) {
                         else if (lavaNoise > 0.3) type = BlockType.MAGMA;
                     }
 
-                    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce') {
+                    // Mountains, elevation-banded surface: grass foothills,
+                    // bare stone-variant slopes (andesite/diorite/granite), snow caps.
+                    if (biome.id === 'mountains' && y === height) {
+                        if (height > 150) {
+                            type = BlockType.SNOW_BLOCK;
+                        } else if (height > 110) {
+                            // Use the column's noise to pick a stone variant so
+                            // bands of andesite/diorite/granite streak the cliffs.
+                            const stoneNoise = noiseSet.cave.noise2D(cwx * 0.1, cwz * 0.1);
+                            if (stoneNoise > 0.33) type = BlockType.GRANITE;
+                            else if (stoneNoise < -0.33) type = BlockType.DIORITE;
+                            else type = BlockType.ANDESITE;
+                        } else {
+                            type = BlockType.GRASS;
+                        }
+                    }
+
+                    if (isBeachZone && height >= 60 && height <= 65 && biome.id !== 'volcanic' && biome.id !== 'red_mesa' && biome.id !== 'mesa_bryce' && biome.id !== 'stone_shore' && biome.id !== 'mountains') {
                         const depth = height - y;
                         if (depth < 4) {
                             if (depth === 3) type = BlockType.SANDSTONE;
@@ -330,66 +499,21 @@ function generateChunkInner(cx: number, cz: number) {
                         type = BlockType.DIRT;
                     }
                     
-                    if (y > MIN_Y) { 
+                    if (y > MIN_Y) {
                         if (biome.id === 'mesa_bryce' && y > baseHeight) {
                         } else {
-                            let isCave = false;
+                            // Deep-stone: plain stone below the deepslate band becomes
+                            // deepslate (jagged hash-blended boundary). Biome-special
+                            // solids (magnetite, terracotta, basalt) are untouched.
+                            if (type === BlockType.STONE && isDeepslateAt(y, seededRand01(wx, y, wz, 71), caveCfg)) {
+                                type = BlockType.DEEPSLATE;
+                            }
+
+                            // Carve caves (config-driven; identical to the editor preview).
                             const depth = height - y;
-
-                            let surfaceTaper = 1.0;
-                            if (depth < 20) {
-                                surfaceTaper = depth / 20.0;
-                                if (isBreachZone) {
-                                    surfaceTaper = Math.max(0.6, surfaceTaper);
-                                }
-                            }
-
-                            const wormFreq = 0.02;
-                            const wormThresh = 0.15 * surfaceTaper; 
-                            const wc1 = noiseSet.cave.noise3D(cwx * wormFreq, y * wormFreq * 1.2, cwz * wormFreq);
-                            if (Math.abs(wc1) < wormThresh) {
-                                const wc2 = noiseSet.cave.noise3D(cwx * wormFreq + 123.4, y * wormFreq * 1.2 + 123.4, cwz * wormFreq + 123.4);
-                                const wormVal = Math.sqrt(wc1*wc1 + wc2*wc2);
-                                if (wormVal < wormThresh) isCave = true;
-                            }
-
-                            if (!isCave && depth > 15) {
-                                const megaMask = noiseSet.cave.noise3D(cwx * 0.005, y * 0.02, cwz * 0.005);
-                                if (megaMask > 0.5) { 
-                                    const megaFreq = 0.012; 
-                                    const megaThresh = 0.25;
-                                    const mc1 = noiseSet.cave.noise3D(cwx * megaFreq + 99, y * megaFreq + 99, cwz * megaFreq + 99);
-                                    if (Math.abs(mc1) < megaThresh) {
-                                        const mc2 = noiseSet.cave.noise3D(cwx * megaFreq + 88, y * megaFreq + 88, cwz * megaFreq + 88);
-                                        const megaVal = Math.sqrt(mc1*mc1 + mc2*mc2);
-                                        if (megaVal < megaThresh) isCave = true; 
-                                    }
-                                }
-                            }
-
-                            if (!isCave) {
-                                const noodleFreq = 0.05; 
-                                const noodleMask = noiseSet.cave.noise3D(cwx * 0.01 + 222, y * 0.01, cwz * 0.01 + 222);
-                                if (noodleMask > 0.2) {
-                                    const noodleThresh = 0.08 * surfaceTaper;
-                                    const nc1 = noiseSet.cave.noise3D(cwx * noodleFreq + 555, y * noodleFreq, cwz * noodleFreq + 555);
-                                    if (Math.abs(nc1) < noodleThresh) {
-                                        const nc2 = noiseSet.cave.noise3D(cwx * noodleFreq + 444, y * noodleFreq, cwz * noodleFreq + 444);
-                                        const noodleVal = Math.sqrt(nc1*nc1 + nc2*nc2);
-                                        if (noodleVal < noodleThresh) isCave = true;
-                                    }
-                                }
-                            }
-                            
-                            if (!isCave && depth > 10 && y < 0) {
-                                const cheeseFreq = 0.03;
-                                const cheeseVal = noiseSet.cave.noise3D(cwx * cheeseFreq + 777, y * cheeseFreq + 777, cwz * cheeseFreq + 777);
-                                if (cheeseVal > 0.45) isCave = true; 
-                            }
-
-                            if (isCave) {
-                                if (y <= MIN_Y + 10) type = BlockType.LAVA;
-                                else type = BlockType.AIR;
+                            const taper = caveSurfaceTaper(depth, isBreachZone, caveCfg);
+                            if (isCaveCarved(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg)) {
+                                type = (y <= MIN_Y + caveCfg.lavaLevel) ? BlockType.LAVA : BlockType.AIR;
                             }
                         }
                     }
@@ -409,16 +533,20 @@ function generateChunkInner(cx: number, cz: number) {
             }
 
             // --- 1.18 ORE GENERATION ---
-            const stoneTop = height - 1; 
+            const stoneTop = height - 1;
             for (let y = MIN_Y + 1; y <= stoneTop; y++) {
                 const index = index3D(x, y, z);
-                if (blocks[index] !== BlockType.STONE) continue;
+                // Ores host in both stone and deepslate (the deep band is deepslate).
+                if (blocks[index] !== BlockType.STONE && blocks[index] !== BlockType.DEEPSLATE) continue;
+                // Inside the deepslate band, ores take their deepslate variant.
+                const inDeepslate = blocks[index] === BlockType.DEEPSLATE;
+                const oreType = (stoneOre: BlockType, deepslateOre: BlockType) => (inDeepslate ? deepslateOre : stoneOre);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
                     if (noise > 0.45) { 
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 101) > 0.5) {
-                            blocks[index] = BlockType.COAL_ORE;
+                            blocks[index] = oreType(BlockType.COAL_ORE, BlockType.DEEPSLATE_COAL_ORE);
                             continue;
                         }
                     }
@@ -431,7 +559,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = favorCopper ? 0.45 : 0.6; 
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 102) > 0.5) {
-                            blocks[index] = BlockType.COPPER_ORE;
+                            blocks[index] = oreType(BlockType.COPPER_ORE, BlockType.DEEPSLATE_COPPER_ORE);
                             continue;
                         }
                     }
@@ -444,7 +572,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.2 + 123, y * 0.2 + 123, cwz * 0.2 + 123);
                     if (noise > 0.52) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 103) > 0.5) {
-                            blocks[index] = BlockType.IRON_ORE;
+                            blocks[index] = oreType(BlockType.IRON_ORE, BlockType.DEEPSLATE_IRON_ORE);
                             continue;
                         }
                     }
@@ -462,7 +590,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (isMesaGold || !isExposed(index, y, x, z) || seededRand01(wx, y, wz, 104) > 0.5) {
-                            blocks[index] = BlockType.GOLD_ORE;
+                            blocks[index] = oreType(BlockType.GOLD_ORE, BlockType.DEEPSLATE_GOLD_ORE);
                             continue;
                         }
                     }
@@ -472,7 +600,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const noise = noiseSet.cave.noise3D(cwx * 0.3 + 444, y * 0.3 + 444, cwz * 0.3 + 444);
                     if (noise > 0.65) {
                         if (!isExposed(index, y, x, z)) {
-                            blocks[index] = BlockType.LAPIS_ORE;
+                            blocks[index] = oreType(BlockType.LAPIS_ORE, BlockType.DEEPSLATE_LAPIS_ORE);
                             continue;
                         }
                     }
@@ -483,7 +611,7 @@ function generateChunkInner(cx: number, cz: number) {
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 105) > 0.5) {
-                            blocks[index] = BlockType.DIAMOND_ORE;
+                            blocks[index] = oreType(BlockType.DIAMOND_ORE, BlockType.DEEPSLATE_DIAMOND_ORE);
                             continue;
                         }
                     }
@@ -493,7 +621,7 @@ function generateChunkInner(cx: number, cz: number) {
                     if (emeraldChance > 0) {
                         const noise = noiseSet.cave.noise3D(cwx * 0.35 + 111, y * 0.35 + 111, cwz * 0.35 + 111);
                         if (noise > 0.75) { 
-                            blocks[index] = BlockType.EMERALD_ORE;
+                            blocks[index] = oreType(BlockType.EMERALD_ORE, BlockType.DEEPSLATE_EMERALD_ORE);
                             continue;
                         }
                     }
@@ -540,7 +668,7 @@ function generateChunkInner(cx: number, cz: number) {
                 // identically when this root is processed by neighboring chunks. An
                 // actual-block check only worked for in-chunk roots, so a tree could
                 // be skipped by its home chunk while neighbors still placed its
-                // canopy — orphan leaves floating across borders.
+                // canopy, orphan leaves floating across borders.
 
                 let treeKind: TreeKind;
                 if (biome.treeType === 'mixed_forest') {
@@ -554,7 +682,7 @@ function generateChunkInner(cx: number, cz: number) {
                     placeIfInChunk(tb.wx, tb.wy, tb.wz, tb.type, !tb.isTrunk);
                 }
             } else if (treeRnd > 0.5 && treeRnd < 0.5 + biome.vegetationChance) {
-                // Vegetation plants remain chunk-local — only process roots inside the
+                // Vegetation plants remain chunk-local, only process roots inside the
                 // current chunk. Placement is a single block (or vertical cactus), so the
                 // full 0..15 range is safe; the old 3-block margin left visible barren
                 // strips along every 16-block grid line.
@@ -569,9 +697,13 @@ function generateChunkInner(cx: number, cz: number) {
                 if ((t === biome.surfaceBlock || t === BlockType.SAND || t === BlockType.RED_SAND || t === BlockType.TERRACOTTA_ORANGE) && terrainY < MAX_Y - 3) {
                     const upIdx = index3D(rootLx, terrainY + 1, rootLz);
                     if (blocks[upIdx] === BlockType.AIR) {
-                        if (biome.id === 'desert' || biome.id === 'red_mesa' || biome.id === 'mesa_bryce') {
+                        const plantRnd = seededRand01(rootWx, terrainY, rootWz, 214);
+                        const vType = biome.vegetationType || 'none';
+                        const markH = () => { colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1); };
+
+                        if (vType === 'desert') {
                             if (t === BlockType.SAND || t === BlockType.RED_SAND) {
-                                if (biome.id === 'desert' && seededRand01(rootWx, terrainY, rootWz, 211) < 0.4) {
+                                if (plantRnd < 0.4) {
                                     const h = 1 + Math.floor(seededRand01(rootWx, terrainY, rootWz, 212) * 3);
                                     for (let i = 1; i <= h; i++) {
                                         const cy = terrainY + i;
@@ -583,27 +715,370 @@ function generateChunkInner(cx: number, cz: number) {
                                     }
                                 } else {
                                     blocks[upIdx] = BlockType.DEAD_BUSH;
-                                    colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                    markH();
                                 }
-                            } else if (biome.id === 'mesa_bryce' && seededRand01(rootWx, terrainY, rootWz, 213) < 0.05) {
+                            } else if (plantRnd < 0.05) {
+                                // Terracotta strata (mesa/bryce), occasional dead bush.
                                 blocks[upIdx] = BlockType.DEAD_BUSH;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                markH();
                             }
-                        } else if (biome.id === 'plains' || biome.id === 'forest') {
-                            if (t === BlockType.GRASS) {
-                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 214);
+                        } else if (vType === 'forest') {
+                            if (isGrassySurface(t)) {
                                 if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
                                 else if (plantRnd < 0.85) blocks[upIdx] = BlockType.DANDELION;
                                 else blocks[upIdx] = BlockType.ROSE;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                markH();
                             }
-                        } else if (biome.id === 'cherry_grove') {
-                            if (t === BlockType.GRASS) {
-                                const plantRnd = seededRand01(rootWx, terrainY, rootWz, 215);
+                        } else if (vType === 'flowers') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.3) blocks[upIdx] = BlockType.DANDELION;
+                                else if (plantRnd < 0.6) blocks[upIdx] = BlockType.ROSE;
+                                else if (plantRnd < 0.8) blocks[upIdx] = BlockType.PINK_FLOWER;
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
+                            }
+                        } else if (vType === 'sparse') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        } else if (vType === 'cherry') {
+                            if (isGrassySurface(t)) {
                                 if (plantRnd < 0.3) blocks[upIdx] = BlockType.PINK_FLOWER;
-                                else if (plantRnd < 0.7) blocks[upIdx] = BlockType.GRASS_PLANT;
-                                colHeightmap[rootLz * CHUNK_SIZE + rootLx] = Math.max(colHeightmap[rootLz * CHUNK_SIZE + rootLx], terrainY + 1);
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
                             }
+                        } else if (vType === 'savanna') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.8) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        } else if (vType === 'jungle') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.6) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else if (plantRnd < 0.8) blocks[upIdx] = BlockType.ROSE;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.DANDELION;
+                                else blocks[upIdx] = BlockType.PINK_FLOWER;
+                                markH();
+                            }
+                        } else if (vType === 'taiga') {
+                            if (isGrassySurface(t)) {
+                                if (plantRnd < 0.6) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else blocks[upIdx] = BlockType.GRASS_PLANT;
+                                markH();
+                            }
+                        } else if (vType === 'swamp') {
+                            if (t === BlockType.MUD || t === BlockType.DIRT) {
+                                if (plantRnd < 0.5) blocks[upIdx] = BlockType.DEAD_BUSH;
+                                else if (plantRnd < 0.9) blocks[upIdx] = BlockType.GRASS_PLANT;
+                                else blocks[upIdx] = BlockType.DANDELION;
+                                markH();
+                            }
+                        }
+                        // vType === 'none': no decoration
+                    }
+                }
+            }
+
+            // Ice Spikes, rare towering packed-ice pillars rising from the snow.
+            if (biome.id === 'ice_spikes') {
+                const rootLx = rootWx - worldX;
+                const rootLz = rootWz - worldZ;
+                if (rootLx >= 0 && rootLx < CHUNK_SIZE && rootLz >= 0 && rootLz < CHUNK_SIZE) {
+                    const spikeRnd = seededRand01(rootWx, 0, rootWz, 231);
+                    if (spikeRnd < 0.05) {
+                        const terrainY = getTerrainHeight(rootWx, rootWz, noiseSet);
+                        if (terrainY > 63 && terrainY < MAX_Y - 14) {
+                            const baseIdx = index3D(rootLx, terrainY, rootLz);
+                            if (blocks[baseIdx] === BlockType.SNOW_BLOCK) {
+                                const spikeH = 5 + Math.floor(seededRand01(rootWx, terrainY, rootWz, 232) * 9); // 5-13 tall
+                                for (let h = 1; h <= spikeH; h++) {
+                                    const cy = terrainY + h;
+                                    if (cy > MAX_Y) break;
+                                    // Plus-shaped base for the bottom 3 layers, single column above,
+                                    // with a tapered tip, reads as a sharp icicle from a distance.
+                                    const isBase = h <= 3;
+                                    const isTip = h >= spikeH - 1;
+                                    const placeIce = (lx: number, lz: number) => {
+                                        if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) return;
+                                        const cIdx = index3D(lx, cy, lz);
+                                        if (cIdx < 0 || cIdx >= blocks.length) return;
+                                        const cur = blocks[cIdx];
+                                        if (cur === BlockType.AIR || cur === BlockType.SNOW_BLOCK) {
+                                            blocks[cIdx] = BlockType.PACKED_ICE;
+                                            colHeightmap[lz * CHUNK_SIZE + lx] = Math.max(colHeightmap[lz * CHUNK_SIZE + lx], cy);
+                                        }
+                                    };
+                                    placeIce(rootLx, rootLz);
+                                    if (isBase && !isTip) {
+                                        placeIce(rootLx + 1, rootLz);
+                                        placeIce(rootLx - 1, rootLz);
+                                        placeIce(rootLx, rootLz + 1);
+                                        placeIce(rootLx, rootLz - 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2b. Magnetic Fields feature pass, exploration content between the biome
+    // boundary and the arena, rooted in world space (so features crossing chunk
+    // borders place cleanly): crystal/shard clusters, charged veins, spike hazard
+    // patches, polarity launch pads, pylon landmarks, and collapsed ruins with
+    // loot caches. Everything is hash-driven and deterministic.
+    const MF_FEATURE_PADDING = 8;
+    const mfBox = magneticFieldsTouchBox(
+        worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
+        worldX + CHUNK_SIZE + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE + MF_FEATURE_PADDING,
+        noiseSet.seed | 0, mfNoise2D(noiseSet),
+    );
+    // Arena centers near this chunk (also used to keep features off the structure).
+    const arenaCenters = getActiveCenters(
+        worldX - MF_FEATURE_PADDING, worldZ - MF_FEATURE_PADDING,
+        worldX + CHUNK_SIZE - 1 + MF_FEATURE_PADDING, worldZ + CHUNK_SIZE - 1 + MF_FEATURE_PADDING,
+        noiseSet.seed | 0, mfNoise2D(noiseSet), ARENA_PROTECTED_RADIUS,
+    );
+    const onArena = (wx: number, wz: number): boolean =>
+        arenaCenters.some((c) => Math.hypot(wx - c.centerX, wz - c.centerZ) <= ARENA_PROTECTED_RADIUS);
+    // A feature root must sit on a shelf interior (not hanging off a cliff edge):
+    // its immediate neighbours must share its surface height within 1 block.
+    const isFlatShelf = (wx: number, wz: number, y: number): boolean =>
+        Math.abs(getTerrainHeight(wx + 1, wz, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx - 1, wz, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx, wz + 1, noiseSet) - y) <= 1
+        && Math.abs(getTerrainHeight(wx, wz - 1, noiseSet) - y) <= 1;
+    for (let rootWx = worldX - MF_FEATURE_PADDING; mfBox && rootWx < worldX + CHUNK_SIZE + MF_FEATURE_PADDING; rootWx++) {
+        for (let rootWz = worldZ - MF_FEATURE_PADDING; rootWz < worldZ + CHUNK_SIZE + MF_FEATURE_PADDING; rootWz++) {
+            if (getBiome(rootWx, rootWz, noiseSet).id !== 'magnetic_fields') continue;
+            if (onArena(rootWx, rootWz)) continue; // never on the arena structure
+            const feature = getMagneticFeature(rootWx, rootWz, noiseSet.seed | 0);
+            if (!feature) continue;
+            const surfaceY = getTerrainHeight(rootWx, rootWz, noiseSet);
+
+            if (feature.kind === 'crystals') {
+                const crystal = feature.polarity > 0 ? BlockType.POSITIVE_MAGNETITE_CRYSTAL : BlockType.NEGATIVE_MAGNETITE_CRYSTAL;
+                const cells = [[0, 0], [1, 0], [0, 1], [-1, 1], [1, -1]];
+                for (let i = 0; i < feature.count && i < cells.length; i++) {
+                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], crystal, true);
+                }
+            } else if (feature.kind === 'shards') {
+                const cells = [[0, 0], [1, 1], [-1, 0]];
+                for (let i = 0; i < feature.count && i < cells.length; i++) {
+                    placeIfInChunk(rootWx + cells[i][0], surfaceY + 1, rootWz + cells[i][1], BlockType.MAGNETITE_SHARD, true);
+                }
+            } else if (feature.kind === 'vein') {
+                // Charged-magnetite vein flush WITH the shelf surface (replaces it).
+                const cells = [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1], [-1, -1]];
+                for (let i = 0; i < feature.size && i < cells.length; i++) {
+                    const vx = rootWx + cells[i][0], vz = rootWz + cells[i][1];
+                    placeIfInChunk(vx, getTerrainHeight(vx, vz, noiseSet), vz, BlockType.CHARGED_MAGNETITE);
+                }
+            } else if (feature.kind === 'spikes') {
+                // Hazard patch: spikes standing on the shelf. Kept off cliff edges
+                // so they read as a floor hazard, not wall decoration.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                for (let dx = -feature.radius; dx <= feature.radius; dx++) {
+                    for (let dz = -feature.radius; dz <= feature.radius; dz++) {
+                        if (Math.abs(dx) + Math.abs(dz) > feature.radius) continue;
+                        if (seededRand01(rootWx + dx, surfaceY, rootWz + dz, 61) < 0.65) {
+                            placeIfInChunk(rootWx + dx, surfaceY + 1, rootWz + dz, BlockType.MAGNETIC_SPIKE, true);
+                        }
+                    }
+                }
+            } else if (feature.kind === 'launchPad') {
+                // 3×3 polarity pad embedded flush in the shelf: repels a player
+                // holding the SAME polarity (launch), attracts the opposite :
+                // teaches arena traversal tier by tier. A shard marks each corner.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const pad = feature.polarity > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        placeIfInChunk(rootWx + dx, surfaceY, rootWz + dz, pad);
+                    }
+                }
+                placeIfInChunk(rootWx, surfaceY + 1, rootWz, BlockType.MAGNETITE_SHARD, true);
+            } else if (feature.kind === 'pylon') {
+                // Magnetite-brick pylon landmark; intact ones carry a charged
+                // beacon block + shard on top (visible route markers toward the
+                // arena), broken ones end in a jagged snap.
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const h = feature.broken ? Math.max(2, Math.floor(feature.height * 0.4)) : feature.height;
+                for (let i = 1; i <= h; i++) {
+                    placeIfInChunk(rootWx, surfaceY + i, rootWz, BlockType.MAGNETITE_BRICKS);
+                }
+                if (!feature.broken) {
+                    placeIfInChunk(rootWx, surfaceY + h + 1, rootWz, BlockType.CHARGED_MAGNETITE);
+                    placeIfInChunk(rootWx, surfaceY + h + 2, rootWz, BlockType.MAGNETITE_SHARD, true);
+                } else {
+                    // Rubble around a broken pylon.
+                    placeIfInChunk(rootWx + 1, surfaceY + 1, rootWz, BlockType.MAGNETITE_BRICKS, true);
+                    placeIfInChunk(rootWx - 1, surfaceY + 1, rootWz + 1, BlockType.MAGNETITE_BRICKS, true);
+                }
+            } else if (feature.kind === 'ruin') {
+                // Collapsed square ruin: a broken brick perimeter wall (height
+                // hash-jittered, some segments missing) around a chiseled floor,
+                // sometimes sheltering a loot cache chest (meta bit 0x40 marks it
+                // for deterministic loot seeding on first open).
+                if (!isFlatShelf(rootWx, rootWz, surfaceY)) continue;
+                const s = feature.size;
+                for (let dx = -s; dx <= s; dx++) {
+                    for (let dz = -s; dz <= s; dz++) {
+                        const onEdge = Math.abs(dx) === s || Math.abs(dz) === s;
+                        const wx = rootWx + dx, wz = rootWz + dz;
+                        if (onEdge) {
+                            const segment = seededRand01(wx, 0, wz, 62);
+                            if (segment < 0.18) continue; // collapsed gap
+                            const wallH = 1 + Math.floor(seededRand01(wx, 1, wz, 63) * 3);
+                            for (let i = 1; i <= wallH; i++) {
+                                placeIfInChunk(wx, surfaceY + i, wz, BlockType.MAGNETITE_BRICKS, true);
+                            }
+                        } else if ((dx + dz) % 2 === 0 && seededRand01(wx, 2, wz, 64) < 0.5) {
+                            // Chiseled floor tiles flush with the shelf.
+                            placeIfInChunk(wx, getTerrainHeight(wx, wz, noiseSet), wz, BlockType.CHISELED_MAGNETITE);
+                        }
+                    }
+                }
+                if (feature.withCache) {
+                    // Cache chest at the ruin center. The 0x40 meta bit marks a
+                    // natural, unopened cache; WorldManager seeds deterministic
+                    // loot and clears the bit on first open.
+                    const lx = rootWx - worldX, lz = rootWz - worldZ;
+                    if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE
+                        && surfaceY + 1 >= MIN_Y && surfaceY + 1 <= MAX_Y) {
+                        const cIdx = index3D(lx, surfaceY + 1, lz);
+                        blocks[cIdx] = BlockType.CHEST;
+                        meta[cIdx] = 0x40;
+                        const colIdx = lz * CHUNK_SIZE + lx;
+                        if (surfaceY + 1 > colHeightmap[colIdx]) colHeightmap[colIdx] = surfaceY + 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2c. Magnetic Fields arena, the monumental Magnetic Warden structure at each
+    // instance center. The dedicated generator fills/reserves its whole volume (no
+    // caves cut through) and only builds the slice overlapping this chunk.
+    if (arenaCenters.length > 0) {
+        const setArenaBlock = (wx: number, wy: number, wz: number, type: BlockType) => {
+            const lx = wx - worldX, lz = wz - worldZ;
+            if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE || wy < MIN_Y || wy > MAX_Y) return;
+            const idx = index3D(lx, wy, lz);
+            blocks[idx] = type;
+            if (type !== BlockType.AIR) {
+                const colIdx = lz * CHUNK_SIZE + lx;
+                if (wy > colHeightmap[colIdx]) colHeightmap[colIdx] = wy;
+            }
+        };
+        for (const center of arenaCenters) {
+            generateMagneticWardenArena(center.centerX, center.centerZ, getMagneticFieldsConfig().arenaFloorY, {
+                setBlock: setArenaBlock,
+                minX: worldX, maxX: worldX + CHUNK_SIZE - 1,
+                minZ: worldZ, maxZ: worldZ + CHUNK_SIZE - 1,
+            });
+        }
+    }
+
+    // 2d. Cave decoration pass, dripstone, glow lichen, and moss keyed by the
+    // cave-biome region for a column. Runs before the light scan so emissive
+    // lichen seeds block light. Chunk-local, deterministic (hash + noise).
+    const YZ_STRIDE = CHUNK_SIZE * CHUNK_SIZE;
+    const isCaveRock = (t: BlockType): boolean => {
+        if (t === BlockType.AIR || t === BlockType.WATER || t === BlockType.LAVA) return false;
+        const d = BLOCKS[t];
+        return !!d && !d.transparent && !d.noCollision;
+    };
+    if (caveCfg.enabled && caveCfg.decorate) {
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            for (let z = 0; z < CHUNK_SIZE; z++) {
+                const wx = worldX + x, wz = worldZ + z;
+                if (getBiome(wx, wz, noiseSet).id === 'magnetic_fields') continue;
+                const surfaceY = getTerrainHeight(wx, wz, noiseSet);
+                const cwx = wx + caveOx, cwz = wz + caveOz;
+                const region = caveBiomeAt(cwx, cwz, caveNoise2D, caveCfg);
+                const topY = Math.min(surfaceY - 6, 72);
+                for (let y = MIN_Y + 2; y <= topY; y++) {
+                    const idx = index3D(x, y, z);
+                    if (blocks[idx] !== BlockType.AIR) continue;
+                    const belowIdx = idx - YZ_STRIDE, aboveIdx = idx + YZ_STRIDE;
+                    const below = blocks[belowIdx], above = blocks[aboveIdx];
+                    const onFloor = isCaveRock(below), onCeil = isCaveRock(above);
+                    if (!onFloor && !onCeil) continue;
+                    const r = (salt: number) => seededRand01(wx, y, wz, salt);
+                    const isPlainRock = (t: BlockType) => t === BlockType.STONE || t === BlockType.DEEPSLATE;
+
+                    // Ambient glow lichen (all regions), a little natural cave light.
+                    if (onCeil && r(90) < caveCfg.glowLichenChance) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+
+                    if (region === 'dripstone') {
+                        if (onCeil && r(91) < caveCfg.dripstoneChance) {
+                            blocks[idx] = BlockType.POINTED_DRIPSTONE;
+                            if (isPlainRock(above)) blocks[aboveIdx] = BlockType.DRIPSTONE_BLOCK;
+                            continue;
+                        }
+                        if (onFloor && r(92) < caveCfg.dripstoneChance) {
+                            blocks[idx] = BlockType.POINTED_DRIPSTONE;
+                            if (isPlainRock(below)) blocks[belowIdx] = BlockType.DRIPSTONE_BLOCK;
+                            continue;
+                        }
+                        if (onFloor && isPlainRock(below) && r(93) < 0.18) blocks[belowIdx] = BlockType.DRIPSTONE_BLOCK;
+                    } else if (region === 'lush') {
+                        if (onFloor && (isPlainRock(below) || below === BlockType.DIRT)) {
+                            if (r(94) < caveCfg.mossChance) blocks[belowIdx] = BlockType.MOSS_BLOCK;
+                            if (r(95) < 0.03) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+                        }
+                        if (onCeil && r(96) < caveCfg.glowLichenChance * 1.6) { blocks[idx] = BlockType.GLOW_LICHEN; continue; }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2e. Amethyst geodes, rare hollow calcite/amethyst pockets deep underground.
+    // Rooted on a coarse world grid (so a geode crossing a chunk border is built
+    // identically by every overlapping chunk) and only overwriting plain rock/air.
+    if (caveCfg.enabled && caveCfg.decorate && caveCfg.geodeRarity > 0) {
+        const R = 4;
+        const pad = R + 1;
+        const geodeReplaceable = (t: BlockType) =>
+            t === BlockType.STONE || t === BlockType.DEEPSLATE || t === BlockType.AIR
+            || t === BlockType.COBBLED_DEEPSLATE || t === BlockType.DRIPSTONE_BLOCK;
+        for (let gx = worldX - pad; gx < worldX + CHUNK_SIZE + pad; gx++) {
+            if ((gx & 7) !== 0) continue;
+            for (let gz = worldZ - pad; gz < worldZ + CHUNK_SIZE + pad; gz++) {
+                if ((gz & 7) !== 0) continue;
+                if (seededRand01(gx, 0, gz, 240) >= caveCfg.geodeRarity) continue;
+                if (getBiome(gx, gz, noiseSet).id === 'magnetic_fields') continue;
+                const surfaceY = getTerrainHeight(gx, gz, noiseSet);
+                const centerY = MIN_Y + 10 + Math.floor(seededRand01(gx, 1, gz, 241) * 26);
+                if (centerY > surfaceY - R - 6) continue; // keep the shell well underground
+                for (let dx = -R; dx <= R; dx++) {
+                    const lx = gx + dx - worldX;
+                    if (lx < 0 || lx >= CHUNK_SIZE) continue;
+                    for (let dz = -R; dz <= R; dz++) {
+                        const lz = gz + dz - worldZ;
+                        if (lz < 0 || lz >= CHUNK_SIZE) continue;
+                        for (let dy = -R; dy <= R; dy++) {
+                            const wy = centerY + dy;
+                            if (wy <= MIN_Y || wy >= MAX_Y) continue;
+                            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                            if (d > R + 0.5) continue;
+                            const idx = index3D(lx, wy, lz);
+                            if (!geodeReplaceable(blocks[idx])) continue;
+                            const gwx = gx + dx, gwz = gz + dz;
+                            let t: BlockType;
+                            if (d <= R - 2.6) t = BlockType.AIR;                                   // hollow core
+                            else if (d <= R - 2.0) t = seededRand01(gwx, wy, gwz, 242) < 0.5 ? BlockType.AMETHYST_CLUSTER : BlockType.AIR;
+                            else if (d <= R - 1.0) t = seededRand01(gwx, wy, gwz, 243) < 0.22 ? BlockType.BUDDING_AMETHYST : BlockType.AMETHYST_BLOCK;
+                            else t = BlockType.CALCITE;                                            // shell
+                            blocks[idx] = t;
                         }
                     }
                 }
@@ -627,7 +1102,7 @@ function generateChunkInner(cx: number, cz: number) {
             for (let y = maxHeight; y >= MIN_Y; y--) {
                 const index = index3D(x, y, z);
                 const type = blocks[index];
-                // Skylight falls straight down — probe the top (downward-entry) face so
+                // Skylight falls straight down, probe the top (downward-entry) face so
                 // shaped blocks occlude by shape, identical to the edit-time scan.
                 const opacity = getDirectionalOpacity(type, meta[index], 0, -1, 0);
 
@@ -648,7 +1123,7 @@ function generateChunkInner(cx: number, cz: number) {
 
     // 3b. Seed horizontal skylight spreading. Sunlit air above each column was
     // filled with sky=15 but never enqueued, so light never spread sideways into
-    // cave mouths, breach shafts, or carved notches — they rendered pitch black
+    // cave mouths, breach shafts, or carved notches, they rendered pitch black
     // except near chunk borders (where reconcileChunkBorders happened to fix it).
     // For every column, enqueue the sunlit cells in the band between its own
     // heightmap and the tallest in-chunk horizontal neighbor column.

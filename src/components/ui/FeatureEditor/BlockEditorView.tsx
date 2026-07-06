@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { ModPack, BlockDefinition, TextureEntry } from './editorTypes';
 import { soundManager } from '../../../systems/sound/SoundManager';
+import { ConfirmModal } from '../ConfirmModal';
 
 interface BlockEditorViewProps {
     pack: ModPack;
@@ -15,6 +16,7 @@ const SOUND_GROUPS = ['stone', 'grass', 'wood', 'sand', 'gravel', 'glass', 'meta
 
 export const BlockEditorView: React.FC<BlockEditorViewProps> = ({ pack, onUpdatePack, selectedId, onSelectId }) => {
     const [search, setSearch] = useState('');
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const blocks = useMemo(() => Object.values(pack.blocks), [pack.blocks]);
     const filtered = blocks.filter(b => b.name.toLowerCase().includes(search.toLowerCase()) || b.id.toLowerCase().includes(search.toLowerCase()));
 
@@ -50,7 +52,13 @@ export const BlockEditorView: React.FC<BlockEditorViewProps> = ({ pack, onUpdate
     };
 
     const handleDeleteBlock = (id: string) => {
-        if (!confirm(`Delete block "${pack.blocks[id]?.name || id}"?`)) return;
+        setPendingDeleteId(id);
+    };
+
+    const confirmDeleteBlock = () => {
+        const id = pendingDeleteId;
+        setPendingDeleteId(null);
+        if (!id) return;
         const nextBlocks = { ...pack.blocks };
         delete nextBlocks[id];
         onUpdatePack({ ...pack, blocks: nextBlocks });
@@ -102,6 +110,16 @@ export const BlockEditorView: React.FC<BlockEditorViewProps> = ({ pack, onUpdate
 
     return (
         <div className="flex h-full bg-black/20">
+            {pendingDeleteId && (
+                <ConfirmModal
+                    title="Delete Block?"
+                    message={<>Delete <span className="text-white">{pack.blocks[pendingDeleteId]?.name ?? pendingDeleteId}</span>?</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={confirmDeleteBlock}
+                    onCancel={() => setPendingDeleteId(null)}
+                />
+            )}
             {/* List */}
             <div className="w-64 bg-[#121212] border-r border-white/5 flex flex-col">
                 <div className="p-3 bg-black/20 flex flex-col gap-2">

@@ -1,8 +1,8 @@
-import { DEFAULTS } from './genConfig';
+import { normalizeGenConfigSnapshot, type WorldGenConfigSnapshot } from './genConfig';
+
+export type { WorldGenConfigSnapshot } from './genConfig';
 
 const WORLD_GEN_PRESETS_KEY = 'atlas.worldGen.presets';
-
-export type WorldGenConfigSnapshot = typeof DEFAULTS;
 
 export interface WorldGenPresetEntry {
     id: string;
@@ -11,8 +11,6 @@ export interface WorldGenPresetEntry {
     createdAt: number;
     updatedAt: number;
 }
-
-const cloneConfig = (value: WorldGenConfigSnapshot): WorldGenConfigSnapshot => JSON.parse(JSON.stringify(value));
 
 const sanitizePresetName = (value: string) => {
     const trimmed = String(value || '').trim();
@@ -36,57 +34,9 @@ const getUniquePresetName = (existingNames: string[], requestedName: string) => 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null;
 
-const normalizeConfigSnapshot = (value: unknown): WorldGenConfigSnapshot | null => {
-    if (!isRecord(value)) return null;
-
-    const snapshot = cloneConfig(DEFAULTS);
-
-    if (isRecord(value.noise)) {
-        const noiseValue = value.noise;
-        const noiseKeys = Object.keys(snapshot.noise) as Array<keyof WorldGenConfigSnapshot['noise']>;
-        noiseKeys.forEach((key) => {
-            const incomingNoise = noiseValue[key];
-            if (!isRecord(incomingNoise)) return;
-            const incomingType = incomingNoise.type;
-            Object.assign(snapshot.noise[key], incomingNoise);
-            if (incomingType === 'simplex') {
-                snapshot.noise[key].type = 'opensimplex2';
-            }
-        });
-    }
-
-    if (isRecord(value.terrainShape)) {
-        Object.assign(snapshot.terrainShape, value.terrainShape);
-    }
-
-    if (isRecord(value.biomes)) {
-        const biomeValue = value.biomes;
-        const biomeKeys = Object.keys(snapshot.biomes) as Array<keyof WorldGenConfigSnapshot['biomes']>;
-        biomeKeys.forEach((key) => {
-            const incomingBiome = biomeValue[key];
-            if (!isRecord(incomingBiome)) return;
-            Object.assign(snapshot.biomes[key], incomingBiome);
-        });
-    }
-
-    if (isRecord(value.height)) {
-        Object.assign(snapshot.height, value.height);
-    }
-
-    if (isRecord(value.climateWarp)) {
-        Object.assign(snapshot.climateWarp, value.climateWarp);
-    }
-
-    if (isRecord(value.spawn)) {
-        Object.assign(snapshot.spawn, value.spawn);
-    }
-
-    return snapshot;
-};
-
 const normalizeEntry = (entry: unknown): WorldGenPresetEntry | null => {
     if (!isRecord(entry)) return null;
-    const config = normalizeConfigSnapshot(entry.config);
+    const config = normalizeGenConfigSnapshot(entry.config);
     if (typeof entry.id !== 'string' || typeof entry.name !== 'string' || !config) return null;
     return {
         id: entry.id,
@@ -165,6 +115,8 @@ export const getWorldGenPresetByIdAsync = async (id: string): Promise<WorldGenPr
 export const saveWorldGenPreset = (name: string, config: WorldGenConfigSnapshot): WorldGenPresetEntry | null => {
     const trimmed = sanitizePresetName(name);
     if (!trimmed) return null;
+    const normalizedConfig = normalizeGenConfigSnapshot(config);
+    if (!normalizedConfig) return null;
 
     const entries = readPresetList();
     const now = Date.now();
@@ -173,7 +125,7 @@ export const saveWorldGenPreset = (name: string, config: WorldGenConfigSnapshot)
     const entry: WorldGenPresetEntry = {
         id: crypto.randomUUID(),
         name: finalName,
-        config: cloneConfig(config),
+        config: normalizedConfig,
         createdAt: now,
         updatedAt: now,
     };
@@ -183,12 +135,14 @@ export const saveWorldGenPreset = (name: string, config: WorldGenConfigSnapshot)
 };
 
 export const saveWorldGenPresetAsync = async (name: string, config: WorldGenConfigSnapshot): Promise<WorldGenPresetEntry | null> => {
+    const normalizedConfig = normalizeGenConfigSnapshot(config);
+    if (!normalizedConfig) return null;
     if (hasDesktopPresetApi()) {
-        const result = await window.atlasDesktop?.saveWorldPreset?.(name, cloneConfig(config));
+        const result = await window.atlasDesktop?.saveWorldPreset?.(name, normalizedConfig);
         const preset = normalizeEntry(result?.preset);
         return preset ?? null;
     }
-    return saveWorldGenPreset(name, config);
+    return saveWorldGenPreset(name, normalizedConfig);
 };
 
 export const deleteWorldGenPreset = (id: string): boolean => {

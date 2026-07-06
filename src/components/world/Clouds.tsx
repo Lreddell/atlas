@@ -63,7 +63,7 @@ let newCloudFadeMultiplier = 1.0;
 // Animated 1→0 for tiles leaving the view; stays at 0 when nothing is leaving
 let leavingCloudMultiplier = 0.0;
 
-// Hoisted — updateCloudColor runs every frame from DayNightCycle's useFrame.
+// Hoisted, updateCloudColor runs every frame from DayNightCycle's useFrame.
 const CLOUD_NIGHT_COLOR = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
 const CLOUD_DAY_COLOR = new THREE.Color(0xFFFFFF);
 
@@ -135,7 +135,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
     });
 
     // Pending per-tile fade setup deferred to useLayoutEffect so it applies only
-    // after the new geometry is committed — preventing the old geometry from
+    // after the new geometry is committed, preventing the old geometry from
     // flashing at the wrong opacity for one frame.
     const pendingFadeSetupRef = useRef<{
         setupNewTileFade: boolean;
@@ -384,7 +384,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         const { width, height, data } = cloudData;
 
         // Scale coverage based on 2x Render Distance, but cap the extra reach at high
-        // render distances — fog is fully opaque well before 2x at RD 32+, and the
+        // render distances, fog is fully opaque well before 2x at RD 32+, and the
         // rebuild scan cost grows with the square of this radius.
         const viewDist = Math.min(renderDistance * 2, renderDistance + 16) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
@@ -527,7 +527,7 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                     // Bottom (Y-)
                     pushLeaving(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
-                    // Sides — no boundary caps for leaving tiles
+                    // Sides, no boundary caps for leaving tiles
                     if (data[dv * width + ((du + 1) % width)] === 0) {
                         pushLeaving(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
                     }

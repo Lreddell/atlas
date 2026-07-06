@@ -152,7 +152,7 @@ export function processFluids(state: WorldState) {
                 }
             } else if (!fedFromAbove) {
                 // Horizontal flow needs a same-type neighbor with strictly lower meta
-                // (falling neighbors with meta 8 are not suppliers — 8+1 exceeds maxSpread).
+                // (falling neighbors with meta 8 are not suppliers, 8+1 exceeds maxSpread).
                 let minSupplier = Infinity;
                 for (const [dx, dz] of [[1,0], [-1,0], [0,1], [0,-1]]) {
                     const n = getBlockAndMeta(state, x + dx, y, z + dz);
@@ -162,7 +162,7 @@ export function processFluids(state: WorldState) {
                 }
                 const maxSpreadDrain = type === BlockType.LAVA ? MAX_LAVA_SPREAD : MAX_WATER_SPREAD;
                 if (minSupplier === Infinity) {
-                    // Orphaned — remove; setBlock reschedules fluid neighbors so the
+                    // Orphaned, remove; setBlock reschedules fluid neighbors so the
                     // drain cascades outward naturally.
                     worldManager.setBlock(x, y, z, BlockType.AIR, 0);
                     continue;
@@ -173,7 +173,7 @@ export function processFluids(state: WorldState) {
                     continue;
                 }
                 if (supportedMeta > currentMeta) {
-                    // Supply weakened — downgrade and re-check next update.
+                    // Supply weakened, downgrade and re-check next update.
                     worldManager.setBlock(x, y, z, type, supportedMeta);
                     scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
                     continue;
@@ -185,7 +185,7 @@ export function processFluids(state: WorldState) {
         const canFlowDown = isReplaceable(down.type) || (down.type === type && down.meta !== 8);
 
         if (canFlowDown) {
-             // Never overwrite a same-type SOURCE below (meta 0) — pouring fluid onto a
+             // Never overwrite a same-type SOURCE below (meta 0), pouring fluid onto a
              // source pool used to rewrite it to falling fluid, destroying the source.
              if (down.type !== type || (down.meta !== 8 && down.meta !== 0)) {
                  trySpreadTo(state, x, y - 1, z, type, 8);

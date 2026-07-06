@@ -128,6 +128,23 @@ export const CUTOUT_TILE_CONFIGS: CutoutTileConfig[] = [
     { slot: 76 },
     { slot: 86 },
     { slot: 89 },
+    // New wood family leaves + saplings (Task ID 6)
+    { slot: 193 },  // jungle leaves
+    { slot: 194 },  // jungle sapling
+    { slot: 198 },  // dark oak leaves
+    { slot: 199 },  // dark oak sapling
+    { slot: 203 },  // acacia leaves
+    { slot: 204 },  // acacia sapling
+    // Magnetic Fields cross-plane crystals + spike (transparent backgrounds)
+    { slot: 206 },  // positive magnetite crystal
+    { slot: 207 },  // negative magnetite crystal
+    { slot: 208 },  // magnetic spike
+    { slot: 210 },  // magnetic shield crystal
+    { slot: 212 },  // magnetite shard
+    // Cave content cross-plane cutouts (transparent backgrounds)
+    { slot: 220 },  // pointed dripstone
+    { slot: 222 },  // glow lichen
+    { slot: 225 },  // amethyst cluster
 ];
 
 export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {
@@ -208,6 +225,39 @@ export const drawOreFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePain
             noise(0.15);
             ctx.fillStyle = oreColor;
             drawRects(ctx, deposits);
+        });
+    });
+};
+
+// Deepslate ore variants: same deposit shapes as the stone ores, but on the
+// lightened deepslate base (slot 217's palette) with a bright fleck on each
+// deposit so the mineral reads against the dark stone.
+const DEEPSLATE_ORE_SPECS: Array<{ slot: number; oreColor: string; hiColor: string; deposits: PixelRect[] }> = [
+    { slot: 227, oreColor: '#20202a', hiColor: '#484852', deposits: ORE_SPECS[0].deposits },
+    { slot: 228, oreColor: '#cfc4bf', hiColor: '#efe7e2', deposits: ORE_SPECS[1].deposits },
+    { slot: 229, oreColor: '#e0813a', hiColor: '#ffb27a', deposits: ORE_SPECS[2].deposits },
+    { slot: 230, oreColor: '#ffd633', hiColor: '#fff0a0', deposits: ORE_SPECS[3].deposits },
+    { slot: 231, oreColor: '#33e6ff', hiColor: '#c8fbff', deposits: ORE_SPECS[4].deposits },
+    { slot: 232, oreColor: '#2f43c8', hiColor: '#7d8ff0', deposits: ORE_SPECS[5].deposits },
+    { slot: 233, oreColor: '#25e070', hiColor: '#a8ffcf', deposits: ORE_SPECS[6].deposits },
+];
+
+export const drawDeepslateOreTiles = ({ ctx, withTile, fill }: AtlasTilePainter) => {
+    const speck = (color: string, n: number) => {
+        ctx.fillStyle = color;
+        for (let i = 0; i < n; i += 1) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+    };
+    DEEPSLATE_ORE_SPECS.forEach(({ slot, oreColor, hiColor, deposits }) => {
+        withTile(slot, () => {
+            fill('#585862');
+            speck('#45454e', 26);
+            speck('#6e6e7a', 16);
+            ctx.fillStyle = '#484850';
+            for (let y = 2; y < 16; y += 5) ctx.fillRect(0, y, 16, 1);
+            ctx.fillStyle = oreColor;
+            drawRects(ctx, deposits);
+            ctx.fillStyle = hiColor;
+            deposits.forEach(([x, y]) => ctx.fillRect(x, y, 1, 1));
         });
     });
 };

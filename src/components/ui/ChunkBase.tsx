@@ -1,11 +1,20 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { getBiome, getGenerationParams, BIOMES } from '../../systems/world/biomes';
+import {
+    getMagneticFieldColumn,
+    getMagneticFieldsConfig,
+    getActiveCenters,
+    findNearestMagneticField,
+} from '../../systems/world/magneticFields';
 import { getTerrainHeight } from '../../systems/world/chunkGeneration';
-import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
-import { CHUNK_SIZE } from '../../constants';
+import { GenConfig, NoiseType, resetGenConfig, loadGenConfig, normalizeGenConfigSnapshot, DEFAULTS, initHistory, pushHistory, undo, redo, getHistoryState } from '../../systems/world/genConfig';
+import { isBreachColumn, caveSurfaceTaper, isCaveCarved, isDeepslateAt, caveBiomeAt } from '../../systems/world/caves';
+import { CHUNK_SIZE, MIN_Y } from '../../constants';
+import type { NoiseSet } from '../../utils/noise';
 import { worldManager } from '../../systems/WorldManager';
 import { createNoiseSet, hashSeed } from '../../utils/noise';
 import { deleteWorldGenPresetAsync, getWorldGenPresetByIdAsync, listWorldGenPresetsAsync, saveWorldGenPresetAsync, WorldGenPresetEntry } from '../../systems/world/worldGenPresets';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ChunkBaseProps {
     onBack: () => void;
@@ -19,9 +28,40 @@ interface LayerConfig {
     color: string;
 }
 
+// Compact labeled number field for the Magnetic Fields config: tooltip on the
+// label, immediate preview on change, history commit on blur, double-click the
+// R button to restore the default.
+const MfNum = ({ label, title, value, step, onChange, onReset }: {
+    label: string;
+    title: string;
+    value: number;
+    step: number;
+    onChange: (v: number) => void;
+    onReset: () => void;
+}) => (
+    <div title={title}>
+        <div className="text-[10px] text-gray-400 mb-0.5 truncate">{label}</div>
+        <div className="flex">
+            <input
+                type="number"
+                step={step}
+                value={value}
+                onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
+                className="w-full min-w-0 bg-black border border-gray-600 text-[11px] px-1.5 py-0.5 rounded"
+            />
+            <button
+                onClick={onReset}
+                className="ml-1 w-5 flex-shrink-0 flex items-center justify-center bg-[#444] hover:bg-[#555] text-[10px] rounded text-gray-200 border border-gray-600"
+                title="Reset to default"
+                aria-label={`Reset ${label}`}
+            >R</button>
+        </div>
+    </div>
+);
+
 const ResetBtn = ({ onClick }: { onClick: () => void }) => (
-    <button 
-        onClick={onClick} 
+    <button
+        onClick={onClick}
         className="ml-2 w-6 flex-shrink-0 flex items-center justify-center bg-[#444] hover:bg-[#555] text-xs rounded text-gray-200 border border-gray-600 aspect-square"
         title="Reset"
         aria-label="Reset"
@@ -29,6 +69,111 @@ const ResetBtn = ({ onClick }: { onClick: () => void }) => (
         R
     </button>
 );
+
+// Vertical cave cross-section preview. Samples the REAL cave functions
+// (systems/world/caves.ts) along an X strip at the map centre's Z, from y=140
+// down to the world floor, so tuning a cave slider immediately shows how the
+// carve changes. Same math the generator runs, this is a faithful side view.
+const CROSS_TOP_Y = 140;
+const CaveCrossSection: React.FC<{
+    centerX: number;
+    centerZ: number;
+    noiseSet: NoiseSet;
+    version: number;
+    width: number;
+    blocksPerPx?: number;
+}> = ({ centerX, centerZ, noiseSet, version, width, blocksPerPx = 1.4 }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const height = 240;
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Coalesce redraws to one per frame (via rAF, cancelling any pending) so
+        // dragging a slider (which bumps `version` on every mousemove) never
+        // runs this ~thousands-of-samples pass more than once a frame. The
+        // component only mounts on the CAVES tab, so it never costs anything on
+        // the other editor tabs.
+        let raf = 0;
+        const render = () => {
+        const cfg = GenConfig.caves;
+        const seaLevel = GenConfig.height.seaLevel;
+        const caveOx = noiseSet.offsets.cave.x;
+        const caveOz = noiseSet.offsets.cave.z;
+        const caveNoise2D = (px: number, pz: number) => noiseSet.cave.noise2D(px, pz);
+        const caveNoise3D = (px: number, py: number, pz: number) => noiseSet.cave.noise3D(px, py, pz);
+        // Cheap deterministic hash for the deepslate blend (illustrative, the
+        // carve shape above is exact; the speckled boundary need only look right).
+        const hash01 = (x: number, y: number, z: number) => {
+            let h = Math.imul(x ^ 0x9e3779b9, 374761393);
+            h = Math.imul(h ^ (y + 101), 668265263);
+            h = Math.imul(h ^ (z - 101), 2147483647);
+            h ^= h >>> 13; return (h >>> 0) / 4294967296;
+        };
+
+        const STEP = 3;
+        const rw = Math.max(1, Math.ceil(width / STEP));
+        const rh = Math.max(1, Math.ceil(height / STEP));
+        const img = ctx.createImageData(rw, rh);
+        const data = img.data;
+        const bottomY = MIN_Y;
+        const yRange = CROSS_TOP_Y - bottomY;
+
+        for (let px = 0; px < rw; px++) {
+            const wx = Math.round(centerX + (px - rw / 2) * blocksPerPx * STEP);
+            const h = getTerrainHeight(wx, centerZ, noiseSet);
+            const isBreach = isBreachColumn(wx + caveOx, centerZ + caveOz, caveNoise2D, cfg);
+            for (let py = 0; py < rh; py++) {
+                const wy = Math.round(CROSS_TOP_Y - (py / rh) * yRange);
+                let r = 20, g = 28, b = 38; // sky
+                if (wy <= bottomY) { r = 12; g = 12; b = 14; } // bedrock floor
+                else if (wy > h) {
+                    if (wy <= seaLevel) { r = 26; g = 78; b = 116; } // water column
+                } else {
+                    const depth = h - wy;
+                    const taper = caveSurfaceTaper(depth, isBreach, cfg);
+                    if (isCaveCarved(wx + caveOx, wy, centerZ + caveOz, depth, taper, caveNoise3D, cfg)) {
+                        if (wy <= bottomY + cfg.lavaLevel) { r = 224; g = 98; b = 30; } // lava
+                        else { r = 8; g = 8; b = 10; } // cave void
+                    } else if (wy === h) { r = 74; g = 122; b = 60; } // surface skin
+                    else if (isDeepslateAt(wy, hash01(wx, wy, centerZ), cfg)) { r = 64; g = 64; b = 74; }
+                    else { r = 116; g = 116; b = 116; } // stone
+                }
+                const i = (py * rw + px) * 4;
+                data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
+            }
+        }
+
+        const tmp = document.createElement('canvas');
+        tmp.width = rw; tmp.height = rh;
+        tmp.getContext('2d')?.putImageData(img, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(tmp, 0, 0, width, height);
+
+        // Reference lines: sea level + y=0, with labels.
+        const yToPx = (wy: number) => ((CROSS_TOP_Y - wy) / yRange) * height;
+        ctx.font = '9px monospace'; ctx.textBaseline = 'bottom';
+        for (const [wy, label, col] of [[seaLevel, `y=${seaLevel} (sea)`, 'rgba(90,180,255,0.5)'], [0, 'y=0', 'rgba(255,255,255,0.35)'], [bottomY + cfg.lavaLevel, 'lava', 'rgba(255,140,60,0.5)']] as [number, string, string][]) {
+            const sy = yToPx(wy);
+            if (sy < 0 || sy > height) continue;
+            ctx.strokeStyle = col; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(width, sy); ctx.stroke();
+            ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(label, 3, sy - 1);
+        }
+        // Centre marker (the X the map is centred on).
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(width / 2, 0); ctx.lineTo(width / 2, height); ctx.stroke();
+        };
+        raf = requestAnimationFrame(render);
+        return () => cancelAnimationFrame(raf);
+    }, [centerX, centerZ, noiseSet, version, width, blocksPerPx]);
+
+    return <canvas ref={canvasRef} width={width} height={height} className="block w-full rounded border border-black/40" />;
+};
 
 export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,12 +193,15 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const [showRulers, setShowRulers] = useState(false);
     const [rulerType, setRulerType] = useState<'power2' | 'decimal'>('power2');
     const [expandedBiomes, setExpandedBiomes] = useState<Record<string, boolean>>({});
-    const [activeSection, setActiveSection] = useState<'noise' | 'biomes' | 'terrain'>('biomes');
+    const [activeSection, setActiveSection] = useState<'noise' | 'biomes' | 'terrain' | 'caves'>('biomes');
     const [historyState, setHistoryState] = useState(getHistoryState());
     const [presetNameInput, setPresetNameInput] = useState('My World Preset');
     const [showSavesMenu, setShowSavesMenu] = useState(false);
     const [savedPresets, setSavedPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+    const [editorStatus, setEditorStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+    const [pendingDeletePreset, setPendingDeletePreset] = useState<WorldGenPresetEntry | null>(null);
     
     // Seed State (Independent from Game)
     const [localSeedInput, setLocalSeedInput] = useState(() => worldManager.getSeed().toString());
@@ -65,8 +213,13 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     // Force re-render token to update canvas when mutable config changes
     const [configVersion, setConfigVersion] = useState(0);
 
+    // Nearest Magnetic Fields arena found via "Find Nearest Field".
+    const [nearestMf, setNearestMf] = useState<{ centerX: number; centerZ: number; distance: number } | null>(null);
+    const [copiedMfTp, setCopiedMfTp] = useState(false);
+
     const [layers, setLayers] = useState<LayerConfig[]>([
         { id: 'biome', name: 'Biomes', enabled: true, opacity: 1.0, color: '#4CAF50' },
+        { id: 'boss', name: 'Boss Field (Magnetic)', enabled: false, opacity: 0.9, color: '#b388ff' },
         { id: 'height', name: 'Heightmap', enabled: false, opacity: 0.8, color: '#FFFFFF' },
         { id: 'river', name: 'Humidity / Rivers', enabled: false, opacity: 0.6, color: '#2196F3' },
         { id: 'temp', name: 'Temperature', enabled: false, opacity: 0.5, color: '#F44336' },
@@ -97,23 +250,32 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         };
     }, []);
 
-    // Init History
-    useEffect(() => {
-        initHistory();
-        setHistoryState(getHistoryState());
-        void refreshPresetList();
-    }, []);
-
     const forceUpdate = () => {
         setConfigVersion(v => v + 1);
         setHistoryState(getHistoryState());
     };
 
-    const refreshPresetList = async () => {
+    const refreshPresetList = useCallback(async () => {
         const presets = await listWorldGenPresetsAsync();
         setSavedPresets(presets);
         setSelectedPresetId((prev) => (prev && presets.some((preset) => preset.id === prev) ? prev : presets[0]?.id ?? ''));
-    };
+    }, []);
+
+    const handleRefreshPresetList = useCallback(async () => {
+        try {
+            await refreshPresetList();
+        } catch (error) {
+            console.error('[WorldEditor] Failed to refresh presets:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to refresh presets.' });
+        }
+    }, [refreshPresetList]);
+
+    // Init History
+    useEffect(() => {
+        initHistory();
+        setHistoryState(getHistoryState());
+        void handleRefreshPresetList();
+    }, [handleRefreshPresetList]);
 
     const commitChange = () => {
         pushHistory();
@@ -146,6 +308,8 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
 
         const invScale = 1 / scale;
         const activeLayers = layers.filter(l => l.enabled && l.opacity > 0);
+        // Boss-biome activation noise sampler (same channel worldgen uses).
+        const bossNoise2D = (px: number, pz: number) => previewNoiseSet.bossBiome.noise2D(px, pz);
         const startWX = center.x - (width / 2) * invScale;
         const startWZ = center.z - (height / 2) * invScale;
         const stepWorld = PIXEL_STEP * invScale;
@@ -172,7 +336,28 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                         lr = (hex >> 16) & 255;
                         lg = (hex >> 8) & 255;
                         lb = hex & 255;
-                    } 
+                    }
+                    else if (layer.id === 'boss') {
+                        // Visualize the rare Magnetic Fields "boss biome": where an
+                        // instance actually lands, shaded outer→inner by tier (the
+                        // golden core is the boss arena plateau); elsewhere a faint
+                        // heatmap of the activation noise so you can spot near-misses.
+                        const bossSeed = previewNoiseSet.seed | 0;
+                        const mfc = getMagneticFieldsConfig();
+                        const col = getMagneticFieldColumn(wx, wz, bossSeed, bossNoise2D);
+                        if (col) {
+                            if (col.isArena) {
+                                lr = 255; lg = 224; lb = 130;          // arena plateau
+                            } else {
+                                const tierT = col.tier / Math.max(1, mfc.tierCount - 1); // 0 outer → 1 inner
+                                lr = 110 + tierT * 130; lg = 40 + tierT * 30; lb = 200;   // purple → magenta
+                            }
+                        } else {
+                            const f = bossNoise2D(wx * mfc.fieldFreq, wz * mfc.fieldFreq);
+                            const hot = Math.max(0, (f - (mfc.fieldThreshold - 0.3)) / 0.3); // ramps toward threshold
+                            lr = hot * 70; lg = 0; lb = hot * 95;
+                        }
+                    }
                     else if (layer.id === 'height') {
                         const h = getTerrainHeight(wx, wz, previewNoiseSet);
                         if (h <= GenConfig.height.seaLevel) {
@@ -241,10 +426,36 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         const tempCtx = tempCanvas.getContext('2d');
         if (tempCtx) {
             tempCtx.putImageData(imageData, 0, 0);
-            ctx.imageSmoothingEnabled = false; 
+            ctx.imageSmoothingEnabled = false;
             ctx.drawImage(tempCanvas, 0, 0, width, height);
         }
-        
+
+        // --- Active Magnetic Fields centers (boss layer): crosshair + label ---
+        if (layers.some(l => l.id === 'boss' && l.enabled)) {
+            const endWX = startWX + width * invScale;
+            const endWZ = startWZ + height * invScale;
+            const centers = getActiveCenters(startWX, startWZ, endWX, endWZ, previewNoiseSet.seed | 0, bossNoise2D, getMagneticFieldsConfig().radius);
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            for (const c of centers) {
+                const sx = (c.centerX - center.x) * scale + width / 2;
+                const sz = (c.centerZ - center.z) * scale + height / 2;
+                ctx.strokeStyle = '#ffe082';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(sx - 8, sz); ctx.lineTo(sx + 8, sz);
+                ctx.moveTo(sx, sz - 8); ctx.lineTo(sx, sz + 8);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(0,0,0,0.65)';
+                const label = `${c.centerX}, ${c.centerZ}`;
+                const w = ctx.measureText(label).width;
+                ctx.fillRect(sx + 10, sz - 16, w + 8, 15);
+                ctx.fillStyle = '#ffe082';
+                ctx.fillText(label, sx + 14, sz - 3);
+            }
+        }
+
         // --- Render Chunk Grid ---
         if (showGrid) {
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
@@ -344,7 +555,15 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         const biome = getBiome(wx, wz, previewNoiseSet);
         const heightVal = getTerrainHeight(wx, wz, previewNoiseSet);
         const params = getGenerationParams(wx, wz, previewNoiseSet);
-        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params });
+        // Magnetic Fields readout: tier / arena / center / distance when inside
+        // an instance, plus the raw boss-field noise value at this position.
+        const bossSeed = previewNoiseSet.seed | 0;
+        const mfc = getMagneticFieldsConfig();
+        const mfCol = getMagneticFieldColumn(wx, wz, bossSeed, (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz));
+        const mfFieldVal = previewNoiseSet.bossBiome.noise2D(wx * mfc.fieldFreq, wz * mfc.fieldFreq);
+        // Which cave biome the rock under this column belongs to (real, large, rare regions).
+        const caveBiome = caveBiomeAt(wx + previewNoiseSet.offsets.cave.x, wz + previewNoiseSet.offsets.cave.z, (a, b) => previewNoiseSet.cave.noise2D(a, b), GenConfig.caves);
+        setHoverInfo({ x: wx, z: wz, biome, height: heightVal, ...params, mfCol, mfFieldVal, caveBiome });
         if (e.buttons === 1) { 
             setCenter({
                 x: center.x - e.movementX * invScale,
@@ -374,9 +593,14 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     };
 
     const handleReset = () => {
-        if (!confirm('Reset all world generation settings to defaults?')) return;
+        setShowResetConfirmation(true);
+    };
+
+    const confirmReset = () => {
+        setShowResetConfirmation(false);
         resetGenConfig();
         commitChange();
+        setEditorStatus({ type: 'success', message: 'World generation settings reset to defaults.' });
     };
 
     const handleRandomSeed = () => {
@@ -384,53 +608,127 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         setLocalSeedInput(rnd);
     };
 
+    // Find the nearest active Magnetic Fields instance to the current map
+    // center, jump the view to its Warden arena, and turn the boss layer on.
+    const handleFindNearestMf = () => {
+        const found = findNearestMagneticField(
+            center.x, center.z, previewNoiseSet.seed | 0,
+            (px, pz) => previewNoiseSet.bossBiome.noise2D(px, pz),
+        );
+        if (!found) {
+            setEditorStatus({ type: 'error', message: 'No Magnetic Field found within 50,000 blocks. Check the domain settings.' });
+            return;
+        }
+        setNearestMf(found);
+        setCopiedMfTp(false);
+        setCenter({ x: found.centerX, z: found.centerZ });
+        setInputX(String(found.centerX));
+        setInputZ(String(found.centerZ));
+        setLayers(prev => prev.map(l => l.id === 'boss' ? { ...l, enabled: true } : l));
+        setEditorStatus({ type: 'success', message: `Found Magnetic Field at ${found.centerX}, ${found.centerZ}.` });
+    };
+
+    const handleCopyMfTp = async () => {
+        if (!nearestMf) return;
+        const y = GenConfig.bossDomains.magneticFields.arenaFloorY + 1;
+        const cmd = `/tp ${nearestMf.centerX} ${y} ${nearestMf.centerZ}`;
+        if (!navigator.clipboard?.writeText) {
+            setEditorStatus({ type: 'error', message: `Clipboard unavailable. Teleport command: ${cmd}` });
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(cmd);
+            setCopiedMfTp(true);
+            setTimeout(() => setCopiedMfTp(false), 1500);
+            setEditorStatus({ type: 'success', message: 'Teleport command copied.' });
+        } catch {
+            setEditorStatus({ type: 'error', message: `Copy failed. Teleport command: ${cmd}` });
+        }
+    };
+
     const downloadConfig = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(GenConfig, null, 2));
+        const snapshot = normalizeGenConfigSnapshot(GenConfig);
+        if (!snapshot) {
+            setEditorStatus({ type: 'error', message: 'Failed to export world generation configuration.' });
+            return;
+        }
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snapshot, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
         downloadAnchorNode.setAttribute("download", "world_gen_config.json");
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
+        setEditorStatus({ type: 'success', message: 'World generation JSON exported.' });
     };
 
     const handleImportClick = () => fileInputRef.current?.click();
 
     const handleSavePreset = async () => {
-        const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
-        if (!saved) {
-            alert('Enter a preset name first.');
-            return;
+        setEditorStatus(null);
+        try {
+            const saved = await saveWorldGenPresetAsync(presetNameInput, GenConfig);
+            if (!saved) {
+                setEditorStatus({ type: 'error', message: 'Enter a preset name first.' });
+                return;
+            }
+            await refreshPresetList();
+            setSelectedPresetId(saved.id);
+            setPresetNameInput(saved.name);
+            setEditorStatus({ type: 'success', message: `Saved preset: ${saved.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to save preset:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to save preset.' });
         }
-        await refreshPresetList();
-        setSelectedPresetId(saved.id);
-        setPresetNameInput(saved.name);
-        alert(`Saved preset: ${saved.name}`);
     };
 
     const handleLoadSelectedPreset = async () => {
         if (!selectedPresetId) return;
-        const preset = await getWorldGenPresetByIdAsync(selectedPresetId);
-        if (!preset) {
-            alert('Preset not found.');
-            await refreshPresetList();
-            return;
-        }
-        if (loadGenConfig(preset.config)) {
+        setEditorStatus(null);
+        try {
+            const preset = await getWorldGenPresetByIdAsync(selectedPresetId);
+            if (!preset) {
+                setEditorStatus({ type: 'error', message: 'Preset not found.' });
+                await refreshPresetList();
+                return;
+            }
+            if (!loadGenConfig(preset.config)) {
+                setEditorStatus({ type: 'error', message: 'Failed to load preset JSON.' });
+                return;
+            }
             commitChange();
             setPresetNameInput(preset.name);
-        } else {
-            alert('Failed to load preset JSON.');
+            setEditorStatus({ type: 'success', message: `Loaded preset: ${preset.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to load preset:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to load preset.' });
         }
     };
 
-    const handleDeleteSelectedPreset = async () => {
+    const handleDeleteSelectedPreset = () => {
         if (!selectedPresetId) return;
         const preset = savedPresets.find((item) => item.id === selectedPresetId);
         if (!preset) return;
-        if (!confirm(`Delete preset "${preset.name}"?`)) return;
-        await deleteWorldGenPresetAsync(selectedPresetId);
-        await refreshPresetList();
+        setPendingDeletePreset(preset);
+    };
+
+    const confirmDeleteSelectedPreset = async () => {
+        const preset = pendingDeletePreset;
+        setPendingDeletePreset(null);
+        if (!preset) return;
+        try {
+            const deleted = await deleteWorldGenPresetAsync(preset.id);
+            if (!deleted) {
+                setEditorStatus({ type: 'error', message: `Preset not found: ${preset.name}` });
+                await refreshPresetList();
+                return;
+            }
+            await refreshPresetList();
+            setEditorStatus({ type: 'success', message: `Deleted preset: ${preset.name}` });
+        } catch (error) {
+            console.error('[WorldEditor] Failed to delete preset:', error);
+            setEditorStatus({ type: 'error', message: 'Failed to delete preset.' });
+        }
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -438,50 +736,85 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (event) => {
-            try {
-                const json = JSON.parse(event.target?.result as string);
-                if (loadGenConfig(json)) {
+            void (async () => {
+                try {
+                    const json = JSON.parse(event.target?.result as string);
+                    if (!loadGenConfig(json)) {
+                        setEditorStatus({ type: 'error', message: 'Failed to load configuration.' });
+                        return;
+                    }
                     commitChange();
                     const inferredName = file.name.replace(/\.json$/i, '').trim() || 'Imported Preset';
-                    void (async () => {
+                    try {
                         const saved = await saveWorldGenPresetAsync(inferredName, GenConfig);
                         await refreshPresetList();
                         if (saved) {
                             setSelectedPresetId(saved.id);
                             setPresetNameInput(saved.name);
+                            setEditorStatus({ type: 'success', message: `Imported preset: ${saved.name}` });
+                        } else {
+                            setEditorStatus({ type: 'error', message: 'Configuration loaded, but the preset could not be saved.' });
                         }
-                    })();
+                    } catch (error) {
+                        console.error('[WorldEditor] Failed to save imported preset:', error);
+                        setEditorStatus({ type: 'error', message: 'Configuration loaded, but the preset could not be saved.' });
+                    }
+                } catch {
+                    setEditorStatus({ type: 'error', message: 'Invalid JSON file.' });
                 }
-                else alert("Failed to load configuration. Check console.");
-            } catch { alert("Invalid JSON file"); }
+            })();
         };
+        reader.onerror = () => setEditorStatus({ type: 'error', message: 'Failed to read JSON file.' });
         reader.readAsText(file);
         e.target.value = ''; 
     };
 
     const toggleBiomeExpand = (key: string) => setExpandedBiomes(prev => ({ ...prev, [key]: !prev[key] }));
 
-    const getBiomeMeta = (key: string) => {
-        switch(key) {
-            case 'volcanic': return { name: 'Volcanic', color: BIOMES.VOLCANIC.color };
-            case 'mesaBryce': return { name: 'Mesa Bryce', color: BIOMES.MESA_BRYCE.color };
-            case 'mesa': return { name: 'Red Mesa', color: BIOMES.RED_MESA.color };
-            case 'desert': return { name: 'Desert', color: BIOMES.DESERT.color };
-            case 'plains': return { name: 'Plains', color: BIOMES.PLAINS.color };
-            case 'forest': return { name: 'Forest', color: BIOMES.FOREST.color };
-            case 'cherry': return { name: 'Cherry Grove', color: BIOMES.CHERRY_GROVE.color };
-            case 'tundra': return { name: 'Tundra', color: BIOMES.TUNDRA.color };
-            case 'ocean': return { name: 'Ocean', color: BIOMES.OCEAN.color };
-            case 'river': return { name: 'River', color: BIOMES.RIVER.color };
-            default: return { name: key, color: '#888' };
-        }
+    // Map every editable GenConfig biome key to its registry name + map colour, so
+    // the editor lists ALL biomes (including the later-added forests/mountains/etc.),
+    // not just the original ten.
+    const BIOME_META: Record<string, { name: string; color: string }> = {
+        ocean: { name: 'Ocean', color: BIOMES.OCEAN.color },
+        beach: { name: 'Beach', color: BIOMES.BEACH.color },
+        tundra: { name: 'Tundra', color: BIOMES.TUNDRA.color },
+        river: { name: 'River', color: BIOMES.RIVER.color },
+        volcanic: { name: 'Volcanic', color: BIOMES.VOLCANIC.color },
+        mesaBryce: { name: 'Mesa Bryce', color: BIOMES.MESA_BRYCE.color },
+        mesa: { name: 'Red Mesa', color: BIOMES.RED_MESA.color },
+        desert: { name: 'Desert', color: BIOMES.DESERT.color },
+        plains: { name: 'Plains', color: BIOMES.PLAINS.color },
+        forest: { name: 'Forest', color: BIOMES.FOREST.color },
+        cherry: { name: 'Cherry Grove', color: BIOMES.CHERRY_GROVE.color },
+        birchForest: { name: 'Birch Forest', color: BIOMES.BIRCH_FOREST.color },
+        flowerForest: { name: 'Flower Forest', color: BIOMES.FLOWER_FOREST.color },
+        darkForest: { name: 'Dark Forest', color: BIOMES.DARK_FOREST.color },
+        meadow: { name: 'Meadow', color: BIOMES.MEADOW.color },
+        savanna: { name: 'Savanna', color: BIOMES.SAVANNA.color },
+        jungle: { name: 'Jungle', color: BIOMES.JUNGLE.color },
+        taiga: { name: 'Taiga', color: BIOMES.TAIGA.color },
+        iceSpikes: { name: 'Ice Spikes', color: BIOMES.ICE_SPIKES.color },
+        mountains: { name: 'Mountains', color: BIOMES.MOUNTAINS.color },
+        swamp: { name: 'Swamp', color: BIOMES.SWAMP.color },
+        stoneShore: { name: 'Stone Shore', color: BIOMES.STONE_SHORE.color },
     };
 
-    const biomeKeys = ['volcanic', 'mesaBryce', 'mesa', 'desert', 'plains', 'forest', 'cherry', 'tundra', 'ocean', 'river'] as const;
+    const getBiomeMeta = (key: string) => BIOME_META[key] ?? { name: key, color: '#888' };
+
+    const biomeKeys = Object.keys(GenConfig.biomes);
 
     return (
         <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden">
             <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
+            {editorStatus && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className={`pointer-events-none absolute left-1/2 top-4 z-[260] max-w-[560px] -translate-x-1/2 rounded border px-4 py-2 text-center text-xs font-bold shadow-xl ${editorStatus.type === 'success' ? 'border-green-500/50 bg-green-950/95 text-green-300' : 'border-red-500/50 bg-red-950/95 text-red-300'}`}
+                >
+                    {editorStatus.message}
+                </div>
+            )}
             
             <div className="bg-[#2a2a2a] border-r border-black flex flex-col shadow-xl z-20 relative flex-shrink-0" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
                 <div className="absolute top-0 right-[-4px] w-3 h-full cursor-col-resize z-50 group flex justify-center" onMouseDown={(e) => { e.preventDefault(); isResizingRef.current = true; document.body.style.cursor = 'col-resize'; }}>
@@ -494,9 +827,10 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                 </div>
                 
                 <div className="flex bg-[#222] border-b border-black">
-                    <button onClick={() => setActiveSection('biomes')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'biomes' ? 'bg-[#333] text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>BIOMES</button>
-                    <button onClick={() => setActiveSection('terrain')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'terrain' ? 'bg-[#333] text-white border-b-2 border-green-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>TERRAIN</button>
-                    <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-sm font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
+                    <button onClick={() => setActiveSection('biomes')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'biomes' ? 'bg-[#333] text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>BIOMES</button>
+                    <button onClick={() => setActiveSection('terrain')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'terrain' ? 'bg-[#333] text-white border-b-2 border-green-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>TERRAIN</button>
+                    <button onClick={() => setActiveSection('caves')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'caves' ? 'bg-[#333] text-white border-b-2 border-amber-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>CAVES</button>
+                    <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -557,6 +891,114 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     {/* --- BIOMES SECTION --- */}
                     {activeSection === 'biomes' && (
                         <div className="border-t border-white/10 pt-2 flex flex-col gap-3">
+                            {/* Magnetic Fields, a boss-domain biome, rendered as a
+                                standard biome accordion row (same header/swatch/chevron
+                                and body styling as the others). Its expanded body just
+                                carries the extra boss-domain tools + parameters. */}
+                            {(() => {
+                                const mf = GenConfig.bossDomains.magneticFields;
+                                const dmf = DEFAULTS.bossDomains.magneticFields;
+                                const isExpanded = expandedBiomes['magneticFields'];
+                                const set = <K extends keyof typeof mf>(key: K) => (v: number) => { (mf[key] as number) = v; forceUpdate(); };
+                                const reset = <K extends keyof typeof mf>(key: K) => () => { (mf[key] as typeof mf[K]) = dmf[key]; commitChange(); };
+                                const groups: { title: string; fields: { key: keyof typeof mf; label: string; step: number; tip: string }[] }[] = [
+                                    {
+                                        title: 'Placement (moves centers!)',
+                                        fields: [
+                                            { key: 'cell', label: 'Cell Spacing', step: 128, tip: 'Grid spacing between candidate centers (blocks). Larger = rarer.' },
+                                            { key: 'fieldFreq', label: 'Field Freq', step: 0.0001, tip: 'Boss-field noise frequency used to activate candidate centers.' },
+                                            { key: 'fieldThreshold', label: 'Threshold', step: 0.01, tip: 'Noise value a center must exceed to activate. Higher = rarer.' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Shape',
+                                        fields: [
+                                            { key: 'radius', label: 'Radius', step: 16, tip: 'Base biome radius in blocks (warped per-edge).' },
+                                            { key: 'edgeFreq', label: 'Edge Warp Freq', step: 0.001, tip: 'Boundary wobble frequency.' },
+                                            { key: 'edgeAmp', label: 'Edge Warp Amp', step: 0.02, tip: 'Boundary radius variation (0.28 = ±28%).' },
+                                            { key: 'tierWarpFreq', label: 'Tier Warp Freq', step: 0.005, tip: 'Cliff-ring wobble frequency.' },
+                                            { key: 'tierWarpAmp', label: 'Tier Warp Amp', step: 1, tip: 'How far cliff rings shift in/out (blocks).' },
+                                            { key: 'shelfJitterFreq', label: 'Shelf Jitter Freq', step: 0.005, tip: 'Per-column shelf bumpiness frequency.' },
+                                            { key: 'shelfJitterAmp', label: 'Shelf Jitter Amp', step: 0.2, tip: 'Shelf bumpiness amplitude (blocks).' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Tiers',
+                                        fields: [
+                                            { key: 'tierCount', label: 'Tier Count', step: 1, tip: 'Number of shelves from the rim to the arena plateau.' },
+                                            { key: 'tierHeight', label: 'Tier Height', step: 1, tip: 'Vertical rise of each magnetite wall (blocks).' },
+                                            { key: 'baseHeight', label: 'Base Height Y', step: 1, tip: 'Surface Y of the outermost shelf (tier 0).' },
+                                        ],
+                                    },
+                                    {
+                                        title: 'Arena & Blend',
+                                        fields: [
+                                            { key: 'arenaRadius', label: 'Arena Radius', step: 4, tip: 'Flat plateau radius the Warden arena sits on.' },
+                                            { key: 'arenaFloorY', label: 'Arena Floor Y', step: 1, tip: 'World Y of the arena plateau / boss floor.' },
+                                            { key: 'apron', label: 'Apron Size', step: 4, tip: 'Edge band (blocks) that ramps down into ambient terrain.' },
+                                            { key: 'apronMinY', label: 'Apron Min Y', step: 1, tip: 'The apron never ramps below this Y (soft shore over oceans).' },
+                                        ],
+                                    },
+                                ];
+                                return (
+                                    <div className="border border-white/10 rounded bg-[#222]">
+                                        <button className="w-full flex items-center gap-3 p-3 hover:bg-[#333] transition-colors" onClick={() => toggleBiomeExpand('magneticFields')}>
+                                            <div className="w-4 h-4 rounded shadow-sm border border-black/30" style={{ backgroundColor: BIOMES.MAGNETIC_FIELDS.color }} />
+                                            <span className="text-sm font-bold text-gray-200 flex-1 text-left">Magnetic Fields</span>
+                                            <span className="text-xs text-gray-500">{isExpanded ? 'v' : '>'}</span>
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="p-3 space-y-3 bg-[#1a1a1a] border-t border-black/20">
+                                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                    <input type="checkbox" checked={mf.enabled} onChange={(e) => { mf.enabled = e.target.checked; commitChange(); }} className="w-4 h-4 rounded accent-blue-500" />
+                                                    <span className="text-xs text-gray-300">Generate Magnetic Fields</span>
+                                                </label>
+                                                <div className="text-[10px] text-gray-500 leading-relaxed">Placed by the dedicated Boss Field noise layer; enable that map layer to preview instances. Hover the map for tier / arena / center readouts.</div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button
+                                                        onClick={handleFindNearestMf}
+                                                        className="py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-100 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                                        title="Search up to 50,000 blocks from the current map center and center the map on the nearest Warden arena"
+                                                    >Find Nearest</button>
+                                                    <button
+                                                        onClick={() => void handleCopyMfTp()}
+                                                        disabled={!nearestMf}
+                                                        className={`py-1.5 font-bold text-[10px] rounded uppercase tracking-wider transition-colors ${nearestMf ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' : 'bg-gray-800 opacity-40 cursor-not-allowed text-gray-400'}`}
+                                                        title="Copy a /tp command to the found arena center"
+                                                    >{copiedMfTp ? 'Copied!' : 'Copy /tp'}</button>
+                                                </div>
+                                                {nearestMf && (
+                                                    <div className="text-[10px] text-gray-400 font-mono">
+                                                        Arena @ {nearestMf.centerX}, {mf.arenaFloorY + 1}, {nearestMf.centerZ} ({Math.round(nearestMf.distance).toLocaleString()} blk away)
+                                                    </div>
+                                                )}
+                                                {groups.map((g) => (
+                                                    <div key={g.title}>
+                                                        <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">{g.title}</div>
+                                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                                            {g.fields.map((f) => (
+                                                                <MfNum
+                                                                    key={String(f.key)}
+                                                                    label={f.label}
+                                                                    title={f.tip}
+                                                                    value={mf[f.key] as number}
+                                                                    step={f.step}
+                                                                    onChange={set(f.key)}
+                                                                    onReset={reset(f.key)}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button
+                                                    onClick={() => { GenConfig.bossDomains.magneticFields = JSON.parse(JSON.stringify(DEFAULTS.bossDomains.magneticFields)); commitChange(); }}
+                                                    className="w-full py-1 bg-gray-700 hover:bg-gray-600 text-gray-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                                >Reset Magnetic Fields</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             {biomeKeys.map(bKey => {
                                 const meta = getBiomeMeta(bKey);
                                 const isExpanded = expandedBiomes[bKey];
@@ -571,6 +1013,94 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                             })}
                         </div>
                     )}
+                    {/* --- CAVES SECTION --- */}
+                    {activeSection === 'caves' && (() => {
+                        const cv = GenConfig.caves;
+                        const dcv = DEFAULTS.caves;
+                        const setNum = <K extends keyof typeof cv>(key: K) => (v: number) => { (cv[key] as number) = v; forceUpdate(); };
+                        const resetNum = <K extends keyof typeof cv>(key: K) => () => { (cv[key] as typeof cv[K]) = dcv[key]; commitChange(); };
+                        const boolRow = (k: keyof typeof cv, label: string, tip: string) => (
+                            <label key={String(k)} title={tip} className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input type="checkbox" checked={cv[k] as boolean} onChange={(e) => { (cv[k] as boolean) = e.target.checked; commitChange(); }} className="w-3.5 h-3.5 accent-amber-500" />
+                                <span className="text-[10px] text-gray-300">{label}</span>
+                            </label>
+                        );
+                        type NumField = { key: keyof typeof cv; label: string; step: number; tip: string };
+                        type BoolField = { k: keyof typeof cv; label: string; tip: string };
+                        const groups: { title: string; bools?: BoolField[]; fields: NumField[] }[] = [
+                            { title: 'General', bools: [{ k: 'enabled', label: 'Caves', tip: 'Master carve toggle (off = solid underground).' }, { k: 'decorate', label: 'Decorate', tip: 'Dripstone / lichen / moss / geode decoration pass.' }], fields: [
+                                { key: 'surfaceTaperDepth', label: 'Surface Taper', step: 1, tip: 'Caves fade in over this many blocks below the surface.' },
+                                { key: 'lavaLevel', label: 'Lava Level', step: 1, tip: 'Carved cells at/below world-bottom + this flood with lava.' },
+                                { key: 'breachFreq', label: 'Breach Freq', step: 0.001, tip: 'Frequency of the mask that lets cave mouths reach daylight.' },
+                                { key: 'breachThreshold', label: 'Breach Thresh', step: 0.01, tip: 'Higher = fewer surface openings.' },
+                            ] },
+                            { title: 'Spaghetti / Worm', bools: [{ k: 'wormEnabled', label: 'Enabled', tip: 'The main long winding tunnels.' }], fields: [
+                                { key: 'wormFreq', label: 'Freq', step: 0.002, tip: 'Smaller = larger, smoother tunnels.' },
+                                { key: 'wormThreshold', label: 'Width', step: 0.01, tip: 'Larger = wider / more tunnels.' },
+                                { key: 'wormYScale', label: 'Y Scale', step: 0.1, tip: '>1 flattens tunnels horizontally.' },
+                            ] },
+                            { title: 'Cheese Caverns', bools: [{ k: 'cavernEnabled', label: 'Enabled', tip: 'Big open rooms.' }], fields: [
+                                { key: 'cavernMinDepth', label: 'Min Depth', step: 1, tip: 'No caverns until this deep below the surface.' },
+                                { key: 'cavernMaskThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = rarer caverns.' },
+                                { key: 'cavernFreq', label: 'Freq', step: 0.002, tip: 'Smaller = larger caverns.' },
+                                { key: 'cavernThreshold', label: 'Size', step: 0.02, tip: 'Larger = bigger caverns.' },
+                            ] },
+                            { title: 'Noodle Caves', bools: [{ k: 'noodleEnabled', label: 'Enabled', tip: 'Thin secondary tunnels.' }], fields: [
+                                { key: 'noodleFreq', label: 'Freq', step: 0.005, tip: 'Smaller = longer noodles.' },
+                                { key: 'noodleMaskThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = fewer noodles.' },
+                                { key: 'noodleThreshold', label: 'Width', step: 0.01, tip: 'Larger = thicker noodles.' },
+                            ] },
+                            { title: 'Deep Cheese', bools: [{ k: 'deepCheeseEnabled', label: 'Enabled', tip: 'Swiss-cheese holes near the world floor.' }], fields: [
+                                { key: 'deepCheeseMaxY', label: 'Max Y', step: 1, tip: 'Only carve these below this Y.' },
+                                { key: 'deepCheeseFreq', label: 'Freq', step: 0.005, tip: 'Hole scale.' },
+                                { key: 'deepCheeseThreshold', label: 'Rarity', step: 0.02, tip: 'Larger = fewer holes.' },
+                            ] },
+                            { title: 'Deepslate Band', fields: [
+                                { key: 'deepslateStartY', label: 'Start Y', step: 1, tip: 'Stone above this Y stays stone.' },
+                                { key: 'deepslateFullY', label: 'Full Y', step: 1, tip: 'Fully deepslate at/below this Y.' },
+                            ] },
+                            { title: 'Decoration', fields: [
+                                { key: 'lushFreq', label: 'Lush Freq', step: 0.001, tip: 'Lush-cave region scale (moss + glow lichen).' },
+                                { key: 'lushThreshold', label: 'Lush Rarity', step: 0.02, tip: 'Larger = rarer lush caves.' },
+                                { key: 'dripstoneFreq', label: 'Drip Freq', step: 0.001, tip: 'Dripstone-cave region scale.' },
+                                { key: 'dripstoneThreshold', label: 'Drip Rarity', step: 0.02, tip: 'Larger = rarer dripstone caves.' },
+                                { key: 'glowLichenChance', label: 'Glow Lichen', step: 0.01, tip: 'Emissive lichen density (natural cave light).' },
+                                { key: 'mossChance', label: 'Moss', step: 0.05, tip: 'Moss coverage on lush cave floors.' },
+                                { key: 'dripstoneChance', label: 'Dripstone', step: 0.02, tip: 'Pointed dripstone density.' },
+                                { key: 'geodeRarity', label: 'Geodes', step: 0.0005, tip: 'Amethyst-geode chance per deep column.' },
+                            ] },
+                        ];
+                        return (
+                            <div className="bg-[#1a1a1a] rounded p-3 border border-white/10 space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="text-sm font-bold text-amber-400">Cave Cross-Section</div>
+                                        <div className="text-[9px] text-gray-500 font-mono">x={center.x} · z={center.z}</div>
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
+                                    <CaveCrossSection centerX={center.x} centerZ={center.z} noiseSet={previewNoiseSet} version={configVersion} width={Math.max(200, sidebarWidth - 56)} />
+                                    <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono"><span>◼ stone</span><span>◼ deepslate</span><span>◼ cave</span><span>◼ lava</span></div>
+                                </div>
+                                {groups.map((g) => (
+                                    <div key={g.title} className="border-t border-white/10 pt-2">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <div className="text-[9px] font-black uppercase tracking-widest text-amber-400/70">{g.title}</div>
+                                            {g.bools && <div className="flex gap-3">{g.bools.map((bf) => boolRow(bf.k, bf.label, bf.tip))}</div>}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                            {g.fields.map((f) => (
+                                                <MfNum key={String(f.key)} label={f.label} title={f.tip} value={cv[f.key] as number} step={f.step} onChange={setNum(f.key)} onReset={resetNum(f.key)} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={() => { GenConfig.caves = JSON.parse(JSON.stringify(DEFAULTS.caves)); commitChange(); }}
+                                    className="w-full py-1 bg-[#4a3f2f] hover:bg-[#63533d] text-amber-200 font-bold text-[10px] rounded uppercase tracking-wider transition-colors"
+                                >Reset Caves</button>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 <div className="p-3 border-t border-black bg-[#222] flex flex-col gap-3">
@@ -603,7 +1133,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 type="text" 
                                 value={localSeedInput} 
                                 onChange={e => setLocalSeedInput(e.target.value)}
-                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-minecraft focus:border-blue-500 outline-none placeholder:text-gray-800"
+                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-pixel focus:border-blue-500 outline-none placeholder:text-gray-800"
                                 placeholder="Seed..."
                             />
                             {localSeedInput !== worldManager.getSeed().toString() && (
@@ -650,7 +1180,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     <input className="w-20 bg-gray-800 border border-gray-600 px-2 py-1 rounded text-right text-sm" value={inputZ} onChange={e => setInputZ(e.target.value)} placeholder="Z" />
                     <button onClick={goToCoords} className="px-4 py-1 bg-blue-700 hover:bg-blue-600 rounded font-bold text-sm">Go</button>
                     <div className="flex-1" />
-                    <button onClick={() => { setShowSavesMenu((prev) => !prev); if (!showSavesMenu) void refreshPresetList(); }} className={`px-4 py-1 rounded font-bold text-sm border border-gray-900 ${showSavesMenu ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'}`}>Saves</button>
+                    <button onClick={() => { setShowSavesMenu((prev) => !prev); if (!showSavesMenu) void handleRefreshPresetList(); }} className={`px-4 py-1 rounded font-bold text-sm border border-gray-900 ${showSavesMenu ? 'bg-indigo-600' : 'bg-gray-700 hover:bg-gray-600'}`}>Saves</button>
                     <div className="text-xs text-gray-400 font-mono">Scale: {scale.toFixed(2)} | Res: 1/2</div>
                 </div>
 
@@ -677,6 +1207,18 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <span className="text-gray-400">Rain:</span> <span>{hoverInfo.riverVal.toFixed(3)}</span>
                                     <span className="text-gray-400">Cont:</span> <span>{hoverInfo.continentalness.toFixed(3)}</span>
                                     <span className="text-gray-400">Weird:</span> <span>{hoverInfo.weirdness.toFixed(3)}</span>
+                                    <span className="text-gray-400">Cave Biome:</span> <span className={hoverInfo.caveBiome === 'lush' ? 'text-green-400' : hoverInfo.caveBiome === 'dripstone' ? 'text-amber-400' : 'text-gray-300'}>{hoverInfo.caveBiome ?? 'N/A'}</span>
+                                    <span className="text-gray-400">Boss Field:</span> <span className="text-purple-300">{hoverInfo.mfFieldVal?.toFixed(3)}</span>
+                                    {hoverInfo.mfCol && (
+                                        <>
+                                            <span className="text-gray-400">MF Tier:</span>
+                                            <span className="text-purple-300">{hoverInfo.mfCol.isArena ? 'Arena' : `${hoverInfo.mfCol.tier} / ${getMagneticFieldsConfig().tierCount - 1}`}</span>
+                                            <span className="text-gray-400">MF Center:</span>
+                                            <span className="text-purple-300">{hoverInfo.mfCol.instance.centerX}, {hoverInfo.mfCol.instance.centerZ}</span>
+                                            <span className="text-gray-400">MF Dist:</span>
+                                            <span className="text-purple-300">{Math.round(hoverInfo.mfCol.distance)} blk</span>
+                                        </>
+                                    )}
                                 </div>
                             </>
                         ) : (
@@ -702,7 +1244,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                     <input
                                         type="text"
                                         value={presetNameInput}
-                                        onChange={(e) => setPresetNameInput(e.target.value)}
+                                        onChange={(e) => { setPresetNameInput(e.target.value); setEditorStatus(null); }}
                                         className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
                                         placeholder="Preset name"
                                     />
@@ -714,7 +1256,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                             <div className="space-y-2 border border-white/10 rounded bg-[#222] p-2">
                                 <div className="flex items-center justify-between">
                                     <div className="text-[10px] font-black uppercase tracking-wider text-gray-400">Saved Presets</div>
-                                    <button onClick={() => void refreshPresetList()} className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded uppercase">Refresh</button>
+                                    <button onClick={() => void handleRefreshPresetList()} className="px-2 py-1 text-[10px] bg-gray-700 hover:bg-gray-600 rounded uppercase">Refresh</button>
                                 </div>
                                 <div className="max-h-40 overflow-y-auto border border-white/10 bg-black/40 rounded">
                                     {savedPresets.length === 0 && <div className="px-2 py-2 text-xs text-gray-500">No presets found.</div>}
@@ -732,13 +1274,35 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button onClick={() => void handleLoadSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-blue-700 hover:bg-blue-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Load</button>
-                                    <button onClick={() => void handleDeleteSelectedPreset()} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-red-700 hover:bg-red-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Delete</button>
+                                    <button onClick={handleDeleteSelectedPreset} disabled={!selectedPresetId} className={`py-2 text-xs font-bold rounded uppercase ${selectedPresetId ? 'bg-red-700 hover:bg-red-600' : 'bg-gray-700 opacity-40 cursor-not-allowed'}`}>Delete</button>
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
             </div>
+
+            {showResetConfirmation && (
+                <ConfirmModal
+                    title="Reset World Generation?"
+                    message="Reset every World Editor setting to its default value?"
+                    confirmLabel="Reset All"
+                    danger
+                    onConfirm={confirmReset}
+                    onCancel={() => setShowResetConfirmation(false)}
+                />
+            )}
+
+            {pendingDeletePreset && (
+                <ConfirmModal
+                    title="Delete Preset?"
+                    message={<>Delete <span className="text-white">{pendingDeletePreset.name}</span>? This cannot be undone.</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={() => void confirmDeleteSelectedPreset()}
+                    onCancel={() => setPendingDeletePreset(null)}
+                />
+            )}
         </div>
     );
 };

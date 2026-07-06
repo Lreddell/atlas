@@ -1,5 +1,6 @@
 
 import { BlockType, ItemStack } from '../types';
+import { BLOCKS } from '../data/blocks';
 import * as WorldTypes from './world/worldTypes';
 import * as WorldStore from './world/worldStore';
 import * as WorldCoords from './world/worldCoords';
@@ -9,6 +10,8 @@ import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
+import { caveBiomeAt, type CaveBiome } from './world/caves';
+import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
@@ -16,6 +19,10 @@ import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
 import { tickPlantGrowth } from './world/plantGrowth';
+import { getRegionAt } from './world/regions';
+import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
+import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
+import { progression } from './progression/ProgressionStore';
 
 // --- Types ---
 enum ChunkStage {
@@ -101,7 +108,7 @@ class JobQueue {
 export type LoadingProgressCallback = (phase: string, done: number, total: number, percent: number) => void;
 
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
-type DropCallback = (type: BlockType, x: number, y: number, z: number) => void;
+type DropCallback = (stack: ItemStack, x: number, y: number, z: number) => void;
 type ParticleCallback = (type: BlockType, x: number, y: number, z: number) => void;
 
 export class WorldManager {
@@ -158,15 +165,23 @@ export class WorldManager {
   private knownMissingStorageChunks = new Set<string>();
 
   // Dark-face culling: chunks beyond this chebyshev distance are meshed without
-  // fully-unlit (cave) faces — enclosed geometry is only visible from inside the
+  // fully-unlit (cave) faces, enclosed geometry is only visible from inside the
   // cave, i.e. when the chunk is near. Tracks which READY meshes were built
   // culled so they can be remeshed in full when the player approaches.
-  private static readonly DARK_CULL_DISTANCE = 4;
+  // Kept large enough that caves render across the near/mid view (they were
+  // vanishing just 3-4 chunks out); only the far ring gets the cheap cull.
+  private static readonly DARK_CULL_DISTANCE = 8;
   private darkCulledMeshes = new Set<string>();
   private pendingMeshDark = new Map<string, boolean>();
   
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
+  // Per-chunk edit counter, bumped on every dirty-marking edit. The batch save
+  // snapshots it per chunk and only clears the dirty flag when it is unchanged,
+  // so an edit landing while the async flush is in flight keeps its chunk dirty
+  // (and is re-saved next pass) instead of being silently lost.
+  private dirtyEditVersion = new Map<string, number>();
+  private saving = false; // guards processSaveQueue against overlapping runs
 
   constructor() {
     this.state = WorldTypes.createWorldState();
@@ -225,6 +240,7 @@ export class WorldManager {
       this.inFlightMesh = 0;
       this.gcCounter = 0;
       this.dirtyChunks.clear();
+      this.dirtyEditVersion.clear();
       this.activeWorldId = null; // Clear context
     this.lastDesiredCenterKey = null;
     this.lastDesiredCount = -1;
@@ -516,7 +532,7 @@ export class WorldManager {
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
-              // Player approached a chunk meshed with dark-face culling — rebuild the
+              // Player approached a chunk meshed with dark-face culling, rebuild the
               // full mesh (with cave interiors) before they can see inside.
               const distCheb = Math.max(Math.abs(cx - center.cx), Math.abs(cz - center.cz));
               if (distCheb <= WorldManager.DARK_CULL_DISTANCE - 1) {
@@ -542,6 +558,7 @@ export class WorldManager {
       const shouldRunEvictionScan = this.desiredUpdateCounter % 6 === 0;
       if (shouldRunEvictionScan && this.chunkStages.size > chunks.length) {
           let evicted = 0;
+          let deferredDirty = false;
           const maxEvictionsPerPass = 16;
           const unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
 
@@ -550,12 +567,20 @@ export class WorldManager {
                   const [kcx, kcz] = key.split(',').map(Number);
                   const dist = Math.sqrt((kcx - center.cx)**2 + (kcz - center.cz)**2);
                   if (dist > unloadRadius) {
-                      this.evict(kcx, kcz);
-                      evicted++;
-                      if (evicted >= maxEvictionsPerPass) break;
+                      // evict() returns false for a still-dirty chunk (it stays loaded);
+                      // only count real unloads toward the per-pass budget.
+                      if (this.evict(kcx, kcz)) {
+                          evicted++;
+                          if (evicted >= maxEvictionsPerPass) break;
+                      } else {
+                          deferredDirty = true;
+                      }
                   }
               }
           }
+          // Persist any chunks we couldn't evict because they were dirty, so they
+          // become evictable on a later pass instead of lingering in memory.
+          if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
       }
   }
 
@@ -793,37 +818,75 @@ export class WorldManager {
       await this.processSaveQueue();
   }
 
+  /** True when there are unsaved chunk edits (lets callers skip no-op autosaves). */
+  public hasUnsavedChunks(): boolean {
+      return this.dirtyChunks.size > 0;
+  }
+
+  private markDirty(key: string): void {
+      this.dirtyChunks.add(key);
+      this.dirtyEditVersion.set(key, (this.dirtyEditVersion.get(key) ?? 0) + 1);
+  }
+
   private async processSaveQueue() {
+      // Re-entrancy guard: the 3s timer and an explicit forceSave can overlap.
+      if (this.saving) return;
       if (this.dirtyChunks.size === 0 || !this.activeWorldId) return;
 
-      const chunksToSave = Array.from(this.dirtyChunks);
-      this.dirtyChunks.clear();
-
-      for (const key of chunksToSave) {
-          const [cx, cz] = key.split(',').map(Number);
-          const blocks = WorldStore.getChunkData(this.state, cx, cz);
-          const light = WorldStore.getLightData(this.state, cx, cz);
-          const meta = WorldStore.getMetadataData(this.state, cx, cz);
-
-          if (blocks && light && meta) {
-              await WorldStorage.saveChunk(this.activeWorldId, cx, cz, { blocks, light, meta });
-              this.knownMissingStorageChunks.delete(key);
+      this.saving = true;
+      const worldId = this.activeWorldId;
+      try {
+          // Snapshot the dirty set and build ONE batch. The backend groups chunks
+          // by region and commits per region (payload-before-header). Dirty flags
+          // are cleared only AFTER the write succeeds; on failure they remain dirty
+          // so the chunks are retried on the next pass (no silent data loss).
+          const keys = Array.from(this.dirtyChunks);
+          const batch: Array<{ cx: number; cz: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array }> = [];
+          const savedKeys: Array<{ key: string; version: number }> = [];
+          for (const key of keys) {
+              const [cx, cz] = key.split(',').map(Number);
+              const blocks = WorldStore.getChunkData(this.state, cx, cz);
+              const light = WorldStore.getLightData(this.state, cx, cz);
+              const meta = WorldStore.getMetadataData(this.state, cx, cz);
+              if (blocks && light && meta) {
+                  batch.push({ cx, cz, blocks, light, meta });
+                  savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
+              }
           }
+          if (batch.length === 0) return;
+
+          await WorldStorage.saveChunks(worldId, batch);
+
+          for (const s of savedKeys) {
+              this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
+              // Clear the flag only if no NEW edit landed while the write was in
+              // flight, an edit made after the snapshot may have missed the
+              // backend's copy, so the chunk stays dirty and re-saves next pass.
+              if ((this.dirtyEditVersion.get(s.key) ?? 0) === s.version) {
+                  this.dirtyChunks.delete(s.key);
+                  this.dirtyEditVersion.delete(s.key);
+              }
+          }
+      } catch (e) {
+          console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
+      } finally {
+          this.saving = false;
       }
   }
 
-  private evict(cx: number, cz: number) {
+  /**
+   * Unload a chunk from memory. Returns false (and unloads NOTHING) if the chunk
+   * still has unsaved edits, we never drop a dirty chunk, because a failed save
+   * would then lose those edits with no copy left in memory to retry from. The
+   * chunk stays loaded + dirty; processSaveQueue() persists it (clearing the dirty
+   * flag only on success, exactly like the normal batch path), after which a later
+   * eviction pass can safely drop it.
+   */
+  private evict(cx: number, cz: number): boolean {
       const key = WorldCoords.getChunkKey(cx, cz);
-      
-      // Force save if dirty before eviction
-      if (this.dirtyChunks.has(key) && this.activeWorldId) {
-          const blocks = WorldStore.getChunkData(this.state, cx, cz);
-          const light = WorldStore.getLightData(this.state, cx, cz);
-          const meta = WorldStore.getMetadataData(this.state, cx, cz);
-          if (blocks && light && meta) {
-              void WorldStorage.saveChunk(this.activeWorldId, cx, cz, { blocks, light, meta });
-          }
-          this.dirtyChunks.delete(key);
+
+      if (this.dirtyChunks.has(key)) {
+          return false; // defer, keep the dirty key + chunk data until confirmed persisted
       }
 
       WorldStore.evictChunk(this.state, cx, cz);
@@ -835,12 +898,18 @@ export class WorldManager {
       this.queuedMeshKeys.delete(key);
       this.genStartedAt.delete(key);
       this.meshStartedAt.delete(key);
-      this.activeGenTickets.delete(key);
-      this.activeMeshTickets.delete(key);
+      // An in-flight gen/mesh for this chunk can never complete once its ticket
+      // is deleted (handleWorkerMessage early-returns before its decrement), so
+      // release the worker slot here, mirroring the repair-timeout path. Without
+      // this, every eviction of an in-flight chunk permanently burned a slot and
+      // fast traversal eventually stalled streaming at MAX_*_IN_FLIGHT.
+      if (this.activeGenTickets.delete(key)) this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+      if (this.activeMeshTickets.delete(key)) this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
-      // Workers are stateless — no per-chunk eviction message needed.
+      // Workers are stateless, no per-chunk eviction message needed.
+      return true;
   }
 
   public async preloadSpawnArea(centerCx: number, centerCz: number, radius: number, onProgress: LoadingProgressCallback) {
@@ -914,6 +983,40 @@ export class WorldManager {
    * It prioritizes finding land (height > 63) in a spiral. 
    * If only water is found, it spawns on the water surface (64).
    */
+  /**
+   * Resolve a genuine standing Y from the ACTUAL placed blocks at a column (not
+   * just the noise height), so a spawn never lands inside a tree, structure, or
+   * overhang. Finds the highest collidable block that has two non-solid cells
+   * above it and returns the cell on top of it. Falls back to noiseHeight+2.
+   * Shared by every spawn (world entry + respawn) so they behave identically.
+   */
+  public resolveClearStandY(x: number, z: number): number {
+      const bx = Math.floor(x), bz = Math.floor(z);
+      this.ensureChunk(Math.floor(bx / CHUNK_SIZE), Math.floor(bz / CHUNK_SIZE));
+      const isSolid = (t: BlockType): boolean => {
+          if (t === BlockType.AIR || t === BlockType.WATER || t === BlockType.LAVA) return false;
+          const d = BLOCKS[t];
+          return !!d && !d.noCollision;
+      };
+      // A cell the player can occupy: air, or a non-solid non-hazard (plants).
+      const isFree = (t: BlockType): boolean => {
+          if (t === BlockType.LAVA) return false;
+          if (t === BlockType.AIR || t === BlockType.WATER) return true;
+          const d = BLOCKS[t];
+          return !!d && !!d.noCollision;
+      };
+      const noiseH = WorldGen.getTerrainHeight(bx, bz);
+      const top = Math.min(MAX_Y - 3, noiseH + 48);
+      for (let y = top; y > MIN_Y + 1; y--) {
+          if (isSolid(this.getBlock(bx, y, bz, false))
+              && isFree(this.getBlock(bx, y + 1, bz, false))
+              && isFree(this.getBlock(bx, y + 2, bz, false))) {
+              return y + 1;
+          }
+      }
+      return noiseH + 2;
+  }
+
   public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
       const seaLevel = GenConfig.height.seaLevel;
       const { safeSearchRadius, safeSearchStep } = GenConfig.spawn;
@@ -986,8 +1089,11 @@ export class WorldManager {
       const pick = scored ?? land;
       if (pick) {
           this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
-          console.log(`[Spawn] Found land at ${pick.x},${pick.y},${pick.z}${scored ? ` (score: ${scored.score})` : ' (fallback land)'}`);
-          return { x: pick.x + 0.5, y: pick.y + 2, z: pick.z + 0.5 };
+          // Snap to a real air gap on top of the actual surface blocks (avoids
+          // spawning inside trees / structures / overhangs the noise height misses).
+          const y = this.resolveClearStandY(pick.x, pick.z);
+          console.log(`[Spawn] Found land at ${pick.x},${y},${pick.z}${scored ? ` (score: ${scored.score})` : ' (fallback land)'}`);
+          return { x: pick.x + 0.5, y, z: pick.z + 0.5 };
       }
 
       if (water) {
@@ -996,7 +1102,7 @@ export class WorldManager {
           return { x: water.x + 0.5, y: seaLevel + 1.5, z: water.z + 0.5 };
       }
 
-      // Emergency fallback — nothing scanned at all
+      // Emergency fallback, nothing scanned at all
       console.warn("[Spawn] No candidates found, emergency fallback to target.");
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
   }
@@ -1072,7 +1178,7 @@ export class WorldManager {
                   bestZ = z;
               }
 
-              // Good enough — stop early
+              // Good enough, stop early
               if (bestScore >= GenConfig.spawn.earlyAcceptScore) {
                   return this.findSafeSpawnPosition(bestX, bestZ);
               }
@@ -1129,6 +1235,39 @@ export class WorldManager {
   getChest(x: number, y: number, z: number) { return TileEntities.getChest(this.state, x, y, z); }
   createChest(x: number, y: number, z: number) { TileEntities.createChest(this.state, x, y, z); }
   removeChest(x: number, y: number, z: number) { TileEntities.removeChest(this.state, x, y, z); }
+
+  /**
+   * Chest state for (x, y, z), created on demand. Worldgen-placed chests have no
+   * tile-entity state until first opened; natural loot caches additionally carry
+   * the 0x40 metadata bit, which seeds deterministic Magnetic Fields cache loot
+   * exactly once (the bit is cleared so re-opening never re-rolls).
+   */
+  ensureChest(x: number, y: number, z: number) {
+      let chest = TileEntities.getChest(this.state, x, y, z);
+      if (!chest) {
+          TileEntities.createChest(this.state, x, y, z);
+          chest = TileEntities.getChest(this.state, x, y, z);
+      }
+      const meta = this.getMetadata(x, y, z);
+      if (chest && (meta & 0x40) !== 0) {
+          const loot = getMagneticCacheLoot(x, y, z, this.activeSeed | 0, {
+              magnetiteBlock: BlockType.MAGNETITE_BLOCK,
+              magnetiteBricks: BlockType.MAGNETITE_BRICKS,
+              positiveCrystal: BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+              negativeCrystal: BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+              shard: BlockType.MAGNETITE_SHARD,
+              chargedMagnetite: BlockType.CHARGED_MAGNETITE,
+              ironIngot: BlockType.IRON_INGOT,
+              goldIngot: BlockType.GOLD_INGOT,
+              diamond: BlockType.DIAMOND,
+          });
+          for (const entry of loot) {
+              chest.items[entry.slot] = { type: entry.itemId as BlockType, count: entry.count };
+          }
+          this.setMetadataAt(x, y, z, meta & ~0x40);
+      }
+      return chest;
+  }
   
   tick(delta: number) {
       this.state.time++;
@@ -1140,7 +1279,6 @@ export class WorldManager {
           setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
-          getLoadedChunkKeys: () => this.getLoadedChunkKeys(),
           getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
@@ -1163,7 +1301,10 @@ export class WorldManager {
   
   subscribeToMessages(cb: MessageCallback) { this.messageListeners.add(cb); cb(`System: ${this.workerStatusMessage}`, this.workersEnabled ? 'success' : 'info'); return () => { this.messageListeners.delete(cb); }; }
   log(msg: string, type: 'info'|'error'|'success' = 'info', clickAction?: string) { this.messageListeners.forEach(cb => cb(msg, type, clickAction)); }
-  spawnDrop(type: BlockType, x: number, y: number, z: number) { this.dropListeners.forEach(cb => cb(type, x, y, z)); }
+  spawnDrop(stackOrType: ItemStack | BlockType, x: number, y: number, z: number) {
+      const stack = typeof stackOrType === 'number' ? { type: stackOrType, count: 1 } : stackOrType;
+      this.dropListeners.forEach(cb => cb(stack, x, y, z));
+  }
   subscribeToDrops(cb: DropCallback) { this.dropListeners.add(cb); return () => { this.dropListeners.delete(cb); }; }
   
   spawnParticles(type: BlockType, x: number, y: number, z: number) { this.particleListeners.forEach(cb => cb(type, x, y, z)); }
@@ -1203,10 +1344,30 @@ export class WorldManager {
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
       const meta = WorldStore.ensureMetadata(this.state, cx, cz);
       meta[WorldCoords.index3D(lx, y, lz)] = value;
-      this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
   getLoadedChunkKeys(): string[] {
       return Array.from(this.state.chunks.keys());
+  }
+  /**
+   * Whether the player may place/break at this position. A sealed region (one
+   * whose boss has not been defeated / which has not been cleansed) is read-only
+   * for terrain edits; world interaction (chests, doors) is unaffected.
+   */
+  canEditBlock(x: number, y: number, z: number): boolean {
+      const region = getRegionAt(x, y, z);
+      if (!region || !region.sealedByDefault) return true;
+      if (progression.isRegionCleansed(region.id)) return true;
+      // Sealed-region exception: in the Magnetic Fields, the two magnetite
+      // crystals are the only blocks a player may mine while the region is still
+      // sealed (so Polarity Boots can be crafted before the boss). This targets
+      // BREAKING a crystal, placement targets are AIR (never a crystal), so
+      // placing stays denied, and other sealed regions are unaffected.
+      if (region.id === MAGNETIC_FIELDS_REGION_ID) {
+          const here = this.getBlock(x, y, z);
+          if (SEALED_MINEABLE_BLOCKS.has(here)) return true;
+      }
+      return false;
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }
@@ -1218,17 +1379,27 @@ export class WorldManager {
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
+    // NOTE: the sealed-region edit check is enforced at the player-interaction
+    // layer (InteractionController), NOT here, setBlock is also the chokepoint
+    // for internal world simulation (fluids, plant growth, support cascades),
+    // which must keep running inside sealed regions.
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
     const chunk = this.getChunkData(cx, cz, true);
     if (!chunk) return [];
     const index = WorldCoords.index3D(lx, y, lz);
     const oldType = chunk[index];
     const oldRotation = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+    // Breaking an unopened natural loot cache (chest with the 0x40 meta bit):
+    // seed its contents first so handleBlockReplaced spills the loot as drops
+    // instead of silently discarding it.
+    if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
+        this.ensureChest(x, y, z);
+    }
     chunk[index] = type;
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
-    droppedItems.forEach(item => { for(let i=0; i<item.count; i++) this.spawnDrop(item.type, x, y, z); });
+    droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
     if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
     [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ].forEach(([dx, dy, dz]) => {
          const nx = x+dx; const ny = y+dy; const nz = z+dz;
@@ -1263,10 +1434,56 @@ export class WorldManager {
     if (oldType !== type) this.breakUnsupported(x, y + 1, z);
 
     // Mark dirty for persistence
-    this.dirtyChunks.add(WorldCoords.getChunkKey(cx, cz));
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
   }
+
+  /**
+   * Batch structural edits (the arena dais / shield crystals): write every block,
+   * then relight and remesh ONCE rather than per block, restoring the ~100-block
+   * dais was triggering ~100 full chunk remeshes and lighting floods, which lagged.
+   * Skips fluid / tile-entity / support cascades, so it is for solid structural
+   * blocks only, not interactive or fluid edits.
+   */
+  setBlocks(edits: Array<{ x: number; y: number; z: number; type: BlockType; rotation?: number }>): void {
+    if (edits.length === 0) return;
+    const meshChunks = new Set<string>();
+    const relit: { x: number; y: number; z: number }[] = [];
+    let changed = false;
+    for (const e of edits) {
+      if (e.y < MIN_Y || e.y > MAX_Y) continue;
+      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
+      const chunk = this.getChunkData(cx, cz, true);
+      if (!chunk) continue;
+      const index = WorldCoords.index3D(lx, e.y, lz);
+      const rot = e.rotation ?? 0;
+      const oldType = chunk[index];
+      const oldRot = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+      if (oldType === e.type && oldRot === rot) continue;
+      chunk[index] = e.type;
+      WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
+      meshChunks.add(`${cx},${cz}`);
+      if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);
+      if (lz === 0) meshChunks.add(`${cx},${cz - 1}`); else if (lz === CHUNK_SIZE - 1) meshChunks.add(`${cx},${cz + 1}`);
+      // One relight flood per ~radius-13 cluster (a flood covers radius 15, and it
+      // reads the final block state below, so clustered edits share one flood).
+      if (!relit.some((p) => Math.abs(p.x - e.x) <= 13 && Math.abs(p.y - e.y) <= 13 && Math.abs(p.z - e.z) <= 13)) {
+        relit.push({ x: e.x, y: e.y, z: e.z });
+      }
+      changed = true;
+    }
+    if (!changed) return;
+    for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
+    for (const key of meshChunks) {
+      const [cx, cz] = key.split(',').map(Number);
+      this.queueMesh(cx, cz, -1000);
+    }
+    this.markQueuesDirty();
+    this.processStreamingJobs();
+  }
+
 
   // Re-derive the corner shape (bits 3-5 of meta) of any stair at (x,y,z) and its
   // four horizontal neighbors from the current world, and store it back. Mirrors how
@@ -1320,8 +1537,21 @@ export class WorldManager {
   }
   public locateBiome(biomeId: string, startX: number, startZ: number) {
       this.log(`Locating biome: ${biomeId}...`, 'info');
-      const SEARCH_RADIUS = 5000;
-      const STEP = 64;
+      // Cave biomes are underground region overlays (caveBiomeAt), not surface
+      // climate biomes, so they're located by their region field and reported at
+      // the surface above the region (dig straight down to reach the cave).
+      const CAVE_REGION: Record<string, CaveBiome> = {
+          lush_caves: 'lush', dripstone_caves: 'dripstone', caves: 'plain',
+      };
+      const caveTarget: CaveBiome | undefined = CAVE_REGION[biomeId];
+      const caveNoise2D = (a: number, b: number) => GlobalNoise.cave.noise2D(a, b);
+      const caveOx = GlobalNoise.offsets.cave.x, caveOz = GlobalNoise.offsets.cave.z;
+
+      // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
+      // they need a wider search than ordinary biomes to stay reliably findable.
+      const isRareBossBiome = biomeId === 'magnetic_fields';
+      const SEARCH_RADIUS = isRareBossBiome ? 36000 : 5000;
+      const STEP = isRareBossBiome ? 128 : 64;
       let found = false;
       let closestX = 0; let closestZ = 0;
       for (let r = 0; r < SEARCH_RADIUS; r += STEP) {
@@ -1330,15 +1560,18 @@ export class WorldManager {
               const angle = (i / circumference) * Math.PI * 2;
               const wx = startX + Math.cos(angle) * r;
               const wz = startZ + Math.sin(angle) * r;
-              const b = getBiome(wx, wz);
-              if (b.id === biomeId) { closestX = wx; closestZ = wz; found = true; break; }
+              const match = caveTarget
+                  ? caveBiomeAt(wx + caveOx, wz + caveOz, caveNoise2D, GenConfig.caves) === caveTarget
+                  : getBiome(wx, wz).id === biomeId;
+              if (match) { closestX = wx; closestZ = wz; found = true; break; }
           }
           if (found) break;
       }
       if (found) {
           const y = this.getTerrainHeight(closestX, closestZ) + 5;
           const tx = Math.floor(closestX); const ty = Math.floor(y); const tz = Math.floor(closestZ);
-          this.log(`Found ${biomeId} at X=${tx}, Z=${tz}`, 'success', `/tp ${tx} ${ty} ${tz}`);
+          const note = caveTarget ? ' (dig down)' : '';
+          this.log(`Found ${biomeId} at X=${tx}, Z=${tz}${note}`, 'success', `/tp ${tx} ${ty} ${tz}`);
       } else { this.log(`Could not find ${biomeId} within ${SEARCH_RADIUS} blocks.`, 'error'); }
   }
 }

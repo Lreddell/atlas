@@ -37,6 +37,9 @@ class SoundManager {
     private readonly MAX_EVENT_SOURCES = 6;
 
     private musicFolderIndex: Map<string, string[]> = new Map();
+    // biomeId -> ordered list of music tags active for that biome (from
+    // music/biomes/<biome>/tags.json, folded into music-index.json).
+    private musicBiomeTags: Map<string, string[]> = new Map();
 
     // Music Streaming State (Dual Deck for Crossfade)
     private musicDeckA: HTMLAudioElement | null = null;
@@ -56,9 +59,38 @@ class SoundManager {
         // Lazy init in init()
     }
 
+    private async loadSoundManifest(cache: RequestCache = 'default') {
+        try {
+            const url = assetUrl('assets/rvx/sounds.json');
+            const response = await fetch(url, { cache });
+            if (response.ok) {
+                const json = await response.json() as SoundManifest;
+                this.manifest = { ...DEFAULT_SOUND_MANIFEST, ...json };
+                console.log(`Loaded sound manifest with ${Object.keys(this.manifest).length} events.`);
+                return;
+            }
+
+            this.manifest = DEFAULT_SOUND_MANIFEST;
+            console.warn(`Failed to load sounds.json (${response.status}), using defaults.`);
+        } catch (e) {
+            this.manifest = DEFAULT_SOUND_MANIFEST;
+            console.debug('Error loading sounds.json, using defaults:', e);
+        }
+    }
+
+    public async reloadManifest() {
+        if (!this.ctx) {
+            await this.init();
+        }
+
+        await this.loadSoundManifest('no-store');
+        this.buffers.clear();
+        this.bufferLoadPromises.clear();
+    }
+
     public async init() {
         if (this.ctx) {
-            // Already initialized — just resume if suspended, don't reload the folder index
+            // Already initialized, just resume if suspended, don't reload the folder index
             // (reloading clears the index causing a brief gap where tracks appear missing)
             if (this.ctx.state === 'suspended') {
                 this.ctx.resume().catch(() => {});
@@ -84,20 +116,7 @@ class SoundManager {
                 this.worldGain.connect(this.worldFilter);
                 this.worldFilter.connect(this.masterGain);
 
-                // Load Manifest
-                try {
-                    const url = assetUrl('assets/rvx/sounds.json');
-                    const response = await fetch(url);
-                    if (response.ok) {
-                        const json = await response.json();
-                        this.manifest = { ...DEFAULT_SOUND_MANIFEST, ...json };
-                        console.log(`Loaded sound manifest with ${Object.keys(this.manifest).length} events.`);
-                    } else {
-                        console.warn('Failed to load sounds.json (404), using defaults.');
-                    }
-                } catch (e) {
-                    console.debug('Error loading sounds.json, using defaults:', e);
-                }
+                await this.loadSoundManifest();
 
                 await this.loadMusicFolderIndex();
 
@@ -196,58 +215,69 @@ class SoundManager {
         }
     }
 
+    private static normalizeTracks(tracks: unknown): string[] {
+        if (!Array.isArray(tracks)) return [];
+        return tracks
+            .filter((track): track is string => typeof track === 'string')
+            .map(track => track.replace(/\\/g, '/').replace(/^\/+/, '').trim())
+            .filter(track => track.length > 0);
+    }
+
     private async loadMusicFolderIndex() {
-        // Build into a temp map first, then swap atomically so there is never
-        // a window where the index is empty while music is already playing.
-        const newIndex = new Map<string, string[]>();
+        // Build into temp maps first, then swap atomically so there is never a
+        // window where the index is empty while music is already playing.
+        const tagIndex = new Map<string, string[]>();
+        const biomeTags = new Map<string, string[]>();
 
-        // In Electron: dynamically scan the music folder (any filename, any audio extension)
-        if (typeof window !== 'undefined' && window.atlasDesktop?.scanMusicFolders) {
-            try {
-                const result = await window.atlasDesktop.scanMusicFolders();
-                if (result?.ok && result.index) {
-                    Object.entries(result.index).forEach(([folderName, tracks]) => {
-                        if (!Array.isArray(tracks)) return;
-                        const normalizedTracks = tracks
-                            .map(t => t.replace(/\\/g, '/').replace(/^\/+/, '').trim())
-                            .filter(t => t.length > 0);
-                        if (normalizedTracks.length > 0) {
-                            newIndex.set(folderName.toLowerCase(), normalizedTracks);
-                        }
-                    });
-                    this.musicFolderIndex = newIndex;
-                    return;
-                }
-            } catch (e) {
-                console.debug('Electron music scan failed, falling back to index file:', e);
-            }
-        }
-
-        // Fall back to static music-index.json (web / no Electron)
+        // 1. Always load the static index. It carries the biome -> tags config
+        //    (music/biomes/<biome>/tags.json) on every platform, and the tag
+        //    songs on the web. New shape: { tags: {...}, biomes: {...} }. Older
+        //    flat { folder: [...] } indexes are read as the tag map.
+        let staticTags: Record<string, unknown> = {};
         try {
             const response = await fetch(assetUrl(MUSIC_FOLDER_INDEX_PATH), { cache: 'no-store' });
-            if (!response.ok) {
+            if (response.ok) {
+                const json = await response.json() as Record<string, unknown>;
+                const tagsObj = (json.tags && typeof json.tags === 'object')
+                    ? json.tags as Record<string, unknown> : json;
+                const biomesObj = (json.biomes && typeof json.biomes === 'object')
+                    ? json.biomes as Record<string, unknown> : {};
+                staticTags = tagsObj;
+                Object.entries(biomesObj).forEach(([biome, list]) => {
+                    if (!Array.isArray(list)) return;
+                    const tags = list.filter((t): t is string => typeof t === 'string').map(t => t.toLowerCase());
+                    if (tags.length > 0) biomeTags.set(biome.toLowerCase(), tags);
+                });
+            } else {
                 console.warn(`Failed to load music folder index (${response.status}).`);
-                return;
             }
-
-            const json = await response.json() as Record<string, unknown>;
-            Object.entries(json).forEach(([folderName, tracks]) => {
-                if (!Array.isArray(tracks)) return;
-
-                const normalizedTracks = tracks
-                    .filter((track): track is string => typeof track === 'string')
-                    .map(track => track.replace(/\\/g, '/').replace(/^\/+/, '').trim())
-                    .filter(track => track.length > 0);
-
-                if (normalizedTracks.length > 0) {
-                    newIndex.set(folderName.toLowerCase(), normalizedTracks);
-                }
-            });
-            this.musicFolderIndex = newIndex;
         } catch (e) {
             console.debug('Error loading music folder index:', e);
         }
+        this.musicBiomeTags = biomeTags;
+
+        // 2. Tag songs: in Electron, scan the folders live (any filename / audio
+        //    extension) so dropped-in tracks work without regenerating the index;
+        //    otherwise use the static index's tags.
+        let tagSource: Record<string, unknown> = staticTags;
+        if (typeof window !== 'undefined' && window.atlasDesktop?.scanMusicFolders) {
+            try {
+                const result = await window.atlasDesktop.scanMusicFolders();
+                if (result?.ok && result.index) tagSource = result.index as Record<string, unknown>;
+            } catch (e) {
+                console.debug('Electron music scan failed, using index file:', e);
+            }
+        }
+        Object.entries(tagSource).forEach(([folderName, tracks]) => {
+            const normalized = SoundManager.normalizeTracks(tracks);
+            if (normalized.length > 0) tagIndex.set(folderName.toLowerCase(), normalized);
+        });
+        this.musicFolderIndex = tagIndex;
+    }
+
+    /** Ordered list of music tags active for a biome (empty if unknown). */
+    public getBiomeTags(biomeId: string): string[] {
+        return this.musicBiomeTags.get(biomeId.toLowerCase()) ?? [];
     }
 
     public hasTracksForEvent(eventId: string): boolean {
@@ -405,6 +435,25 @@ class SoundManager {
     }
 
     /**
+     * Live-set the playback rate of the music decks (mid-song), with pitch
+     * preservation OFF so the pitch shifts with the speed. Used for the boss
+     * frenzy speed-up (the exact opposite of the night slowdown).
+     */
+    public setMusicPlaybackRate(rate: number): void {
+        // Defensive clamp: a bad rate (NaN/0/huge) would throw or chipmunk the
+        // decks; live rate changes are only ever small musical shifts.
+        if (!Number.isFinite(rate) || rate < 0.5 || rate > 2) return;
+        for (const deck of [this.musicDeckA, this.musicDeckB]) {
+            if (!deck) continue;
+            const d = deck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
+            d.preservesPitch = false;
+            d.mozPreservesPitch = false;
+            d.webkitPreservesPitch = false;
+            deck.playbackRate = rate;
+        }
+    }
+
+    /**
      * Plays streaming music. Use for long audio files.
      * Guaranteed not to crash on missing files or fetch errors.
      */
@@ -438,7 +487,7 @@ class SoundManager {
             nextDeck.src = fullUrl;
             nextDeck.load();
             // Playback rate < 1 slows the track and (with pitch-preservation off) lowers
-            // its pitch too — used for the subtle "night" effect. Disable preservesPitch
+            // its pitch too, used for the subtle "night" effect. Disable preservesPitch
             // across vendor prefixes so the pitch actually drops with the speed.
             const rateDeck = nextDeck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
             rateDeck.preservesPitch = false;
@@ -482,15 +531,29 @@ class SoundManager {
 
         // Crossfade: Fade Out Prev
         if (prevDeck && prevGain && this.activeDeck) {
+            const prevDeckId: 'A' | 'B' = nextDeckId === 'A' ? 'B' : 'A';
             prevGain.gain.cancelScheduledValues(now);
             prevGain.gain.setValueAtTime(prevGain.gain.value, now);
             prevGain.gain.linearRampToValueAtTime(0, now + fadeOutTime);
-            
-            setTimeout(() => {
-                if (this.activeDeck !== (nextDeckId === 'A' ? 'B' : 'A')) return; 
+
+            // Pause the retired deck once its fade completes, UNLESS a newer
+            // transition has made it the live deck again in the meantime. (This
+            // guard used to be inverted: it never paused retired decks, they
+            // kept streaming silently at gain 0, and on a quick A→B→A reuse it
+            // paused the deck that was actively playing, which is exactly the
+            // intermittent "music cuts out" stutter, menu included.)
+            // The timeout is tracked in the per-deck stop slot so both stopMusic
+            // and a playMusic that reuses this deck cancel it deterministically.
+            this.clearMusicStopTimeout(prevDeckId);
+            const pauseTimeout = window.setTimeout(() => {
+                if (prevDeckId === 'A') this.musicStopTimeoutA = null;
+                else this.musicStopTimeoutB = null;
+                if (this.activeDeck === prevDeckId) return;
                 prevDeck.pause();
                 prevDeck.currentTime = 0;
             }, fadeOutTime * 1000 + 100);
+            if (prevDeckId === 'A') this.musicStopTimeoutA = pauseTimeout;
+            else this.musicStopTimeoutB = pauseTimeout;
         }
 
         this.activeDeck = nextDeckId;

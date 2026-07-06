@@ -1,5 +1,7 @@
 
 import { soundManager } from './SoundManager';
+import { gameEvents } from '../events/GameEvents';
+import { MAGNETIC_WARDEN_BOSS_ID } from '../world/magneticFields';
 
 const MUSIC_DELAY_MIN_KEY = 'atlas.music.delay.min';
 const MUSIC_DELAY_MAX_KEY = 'atlas.music.delay.max';
@@ -8,45 +10,68 @@ const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
 // Subtle "night" effect: a track started at night plays a little slower, and with
 // pitch-preservation disabled (in SoundManager) that also drops its pitch slightly.
 // -1 semitone
-const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935
+const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935 (−100 cents)
+const FRENZY_PLAYBACK_RATE = 2 ** (1 / 12);  // 1.0594630943592953  (+100 cents, the exact opposite of night)
 
-// Mapping of Game States/Biomes to Music Packs
-const MUSIC_PACKS: Record<string, string[]> = {
-    // Menu
-    "MENU": ["music.menu"],
-
-    // Death
-    "DEATH": ["music.death"],
-
-    // Game States
-    "BLOODMOON": ["music.bloodmoon"],
-    "CREATIVE": ["music.creative"],
-    "CAVES": ["music.caves"],
-    
-    // Biomes (Exclusive assignments)
-    "ocean": ["music.ocean"],
-    "frozen_ocean": ["music.cold"],
-    
-    "plains": ["music.plains"],
-    "river": ["music.plains"], // River falls back to plains
-    "frozen_river": ["music.cold"],
-    
-    "forest": ["music.forest"],
-    
-    "desert": ["music.desert"],
-    
-    "tundra": ["music.cold"],
-    
-    "cherry_grove": ["music.cherry"],
-    
-    "red_mesa": ["music.mesa"],
-    "mesa_bryce": ["music.mesa"],
-    
-    "volcanic": ["music.volcanic"],
-    
-    // Fallback
-    "generic": ["music.plains"]
+// --- Music tags ---
+//
+// A "music tag" is a folder of songs (public/assets/rvx/sounds/music/<tag>/).
+// Each biome activates a set of tags (music/biomes/<biome>/tags.json, loaded via
+// soundManager.getBiomeTags); the game plays a random song pooled from the
+// biome's tags that actually have files, so multiple biomes can share identical
+// music simply by sharing a tag. If a song from a tag is already playing and you
+// cross into another biome that still has that tag, the music keeps playing
+// (see switchContext continuity), the biome-stability timer still governs when a
+// switch is even considered.
+//
+// Non-biome game states map to a single tag each.
+const STATE_TAGS: Record<string, string[]> = {
+    MENU: ["menu"],
+    DEATH: ["death"],
+    BLOODMOON: ["bloodmoon"],
+    CREATIVE: ["creative"],
+    CAVES: ["caves"],
+    BOSS_MAGNETIC: ["boss_magnetic_warden"],
+    generic: ["plains"],
 };
+
+// Default biome -> tags. Mirrors the music/biomes/<biome>/tags.json config
+// folders; those override this at runtime once the index loads, but this keeps
+// the game working before load and if a biome is missing a config.
+const BIOME_TAGS: Record<string, string[]> = {
+    plains: ["plains"],
+    meadow: ["plains", "meadow"],
+    savanna: ["plains", "savanna"],
+    river: ["plains", "river"],
+    forest: ["forest"],
+    birch_forest: ["forest", "birch_forest"],
+    flower_forest: ["forest", "flower_forest"],
+    dark_forest: ["forest", "dark_forest"],
+    jungle: ["forest", "jungle"],
+    swamp: ["forest", "swamp"],
+    cherry_grove: ["forest", "cherry_grove"],
+    ocean: ["ocean"],
+    beach: ["ocean", "beach"],
+    stone_shore: ["ocean", "stone_shore"],
+    frozen_ocean: ["cold", "frozen_ocean"],
+    frozen_river: ["cold", "frozen_river"],
+    tundra: ["cold", "tundra"],
+    taiga: ["cold", "taiga"],
+    ice_spikes: ["cold", "ice_spikes"],
+    mountains: ["cold", "mountains"],
+    desert: ["desert"],
+    red_mesa: ["mesa"],
+    mesa_bryce: ["mesa"],
+    volcanic: ["volcanic", "caves"],
+    magnetic_fields: ["magnetic_fields"],
+    caves: ["caves"],
+    lush_caves: ["caves", "lush_caves"],
+    dripstone_caves: ["caves", "dripstone_caves"],
+};
+
+// Cave contexts react faster than surface biome travel and are treated together
+// for transition timing. The generic CAVES state plus the cave biomes.
+const CAVE_CONTEXTS = new Set(["CAVES", "lush_caves", "dripstone_caves"]);
 
 // Biome Switch Config
 const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
@@ -75,12 +100,13 @@ class MusicController {
     private currentContext: string = "";
     private isPlaying: boolean = false;
     private nextPlayTime: number = 0;
-    
+
+    // The music tag the currently-playing song was drawn from. Used for the
+    // cross-biome continuity check (keep playing if the new biome shares the tag).
+    private currentTrackTag: string | null = null;
+
     // Track when the last track finished to allow live-updating delays
-    private lastFinishTime: number = 0; 
-    
-    // Track the last played track to prevent repeats
-    private lastPlayedTrack: string | null = null;
+    private lastFinishTime: number = 0;
     
     // Configurable delays (in ms)
     private minDelay: number = 5000;
@@ -99,8 +125,26 @@ class MusicController {
     // Night slowdown effect (player setting + latest day/night state from update()).
     private nightSlowdownEnabled: boolean = true;
     private isNight: boolean = false;
+    // Boss frenzy: the music speeds up + pitches up +100 cents, mid-song.
+    private bossFrenzy: boolean = false;
+
+    // Boss-music override. The dedicated boss track plays only while the Magnetic
+    // Warden is alive AND the player is actively in combat (aggro'd). So it stops
+    // when the boss dies, when the player dies, or when the player leaves / loses
+    // aggro, but survives a brief loss of line-of-sight and resumes on re-engage.
+    private bossAlive: boolean = false;
+    private inCombat: boolean = false;
 
     constructor() {
+        // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
+        gameEvents.on('boss:spawned', ({ bossId }) => {
+            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = true;
+        });
+        gameEvents.on('boss:defeated', () => { this.bossAlive = false; });
+        gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
+        gameEvents.on('combat:start', () => { this.inCombat = true; });
+        gameEvents.on('combat:stop', () => { this.inCombat = false; });
+
         if (typeof window === 'undefined') return;
 
         // Load before the delay parsing below (which may early-return on bad data).
@@ -159,6 +203,25 @@ class MusicController {
         return this.nightSlowdownEnabled;
     }
 
+    /**
+     * Boss frenzy music: speeds up + pitches up +100 cents MID-SONG (the exact
+     * opposite of the night slowdown), and persists across track loops while on.
+     */
+    public setBossFrenzy(active: boolean) {
+        if (this.bossFrenzy === active) return;
+        this.bossFrenzy = active;
+        if (active) {
+            // Turning ON: apply live so the track currently playing speeds up + pitches
+            // up mid-song. Future tracks pick it up via playNextTrack().
+            soundManager.setMusicPlaybackRate(FRENZY_PLAYBACK_RATE);
+        }
+        // Turning OFF (boss defeated / player died / fight cleared): do NOT snap the
+        // playing track's rate back down, that pitch drop is clearly audible while the
+        // track is fading out and sounds like a glitch. Leave the fading track at its
+        // raised pitch; whatever plays next (death music, world music) starts fresh at
+        // 1.0 via playNextTrack(), so nothing else is left pitched.
+    }
+
     public setNightSlowdownEnabled(enabled: boolean) {
         this.nightSlowdownEnabled = enabled;
         if (typeof window !== 'undefined') {
@@ -167,8 +230,24 @@ class MusicController {
         // Applied to the next track that starts; a track already playing is left as-is.
     }
 
+    // The music tags active for a context: a fixed tag for game states, else the
+    // biome's tag list (folder config preferred, code default as a safety net).
+    private tagsForContext(context: string): string[] {
+        if (STATE_TAGS[context]) return STATE_TAGS[context];
+        const fromFolders = soundManager.getBiomeTags(context);
+        if (fromFolders.length > 0) return fromFolders;
+        return BIOME_TAGS[context] ?? [];
+    }
+
+    private isKnownContext(context: string): boolean {
+        return !!STATE_TAGS[context] || this.tagsForContext(context).length > 0;
+    }
+
     public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         this.isDeathSuspended = false;
+        // Defensive: entering a world must never inherit a stale frenzy pitch-up
+        // from a previous session's boss fight.
+        this.bossFrenzy = false;
 
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;
@@ -178,8 +257,8 @@ class MusicController {
         } else if (gameMode === 'creative') {
             targetContext = 'CREATIVE';
         } else if (inCaves) {
-            targetContext = 'CAVES';
-        } else if (MUSIC_PACKS[biomeId]) {
+            targetContext = (biomeId === 'lush_caves' || biomeId === 'dripstone_caves') ? biomeId : 'CAVES';
+        } else if (this.isKnownContext(biomeId)) {
             targetContext = biomeId;
         }
 
@@ -190,7 +269,6 @@ class MusicController {
         this.isPlaying = false;
         this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = 0;
-        this.lastPlayedTrack = null;
         this.nextPlayTime = Date.now() + (fadeOut * 1000);
 
         // Fade out menu music first, then let the normal update loop start
@@ -202,8 +280,7 @@ class MusicController {
         if (this.isDeathSuspended) return false;
 
         const context = this.currentContext || this.pendingContext || 'generic';
-        const pack = MUSIC_PACKS[context] || MUSIC_PACKS.generic;
-        if (!pack || pack.length === 0) return false;
+        if (this.tagsForContext(context).length === 0) return false;
 
         this.currentContext = context;
         this.pendingContext = context;
@@ -217,7 +294,6 @@ class MusicController {
         this.isTransitioning = true;
         this.lastFinishTime = 0;
         this.bloodMoonLoopCrossfadePending = false;
-        // Don't reset lastPlayedTrack - skip should also avoid repeating the same song
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
         return true;
     }
@@ -235,15 +311,19 @@ class MusicController {
         
         if (inMenu) {
             targetContext = "MENU";
+        } else if (this.bossAlive && this.inCombat && gameMode !== 'creative') {
+            // Magnetic Warden fight overrides biome/ambient music while engaged.
+            targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
         } else if (gameMode === 'creative') {
             targetContext = "CREATIVE";
         } else if (inCaves) {
-            targetContext = "CAVES";
+            // Cave biomes can carry their own music; otherwise the generic caves pack.
+            targetContext = (biomeId === 'lush_caves' || biomeId === 'dripstone_caves') ? biomeId : "CAVES";
         } else {
-            // Use biome ID directly if it exists in our packs, otherwise fallback
-            if (MUSIC_PACKS[biomeId]) {
+            // Use biome ID directly if it maps to tags, otherwise stay generic.
+            if (this.isKnownContext(biomeId)) {
                 targetContext = biomeId;
             }
         }
@@ -262,10 +342,23 @@ class MusicController {
         const isMenuSwitch = targetContext === "MENU" || this.currentContext === "MENU";
         const isDeathSwitch = this.currentContext === "DEATH"; // leaving death resumes instantly
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
-        const isCaveSwitch = targetContext === "CAVES" || this.currentContext === "CAVES";
-        const threshold = (isMenuSwitch || isDeathSwitch)
-            ? 0
-            : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
+        const isCaveSwitch = CAVE_CONTEXTS.has(targetContext) || CAVE_CONTEXTS.has(this.currentContext);
+        const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC';
+        // A game-mode change (into or out of CREATIVE) is a deliberate action, not a
+        // biome wander, switch promptly instead of waiting out the biome debounce,
+        // so the right track starts even when nothing is currently playing.
+        const isCreativeSwitch = targetContext === 'CREATIVE' || this.currentContext === 'CREATIVE';
+        // Leaving the boss track while the boss is STILL ALIVE is usually an aggro
+        // flicker (a beat of combat:stop mid-fight), not the fight ending, debounce
+        // it so the music doesn't thrash boss↔biome. A real end (boss dead/cleared,
+        // player dead, quitting to menu) switches away instantly as before.
+        const leavingLiveBossFlicker = this.currentContext === 'BOSS_MAGNETIC'
+            && targetContext !== 'BOSS_MAGNETIC' && this.bossAlive && !inMenu;
+        const threshold = leavingLiveBossFlicker
+            ? 3000
+            : (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch)
+                ? 0
+                : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
         if (this.pendingContext && now - this.contextStableTime >= threshold) {
             if (this.pendingContext !== this.currentContext) {
@@ -298,8 +391,8 @@ class MusicController {
 
     private switchContext(newContext: string, isFast: boolean = false) {
         // Don't stop current music if the new context has no available tracks
-        const newPack = MUSIC_PACKS[newContext] || MUSIC_PACKS['generic'];
-        const hasNewTracks = newPack?.some(eventId => soundManager.hasTracksForEvent(eventId)) ?? false;
+        const newTags = this.tagsForContext(newContext);
+        const hasNewTracks = newTags.some(tag => soundManager.hasTracksForEvent(`music.${tag}`));
         if (!hasNewTracks) {
             console.log(`[Music] Context ${newContext} has no tracks, staying in ${this.currentContext || 'current'}.`);
             this.pendingContext = this.currentContext;
@@ -307,27 +400,48 @@ class MusicController {
             return;
         }
 
+        // Continuity: if the song currently playing belongs to a tag the new
+        // context still uses (e.g. crossing from tundra to mountains, both 'cold',
+        // or generic caves into a dripstone cave, both 'caves'), keep it playing.
+        // Just adopt the new context so the NEXT song comes from the new pool.
+        if (this.isPlaying && this.currentTrackTag && newTags.includes(this.currentTrackTag)) {
+            console.log(`[Music] Context ${newContext} shares tag '${this.currentTrackTag}', keeping current track.`);
+            this.currentContext = newContext;
+            this.pendingContext = newContext;
+            this.bloodMoonLoopCrossfadePending = false;
+            return;
+        }
+
         console.log(`[Music] Switching to ${newContext} (Fast: ${isFast})`);
         const previousContext = this.currentContext;
         this.currentContext = newContext;
         this.bloodMoonLoopCrossfadePending = false;
-        this.lastPlayedTrack = null; // Reset track history when switching contexts
 
         const leavingDeath = previousContext === 'DEATH';
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
+        const enteringBoss = newContext === 'BOSS_MAGNETIC';
         const leavingBloodMoon = previousContext === 'BLOODMOON' && newContext !== 'BLOODMOON';
 
         let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
         let silence = isFast ? FAST_SILENCE : TRANSITION_SILENCE;
 
-        if (leavingDeath) {
+        if (enteringBoss) {
+            // Quickly duck out whatever was playing; the boss track starts dry.
+            fadeOut = 0.5;
+            silence = 0;
+        } else if (leavingDeath) {
             // Death music fades out quickly before the world/menu music resumes.
             fadeOut = DEATH_FADE_OUT;
             silence = 0;
         } else if (enteringMenu) {
             fadeOut = 0;
             silence = 0;
+            // Menu music is always as-authored: clear any lingering fight state and
+            // snap both decks back to 1.0. Safe here (no audible pitch snap) because
+            // the menu switch stops the old track with a zero-length fade anyway.
+            this.bossFrenzy = false;
+            soundManager.setMusicPlaybackRate(1.0);
         } else if (leavingMenuForWorld) {
             fadeOut = FAST_FADE_OUT;
             silence = FAST_SILENCE;
@@ -347,7 +461,11 @@ class MusicController {
     }
 
     public stopForDeath(fadeOut = DEATH_FADE_OUT) {
-        if (this.isDeathSuspended) return; // already in death music — don't restart it
+        // Player death always ends the boss fight context (music must not resume
+        // the boss track on respawn).
+        this.bossAlive = false;
+        this.inCombat = false;
+        if (this.isDeathSuspended) return; // already in death music, don't restart it
 
         this.isDeathSuspended = true;
         this.isTransitioning = false;
@@ -355,7 +473,6 @@ class MusicController {
         this.currentContext = 'DEATH';
         this.pendingContext = 'DEATH';
         this.contextStableTime = Date.now();
-        this.lastPlayedTrack = null;
         this.lastFinishTime = Date.now();
         this.nextPlayTime = Number.POSITIVE_INFINITY;
 
@@ -398,25 +515,27 @@ class MusicController {
     }
 
     private getFadeInForContext(context: string) {
-        return context === 'BLOODMOON' ? BLOOD_MOON_FADE_IN : STANDARD_FADE_IN;
+        if (context === 'BLOODMOON') return BLOOD_MOON_FADE_IN;
+        if (context === 'BOSS_MAGNETIC') return 0; // boss music starts instantly, no fade-in
+        return STANDARD_FADE_IN;
     }
 
     private playNextTrack(fadeTime = STANDARD_FADE_IN, fadeOutTime: number = fadeTime) {
-        const pack = MUSIC_PACKS[this.currentContext] || MUSIC_PACKS["generic"];
-        if (!pack || pack.length === 0) return Promise.resolve();
-
-        // If there are multiple tracks, exclude the last played track
-        let availableTracks = pack;
-        if (pack.length > 1 && this.lastPlayedTrack !== null) {
-            availableTracks = pack.filter(track => track !== this.lastPlayedTrack);
-            // If all tracks are filtered out (shouldn't happen), use all tracks
-            if (availableTracks.length === 0) {
-                availableTracks = pack;
-            }
+        // Pool the current context's tags and pick one at random among those that
+        // actually have songs (so a biome plays a random song across all of its
+        // populated tags, and empty tags simply drop out).
+        const playableTags = this.tagsForContext(this.currentContext)
+            .filter(tag => soundManager.hasTracksForEvent(`music.${tag}`));
+        if (playableTags.length === 0) {
+            // Nothing playable for this context (all its tag folders empty), retry later.
+            this.isPlaying = false;
+            this.nextPlayTime = Date.now() + (this.currentContext === 'MENU' ? 250 : 30000);
+            return Promise.resolve();
         }
 
-        const trackId = availableTracks[Math.floor(Math.random() * availableTracks.length)];
-        this.lastPlayedTrack = trackId; // Store the track we're about to play
+        const tag = playableTags[Math.floor(Math.random() * playableTags.length)];
+        this.currentTrackTag = tag;
+        const trackId = `music.${tag}`;
 
         // Optimistically lock to prevent double triggers
         this.isPlaying = true;
@@ -429,7 +548,8 @@ class MusicController {
             && this.currentContext !== 'MENU'
             && this.currentContext !== 'DEATH'
             && this.currentContext !== 'BLOODMOON';
-        const playbackRate = useNightRate ? NIGHT_PLAYBACK_RATE : 1.0;
+        // Frenzy overrides night: the fight track always drives UP +100 cents.
+        const playbackRate = this.bossFrenzy ? FRENZY_PLAYBACK_RATE : (useNightRate ? NIGHT_PLAYBACK_RATE : 1.0);
 
         // Try to play
         // We pass a callback for when it finishes
@@ -449,8 +569,13 @@ class MusicController {
         this.bloodMoonLoopCrossfadePending = false;
         this.lastFinishTime = Date.now();
         if (this.isDeathSuspended) {
-            // Death music plays once — after it ends, stay silent until respawn / menu.
+            // Death music plays once, after it ends, stay silent until respawn / menu.
             this.nextPlayTime = Number.POSITIVE_INFINITY;
+            return;
+        }
+        // Boss music restarts immediately (no delay) so the fight never falls quiet.
+        if (this.currentContext === 'BOSS_MAGNETIC') {
+            this.nextPlayTime = 0;
             return;
         }
         this.scheduleNextTrack();

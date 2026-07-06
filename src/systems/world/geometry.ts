@@ -173,11 +173,17 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.SPRUCE_LEAVES,
     BlockType.CHERRY_LEAVES,
     BlockType.BIRCH_LEAVES,
+    BlockType.JUNGLE_LEAVES,
+    BlockType.DARK_OAK_LEAVES,
+    BlockType.ACACIA_LEAVES,
     BlockType.TORCH,
     BlockType.SAPLING,
     BlockType.SPRUCE_SAPLING,
     BlockType.BIRCH_SAPLING,
     BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING,
+    BlockType.DARK_OAK_SAPLING,
+    BlockType.ACACIA_SAPLING,
     BlockType.LAVA,
     BlockType.BED_FOOT,
     BlockType.BED_HEAD,
@@ -186,7 +192,15 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.ROSE,
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER
+    BlockType.PINK_FLOWER,
+    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+    BlockType.MAGNETIC_SPIKE,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL,
+    BlockType.MAGNETITE_SHARD,
+    BlockType.POINTED_DRIPSTONE,
+    BlockType.GLOW_LICHEN,
+    BlockType.AMETHYST_CLUSTER
 ].forEach(t => { IS_CUTOUT[t] = 1; });
 
 [
@@ -201,12 +215,23 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.SPRUCE_SAPLING,
     BlockType.BIRCH_SAPLING,
     BlockType.CHERRY_SAPLING,
+    BlockType.JUNGLE_SAPLING,
+    BlockType.DARK_OAK_SAPLING,
+    BlockType.ACACIA_SAPLING,
     BlockType.DEAD_BUSH,
     BlockType.GRASS_PLANT,
     BlockType.ROSE,
     BlockType.DANDELION,
     BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER
+    BlockType.PINK_FLOWER,
+    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
+    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
+    BlockType.MAGNETIC_SPIKE,
+    BlockType.MAGNETIC_SHIELD_CRYSTAL,
+    BlockType.MAGNETITE_SHARD,
+    BlockType.POINTED_DRIPSTONE,
+    BlockType.GLOW_LICHEN,
+    BlockType.AMETHYST_CLUSTER
 ].forEach(t => { IS_CROSS[t] = 1; });
 
 // Slabs / stairs: rendered as partial boxes, never as full cubes or greedy quads.
@@ -241,7 +266,7 @@ export function generateGeometryData(
     lights: NeighborLight,
     // When true (far chunks), faces whose facing cell has zero sky AND zero block
     // light are skipped entirely. Enclosed cave geometry is only ever visible from
-    // inside the cave — i.e. when the chunk is near — so distant chunks don't need
+    // inside the cave (i.e. when the chunk is near) so distant chunks don't need
     // it. This typically halves or better the triangle count of a full-depth chunk.
     cullDarkFaces: boolean = false
 ): GeometryResult {
@@ -303,7 +328,7 @@ export function generateGeometryData(
     };
 
     // Slabs/stairs attenuate light by shape (getDirectionalOpacity), so getOpacity no
-    // longer flags them as occluders — but they're still solid partial geometry, so
+    // longer flags them as occluders, but they're still solid partial geometry, so
     // they must darken neighbouring AO corners. Treat any shaped block as an occluder.
     const isAOOccluder = (type: BlockType) =>
         type !== BlockType.AIR && (IS_SHAPED[type] === 1 || getOpacity(type) >= 2);
@@ -340,7 +365,7 @@ export function generateGeometryData(
                     continue;
                 }
 
-                // Note: shaped blocks intentionally ignore cullDarkFaces — they are
+                // Note: shaped blocks intentionally ignore cullDarkFaces, they are
                 // rare, player-placed, and small, so far-chunk dark-face culling would
                 // risk punching visible holes in them for negligible triangle savings.
                 //
@@ -391,7 +416,7 @@ export function generateGeometryData(
                     // A perpendicular neighbour only borders this vertex if the box actually
                     // reaches the cell edge in that direction. A sub-box edge that stops
                     // mid-cell (e.g. a stair step's underside at y=0.5) has no neighbour
-                    // there, so it must not pick up AO/dark light from the cell beyond —
+                    // there, so it must not pick up AO/dark light from the cell beyond :
                     // that over-reach was darkening the tops of stairs.
                     const av = face.aoVectors[k];
                     const a1 = av[0], a2 = av[1];
@@ -538,7 +563,12 @@ export function generateGeometryData(
                         const tx = x + dx;
                         const tz = z + dz;
 
-                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0) continue;
+                        // Dark-cull only against enclosed dark AIR (cave interiors).
+                        // A zero-light facing cell holding water is still visible
+                        // THROUGH the water column above (deep ocean floors), so it
+                        // must keep its face or distant oceans render see-through.
+                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0
+                            && getTypeFast(tx, nY, tz) === BlockType.AIR) continue;
 
                         const p0x = tx + c0[0];
                         const p0y = y + c0[1];
@@ -606,7 +636,7 @@ export function generateGeometryData(
         }
     };
 
-    // Bound meshing to the occupied Y range — skips the empty sky above terrain,
+    // Bound meshing to the occupied Y range, skips the empty sky above terrain,
     // which is most of the 384-block column for typical chunks.
     const LAYER_SIZE = CHUNK_SIZE * CHUNK_SIZE;
     let minOccY = -1;
@@ -620,7 +650,7 @@ export function generateGeometryData(
         if (occupied) { minOccY = y; break; }
     }
     if (minOccY === -1) {
-        // Entirely air — nothing to mesh.
+        // Entirely air, nothing to mesh.
         return {
             opaque: opaqueBuffer.slice(),
             cutout: cutoutBuffer.slice(),
@@ -787,7 +817,11 @@ export function generateGeometryData(
              }
              
              if (visible) {
-                 if (cullDarkFaces && getLightFast(nx, ny, nz) === 0) continue;
+                 // As in the greedy pass: only dark AIR is safely invisible from
+                 // outside. Dark water/fluid cells (deep oceans) show this face
+                 // through the medium, so they are never dark-culled.
+                 if (cullDarkFaces && getLightFast(nx, ny, nz) === 0
+                     && nType === BlockType.AIR) continue;
 
                  const { uvs } = resolveTexture(type, dir, dx, dy, dz, rotation);
 

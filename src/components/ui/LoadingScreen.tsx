@@ -31,7 +31,21 @@ const LOADING_TIPS = [
     "While hovering an item in the inventory, press 1-9 to swap it directly into a hotbar slot.",
     "Oak, spruce, birch, and cherry logs each craft into their own plank set.",
     "Raw iron, raw copper, and raw gold can all be smelted into ingots in a furnace.",
-    "Atlas worlds include Plains, Forest, Desert, Tundra, Cherry Grove, Red Mesa, Mesa Bryce, and Volcanic Crags.",
+    "Atlas worlds span Plains, Forests, Desert, Tundra, Cherry Grove, Mesa, Jungle, Savanna, Taiga, Swamp, Beach, Meadow, Mountains, Ice Spikes, Volcanic Crags, and more.",
+    "Swamps are waterlogged lowlands, and sandy beaches now rim most coastlines.",
+    "Craft a Boat from 5 planks and use it on water to set it afloat. Right-click to board, Sneak to hop out; it stays parked where you leave it.",
+    "Wheat seeds from tall grass weave into wool; three wool over three planks makes a bed.",
+    "Armor is craftable from iron, gold, diamond, and copper. Your defense pips and armor durability show on the HUD.",
+    "Rare Magnetic Fields are sealed against mining and building until their guardian, the Magnetic Warden, is defeated.",
+    "Magnetic Fields hide ruins, pylons, loot caches, spike patches, and polarity launch pads between the rim and the arena.",
+    "Step onto a launch pad in the Magnetic Fields with matching polarity to be flung; opposite polarity holds you tight.",
+    "Summon the Magnetic Warden at the arena's central altar: break its four shield crystals before it can be hurt.",
+    "The Warden's glowing bolts can be struck back at it. Aim through the boss when you swing.",
+    "Polarity Boots: press R to flip your polarity. Same polarity repels, opposite attracts; launch and climb with it.",
+    "Iron armor is ferromagnetic. Without Polarity Boots, magnets will drag you around whether you like it or not.",
+    "Armor absorbs combat damage but wears out. Falls, fire, and drowning ignore armor entirely.",
+    "Tools and weapons have durability bars and break at zero. Higher tiers hit harder and last longer.",
+    "Use /setspawn to set your respawn point, and /keepinventory on to keep items on death.",
     "Singleplayer worlds can be saved, imported, and exported from the main menu.",
     "Panorama Settings let you manage captured backgrounds and tune blur, gradient, and rotation.",
     "There is a built-in tutorial wiki under Options if you need a controls refresher.",
@@ -44,7 +58,7 @@ const LOADING_TIPS = [
     "Grass plants have a chance to drop wheat seeds when broken.",
     "Leaves can drop saplings, sticks, and sometimes apples depending on the tree type.",
     "The first version of this game was made in Google AI Studio. Crazy, right?",
-    "Atlas is open source! Check out the GitHub repo at github.com/Lreddell/atlas.",
+    "Atlas source is available at github.com/Lreddell/atlas.",
     "The world editor supports custom terrain generation, so you can create your own unique presets and share them with friends!",
 ];
 
@@ -198,7 +212,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     </div>
 
                     {/* Phase title */}
-                    <h1 className="text-white font-minecraft text-xl text-shadow-md">
+                    <h1 className="text-white font-pixel text-xl text-shadow-md">
                         {phase || 'Loading World...'}
                     </h1>
 
@@ -208,17 +222,17 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                             className="h-full bg-[#2e7d32] transition-all duration-100 ease-linear"
                             style={{ width: `${clampedPercent}%` }}
                         />
-                        <div className="absolute inset-0 flex items-center justify-center text-white font-minecraft text-xs text-shadow-md pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center text-white font-pixel text-xs text-shadow-md pointer-events-none">
                             {clampedPercent}%
                         </div>
                     </div>
 
                     {/* Tips section */}
                     <div className="w-full bg-black/40 border-2 border-white/20 px-4 py-3 min-h-[76px] flex flex-col gap-1">
-                        <span className="text-yellow-300 font-minecraft text-xs text-shadow-md tracking-wide">
+                        <span className="text-yellow-300 font-pixel text-xs text-shadow-md tracking-wide">
                             DID YOU KNOW...
                         </span>
-                        <p className="text-gray-200 font-minecraft text-sm leading-relaxed text-shadow-md">
+                        <p className="text-gray-200 font-pixel text-sm leading-relaxed text-shadow-md">
                             {LOADING_TIPS[tipIndex]}
                         </p>
                     </div>

@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { ModPack, ItemDefinition, TextureEntry, BlockDefinition } from './editorTypes';
 import { soundManager } from '../../../systems/sound/SoundManager';
+import { ConfirmModal } from '../ConfirmModal';
 
 interface ItemEditorViewProps {
     pack: ModPack;
@@ -14,6 +15,7 @@ const CATEGORIES = ['building', 'natural', 'functional', 'tools', 'food', 'ingre
 
 export const ItemEditorView: React.FC<ItemEditorViewProps> = ({ pack, onUpdatePack, selectedId, onSelectId }) => {
     const [search, setSearch] = useState('');
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const items = useMemo(() => Object.values(pack.items), [pack.items]);
     const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.id.toLowerCase().includes(search.toLowerCase()));
 
@@ -42,7 +44,13 @@ export const ItemEditorView: React.FC<ItemEditorViewProps> = ({ pack, onUpdatePa
     };
 
     const handleDeleteItem = (id: string) => {
-        if (!confirm(`Delete item "${pack.items[id]?.name || id}"?`)) return;
+        setPendingDeleteId(id);
+    };
+
+    const confirmDeleteItem = () => {
+        const id = pendingDeleteId;
+        setPendingDeleteId(null);
+        if (!id) return;
         const nextItems = { ...pack.items };
         delete nextItems[id];
         onUpdatePack({ ...pack, items: nextItems });
@@ -63,6 +71,16 @@ export const ItemEditorView: React.FC<ItemEditorViewProps> = ({ pack, onUpdatePa
 
     return (
         <div className="flex h-full bg-black/20">
+            {pendingDeleteId && (
+                <ConfirmModal
+                    title="Delete Item?"
+                    message={<>Delete <span className="text-white">{pack.items[pendingDeleteId]?.name ?? pendingDeleteId}</span>?</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={confirmDeleteItem}
+                    onCancel={() => setPendingDeleteId(null)}
+                />
+            )}
             {/* List */}
             <div className="w-64 bg-[#121212] border-r border-white/5 flex flex-col">
                 <div className="p-3 bg-black/20 flex flex-col gap-2">

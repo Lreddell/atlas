@@ -1,17 +1,20 @@
 # Atlas
 
-Atlas is a voxel sandbox game built with TypeScript, React, Three.js, and Vite, with an Electron desktop wrapper for native Windows builds.
+Atlas is a voxel sandbox and action-adventure game built with TypeScript, React,
+Three.js, and Vite, with an Electron desktop wrapper for native Windows builds.
 
-Atlas focuses on procedural world generation, chunk streaming, responsive gameplay systems, and a desktop-friendly development flow for building and packaging the project as a playable application.
+Explore procedural worlds, gather and craft, build freely, tune terrain in the
+World Editor, or seek out sealed regions and their guardians.
 
 ## Highlights
 
-- Procedural voxel world generation with chunk streaming
-- Real-time meshing and generation workers for smoother gameplay
-- Inventory, crafting, drops, and interaction systems
-- In-game UI including main menu, pause menu, HUD, chat, and debug tools
-- Panorama-based menu backgrounds and customization support
-- Browser development flow and desktop installer packaging
+- Procedural surface and cave generation across more than twenty biomes
+- The sealed Magnetic Fields, polarity-based traversal, and the Magnetic Warden boss
+- Survival, creative, and spectator modes with crafting, combat, armor, tools, and boats
+- A live World Editor for terrain, caves, biomes, and Magnetic Fields generation
+- Streamed chunk generation and meshing through a unified worker pipeline
+- Local world management with desktop filesystem saves, browser storage, import, and export
+- In-game menus, HUD, tutorial, chat, commands, debug tools, and custom panoramas
 
 ## Tech Stack
 
@@ -48,11 +51,16 @@ npm run electron:dev
 
 ## Controls And Input Notes
 
+- Use `W`, `A`, `S`, and `D` to move, `Space` to jump, and `Ctrl` to sprint.
+- Use left click to break or attack and right click to place, use, eat, or board.
 - Use the mouse wheel or number keys `1` through `9` to change the selected
   hotbar slot.
 - In the browser runtime, `Ctrl`/`Cmd` + wheel still changes hotbar slots while
   Atlas prevents browser zoom during active gameplay.
 - Press `/` or `T` in-game to open the command/chat input.
+- Press `R` to flip polarity while wearing Polarity Boots. Upgraded boots use `N`
+  to toggle their magnetic power.
+- Press `E` for inventory, `Q` to drop an item, and `F3` for the debug screen.
 - Focused text inputs keep normal typing behavior, including movement-key
   letters such as `W`, `A`, `S`, and `D`.
 - `Escape` closes active UI, pauses/resumes, or exits pointer lock depending on
@@ -120,7 +128,7 @@ atlas/
     systems/         # World, player, sound, texture, and gameplay systems
     hooks/           # Reusable gameplay hooks
     utils/           # Utility modules
-    data/            # Code-defined block and command data
+    data/            # Blocks, commands, tutorial, and changelog data
     App.tsx          # App and game orchestration
     index.tsx        # React entrypoint
     constants.ts     # Shared constants and APP_VERSION
@@ -133,11 +141,17 @@ atlas/
   build/             # Desktop build resources such as icons
 ```
 
-## Notes on Data and Storage
+## Worlds and Local Storage
 
 - In development, panorama captures are stored under `data/panoramas/`.
 - In packaged desktop builds, panorama files are stored under Electron `userData`.
-- World and chunk persistence use IndexedDB through the world storage systems.
+- Desktop worlds use Atlas region files in the application's save folder.
+- Browser worlds prefer the browser's private filesystem and fall back to IndexedDB
+  when that filesystem is unavailable.
+- Existing browser-database worlds migrate automatically without deleting the source
+  copy. Import and export remain available across browser and desktop builds.
+- Atlas prevents the same world from being opened in two active sessions and performs
+  a final save when quitting through the game or closing the desktop app.
 
 ## Troubleshooting
 

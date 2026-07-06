@@ -8,6 +8,8 @@ import { BlockEditorView } from './BlockEditorView';
 import { ItemEditorView } from './ItemEditorView';
 import { RecipeEditorView } from './RecipeEditorView';
 import { ValidationView } from './ValidationView';
+import { ConfirmModal } from '../ConfirmModal';
+import { UiNotice, type UiNoticeState } from '../UiNotice';
 
 interface FeatureEditorProps {
     onBack: () => void;
@@ -19,6 +21,8 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
     const [packs, setPacks] = useState<ModPack[]>([]);
     const [activePackId, setActivePackId] = useState<string | null>(null);
     const [isWizardOpen, setIsWizardOpen] = useState(false);
+    const [pendingDeletePackId, setPendingDeletePackId] = useState<string | null>(null);
+    const [notice, setNotice] = useState<UiNoticeState | null>(null);
     
     // Persistent selection states lifted to survive tab changes
     const [selectedTextureId, setSelectedTextureId] = useState<string | null>(() => localStorage.getItem('atlas_selected_texture_id'));
@@ -88,7 +92,14 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
     const handleDeletePack = (id: string) => {
         const packToDelete = packs.find(p => p.meta.id === id);
         if (!packToDelete) return;
-        if (confirm(`Are you sure you want to delete the Mod Pack "${packToDelete.meta.name}"? This cannot be undone.`)) {
+        setPendingDeletePackId(id);
+    };
+
+    const confirmDeletePack = () => {
+        const id = pendingDeletePackId;
+        setPendingDeletePackId(null);
+        if (!id) return;
+        try {
             PackStorage.deletePack(id);
             const remaining = packs.filter(p => p.meta.id !== id);
             setPacks(remaining);
@@ -102,6 +113,10 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
                 }
             }
             soundManager.play("ui.click", { pitch: 0.8 });
+            setNotice({ type: 'success', message: 'Mod pack deleted.' });
+        } catch (error) {
+            console.error('[FeatureEditor] Failed to delete pack:', error);
+            setNotice({ type: 'error', message: 'Failed to delete the mod pack.' });
         }
     };
 
@@ -135,18 +150,25 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
         reader.onload = (event) => {
             try {
                 const pack = JSON.parse(event.target?.result as string);
-                if (PackStorage.validatePack(pack)) {
-                    const updated = [...packs.filter(p => p.meta.id !== pack.meta.id), pack];
-                    setPacks(updated);
-                    PackStorage.savePack(pack);
-                    setActivePackId(pack.meta.id);
-                    soundManager.play("ui.click", { pitch: 1.2 });
+                if (!PackStorage.validatePack(pack)) {
+                    setNotice({ type: 'error', message: 'Invalid mod pack file.' });
+                    return;
                 }
-            } catch (err) {
-                alert("Invalid Mod Pack file");
+                const updated = [...packs.filter(p => p.meta.id !== pack.meta.id), pack];
+                setPacks(updated);
+                PackStorage.savePack(pack);
+                setActivePackId(pack.meta.id);
+                PackStorage.setActivePackId(pack.meta.id);
+                soundManager.play("ui.click", { pitch: 1.2 });
+                setNotice({ type: 'success', message: `Imported mod pack: ${pack.meta.name}` });
+            } catch (error) {
+                console.error('[FeatureEditor] Failed to import pack:', error);
+                setNotice({ type: 'error', message: 'Invalid mod pack file.' });
             }
         };
+        reader.onerror = () => setNotice({ type: 'error', message: 'Failed to read the mod pack file.' });
         reader.readAsText(file);
+        e.target.value = '';
     };
 
     const renderTabContent = () => {
@@ -231,6 +253,7 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
     return (
         <div className="absolute inset-0 z-[200] flex bg-[#0c0c0c] font-sans text-white select-none overflow-hidden">
             <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImport} />
+            <UiNotice notice={notice} onDismiss={() => setNotice(null)} />
             <style>{`
                 .tab-active { background: #3b82f6; color: #fff; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); }
                 .tab-inactive { color: #666; }
@@ -244,6 +267,17 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
             `}</style>
 
             {isWizardOpen && <PackWizard onClose={() => setIsWizardOpen(false)} onSave={handleCreatePack} existingIds={packs.map(p => p.meta.id)} />}
+
+            {pendingDeletePackId && (
+                <ConfirmModal
+                    title="Delete Mod Pack?"
+                    message={<>Delete <span className="text-white">{packs.find((pack) => pack.meta.id === pendingDeletePackId)?.meta.name ?? 'this mod pack'}</span>? This cannot be undone.</>}
+                    confirmLabel="Delete"
+                    danger
+                    onConfirm={confirmDeletePack}
+                    onCancel={() => setPendingDeletePackId(null)}
+                />
+            )}
 
             {/* Sidebar */}
             <aside className="h-full bg-[#111] border-r border-white/5 flex flex-col flex-shrink-0 shadow-2xl z-20 relative" style={{ width: sidebarWidth }}>

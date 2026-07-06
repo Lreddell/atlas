@@ -2,9 +2,17 @@
 import React from 'react';
 import { ItemStack, BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
-import { getAtlasURL, ATLAS_STRIDE, ATLAS_PADDING, getAtlasDimensions } from '../../utils/textures';
+import {
+  ATLAS_PADDING,
+  ATLAS_STRIDE,
+  ATLAS_UPDATED_EVENT,
+  getAtlasCanvas,
+  getAtlasDimensions,
+  getAtlasURL,
+} from '../../utils/textures';
 import { resolveTexture } from '../../systems/world/textureResolver';
 import { getShapeBoxes } from '../../systems/world/blockShapes';
+import { getMaxDurability } from '../../systems/registry/itemStats';
 
 interface SlotProps {
   item: ItemStack | null;
@@ -19,15 +27,155 @@ interface SlotProps {
   onMouseUp?: (e: React.MouseEvent) => void;
   size?: 'large' | 'small';
   isCursor?: boolean;
+  /** Render only the item, for surfaces such as creative category tabs. */
+  bare?: boolean;
+  /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
+  animateChanges?: boolean;
 }
+
+interface PixelPerfectItemIconProps {
+  texSlot: number;
+  targetSize: number;
+}
+
+const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, targetSize }) => {
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  React.useLayoutEffect(() => {
+      const wrapper = wrapperRef.current;
+      const canvas = canvasRef.current;
+      if (!wrapper || !canvas) return;
+
+      const draw = () => {
+          const atlasCanvas = getAtlasCanvas();
+          if (!atlasCanvas) return;
+
+          const ancestorScale = wrapper.offsetWidth > 0
+              ? wrapper.getBoundingClientRect().width / wrapper.offsetWidth
+              : 1;
+          const physicalPixelsPerCssPixel = window.devicePixelRatio * ancestorScale;
+          const requestedScale = (targetSize * physicalPixelsPerCssPixel) / 16;
+          const sourcePixelScale = Math.max(
+              1,
+              targetSize <= 32 ? Math.round(requestedScale) : Math.ceil(requestedScale)
+          );
+          const backingSize = 16 * sourcePixelScale;
+          const cssSize = backingSize / physicalPixelsPerCssPixel;
+
+          canvas.width = backingSize;
+          canvas.height = backingSize;
+          canvas.style.width = `${cssSize}px`;
+          canvas.style.height = `${cssSize}px`;
+          canvas.style.transform = '';
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.imageSmoothingEnabled = false;
+          ctx.clearRect(0, 0, backingSize, backingSize);
+          const col = texSlot % ATLAS_COLS;
+          const row = Math.floor(texSlot / ATLAS_COLS);
+          ctx.drawImage(
+              atlasCanvas,
+              col * ATLAS_STRIDE + ATLAS_PADDING,
+              row * ATLAS_STRIDE + ATLAS_PADDING,
+              16,
+              16,
+              0,
+              0,
+              backingSize,
+              backingSize
+          );
+
+          // Centering can land on a fractional device pixel. Nudge the finished
+          // canvas onto the physical pixel grid so every texel stays uniform.
+          const rect = canvas.getBoundingClientRect();
+          const offsetX = (Math.round(rect.left * window.devicePixelRatio) - rect.left * window.devicePixelRatio)
+              / physicalPixelsPerCssPixel;
+          const offsetY = (Math.round(rect.top * window.devicePixelRatio) - rect.top * window.devicePixelRatio)
+              / physicalPixelsPerCssPixel;
+          canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+      };
+
+      draw();
+      const resizeObserver = new ResizeObserver(draw);
+      resizeObserver.observe(wrapper);
+      window.addEventListener('resize', draw);
+      window.addEventListener(ATLAS_UPDATED_EVENT, draw);
+
+      return () => {
+          resizeObserver.disconnect();
+          window.removeEventListener('resize', draw);
+          window.removeEventListener(ATLAS_UPDATED_EVENT, draw);
+      };
+  }, [targetSize, texSlot]);
+
+  return (
+      <div
+          ref={wrapperRef}
+          className="pointer-events-none flex shrink-0 items-center justify-center"
+          style={{ width: `${targetSize}px`, height: `${targetSize}px` }}
+      >
+          <canvas
+              ref={canvasRef}
+              width={16}
+              height={16}
+              data-texture-slot={texSlot}
+              className="pointer-events-none select-none"
+              style={{ width: '100%', height: '100%', imageRendering: 'pixelated' }}
+          />
+      </div>
+  );
+};
 
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
-    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false 
+    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
+    bare = false, animateChanges = false,
 }) => {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
+  const currentItemType = item?.type;
+  const currentItemCount = item?.count;
   const blockDef = item ? BLOCKS[item.type] : null;
   const atlasURL = getAtlasURL();
   const { width } = getAtlasDimensions(); // Real POT width of texture
+
+  // Durability bar: shown only for a damaged tool/weapon (current < max).
+  const maxDurability = item ? getMaxDurability(item.type) : undefined;
+  const curDurability = item?.instance?.durability;
+  const showDurability = maxDurability !== undefined && curDurability !== undefined && curDurability < maxDurability;
+  const durabilityFrac = showDurability ? Math.max(0, curDurability / maxDurability) : 0;
+  const durabilityColor = `rgb(${Math.round((1 - durabilityFrac) * 255)}, ${Math.round(durabilityFrac * 255)}, 0)`;
+  const durabilityDimColor = `rgb(${Math.round((1 - durabilityFrac) * 63)}, 63, 0)`;
+  const durabilityBar = showDurability ? (
+      <div className="absolute bottom-[10px] left-1/2 h-1 w-[26px] -translate-x-1/2 bg-black pointer-events-none z-20">
+          <div className="absolute left-0 top-0 h-0.5 w-6" style={{ background: durabilityDimColor }} />
+          <div
+              className="absolute left-0 top-0 h-0.5"
+              style={{ width: `${Math.round(durabilityFrac * 13) * 2}px`, background: durabilityColor }}
+          />
+      </div>
+  ) : null;
+
+  React.useLayoutEffect(() => {
+      const previous = previousItemRef.current;
+      const current = currentItemType === undefined || currentItemCount === undefined
+          ? null
+          : { type: currentItemType, count: currentItemCount };
+      const shouldPop = animateChanges
+          && previous !== undefined
+          && current !== null
+          && (previous === null || (previous.type === current.type && current.count > previous.count));
+
+      previousItemRef.current = current;
+      if (!shouldPop || !contentRef.current) return;
+
+      const content = contentRef.current;
+      content.classList.remove('atlas-item-pop');
+      void content.offsetWidth;
+      content.classList.add('atlas-item-pop');
+  }, [animateChanges, currentItemCount, currentItemType]);
 
   const getFaceStyle = (texIdx: number, brightness: number, displaySize: number) => {
       if (!atlasURL) return {};
@@ -51,7 +199,7 @@ export const Slot: React.FC<SlotProps> = ({
           backgroundImage: `url(${atlasURL})`,
           backgroundSize: `${bgSize}px`, 
           backgroundPosition: `-${offsetX}px -${offsetY}px`,
-          filter: `brightness(${brightness})`,
+          ...(brightness === 1 ? {} : { filter: `brightness(${brightness})` }),
           imageRendering: 'pixelated' as const,
           backfaceVisibility: 'hidden' as const
       };
@@ -67,7 +215,7 @@ export const Slot: React.FC<SlotProps> = ({
           const topTex = resolveTexture(parentType, 'top', 0, 1, 0, 0).texIdx;
           const frontTex = resolveTexture(parentType, 'front', 0, 0, 1, 0).texIdx;
           const leftTex = resolveTexture(parentType, 'left', -1, 0, 0, 0).texIdx;
-          const baseScale = size === 'large' ? 1.4 : 1.0;
+          const baseScale = size === 'large' ? 1.4 : 1.25;
           const U = 16;
           // A fixed, readable orientation for the icon (step facing front-right).
           // Use a non-overlapping decomposition so faces don't seam: a slab is one
@@ -116,7 +264,10 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.SPRUCE_SAPLING &&
                    item.type !== BlockType.BIRCH_SAPLING &&
                    item.type !== BlockType.CHERRY_SAPLING &&
-                   item.type !== BlockType.WATER && 
+                   item.type !== BlockType.JUNGLE_SAPLING &&
+                   item.type !== BlockType.DARK_OAK_SAPLING &&
+                   item.type !== BlockType.ACACIA_SAPLING &&
+                   item.type !== BlockType.WATER &&
                    item.type !== BlockType.LAVA &&
                    item.type !== BlockType.DEAD_BUSH &&
                    item.type !== BlockType.GRASS_PLANT &&
@@ -124,7 +275,12 @@ export const Slot: React.FC<SlotProps> = ({
                    item.type !== BlockType.DANDELION &&
                    item.type !== BlockType.DEBUG_CROSS &&
                    item.type !== BlockType.WHEAT_SEEDS &&
-                   item.type !== BlockType.PINK_FLOWER;
+                   item.type !== BlockType.PINK_FLOWER &&
+                   item.type !== BlockType.POSITIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.NEGATIVE_MAGNETITE_CRYSTAL &&
+                   item.type !== BlockType.MAGNETIC_SPIKE &&
+                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL &&
+                   item.type !== BlockType.MAGNETITE_SHARD;
 
       if (is3D) {
           // Top Face (dy=1)
@@ -136,7 +292,7 @@ export const Slot: React.FC<SlotProps> = ({
           
           const cubeSize = 16; 
           const half = cubeSize / 2;
-          const baseScale = size === 'large' ? 1.4 : 1.0; 
+          const baseScale = size === 'large' ? 1.4 : 1.25;
           
           return (
               <div 
@@ -173,16 +329,16 @@ export const Slot: React.FC<SlotProps> = ({
           );
       } else {
           // 2D Item / Sprite Render
-          const pxSize = size === 'large' ? 36 : 28; 
+          // Draw synchronously from the generated atlas. The canvas renderer
+          // snaps the 16px source to whole physical pixels.
+          // Keep the 16px source on an exact 2x grid. The next whole-pixel
+          // scale (48px) fills the slot edge-to-edge and reads oversized.
+          const pxSize = 32;
           const texSlot = blockDef.textureSlot || 0;
           return (
-              <div 
-                  className="pointer-events-none"
-                  style={{
-                      width: `${pxSize}px`,
-                      height: `${pxSize}px`,
-                      ...getFaceStyle(texSlot, 1.0, pxSize)
-                  }}
+              <PixelPerfectItemIcon
+                  texSlot={texSlot}
+                  targetSize={pxSize}
               />
           );
       }
@@ -212,19 +368,33 @@ export const Slot: React.FC<SlotProps> = ({
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
         className={`
-            relative bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]
-            flex items-center justify-center cursor-pointer hover:bg-[#a0a0a0]
+            group relative flex items-center justify-center
             ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
-            ${selected ? 'border-4 border-white shadow-lg z-10' : ''}
+            ${bare
+                ? 'pointer-events-none'
+                : 'cursor-pointer bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]'}
+            ${selected ? 'z-10' : ''}
         `}
     >
-        {renderContent()}
+        <div ref={contentRef} className="pointer-events-none flex items-center justify-center">
+            {renderContent()}
+        </div>
+
+        {!bare && (
+            <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />
+        )}
+
+        {selected && !bare && (
+            <span className="absolute -inset-1 z-30 pointer-events-none border-4 border-white shadow-lg" />
+        )}
 
         {item && item.count > 1 && (
             <span className="absolute bottom-1 right-1 text-white text-[12px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none pointer-events-none z-20">
                 {item.count}
             </span>
         )}
+
+        {durabilityBar}
     </div>
   );
 };

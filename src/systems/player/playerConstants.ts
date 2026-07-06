@@ -1,5 +1,5 @@
 
-// Dimensions (Minecraft-like)
+// Player collision dimensions (blocks)
 export const PLAYER_WIDTH = 0.6;
 export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_HEIGHT_SNEAK = 1.5;
@@ -11,22 +11,33 @@ export const GRAVITY = 32;
 export const JUMP_VELOCITY = 8.4; 
 export const TERMINAL_VELOCITY = 78.4;
 
-// Speeds (Minecraft-accurate terminal velocities in blocks/sec)
+// Speeds (terminal velocities in blocks/sec)
 export const WALK_SPEED = 4.317;
 export const SPRINT_MULTIPLIER = 1.3;   // -> 5.612 b/s
 export const SNEAK_MULTIPLIER = 0.3;    // -> 1.295 b/s
 
 // One-time forward impulse (blocks/sec) added on the tick you jump while sprinting.
-// In Minecraft this impulse, preserved by the high air friction, is what makes
-// sprint-jumping the fastest way to travel (~27% faster than flat sprinting).
-// Tuned so the sprint-jump cycle averages ~7.1 b/s vs 5.612 sprinting — matching
-// that 27% gap — rather than copying MC's raw internal value.
+// This impulse, preserved by the high air friction, is what makes sprint-jumping
+// the fastest way to travel (~27% faster than flat sprinting). Tuned so the
+// sprint-jump cycle averages ~7.1 b/s vs 5.612 sprinting (matching that 27% gap),
+// rather than copying a raw internal engine value.
 export const SPRINT_JUMP_BOOST = 2.0;
 
 // Fluid speeds
-export const SWIM_SPEED = 2.55;           
-export const SWIM_SUBMERGED_SPEED = 2.096; 
-export const LAVA_HORIZONTAL_REDUCTION = 0.4; 
+export const SWIM_SPEED = 2.55;
+export const SWIM_SUBMERGED_SPEED = 2.096;
+export const LAVA_HORIZONTAL_REDUCTION = 0.4;
+
+// --- Boat (rideable water traversal) ---
+// Afloat, the boat glides: high per-tick velocity retention with an input
+// acceleration whose equilibrium is BOAT_SPEED (~2.2x sprint swimming). Beached
+// it scrapes along slowly so you can nudge back into water.
+export const BOAT_SPEED = 9.0;            // blocks/sec afloat
+export const BOAT_FRICTION = 0.94;        // per-tick retention -> long glide
+export const BOAT_LAND_SPEED = 0.9;       // scraping over land
+export const BOAT_LAND_FRICTION = 0.5;
+export const BOAT_BUOYANCY = 30;          // upward accel while the hull is submerged
+export const BOAT_VERTICAL_DAMP = 0.6;    // per-tick vertical damping while afloat (calm bobbing)
 
 // Fluid Physics (Vertical)
 export const FLUID_GRAVITY = 4;       
@@ -34,30 +45,30 @@ export const FLUID_TERMINAL_VEL = 5.0;
 export const FLUID_JUMP_ACCEL = 16.0;    
 export const FLUID_JUMP_MAX = 3;       
 
-// --- Movement model: Minecraft per-tick friction + input acceleration ---
-// Minecraft has no "target velocity" that you lerp toward. Instead, every tick:
+// --- Movement model: per-tick friction + input acceleration ---
+// There is no "target velocity" that you lerp toward. Instead, every tick:
 //   1. horizontal velocity is multiplied by a friction factor (exponential decay)
 //   2. movement input adds a small fixed acceleration
 // The equilibrium of those two IS the top speed, which is what gives the genuine
 // momentum feel: gradual ramp-up, a short glide to a stop, and direction changes
 // that carry your old momentum for a few ticks. The simulation runs a fixed 20 Hz
-// substep (FIXED_DT) == one Minecraft tick, so these per-tick values apply directly.
+// substep (FIXED_DT) == one simulation tick, so these per-tick values apply directly.
 //
-// Friction factors are per-tick velocity RETENTION (Minecraft: slipperiness * 0.91).
+// Friction factors are per-tick velocity RETENTION (block slipperiness * 0.91).
 export const GROUND_FRICTION = 0.546;   // 0.6 (normal block) * 0.91
 export const AIR_FRICTION = 0.91;       // little decay -> momentum carries in air
 export const FLUID_FRICTION = 0.80;     // water/lava drag
 
-// Air acceleration as a fraction of the GROUND acceleration amplitude (Minecraft
-// uses ~20%). Crucially this is measured against the ground amplitude, NOT against
+// Air acceleration as a fraction of the GROUND acceleration amplitude (the reference
+// model uses ~20%). Crucially this is measured against the ground amplitude, NOT against
 // (1 - AIR_FRICTION): pairing 20% of ground accel with the high 0.91 air retention
 // makes the air terminal speed land right at your ground speed, so sprint speed
 // carries cleanly through a jump and you can still steer onto a block. (The prior
-// 0.15-of-air-amplitude reading made air accel ~7x too weak — speed bled to a crawl,
+// 0.15-of-air-amplitude reading made air accel ~7x too weak, speed bled to a crawl,
 // which both killed sprint-jumps and made blocks hard to mount.)
 export const AIR_CONTROL = 0.20;
 
-// Sprint auto-cancel needs this many consecutive slow ticks — a momentum-based
+// Sprint auto-cancel needs this many consecutive slow ticks, a momentum-based
 // direction flip passes through low speed for 1-2 ticks and must not cancel
 // sprint; a genuine wall bump stays slow and cancels after ~150ms.
 export const SPRINT_STOP_GRACE_TICKS = 3;

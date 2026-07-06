@@ -8,11 +8,31 @@ import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
+import { FxParticles } from './components/FxParticles';
 import { DayNightCycle, DayNightCycleRef } from './components/world/DayNightCycle';
 import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
+import { BossBar } from './components/ui/BossBar';
+import { BossConfirmModal } from './components/ui/BossConfirmModal';
+import { ConfirmModal } from './components/ui/ConfirmModal';
+import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
+import { PolarityIndicator } from './components/ui/PolarityIndicator';
+import { PolarityVignette } from './components/ui/PolarityVignette';
+import { CinematicOverlay } from './components/ui/CinematicOverlay';
+import { BossCinematic } from './components/BossCinematic';
+import { bossSummon } from './systems/boss/bossSummon';
+import { MagneticFieldDebug } from './components/MagneticFieldDebug';
+import { EntityRenderer } from './components/EntityRenderer';
+import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
+import { ENTITY_KINDS } from './systems/entities/Entity';
+import { getMaxDurability } from './systems/registry/itemStats';
+import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
+import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
+import type { MagneticMode } from './systems/player/magnetism';
+import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
 import { HeldItem } from './components/HeldItem';
@@ -35,8 +55,12 @@ import { RenderStats } from './components/RenderStats';
 import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
+import { progression } from './systems/progression/ProgressionStore';
+import { gameEvents } from './systems/events/GameEvents';
+import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
-import { getBiome } from './systems/world/biomes';
+import { requestPersistentStorage } from './systems/world/storage/storagePersistence';
+import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH } from './systems/player/playerConstants';
@@ -51,15 +75,14 @@ import {
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { resetInputState } from './systems/player/playerInput';
-import { BIOMES } from './systems/world/biomes';
-import { loadGenConfig, resetGenConfig } from './systems/world/genConfig';
+import { loadGenConfig, normalizeGenConfigSnapshot, resetGenConfig, type WorldGenConfigSnapshot } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
-import { COMMANDS, SUBCOMMANDS, ARGUMENT_OPTIONS } from './data/commands';
+import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
+import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
-import type { WorldGenConfigSnapshot } from './systems/world/worldGenPresets';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type RenderedChunk = { cx: number; cz: number };
@@ -75,6 +98,25 @@ const PANORAMA_CAPTURE_KEY = 'F8';
 const WEB_PANORAMA_PREFIX = 'web:';
 const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
 const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
+const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
+const commandItems = Array.from(new Set(
+    Object.values(BLOCKS)
+        .filter(Boolean)
+        .map(block => toCommandArgument(block.name)),
+)).sort();
+const commandEquippableItems = Array.from(new Set(
+    Object.values(BLOCKS)
+        .filter(block => block && slotForItem(block.id))
+        .map(block => toCommandArgument(block.name)),
+)).sort();
+const COMMAND_AUTOCOMPLETE_OPTIONS: CommandAutocompleteOptions = {
+    biomes: Array.from(new Set(Object.values(BIOMES).map(biome => biome.id))).sort(),
+    regions: getAllRegions().map(region => region.id).sort(),
+    items: commandItems,
+    equippableItems: commandEquippableItems,
+    entities: Object.keys(ENTITY_KINDS).sort(),
+    sounds: Object.keys(DEFAULT_SOUND_MANIFEST).sort(),
+};
 const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
@@ -209,7 +251,7 @@ function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceS
         ctx.drawImage(source, cellX * faceSize, cellY * faceSize, faceSize, faceSize);
     };
 
-    // Minecraft-like panorama layout:
+    // Main-menu panorama layout:
     // row 0:      [ ][4][ ][ ]
     // row 1:      [0][1][2][3]
     // row 2:      [ ][5][ ][ ]
@@ -237,6 +279,7 @@ const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false); 
   const [health, setHealth] = useState(20);
   const [hunger, setHunger] = useState(20);
+  const [equipment, setEquipment] = useState<Equipment>(() => createEmptyEquipment());
   const [saturation, setSaturation] = useState(5);
   const [breath, setBreath] = useState(MAX_BREATH);
   const [gameMode, setGameMode] = useState<GameMode>('survival');
@@ -245,11 +288,34 @@ const App: React.FC = () => {
   const [respawnKey, setRespawnKey] = useState(0);
   const [lastDamageTime, setLastDamageTime] = useState(0);
   const [showDeathScreen, setShowDeathScreen] = useState(false);
+  // Upgraded-boots ability toggle (N). Mirrors inputState.polarityPowerOn so the
+  // derived magneticMode re-computes when it changes.
+  const [polarityPowerOn, setPolarityPowerOn] = useState(true);
+  // Boss summon cutscene: pauses player physics + mouse-look while the camera is
+  // scripted. The arena centre is remembered so the dais altar can be restored.
+  const [cinematicMode, setCinematicMode] = useState(false);
+  const summonArenaRef = useRef<{ cx: number; cz: number; baseY: number } | null>(null);
+  // A defeat's delayed dais/altar rebuild (timer id + the restore closure), so
+  // leaving the world can flush it into the old world instead of the next one.
+  const daisRestoreRef = useRef<{ id: number; run: () => void } | null>(null);
+  // True while handleStartGame is running (guards against double-click double-open).
+  const startingWorldRef = useRef(false);
+  // True while the towers' magnet climb faces are present (placed for a fight, until
+  // stripped at 50% or on reset), so we never strip/place redundantly.
+  const climbMagnetsActiveRef = useRef(false);
+  // When on, death does not drop/clear the inventory (the /keepinventory command).
+  const [keepInventory, setKeepInventory] = useState(false);
+  // Entity id of the boat the player is riding, or null. Boats are real world
+  // entities (placed, boarded, broken, persisted); see the boat handlers below.
+  const [ridingBoatId, setRidingBoatId] = useState<number | null>(null);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [appNotice, setAppNotice] = useState<UiNoticeState | null>(null);
+  const [pendingPanoramaDelete, setPendingPanoramaDelete] = useState<{ filePath: string; fileName: string } | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
@@ -437,7 +503,9 @@ const App: React.FC = () => {
       gameMode, 
       setDrops, 
       playerPosRef, 
-      cameraRef: controlsRef 
+      cameraRef: controlsRef,
+      equipment,
+      setEquipment,
   });
 
   const isInventoryOpenRef = useRef(false);
@@ -500,42 +568,150 @@ const App: React.FC = () => {
   }, [appState, respawnKey]);
 
   // --- AUTO SAVE LOGIC ---
-  const saveGame = useCallback(async () => {
+  // Unified player damage entry point (fall/fire/drown via Player, plus entity
+  // contact damage routed through the EntityManager hooks below).
+  // Raw damage that bypasses armor, for environmental sources (fall, fire,
+  // drowning), which armor does not reduce.
+  const applyRawDamage = useCallback((d: number) => {
+      if (gameMode !== 'survival' || d <= 0) return;
+      setHealth(h => {
+          const newHealth = Math.max(0, h - d);
+          if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
+          return newHealth;
+      });
+  }, [gameMode]);
+
+  // Combat damage (entity contact/attacks), reduced by armor, and wears it down.
+  const damagePlayer = useCallback((d: number) => {
+      if (gameMode !== 'survival' || d <= 0) return;
+      applyRawDamage(Math.max(0, Math.ceil(applyArmor(d, equipment))));
+      setEquipment(prev => damageArmor(prev, d));
+  }, [applyRawDamage, equipment, gameMode]);
+
+  useEffect(() => {
+      entityManager.setPlayerHooks(
+          () => {
+              const p = playerPosRef.current;
+              return p ? { x: p.x, y: p.y, z: p.z } : null;
+          },
+          (amount, knockX, knockZ) => {
+              damagePlayer(amount);
+              const length = Math.hypot(knockX, knockZ) || 1;
+              // Knockback scales with hit strength, so heavy boss attacks (projectiles,
+              // slams) really throw the player around, not just a nudge.
+              const kb = 6 + amount * 0.8;
+              const up = 3 + amount * 0.25;
+              playerRef.current?.applyImpulse((knockX / length) * kb, up, (knockZ / length) * kb);
+          },
+          // Magnetic field impulse (the Magnetic Warden pushing/pulling the player).
+          (x, y, z) => playerRef.current?.applyImpulse(x, y, z),
+      );
+  }, [damagePlayer]);
+
+  // Magnetic susceptibility from equipment: polarity boots grant control,
+  // otherwise iron armor makes the player passively ferromagnetic. Upgraded
+  // boots can switch the ability off entirely (the N key → polarityPowerOn).
+  const controllable = hasPolarityBoots(equipment)
+      && (!hasUpgradedPolarityBoots(equipment) || polarityPowerOn);
+  // Upgraded boots shield you from passive magnetism even when their ability is
+  // switched OFF: iron armor no longer drags you around. (Base boots can't turn
+  // off, so they're always 'controlled' when worn.)
+  const magnetShielded = hasUpgradedPolarityBoots(equipment);
+  const magneticMode: MagneticMode = controllable
+      ? 'controlled'
+      : (!magnetShielded && isWearingIronArmor(equipment) ? 'ferro' : 'none');
+  // Polarity boots soften falls while the ability is active; the upgraded pair
+  // softens them further. 1 = no reduction.
+  const fallDamageFactor = magneticMode === 'controlled'
+      ? (hasUpgradedPolarityBoots(equipment) ? 0.25 : 0.5)
+      : 1;
+
+  // Signature of the last persisted player/world state (excludes time, which
+  // advances every tick) so a periodic autosave can skip a redundant write when
+  // nothing meaningful changed. Forced saves (pause/quit/unload/respawn) ignore it.
+  const lastSaveSignatureRef = useRef('');
+  // True once the player has been warned about a failing save, reset on the next
+  // success, so a recurring problem surfaces once instead of every autosave tick.
+  const saveErrorNotifiedRef = useRef(false);
+
+  const saveGame = useCallback(async (opts?: {
+      force?: boolean;
+      // Explicit values for state that was JUST set in the same event handler
+      // (React state commits after this closure was captured). Respawn uses this:
+      // without it, the forced save persisted the death-render's health of 0 and
+      // a crash before the next autosave reloaded the player dead.
+      playerOverrides?: { health?: number; hunger?: number; saturation?: number; breath?: number };
+  }) => {
       if (!activeWorldIdRef.current) return;
-      
-      const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
-      if (meta) {
+
+      const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
+      const playerData = {
+          position: { x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z },
+          rotation: { x: currentRotation.x, y: currentRotation.y },
+          inventory: inventory,
+          health: health,
+          hunger: hunger,
+          saturation: saturation,
+          breath: breath,
+          gameMode: gameMode,
+          selectedSlot: selectedSlot,
+          equipment: equipment,
+          cursorStack: cursorStack, // previously dropped on reload; now persisted
+          ...opts?.playerOverrides,
+      };
+      const spawnPoint = worldManager.getSpawnPoint();
+      const worldSpawn = worldManager.getWorldSpawn();
+      const progressionData = progression.serialize();
+      const boatsData = entityManager.serializeBoats();
+
+      // Change-detection: skip the metadata write + chunk flush when an autosave
+      // tick finds nothing dirty and no player/world change since the last save.
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
+      if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
+          return;
+      }
+
+      // A save failure must never crash the session: every caller fires this
+      // forget-style, so a thrown error would become an unhandled rejection and
+      // trip the fatal-error overlay, forcing a reload that loses more progress
+      // than the failed save did. Catch here, warn the player once (until a save
+      // succeeds again), and resolve normally so quit/respawn flows still proceed.
+      try {
+          const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
+          if (!meta) return;
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
-
-          const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
-          
-          // Persist the current game mode to the top-level metadata
-          // This ensures that if the user changed gamemode via commands, it persists on reload.
-          meta.gameMode = gameMode;
-
-          meta.player = {
-              position: { x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z },
-              rotation: { x: currentRotation.x, y: currentRotation.y },
-              inventory: inventory,
-              health: health,
-              hunger: hunger,
-              saturation: saturation,
-              breath: breath,
-              gameMode: gameMode,
-              selectedSlot: selectedSlot
-          };
-          meta.spawnPoint = worldManager.getSpawnPoint();
-          meta.worldSpawn = worldManager.getWorldSpawn();
+          meta.gameMode = gameMode; // persist command-driven gamemode changes
+          meta.player = playerData;
+          meta.spawnPoint = spawnPoint;
+          meta.worldSpawn = worldSpawn;
+          meta.progression = progressionData;
+          if (activeWorldGenConfigRef.current) {
+              const worldGenConfigSnapshot = normalizeGenConfigSnapshot(activeWorldGenConfigRef.current);
+              if (worldGenConfigSnapshot) {
+                  meta.worldGenConfig = worldGenConfigSnapshot;
+                  activeWorldGenConfigRef.current = worldGenConfigSnapshot;
+              }
+          }
+          meta.boats = boatsData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
+          lastSaveSignatureRef.current = signature;
+          saveErrorNotifiedRef.current = false; // a good save re-arms the warning
           console.log(`[AutoSave] World ${meta.name} saved.`);
+      } catch (e) {
+          console.error('[AutoSave] save failed:', e);
+          if (!saveErrorNotifiedRef.current) {
+              saveErrorNotifiedRef.current = true;
+              const msg = e instanceof Error ? e.message : String(e);
+              worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
+          }
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
-  // auto-save during active play — go through a latest-value ref instead.
+  // auto-save during active play, go through a latest-value ref instead.
   const saveGameRef = useRef(saveGame);
   useEffect(() => { saveGameRef.current = saveGame; }, [saveGame]);
 
@@ -548,17 +724,34 @@ const App: React.FC = () => {
       }
   }, [appState]);
 
-  // Best-effort save when the window/tab is closed or killed mid-session.
+  // Best-effort save when the window/tab is closed, hidden, or killed mid-session.
+  // visibilitychange -> hidden fires more reliably than beforeunload (tab switch /
+  // backgrounding / mobile) and the page usually keeps running, giving the async
+  // save a real chance to finish; pagehide/beforeunload remain as last-ditch hooks.
   useEffect(() => {
       if (appState !== 'game') return;
-      const onPageHide = () => { void saveGameRef.current(); };
-      window.addEventListener('pagehide', onPageHide);
-      window.addEventListener('beforeunload', onPageHide);
+      const flush = () => { void saveGameRef.current({ force: true }); };
+      const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+      window.addEventListener('pagehide', flush);
+      window.addEventListener('beforeunload', flush);
+      document.addEventListener('visibilitychange', onVisibility);
       return () => {
-          window.removeEventListener('pagehide', onPageHide);
-          window.removeEventListener('beforeunload', onPageHide);
+          window.removeEventListener('pagehide', flush);
+          window.removeEventListener('beforeunload', flush);
+          document.removeEventListener('visibilitychange', onVisibility);
       };
   }, [appState]);
+
+  // Desktop: the main process holds the window's close until the renderer confirms
+  // a final save (with a timeout safety net), so quitting the app never loses the
+  // last few seconds of edits the way an async beforeunload can.
+  useEffect(() => {
+      const api = window.atlasDesktop;
+      if (!api?.onFlushRequest) return;
+      api.onFlushRequest(() => {
+          void saveGameRef.current({ force: true }).finally(() => { void api.flushComplete?.(); });
+      });
+  }, []);
 
   useEffect(() => {
       const handleError = (event: ErrorEvent) => {
@@ -680,35 +873,51 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const handleContextMenu = (e: MouseEvent) => {
+          if (appState !== 'game' || isEditableElement(e.target)) return;
           e.preventDefault();
       };
       window.addEventListener('contextmenu', handleContextMenu);
       return () => window.removeEventListener('contextmenu', handleContextMenu);
-  }, []);
+  }, [appState]);
 
   useEffect(() => {
+      const TICK_MS = 1000;
       const interval = setInterval(() => {
           if (worldPaused) return;
-          const now = Date.now();
+          // Drop-aging rule: an item entity only counts down its 5-minute despawn timer
+          // while its chunk is loaded (i.e. near the player). Drops the player has
+          // wandered away from keep their timer paused and persist, so going far away
+          // never makes them "gone forever", they resume aging when you return.
+          const px = playerPosRef.current.x, pz = playerPosRef.current.z;
+          const loadedRange = renderDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
+          const loadedR2 = loadedRange * loadedRange;
           setDrops(currentDrops => {
-              const remaining = currentDrops.filter(d => now - d.createdAt < DROP_LIFETIME_MS);
-              if (remaining.length !== currentDrops.length) return remaining;
-              return currentDrops;
+              let anyExpired = false;
+              for (const d of currentDrops) {
+                  const dx = d.position[0] - px, dz = d.position[2] - pz;
+                  // Mutated in place, these Drop objects are already mutated by the
+                  // physics loop (DropManager), so this stays consistent and cheap.
+                  if (dx * dx + dz * dz <= loadedR2) d.age += TICK_MS;
+                  if (d.age >= DROP_LIFETIME_MS) anyExpired = true;
+              }
+              return anyExpired ? currentDrops.filter(d => d.age < DROP_LIFETIME_MS) : currentDrops;
           });
-      }, 1000);
+      }, TICK_MS);
       return () => clearInterval(interval);
-  }, [worldPaused]);
+  }, [worldPaused, renderDistance]);
 
   useEffect(() => {
-      const unsub = worldManager.subscribeToDrops((type, x, y, z) => {
+      const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
           setDrops(p => [...p, {
                 id: Math.random().toString(), 
-                type: type, 
-                count: 1,
-                position: [x+0.5, y+0.5, z+0.5], 
-                velocity: [(Math.random()-0.5)*2, 4, (Math.random()-0.5)*2], 
-                createdAt: Date.now(), 
-                pickupDelay: Date.now() + 500 
+                type: stack.type,
+                count: stack.count,
+                instance: stack.instance ? structuredClone(stack.instance) : undefined,
+                position: [x+0.5, y+0.5, z+0.5],
+                velocity: [(Math.random()-0.5)*2, 4, (Math.random()-0.5)*2],
+                createdAt: Date.now(),
+                pickupDelay: Date.now() + 500,
+                age: 0,
           }]);
       });
       return unsub;
@@ -716,8 +925,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (health <= 0) {
-        const hasItems = inventory.some(i => i !== null) || cursorStack !== null || craftingGrid2x2.some(i => i !== null) || craftingGrid3x3.some(i => i !== null);
-        if (hasItems) {
+        const hasItems = inventory.some(i => i !== null)
+            || cursorStack !== null
+            || craftingGrid2x2.some(i => i !== null)
+            || craftingGrid3x3.some(i => i !== null)
+            || EQUIPMENT_SLOTS.some(slot => equipment[slot] !== null);
+        // /keepinventory keeps everything through death, skip the drop entirely.
+        if (hasItems && !keepInventory) {
+            const extractedEquipment = extractEquipmentItems(equipment);
             setDrops(prev => {
                 const newDrops = [...prev];
                 const dropItem = (item: ItemStack) => {
@@ -727,10 +942,12 @@ const App: React.FC = () => {
                          id: Math.random().toString(),
                          type: item.type,
                          count: item.count,
+                         instance: item.instance ? structuredClone(item.instance) : undefined,
                          position: [playerPosRef.current.x, playerPosRef.current.y + 1.0, playerPosRef.current.z],
                          velocity: [Math.cos(angle) * speed, 3 + Math.random() * 2, Math.sin(angle) * speed],
                          createdAt: Date.now(),
-                         pickupDelay: Date.now() + 1500 
+                         pickupDelay: Date.now() + 1500,
+                         age: 0,
                     });
                 };
                 
@@ -738,6 +955,7 @@ const App: React.FC = () => {
                 if (cursorStack) dropItem(cursorStack);
                 craftingGrid2x2.forEach(item => { if(item) dropItem(item); });
                 craftingGrid3x3.forEach(item => { if(item) dropItem(item); });
+                extractedEquipment.items.forEach(dropItem);
                 
                 return newDrops;
             });
@@ -746,23 +964,185 @@ const App: React.FC = () => {
             setCursorStack(null);
             setCraftingGrid2x2(Array(4).fill(null));
             setCraftingGrid3x3(Array(9).fill(null));
+            setEquipment(extractedEquipment.equipment);
             if (openContainer) {
                 setOpenContainer(null);
                 isInventoryOpenRef.current = false;
             }
         }
     }
-  }, [health, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]); 
+  }, [health, keepInventory, inventory, cursorStack, craftingGrid2x2, craftingGrid3x3, equipment, openContainer, setInventory, setCursorStack, setCraftingGrid2x2, setCraftingGrid3x3, setOpenContainer]);
 
   useEffect(() => {
       const unsubscribe = worldManager.subscribeToMessages((msg, type, clickAction) => {
           setMessages(prev => [
-              ...prev.slice(-19), 
+              ...prev.slice(-19),
               { id: Date.now() + Math.random(), text: msg, type, timestamp: Date.now(), clickAction }
           ]);
       });
       return () => { unsubscribe(); };
   }, []);
+
+  // Restore the arena once the boss is gone (defeated or despawned): the four
+  // causeways across the lava come straight back so the player can leave, while
+  // the raised dais + summoner altar is rebuilt after `daisDelayMs` (on a clean
+  // defeat we let the victory effects breathe before the altar re-forms). No-op
+  // if nothing was summoned.
+  const restoreSummonAltar = useCallback((daisDelayMs = 0) => {
+      const a = summonArenaRef.current;
+      if (!a) return;
+      summonArenaRef.current = null;
+      restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      // Never leave the magnet climb faces on the walls after a fight.
+      if (climbMagnetsActiveRef.current) {
+          climbMagnetsActiveRef.current = false;
+          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      }
+      const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      if (daisDelayMs > 0) {
+          // Tracked (id + the restore itself) so quitting the world inside the
+          // delay can flush it synchronously into the OLD world before the final
+          // save, a stale timer firing later would setBlocks into whatever world
+          // is loaded next, and cancelling without flushing would save an arena
+          // with no dais/altar to re-summon at.
+          if (daisRestoreRef.current) clearTimeout(daisRestoreRef.current.id);
+          daisRestoreRef.current = {
+              id: window.setTimeout(() => {
+                  daisRestoreRef.current = null;
+                  restoreDais();
+              }, daisDelayMs),
+              run: restoreDais,
+          };
+      } else {
+          restoreDais();
+      }
+  }, []);
+
+  // Hard-reset an in-progress encounter (used when leaving the world mid-fight, so
+  // the saved + in-memory arena is clean for the next visit). Works whether we are
+  // mid-cutscene (no boss spawned yet) or mid-fight: cancels the cutscene, despawns
+  // the boss, clears any standing crystals, and rebuilds the dais/altar + bridges
+  // synchronously (no delay, we are about to save).
+  const resetSummonArena = useCallback(() => {
+      // A defeat's delayed dais rebuild may still be pending: flush it into the
+      // current world NOW (we are about to save/leave) instead of letting the
+      // timer fire after the next world loads.
+      if (daisRestoreRef.current) {
+          clearTimeout(daisRestoreRef.current.id);
+          const flush = daisRestoreRef.current.run;
+          daisRestoreRef.current = null;
+          flush();
+      }
+      bossSummon.cancel();
+      setCinematicMode(false);
+      // Despawns a live boss (clears its crystals + fires boss:cleared → restores
+      // the arena and nulls the ref). If there was no live boss (e.g. quit during
+      // the cutscene), the ref survives and we finish the reset by hand below.
+      entityManager.despawnAllBosses();
+      const a = summonArenaRef.current;
+      if (!a) return;
+      summonArenaRef.current = null;
+      const crystals = getShieldCrystalPositions(a.cx, a.cz, a.baseY);
+      worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
+      restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      if (climbMagnetsActiveRef.current) {
+          climbMagnetsActiveRef.current = false;
+          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+      }
+  }, []);
+
+  // Sealed-region feedback: blocked edits and cleanse notifications. The denied
+  // event can fire rapidly (holding the mouse on a sealed block), so throttle the
+  // toast/sound to avoid spam.
+  useEffect(() => {
+      let lastDeniedAt = 0;
+      const offDenied = gameEvents.on('edit:denied', ({ regionId }) => {
+          const now = Date.now();
+          if (now - lastDeniedAt < 1500) return;
+          lastDeniedAt = now;
+          const region = regionId ? getRegionById(regionId) : undefined;
+          const where = region ? region.displayName : 'this region';
+          worldManager.log(`${where} is sealed; defeat its guardian to reshape it.`, 'error');
+          soundManager.play('ui.click', { volume: 0.3, pitch: 0.6 });
+      });
+      const offCleansed = gameEvents.on('region:cleansed', ({ regionId }) => {
+          const region = getRegionById(regionId);
+          worldManager.log(`${region ? region.displayName : 'The region'} has been cleansed. You may now reshape it.`, 'success');
+      });
+      // Defeating a boss records progression and cleanses its region. The dummy
+      // boss (debug /boss kill, and later real boss entities) route through here.
+      const offDefeated = gameEvents.on('boss:defeated', ({ bossId, regionId }) => {
+          progression.markBossDefeated(bossId);
+          if (regionId) progression.cleanseRegion(regionId);
+          // Victory sting (editable: sounds/magnetic_warden/defeat).
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
+          // Let the defeat eruption breathe, then re-form the altar; the loot drops
+          // in sync (EntityManager uses the same delay) so it lands on top.
+          restoreSummonAltar(BOSS_DEFEAT_ALTAR_DELAY_MS);
+      });
+      // The summon cutscene pauses player control while the camera is scripted.
+      const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
+      const offCineEnd = gameEvents.on('cinematic:end', () => {
+          setCinematicMode(false);
+          // Hand the player back at the cutscene's return spot (farther from the
+          // altar) looking straight at the energy ball, room to run before it blows.
+          const rp = bossSummon.returnPos;
+          const feet = new THREE.Vector3(rp.x, playerPosRef.current.y, rp.z);
+          playerRef.current?.teleport(feet);
+          playerPosRef.current.copy(feet);
+          const euler = new THREE.Euler().setFromQuaternion(bossSummon.returnQuat, 'YXZ');
+          controlsRef.current?.setRotation(euler.x, euler.y);
+      });
+      // When the boss leaves (despawn), put the raised dais + summoner altar back.
+      const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
+      // The boss launched a deflectable parry bolt, telegraph it with a cue.
+      const offParry = gameEvents.on('boss:parry', () => {
+          soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
+      });
+      // The Warden took a hit (a deflected bolt landing, etc.), a hurt grunt.
+      const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
+      });
+      // Slam attack: a rise telegraph, then the shockwave impact.
+      const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
+          soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
+              { volume: phase === 'rise' ? 0.7 : 0.95 });
+      });
+      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue. At frenzy
+      // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
+      const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
+          if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
+          if (phase >= 3) musicController.setBossFrenzy(true);
+          // Entering the slam phase (≤50%): strip the towers' magnet climb faces so
+          // the player can't climb up to perch above the slam. The shield is already
+          // broken by now (the towers stay as cover, just unclimbable).
+          const a = summonArenaRef.current;
+          if (phase >= 2 && a && climbMagnetsActiveRef.current) {
+              climbMagnetsActiveRef.current = false;
+              stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
+          }
+      });
+      // Reset the frenzy music whenever a fight begins or ends.
+      const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
+      const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
+      const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
+      // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
+      // its tracking beam dissipates, BossCinematic handles the visual).
+      const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
+          entityManager.onShieldCrystalBroken(regionId);
+          soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
+      });
+      // Upgraded-boots ability toggle (N) → recompute magneticMode.
+      const offPower = gameEvents.on('ability:changed', ({ abilityId, active }) => {
+          if (abilityId === 'polarity-power') setPolarityPowerOn(active);
+      });
+      return () => {
+          offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
+          offCineStart(); offCineEnd(); offCleared();
+          offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
+      };
+  }, [restoreSummonAltar]);
 
   // Update Chunks & Stream
   useEffect(() => {
@@ -793,11 +1173,16 @@ const App: React.FC = () => {
         return () => window.removeEventListener('wheel', onWheel, { passive: false } as EventListenerOptions);
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
-  const handleCollect = useCallback((id: string, type: BlockType, count: number) => {
-    if (health <= 0) return; 
-    addToInventory(type, count);
+  const handleCollect = useCallback((id: string, stack: ItemStack) => {
+    if (health <= 0) return false;
+    const remainder = addToInventory(stack);
+    const pickedUp = stack.count - (remainder?.count ?? 0);
+    if (pickedUp <= 0) return false;
     soundManager.play("entity.item.pickup"); 
-    setDrops(prev => prev.filter(d => d.id !== id));
+    setDrops(prev => remainder
+        ? prev.map(drop => drop.id === id ? { ...drop, count: remainder.count } : drop)
+        : prev.filter(drop => drop.id !== id));
+    return remainder === null;
   }, [addToInventory, health]);
 
   const handleDestroy = useCallback((id: string) => {
@@ -805,13 +1190,36 @@ const App: React.FC = () => {
   }, []);
 
   const consumeItem = useCallback((slot: number) => {
-    if (gameMode === 'creative' || gameMode === 'spectator') return; 
+    if (gameMode === 'creative' || gameMode === 'spectator') return;
     setInventory(prev => {
         const next = [...prev];
         const it = next[slot];
         if (it) {
             if (it.count > 1) next[slot] = { ...it, count: it.count - 1 };
             else next[slot] = null;
+        }
+        return next;
+    });
+  }, [gameMode, setInventory]);
+
+  // Apply durability damage to a tool/weapon in a slot. Durability is lazy-init
+  // from the registry on first use; the item breaks (disappears) at 0. Only in
+  // survival, creative/spectator never wear tools down.
+  const damageHeldItem = useCallback((slot: number, amount: number) => {
+    if (gameMode !== 'survival') return;
+    setInventory(prev => {
+        const it = prev[slot];
+        if (!it) return prev;
+        const max = getMaxDurability(it.type);
+        if (max === undefined) return prev; // not a breakable tool
+        const current = it.instance?.durability ?? max;
+        const left = current - amount;
+        const next = [...prev];
+        if (left <= 0) {
+            next[slot] = null;
+            soundManager.play('random.break', { volume: 0.6 });
+        } else {
+            next[slot] = { ...it, instance: { ...(it.instance ?? {}), durability: left, maxDurability: max } };
         }
         return next;
     });
@@ -860,7 +1268,7 @@ const App: React.FC = () => {
       const onKeyUp = (e: KeyboardEvent) => {
           if (e.key === 'Escape') {
               escapeHeldRef.current = false;
-              if (appState !== 'game') return; 
+              if (appState !== 'game') return;
               if (document.pointerLockElement) return;
               if (!wantsGameplayRef.current && !relockWantedRef.current) return;
               relockWantedRef.current = true;
@@ -873,7 +1281,7 @@ const App: React.FC = () => {
   }, [requestPointerLockBurst, suppressAutoPauseFor, appState]);
 
   const resumeFromUserGesture = useCallback((reason: 'escape' | 'button' | 'respawn') => {
-      soundManager.resume(); 
+      soundManager.resume();
       soundManager.preload(['ui.click', 'ui.open', 'ui.close', 'entity.player.hurt', 'block.grass.step', 'block.stone.step', 'block.wood.step']);
       void lockBrowserShortcuts();
       setIsPaused(false);
@@ -911,6 +1319,9 @@ const App: React.FC = () => {
 
       musicController.stopForDeath();
       soundManager.play("entity.player.death");
+      // On death the fight ends: the boss despawns (its bar clears) and can be
+      // re-summoned at the altar. Crystals are restored for the next attempt.
+      entityManager.despawnAllBosses();
       setShowDeathScreen(true);
       deathScreenActiveRef.current = true;
       setOpenContainer(null);
@@ -978,15 +1389,37 @@ const App: React.FC = () => {
       };
   }, [tryRecoverPointerLock]);
 
+  const dropInventoryOverflow = useCallback((item: ItemStack) => {
+    const position = playerPosRef.current;
+    setDrops(prev => [...prev, {
+      id: Math.random().toString(),
+      type: item.type,
+      count: item.count,
+      instance: item.instance ? structuredClone(item.instance) : undefined,
+      position: [position.x, position.y + 1, position.z],
+      velocity: [(Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2],
+      createdAt: Date.now(),
+      pickupDelay: Date.now() + 1500,
+      age: 0,
+    }]);
+  }, []);
+
   const closeInventory = useCallback((opts?: { deferPointerLock?: boolean }) => {
     soundManager.play("ui.close"); 
     const grids = [...craftingGrid2x2, ...craftingGrid3x3];
-    grids.forEach(item => { if (item) addToInventory(item.type, item.count); });
-    if (cursorStack && gameMode !== 'creative') addToInventory(cursorStack.type, cursorStack.count);
+    grids.forEach(item => {
+      if (!item) return;
+      const remainder = addToInventory(item);
+      if (remainder) dropInventoryOverflow(remainder);
+    });
+    if (cursorStack && gameMode !== 'creative') {
+      const remainder = addToInventory(cursorStack);
+      if (remainder) dropInventoryOverflow(remainder);
+    }
     setCraftingGrid2x2(Array(4).fill(null)); setCraftingGrid3x3(Array(9).fill(null));
     setCursorStack(null); 
     resumeGame(opts);
-  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
+  }, [craftingGrid2x2, craftingGrid3x3, cursorStack, addToInventory, dropInventoryOverflow, gameMode, resumeGame, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack]);
 
   const openInventory = useCallback(() => {
     soundManager.play("ui.open"); 
@@ -1198,73 +1631,92 @@ const App: React.FC = () => {
               const file = input.files?.[0];
               if (!file) return;
 
-              const safeName = file.name.replace(/[\\/:*?"<>|]+/g, '_');
-              const webEntryId = `${WEB_PANORAMA_PREFIX}${Date.now()}-${safeName}`;
-              saveWebPanoramaBlob(webEntryId, file).then(() => {
-                  setMenuPanoramaPath(webEntryId);
-                  setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
-                  setMenuBackgroundMode('panorama');
-                  logMsg('Panorama imported into blob storage.', 'success');
-              }).catch(() => {
-                  alert('Failed to import panorama file.');
-              });
+              void (async () => {
+                  try {
+                      const safeName = file.name.replace(/[\\/:*?"<>|]+/g, '_');
+                      const webEntryId = `${WEB_PANORAMA_PREFIX}${Date.now()}-${safeName}`;
+                      await saveWebPanoramaBlob(webEntryId, file);
+                      setMenuPanoramaPath(webEntryId);
+                      setMenuPanoramaLibrary(prev => prev.includes(webEntryId) ? prev : [webEntryId, ...prev]);
+                      setMenuBackgroundMode('panorama');
+                      logMsg('Panorama imported into blob storage.', 'success');
+                      setAppNotice({ type: 'success', message: 'Panorama imported.' });
+                  } catch (error) {
+                      console.error('[Panorama] Failed to import browser panorama:', error);
+                      setAppNotice({ type: 'error', message: 'Failed to import the panorama file.' });
+                  }
+              })();
           };
           input.click();
           return;
       }
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.pickPanorama) {
-          alert('Desktop panorama picker API is unavailable.');
-          return;
-      }
+      try {
+          const desktopApi = window.atlasDesktop;
+          if (!desktopApi?.pickPanorama) {
+              setAppNotice({ type: 'error', message: 'Desktop panorama picker is unavailable.' });
+              return;
+          }
 
-      const result = await desktopApi.pickPanorama();
-      if (result?.canceled) return;
-      if (result?.error) {
-          alert(`Failed to pick panorama: ${result.error}`);
-          return;
-      }
-      if (!result?.filePath) return;
+          const result = await desktopApi.pickPanorama();
+          if (result?.canceled) return;
+          if (result?.error) {
+              setAppNotice({ type: 'error', message: `Failed to pick panorama: ${result.error}` });
+              return;
+          }
+          if (!result?.filePath) return;
 
-      setActivePanorama(result.filePath);
+          setActivePanorama(result.filePath);
+          setAppNotice({ type: 'success', message: 'Panorama imported.' });
+      } catch (error) {
+          console.error('[Panorama] Failed to pick desktop panorama:', error);
+          setAppNotice({ type: 'error', message: 'Failed to open the panorama picker.' });
+      }
   }, [isElectron, setActivePanorama, logMsg]);
 
-  const deletePanoramaFromDisk = useCallback(async (filePath: string) => {
-      if (!isElectron) {
-          const fileName = filePath.replace(/^web:/, '');
-          const confirmDelete = window.confirm(`Remove panorama from browser storage?\n\n${fileName}`);
-          if (!confirmDelete) return;
-
-          await deleteWebPanoramaBlob(filePath);
-          removePanoramaFromLibrary(filePath);
-          logMsg('Panorama removed from browser storage.', 'success');
-          return;
-      }
-
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.deletePanorama) {
-          alert('Desktop delete API is unavailable.');
-          return;
-      }
-
+  const deletePanoramaFromDisk = useCallback((filePath: string) => {
       const fileName = filePath.replace(/\\/g, '/').split('/').pop() || filePath;
-      const confirmDelete = window.confirm(`Delete panorama file from disk?\n\n${fileName}`);
-      if (!confirmDelete) return;
+      setPendingPanoramaDelete({ filePath, fileName: fileName.replace(/^web:/, '') });
+  }, []);
 
-      const result = await desktopApi.deletePanorama(filePath);
-      if (!result?.ok) {
-          alert(`Failed to delete panorama: ${result?.error || 'Unknown error'}`);
-          return;
+  const confirmDeletePanorama = useCallback(async () => {
+      const pending = pendingPanoramaDelete;
+      setPendingPanoramaDelete(null);
+      if (!pending) return;
+
+      try {
+          if (!isElectron) {
+              await deleteWebPanoramaBlob(pending.filePath);
+              removePanoramaFromLibrary(pending.filePath);
+              logMsg('Panorama removed from browser storage.', 'success');
+              setAppNotice({ type: 'success', message: 'Panorama removed from browser storage.' });
+              return;
+          }
+
+          const desktopApi = window.atlasDesktop;
+          if (!desktopApi?.deletePanorama) {
+              setAppNotice({ type: 'error', message: 'Desktop panorama deletion is unavailable.' });
+              return;
+          }
+
+          const result = await desktopApi.deletePanorama(pending.filePath);
+          if (!result?.ok) {
+              setAppNotice({ type: 'error', message: `Failed to delete panorama: ${result?.error || 'Unknown error'}` });
+              return;
+          }
+
+          removePanoramaFromLibrary(pending.filePath);
+          logMsg('Panorama deleted from disk.', 'success');
+          setAppNotice({ type: 'success', message: 'Panorama deleted from disk.' });
+      } catch (error) {
+          console.error('[Panorama] Failed to delete panorama:', error);
+          setAppNotice({ type: 'error', message: 'Failed to delete the panorama.' });
       }
-
-      removePanoramaFromLibrary(filePath);
-      logMsg('Panorama deleted from disk.', 'success');
-  }, [isElectron, removePanoramaFromLibrary, logMsg]);
+  }, [isElectron, pendingPanoramaDelete, removePanoramaFromLibrary, logMsg]);
 
   const toggleMenuBackgroundMode = useCallback(() => {
       if (menuBackgroundMode === 'dirt') {
           if (!menuPanoramaDataUrl) {
-              alert(`No panorama is available yet. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.`);
+              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.` });
               return;
           }
           setMenuBackgroundMode('panorama');
@@ -1283,6 +1735,15 @@ const App: React.FC = () => {
           else if (['survival', 's', '0'].includes(mode)) { setGameMode('survival'); logMsg("Set game mode to Survival", 'success'); } 
           else if (['spectator', 'sp', '3'].includes(mode)) { setGameMode('spectator'); logMsg("Set game mode to Spectator", 'success'); } 
           else { logMsg("Unknown gamemode. Use survival/creative/spectator", 'error'); }
+      } else if (parts[0] === '/keepinventory') {
+          const arg = parts[1]?.toLowerCase();
+          let next: boolean | null;
+          if (arg === undefined) next = !keepInventory; // toggle
+          else if (['on', 'true', '1', 'enable'].includes(arg)) next = true;
+          else if (['off', 'false', '0', 'disable'].includes(arg)) next = false;
+          else next = null;
+          if (next === null) { logMsg('Usage: /keepinventory [on|off]', 'error'); }
+          else { setKeepInventory(next); logMsg(`Keep inventory on death: ${next ? 'ON' : 'OFF'}`, 'success'); }
       } else if (parts[0] === '/music') {
           if (parts[1] === 'skip') {
               const skipped = musicController.skipTrack();
@@ -1296,14 +1757,19 @@ const App: React.FC = () => {
           }
       } else if (parts[0] === '/sound') {
           if (parts[1] === 'reload') {
-              soundManager.init();
-              logMsg("Reloaded sound manifest", 'success');
+              void soundManager.reloadManifest()
+                  .then(() => logMsg('Reloaded sound manifest and sound-effect buffers', 'success'))
+                  .catch((error) => logMsg(`Failed to reload sounds: ${String(error)}`, 'error'));
           } else if (parts[1] === 'volume') {
               const v = parseFloat(parts[2]);
               if (!isNaN(v)) {
                   soundManager.setVolume('master', v);
                   logMsg(`Set master volume to ${v}`, 'success');
+              } else {
+                  logMsg('Usage: /sound volume <0-1>', 'error');
               }
+          } else {
+              logMsg('Usage: /sound reload or /sound volume <0-1>', 'error');
           }
       } else if (parts[0] === '/playsound' && parts[1]) {
           const id = parts[1];
@@ -1359,6 +1825,8 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /phase set <0-7>", 'error');
           }
+      } else if (parts[0] === '/tp' && parts.length !== 4) {
+          logMsg("Usage: /tp <x> <y> <z>", 'error');
       } else if (parts[0] === '/tp' && parts.length === 4) {
           const x = parseFloat(parts[1]);
           const y = parseFloat(parts[2]);
@@ -1371,6 +1839,15 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /tp <x> <y> <z>", 'error');
           }
+      } else if (parts[0] === '/setspawn') {
+          // Set the player's personal respawn point to their current position,
+          // like sleeping in a bed.
+          const p = playerPosRef.current;
+          const sx = Math.floor(p.x) + 0.5;
+          const sy = Math.round(p.y);
+          const sz = Math.floor(p.z) + 0.5;
+          worldManager.setSpawnPoint(sx, sy, sz, false);
+          logMsg(`Spawn point set to ${Math.floor(p.x)}, ${sy}, ${Math.floor(p.z)}`, 'success');
       } else if (parts[0] === '/locate') {
           if (parts[1] === 'biome' && parts[2]) {
               worldManager.locateBiome(parts[2], playerPosRef.current.x, playerPosRef.current.z);
@@ -1412,7 +1889,113 @@ const App: React.FC = () => {
           } else {
               logMsg('Usage: /bloodmoon <force|clear|query> [current|next]', 'error');
           }
-      } else { logMsg(`Unknown command: ${parts[0]}`, 'error'); }
+      } else if (parts[0] === '/region') {
+          const p = playerPosRef.current;
+          const region = getRegionAt(p.x, p.y, p.z);
+          if (!region) {
+              logMsg('You are in ordinary, editable terrain (no region).', 'info');
+          } else {
+              const state = progression.isRegionCleansed(region.id) ? 'cleansed (editable)' : 'sealed (read-only)';
+              logMsg(`Region: ${region.displayName} [${region.id}]; ${state}. Guardian: ${region.bossId}.`, 'info');
+          }
+      } else if (parts[0] === '/cleanse') {
+          const p = playerPosRef.current;
+          const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
+          if (!region) { logMsg('No sealable region here. Usage: /cleanse [regionId]', 'error'); }
+          else { progression.cleanseRegion(region.id); progression.markBossDefeated(region.bossId); }
+      } else if (parts[0] === '/seal') {
+          const p = playerPosRef.current;
+          const region = parts[1] ? getRegionById(parts[1]) : getRegionAt(p.x, p.y, p.z);
+          if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
+          else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
+      } else if (parts[0] === '/giveitem' && parts[1]) {
+          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
+          let found: BlockType | null = null;
+          for (const key in BLOCKS) {
+              const t = Number(key) as BlockType;
+              const def = BLOCKS[t];
+              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
+          }
+          if (found === null) { logMsg(`Unknown item: ${parts[1]}`, 'error'); }
+          else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
+      } else if (parts[0] === '/equip' && parts[1]) {
+          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
+          let found: BlockType | null = null;
+          for (const key in BLOCKS) {
+              const t = Number(key) as BlockType;
+              const def = BLOCKS[t];
+              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
+          }
+          const slot = found !== null ? slotForItem(found) : undefined;
+          if (found === null) logMsg(`Unknown item: ${parts[1]}`, 'error');
+          else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
+          else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
+      } else if (parts[0] === '/unequip' && parts[1]) {
+              const slot = EQUIPMENT_SLOTS.find(s => s === parts[1]);
+          if (!slot) { logMsg('Usage: /unequip <helmet|chestplate|leggings|boots|accessory>', 'error'); }
+          else {
+              setEquipment(prev => {
+                  const it = prev[slot];
+                  if (!it) { logMsg(`Nothing equipped in ${slot}`, 'error'); return prev; }
+                  const remainder = addToInventory(it);
+                  if (remainder) {
+                      logMsg('Inventory is full.', 'error');
+                      return prev;
+                  }
+                  logMsg(`Unequipped ${BLOCKS[it.type].name}`, 'success');
+                  return { ...prev, [slot]: null };
+              });
+          }
+      } else if (parts[0] === '/spawn' && parts[1]) {
+          const p = playerPosRef.current;
+          const e = entityManager.spawn(parts[1], p.x + 2, p.y + 1, p.z, {});
+          if (e) logMsg(`Spawned ${parts[1]} (#${e.id}).`, 'success');
+          else logMsg(`Unknown entity kind: ${parts[1]}`, 'error');
+      } else if (parts[0] === '/boss') {
+          const p = playerPosRef.current;
+          const region = getRegionAt(p.x, p.y, p.z);
+          if (parts[1] === 'spawn') {
+              if (!region) { logMsg('Stand in a sealed region to spawn its guardian.', 'error'); }
+              else {
+                  const e = entityManager.spawn(region.bossId, p.x + 3, p.y + 1, p.z, { bossId: region.bossId, regionId: region.id });
+                  if (e) logMsg(`Spawned ${region.displayName} Guardian (#${e.id}).`, 'success');
+                  else logMsg(`No entity defined for boss "${region.bossId}".`, 'error');
+              }
+          } else if (parts[1] === 'kill') {
+              const bosses = entityManager.getEntities().filter(e => e.isBoss);
+              if (bosses.length > 0) {
+                  bosses.forEach(b => entityManager.damageEntity(b.id, b.maxHp + 1));
+                  logMsg('Boss defeated.', 'success');
+              } else if (region) {
+                  gameEvents.emit('boss:defeated', { bossId: region.bossId, entityId: -1, regionId: region.id });
+                  logMsg(`${region.displayName} Guardian defeated.`, 'success');
+              } else {
+                  logMsg('No boss to defeat here.', 'error');
+              }
+          } else {
+              logMsg('Usage: /boss <spawn|kill>', 'error');
+          }
+      } else if (parts[0] === '/magfields') {
+          const mode = (parts[1] || 'toggle').toLowerCase();
+          if (!['on', 'off', 'toggle'].includes(mode)) {
+              logMsg('Usage: /magfields [on|off|toggle]', 'error');
+          } else {
+              const nextVisible = mode === 'on'
+                  ? true
+                  : mode === 'off'
+                      ? false
+                      : !showMagneticFields;
+              setShowMagneticFields(nextVisible);
+              logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
+          }
+      } else if (parts[0] === '/help') {
+          // Grouped, compact command listing (autocomplete carries the details).
+          logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
+          logMsg('Progression: /boss /region /cleanse /seal /magfields', 'info');
+          logMsg('Player: /gamemode /giveitem /equip /unequip /keepinventory', 'info');
+          logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
+          logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
+      } else { logMsg(`Unknown command: ${parts[0]}; try /help`, 'error'); }
       if (commandValue.trim()) {
           commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
           setHistoryIndex(-1);
@@ -1420,33 +2003,10 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  }, [commandValue, logMsg, resumeGame]);
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory]);
 
   const updateAutocomplete = useCallback((input: string) => {
-      const parts = input.trim().split(' ');
-      let newCandidates: string[] = [];
-      
-      if (input.trim() === '' || (parts.length === 1 && !input.endsWith(' '))) {
-          const prefix = input.trim();
-          newCandidates = COMMANDS.filter(c => c.startsWith(prefix));
-      } 
-      else if ((parts.length === 1 && input.endsWith(' ')) || (parts.length === 2 && !input.endsWith(' '))) {
-          const cmd = parts[0];
-          const prefix = parts[1] || '';
-          if (SUBCOMMANDS[cmd]) {
-              newCandidates = SUBCOMMANDS[cmd].filter(sc => sc.startsWith(prefix));
-          }
-      }
-      else if ((parts.length === 2 && input.endsWith(' ')) || (parts.length === 3 && !input.endsWith(' '))) {
-          const cmdContext = `${parts[0]} ${parts[1]}`;
-          const prefix = parts[2] || '';
-          
-          if (parts[0] === '/locate' && parts[1] === 'biome') {
-              newCandidates = Object.keys(BIOMES).map(k => BIOMES[k].id).filter(id => id.startsWith(prefix));
-          } else if (ARGUMENT_OPTIONS[cmdContext]) {
-              newCandidates = ARGUMENT_OPTIONS[cmdContext].filter(opt => opt.startsWith(prefix));
-          }
-      }
+      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
 
       setAcCandidates(newCandidates);
       setAcIndex(0);
@@ -1466,13 +2026,15 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    if (e.code === 'F4') { 
-        e.preventDefault(); 
+    if (e.code === 'F4') {
         if (showAtlasViewer) {
+            e.preventDefault();
             setShowAtlasViewer(false);
             isAtlasViewerOpenRef.current = false;
             resumeGame();
-        } else {
+        } else if (appState === 'game' && !isEditableTarget && !openContainer && !isPaused
+            && !showCommandInput && !isDead && !isSleeping && !isCapturingPanorama) {
+            e.preventDefault();
             setShowAtlasViewer(true);
             isAtlasViewerOpenRef.current = true;
             enterUIMode();
@@ -1570,8 +2132,8 @@ const App: React.FC = () => {
         if (isPaused) { setIsPaused(false); wantsGameplayRef.current = true; relockWantedRef.current = true; suppressAutoPauseFor(350); requestPointerLockBurst('pause-escape', { force: true }); return; }
         
         // PAUSE: Save Immediately
-        saveGame();
-        
+        saveGame({ force: true });
+
         setIsPaused(true); enterUIMode(); return;
     }
     if (showCommandInput) { 
@@ -1815,21 +2377,14 @@ const App: React.FC = () => {
   useEffect(() => {
       if (isElectron) return;
 
-      const shouldBlockBrowserShortcuts = appState === 'game'
-          && !openContainer
-          && !isPaused
-          && isLocked
-          && !showCommandInput
-          && !isDead
-          && !isSleeping
-          && !showAtlasViewer
-          && !isCapturingPanorama;
-
-      if (!shouldBlockBrowserShortcuts) return;
-
+      // Suppress browser keyboard shortcuts (Ctrl/Cmd/Alt combos: reload, find,
+      // save-page, print, bookmark, downloads, history, zoom, etc.) EVERYWHERE in
+      // the app, menu, loading, and in-world alike. The one exception is when a
+      // text field is focused, where Ctrl+A/C/V/X/Z must keep working for editing.
+      // Plain keys with no modifier (F11/F12 fullscreen/devtools) are never touched.
       const blockBrowserShortcut = (event: KeyboardEvent) => {
           if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
-
+          if (isEditableElement(event.target)) return; // keep clipboard/select in inputs
           event.preventDefault();
       };
 
@@ -1845,7 +2400,21 @@ const App: React.FC = () => {
           window.removeEventListener('keydown', blockBrowserShortcut, { capture: true } as EventListenerOptions);
           window.removeEventListener('wheel', blockZoomWheel, { capture: true } as EventListenerOptions);
       };
-  }, [appState, openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, showAtlasViewer, isCapturingPanorama, isElectron]);
+  }, [isElectron]);
+
+  // Guard against accidentally closing/reloading the tab (Ctrl+W, Ctrl+R, browser
+  // back, etc.), the destructive shortcuts that keydown preventDefault can't stop.
+  // Active everywhere (menu included) so a stray Ctrl+W becomes a confirm prompt
+  // instead of instantly killing the app.
+  useEffect(() => {
+      if (isElectron) return;
+      const onBeforeUnload = (event: BeforeUnloadEvent) => {
+          event.preventDefault();
+          event.returnValue = '';
+      };
+      window.addEventListener('beforeunload', onBeforeUnload);
+      return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isElectron]);
 
   useEffect(() => {
       const shouldHoldShortcutLock = !isElectron
@@ -1944,22 +2513,96 @@ const App: React.FC = () => {
         worldManager.setWorldSpawn(safe.x, safe.y, safe.z);
     }
 
-    // Ensure the chunk exists so we don't fall through
+    // Ensure the chunk exists so we don't fall through, and RE-CENTER chunk
+    // streaming on the respawn point. The Player remounts (respawnKey) but only
+    // fires onChunkChange once it crosses a boundary, so without this the world
+    // stays streamed around the death location and the spawn area renders blank
+    // until you walk. force=true bypasses the "same chunk" guard.
     if (spawn) {
         const cx = Math.floor(spawn.x / CHUNK_SIZE);
         const cz = Math.floor(spawn.z / CHUNK_SIZE);
         worldManager.ensureChunk(cx, cz);
+        applyChunkCenter(cx, cz, true);
     }
 
     const spawnVec = new THREE.Vector3(spawn!.x, spawn!.y, spawn!.z);
-    
+
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
+    setRidingBoatId((riding) => {
+        if (riding !== null) entityManager.setRidden(riding, false);
+        return null;
+    });
+    // Persist the post-death state immediately (cleared bed spawn, new position,
+    // reset health/inventory) so a crash before the next autosave can't revert it.
+    // The vitals reset above hasn't committed yet, so pass it explicitly, the
+    // captured closure would otherwise save the death-render's health of 0.
+    void saveGameRef.current({
+        force: true,
+        playerOverrides: { health: 20, hunger: 20, saturation: 5, breath: MAX_BREATH },
+    });
     resumeFromUserGesture('respawn');
   };
 
+  // --- Boat riding (real world entities; persisted in WorldMetadata.boats) ---
+  // Place: use a Boat item on a water cell, spawns a boat entity (the item is
+  // consumed in survival). Board: right-click the boat. Dismount: sneak, the
+  // boat stays where you left it. Break: punch it; it drops its Boat item.
+  const handlePlaceBoat = useCallback((x: number, y: number, z: number) => {
+      // Spawn slightly above the clicked water cell; hull buoyancy settles it.
+      const boat = entityManager.spawn('boat', x + 0.5, y + 0.6, z + 0.5);
+      if (boat && controlsRef.current) {
+          // Face the way the player is looking so boarding feels natural.
+          boat.yaw = controlsRef.current.getRotation().y;
+      }
+      soundManager.playAt('block.wood.place', { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+      return boat !== null;
+  }, []);
+
+  const handleEnterBoat = useCallback((entityId: number) => {
+      setRidingBoatId((already) => {
+          if (already !== null) return already;
+          const boat = entityManager.getEntity(entityId);
+          if (!boat || boat.kind !== 'boat' || boat.hp <= 0) return null;
+          entityManager.setRidden(entityId, true);
+          // Sit in the hull: feet at the boat's floor; the player's boat physics
+          // takes over from here (and drives the entity each frame).
+          playerRef.current?.teleport(new THREE.Vector3(boat.pos.x, boat.pos.y + 0.1, boat.pos.z));
+          soundManager.play('ui.click');
+          return entityId;
+      });
+  }, []);
+
+  const handleExitBoat = useCallback(() => {
+      setRidingBoatId((riding) => {
+          if (riding === null) return riding;
+          // The boat stays parked where the ride ended.
+          entityManager.setRidden(riding, false);
+          // A small hop out of the hull so you don't dismount straight into a swim.
+          playerRef.current?.applyImpulse(0, 4.0, 0);
+          return null;
+      });
+  }, []);
+
+  // If the ridden boat is destroyed (punched apart under the player, despawned
+  // by a world reset), dismount cleanly instead of gliding on a ghost hull.
+  useEffect(() => {
+      const off = gameEvents.on('entity:died', ({ entityId, type }) => {
+          if (type !== 'boat') return;
+          setRidingBoatId((riding) => (riding === entityId ? null : riding));
+      });
+      return off;
+  }, []);
+
   const handleQuitToTitle = useCallback(() => {
-      saveGame().then(() => {
+      // Leaving mid-fight resets the arena first, so the save (and the world we'd
+      // resume) has a clean, re-summonable encounter rather than a flattened dais
+      // with the bridges gone and the boss missing.
+      resetSummonArena();
+      const quittingWorldId = activeWorldIdRef.current;
+      saveGame({ force: true }).then(() => {
+          // Release the world (drops the filesystem session lock + closes handles).
+          if (quittingWorldId) void WorldStorage.closeWorld(quittingWorldId).catch(() => {});
           soundManager.setGamePaused(false, 2.5);
           setAppState('menu');
           setOpenContainer(null);
@@ -1973,39 +2616,86 @@ const App: React.FC = () => {
           musicController.update(true, 'survival', 'plains');
           soundManager.play("ui.click");
       });
-  }, [saveGame, setOpenContainer]);
+  }, [saveGame, setOpenContainer, resetSummonArena]);
 
   // --- Start Game with Preloading & Restore ---
   const handleStartGame = useCallback(async (worldId: string) => {
+      // Re-entrancy guard: a fast double-click on "Play" fired two overlapping
+      // opens; the second then hit its OWN session lock and popped the confusing
+      // "already open in another window" message.
+      if (startingWorldRef.current) return;
+      startingWorldRef.current = true;
+      try {
       soundManager.play("ui.click");
-      
+
       setAppState('loading');
       setLoadingState({ phase: 'Loading Metadata...', percent: 0, details: '' });
 
       // 1. Load Metadata
       const meta = await WorldStorage.getWorldMeta(worldId);
       if (!meta) {
-          alert("Failed to load world");
           setAppState('menu');
+          setAppNotice({ type: 'error', message: 'Failed to load the selected world.' });
           return;
       }
 
       activeWorldIdRef.current = worldId;
 
+      // Acquire the world for writing: a filesystem session lock on desktop, a
+      // sync-access-handle lock in the OPFS worker, a no-op on IndexedDB. A locked
+      // world (already open in another window/tab) must NOT be entered as writable :
+      // two writers would corrupt the save, so abort back to the menu with a clear
+      // message. Other (non-lock) open errors are logged and entry proceeds.
+      try {
+          await WorldStorage.openWorld(worldId);
+      } catch (lockErr) {
+          if ((lockErr as { code?: string })?.code === 'LOCKED') {
+              activeWorldIdRef.current = null;
+              setAppState('menu');
+              setAppNotice({ type: 'error', message: 'This world is already open in another window or tab. Close it there first.' });
+              return;
+          }
+          console.warn('[Saves] Could not acquire world lock:', lockErr);
+      }
+      // Entering a world is a user gesture, ask the browser to keep our storage
+      // persistent so worlds aren't auto-evicted under storage pressure (no-op on
+      // desktop / when already granted).
+      void requestPersistentStorage();
+      lastSaveSignatureRef.current = ''; // force a save on first autosave in this world
+
+      const worldGenConfigSnapshot = meta.worldGenConfig == null
+          ? null
+          : normalizeGenConfigSnapshot(meta.worldGenConfig);
       resetGenConfig();
-      if (meta.worldGenConfig) {
-          const loaded = loadGenConfig(meta.worldGenConfig);
-          if (!loaded) {
+      if (meta.worldGenConfig != null) {
+          if (!worldGenConfigSnapshot || !loadGenConfig(worldGenConfigSnapshot)) {
               console.warn('[WorldGen] Failed to load world generation config preset; using defaults.');
           }
       }
       
       // Store the world's GenConfig so it can be restored after World Editor visits
-      activeWorldGenConfigRef.current = meta.worldGenConfig ? JSON.parse(JSON.stringify(meta.worldGenConfig)) : null;
+      activeWorldGenConfigRef.current = worldGenConfigSnapshot;
       
       // 2. Configure World Manager
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
+      entityManager.clear();
+      bossSummon.cancel();
+      setCinematicMode(false);
+      summonArenaRef.current = null;
+      // Per-world React state: item entities and chat/log lines belong to the
+      // previous session, without this, World A's ground drops render (and are
+      // collectible) at their old coordinates inside World B.
+      setDrops([]);
+      setMessages([]);
+      setRidingBoatId(null);
+
+      // Hydrate action-adventure progression (defaults to empty for old worlds).
+      progression.load(meta.progression);
+
+      // Respawn this world's parked boats (entityManager.clear() above removed
+      // the previous world's, boats never leak across worlds).
+      entityManager.restoreBoats(meta.boats);
 
       if (meta.worldSpawn) {
           worldManager.setWorldSpawn(meta.worldSpawn.x, meta.worldSpawn.y, meta.worldSpawn.z);
@@ -2025,6 +2715,9 @@ const App: React.FC = () => {
           setBreath(meta.player.breath);
           setInventory(meta.player.inventory);
           setSelectedSlot(meta.player.selectedSlot);
+          setEquipment({ ...createEmptyEquipment(), ...(meta.player.equipment as Partial<Equipment> | undefined) });
+          setCursorStack(meta.player.cursorStack ?? null); // restore a held-on-cursor item
+
           
           const pos = meta.player.position;
           const spawnVec = new THREE.Vector3(pos.x, pos.y, pos.z);
@@ -2042,6 +2735,7 @@ const App: React.FC = () => {
           // New World Logic
           setInventory(Array(36).fill(null)); 
           setCursorStack(null);
+          setEquipment(createEmptyEquipment());
           setHealth(20); setHunger(20); setSaturation(5); setBreath(MAX_BREATH);
           
           // Use seed-aware spawn search
@@ -2082,6 +2776,20 @@ const App: React.FC = () => {
       relockWantedRef.current = true;
       suppressAutoPauseFor(500);
       requestPointerLockBurst('start-game', { force: true });
+      } catch (error) {
+          console.error('[World] Failed to start world:', error);
+          const failedWorldId = activeWorldIdRef.current;
+          activeWorldIdRef.current = null;
+          activeWorldGenConfigRef.current = null;
+          if (failedWorldId) {
+              await WorldStorage.closeWorld(failedWorldId).catch(() => {});
+          }
+          worldManager.reset();
+          setAppState('menu');
+          setAppNotice({ type: 'error', message: 'Failed to start the world. The save was closed safely.' });
+      } finally {
+          startingWorldRef.current = false;
+      }
     }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory]);
 
   useEffect(() => {
@@ -2116,11 +2824,11 @@ const App: React.FC = () => {
       }
   }, [enterUIMode, setOpenContainer]);
 
-  const handleSpawnDrop = useCallback((type: BlockType, x: number, y: number, z: number) => {
-      worldManager.spawnDrop(type, x, y, z);
+  const handleSpawnDrop = useCallback((stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => {
+      worldManager.spawnDrop(stackOrType, x, y, z);
   }, []);
 
-  // Stable identity — an inline arrow here re-bound InteractionController's
+  // Stable identity, an inline arrow here re-bound InteractionController's
   // window mouse listeners on every App render.
   const handleSleepInBed = useCallback((x: number, y: number, z: number) => {
       pendingBedSpawnRef.current = { x, y, z };
@@ -2143,6 +2851,18 @@ const App: React.FC = () => {
   return (
         <div className={`w-full h-full relative font-sans text-white select-none outline-none ${hideGameplayCursor ? 'cursor-none' : 'cursor-auto'}`} tabIndex={0} autoFocus onClick={handleGameClick}>
       {fatalError && <ErrorOverlay error={fatalError} playerPos={playerPosRef.current} />}
+      <UiNotice notice={appNotice} onDismiss={() => setAppNotice(null)} />
+
+      {pendingPanoramaDelete && (
+          <ConfirmModal
+              title="Remove Panorama?"
+              message={<>Remove <span className="text-white">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
+              confirmLabel="Remove"
+              danger
+              onConfirm={() => void confirmDeletePanorama()}
+              onCancel={() => setPendingPanoramaDelete(null)}
+          />
+      )}
 
       {!bootReady && (
           <LoadingScreen 
@@ -2278,9 +2998,64 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} />}
+                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
+                    <BossBar />
+                    <CinematicOverlay />
+                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
+                    {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
+                        <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
+                            Sneak (Shift) to hop out of the boat
+                        </div>
+                    )}
+                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} setCursorStack={setCursorStack} handleInventoryAction={handleInventoryAction} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
+                    {openContainer?.type === 'boss_confirm' && (
+                        <BossConfirmModal
+                            bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : openContainer.bossId}
+                            onConfirm={() => {
+                                const { x, y, z, bossId, regionId } = openContainer;
+                                const active = entityManager.getEntities().some((e) => e.bossId === bossId && e.hp > 0);
+                                if (active) {
+                                    worldManager.log('The boss is already active.', 'error');
+                                    handleInventoryContainerChange(null);
+                                    return;
+                                }
+                                // The summoner sits at (centerX, baseY+4, centerZ). Derive the
+                                // arena centre + crystal positions, then play the summon cutscene;
+                                // the boss is spawned at its climax (not instantly on top of you).
+                                const centerX = x, centerZ = z, baseY = y - 4;
+                                const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
+                                summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
+                                // The climb-face magnets light up tower-by-tower as each crystal
+                                // spawns (in the cutscene); flag it so the reset strips them.
+                                climbMagnetsActiveRef.current = true;
+
+                                const cam = controlsRef.current?.getCamera();
+                                const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
+                                const startQuat = new THREE.Quaternion();
+                                if (cam) {
+                                    const lookM = new THREE.Matrix4().lookAt(cam.pos, cam.pos.clone().add(cam.dir), new THREE.Vector3(0, 1, 0));
+                                    startQuat.setFromRotationMatrix(lookM);
+                                }
+                                handleInventoryContainerChange(null);
+                                bossSummon.begin({
+                                    centerX, centerZ, baseY, startPos, startQuat,
+                                    onSpawnBoss: () => {
+                                        // baseY is the platform floor; spawn one above so the boss
+                                        // settles on top of it (the dais is flattened by now). The
+                                        // run-away grace already happened (the energy-ball charge),
+                                        // so it spawns aggro and the fight starts immediately.
+                                        entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
+                                            bossId, regionId: regionId ?? undefined,
+                                            shieldCrystalPositions: crystals,
+                                        });
+                                    },
+                                });
+                            }}
+                            onCancel={() => handleInventoryContainerChange(null)}
+                        />
+                    )}
                     <Chat 
                         messages={messages} 
                         showInput={showCommandInput} 
@@ -2293,7 +3068,8 @@ const App: React.FC = () => {
                         acCandidates={acCandidates} 
                         acIndex={acIndex} 
                         onMessageClick={(action) => executeCommand(action)} 
-                        showSuggestions={showSuggestions} 
+                        showSuggestions={showSuggestions}
+                        interactionsDisabled={!!openContainer || isPaused || showAtlasViewer || showDeathScreen}
                     />
                 </>
             )}
@@ -2319,55 +3095,55 @@ const App: React.FC = () => {
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
+                    <EntityRenderer />
+                    <BossCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
+                    <FxParticles isPaused={worldPaused} />
                 </Suspense>
 
                 <InteractionController
-                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem}
+                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
+                    onPlaceBoat={handlePlaceBoat} onEnterBoat={handleEnterBoat}
                 />
 
                 <BreakingVisualMesh suspended={isCapturingPanorama} />
+                {appState === 'game' && showMagneticFields && (
+                    <MagneticFieldDebug playerPosRef={playerPosRef} />
+                )}
 
                 {/* Only mount Player when game is Active to ensure physics starts with correct spawn position */}
                 {appState === 'game' && (
                     <>
-                        <Player 
-                            ref={playerRef} key={respawnKey} position={currentSpawnPos} 
-                            isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama} 
-                            isPaused={worldPaused} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
+                        <Player
+                            ref={playerRef} key={respawnKey} position={currentSpawnPos}
+                            isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode}
+                            isPaused={worldPaused || cinematicMode} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
                             forcedFov={isCapturingPanorama ? 90 : null}
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
                             }} 
-                            onTakeDamage={d => { 
-                                if(gameMode === 'survival') {
-                                    setHealth(h => {
-                                        const newHealth = Math.max(0, h-d);
-                                        if (newHealth > 0) {
-                                            soundManager.play("entity.player.hurt"); setLastDamageTime(Date.now());
-                                        }
-                                        return newHealth;
-                                    }); 
-                                }
-                            }} 
+                            onTakeDamage={applyRawDamage}
                             setBreath={setBreath} setIsOnFire={setIsOnFire} foodStateRef={foodStateRef} isDead={isDead}
+                            magneticMode={magneticMode}
+                            fallDamageFactor={fallDamageFactor}
+                            ridingBoatId={ridingBoatId} onExitBoat={handleExitBoat}
                         />
-                        <PlayerRefUpdater playerPosRef={playerPosRef} />
+                        <PlayerRefUpdater playerPosRef={playerPosRef} cinematicMode={cinematicMode} />
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
-                <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama} />
+                <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>
 
             {isCapturingPanorama && (
                 <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">
-                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-minecraft text-sm">
+                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-pixel text-sm">
                         Capturing panorama… input locked
                     </div>
                 </div>

@@ -41,7 +41,7 @@ export function updateLightingAround(state: WorldState, x: number, y: number, z:
 
 export function floodLightLocal(state: WorldState, bx: number, by: number, bz: number, radius: number = 15) {
     // Hot path: runs on the main thread for EVERY block edit (and fluid level change).
-    // Uses direct chunk/light array access — the previous getBlock/getLight/setLight
+    // Uses direct chunk/light array access, the previous getBlock/getLight/setLight
     // version allocated ~800k temporary objects+strings per flood.
     const R = radius;
     const minX = bx - R, maxX = bx + R;
@@ -180,7 +180,7 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
         if (lvl <= 0) continue;
 
-        // Source block/meta (cache currently holds the source chunk) — used so a
+        // Source block/meta (cache currently holds the source chunk), used so a
         // shaped source can't emit light back out through one of its sealed faces.
         const srcType = chunkCache ? chunkCache[index] : 0;
         const srcMeta = metaCache ? metaCache[index] : 0;
@@ -325,7 +325,7 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
                      const nVal = nLight[nIndex];
 
                      // When both sides of the border are fully sunlit (sky=15), neither can
-                     // improve the other — this is the overwhelmingly common open-air case
+                     // improve the other, this is the overwhelmingly common open-air case
                      // and skipping it removes tens of thousands of no-op BFS seeds per
                      // chunk load on the main thread.
                      const curSky = val >> 4;
