@@ -115,11 +115,11 @@ export const CHANGELOG: ChangelogEntry[] = [
             {
                 title: 'Looking Ahead',
                 items: [
-                    'Atlas is planned to keep expanding around distinct boss regions with their own traversal, preparation, hazards, mechanics, and fights, with victories increasingly changing the world and opening new routes rather than only dropping stronger gear.',
-                    'A broader combat overhaul is part of the direction: more responsive melee, stronger enemy behavior, more hostile creatures, expanded weapons and combat options, and fights built around movement, timing, dodging, parrying, counters, and positioning.',
-                    'Future regions may include much larger environmental encounters, traversal gear that changes how areas are crossed, deeper cave and exploration systems, and an underwater civilization built around survival gear, limited breath, crushing pressure, and ruins extending into the deepest parts of the ocean.',
-                    'Longer-term directions discussed for Atlas include a third-person camera, a visible player model and animation foundation, additional worlds or dimensions with different rules, and eventual multiplayer exploration and boss fights.',
-                    'These are concrete direction targets for the project, but not locked release promises or a fixed order of implementation.',
+                    'Atlas is planned to keep expanding around distinct boss regions with their own traversal, hazards, mechanics, and fights, with some victories changing the world and opening new routes rather than only rewarding stronger gear.',
+                    'A broader combat overhaul is part of the direction, with more responsive melee, stronger enemy behavior, more hostile creatures, expanded combat options, and fights built more around movement, timing, counters, and positioning.',
+                    'Future regions may push exploration into stranger environments with larger encounters, traversal gear that changes how areas are crossed, deeper ruins and cave systems, and places where the environment itself becomes a major part of survival.',
+                    'Longer-term directions include broader camera and player presentation, places beyond the current world with different rules, and the possibility of eventually exploring and fighting alongside other players.',
+                    'These are direction targets for the project, not locked release promises or a fixed order of implementation.',
                 ],
             },
         ],
