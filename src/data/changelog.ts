@@ -98,6 +98,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'The Warden encounter includes a summon cinematic, shield beams, fog, particles, camera shake, phase warnings, and distinct combat sounds.',
                     'Health, hunger, and armor use a unified pixel-art HUD, and dedicated item art keeps inventory, hotbar, held, and dropped presentations consistent.',
                     'Rename, confirmation, boss-warning, error, and information prompts use styled in-game dialogs instead of browser-native popups.',
+                    'Refreshed the main-menu splash pool by removing weaker, off-brand, and implementation-focused lines, then adding a much larger set of Atlas-specific jokes, world hints, boss teases, exploration lines, and clues about possible future directions.',
                 ],
             },
             {
@@ -109,6 +110,12 @@ export const CHANGELOG: ChangelogEntry[] = [
                     'Dropped-item despawn time pauses while its chunk is unloaded.',
                     'Regaining pointer lock cannot turn a single mouse event into a full camera spin.',
                     'Distant ocean floors remain visible instead of opening see-through gaps in the world.',
+                ],
+            },
+            {
+                title: 'Looking Ahead',
+                items: [
+                    'Atlas is planned to keep expanding around distinct boss regions that change how players move, prepare, and fight. Future directions include additional guardians and regions, larger environmental encounters, more hostile creatures, deeper exploration systems, underwater ruins with pressure-based progression, and eventually other worlds beyond the current map. These are direction targets, not locked release promises.',
                 ],
             },
         ],
