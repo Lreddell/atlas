@@ -115,11 +115,21 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 - Distant ocean floors remain visible instead of opening see-through gaps in the world.
 
 ### Looking Ahead
-- Atlas is planned to keep expanding around distinct boss regions that change how players
-  move, prepare, and fight. Future directions include additional guardians and regions,
-  larger environmental encounters, more hostile creatures, deeper exploration systems,
-  underwater ruins with pressure-based progression, and eventually other worlds beyond
-  the current map. These are direction targets, not locked release promises.
+- Atlas is planned to keep expanding around distinct boss regions with their own traversal,
+  preparation, hazards, mechanics, and fights, with victories increasingly changing the
+  world and opening new routes rather than only dropping stronger gear.
+- A broader combat overhaul is part of the direction: more responsive melee, stronger enemy
+  behavior, more hostile creatures, expanded weapons and combat options, and fights built
+  around movement, timing, dodging, parrying, counters, and positioning.
+- Future regions may include much larger environmental encounters, traversal gear that
+  changes how areas are crossed, deeper cave and exploration systems, and an underwater
+  civilization built around survival gear, limited breath, crushing pressure, and ruins
+  extending into the deepest parts of the ocean.
+- Longer-term directions discussed for Atlas include a third-person camera, a visible player
+  model and animation foundation, additional worlds or dimensions with different rules,
+  and eventual multiplayer exploration and boss fights.
+- These are concrete direction targets for the project, but not locked release promises or
+  a fixed order of implementation.
 
 ## [v1.0.2-alpha]: 2026-06-15
 
