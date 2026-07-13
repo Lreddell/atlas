@@ -9,6 +9,18 @@ import { getOpacity } from './blockProps';
 import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
 
+// Neighbor chunk data reaches the mesher as 1-block-deep BORDER PLANES, not
+// full chunk arrays: the mesher only ever samples one block past the chunk
+// boundary (face culling, AO corners, light smoothing all use ±1 offsets, and
+// tangential coordinates are clamped to the border), so a 16×WORLD_HEIGHT
+// plane per side carries every byte it can read. That cuts the per-job worker
+// transfer from ~1.03 MiB of cloned neighbor arrays to ~48 KiB of planes.
+//
+// Plane layout: plane[(y - MIN_Y) * CHUNK_SIZE + t] where t is the tangential
+// coordinate along the shared face (lz for left/right planes, lx for
+// front/back planes). Extract with extractBorderPlane().
+export const NEIGHBOR_PLANE_SIZE = CHUNK_SIZE * WORLD_HEIGHT;
+
 export interface NeighborData {
     left?: Uint8Array;
     right?: Uint8Array;
@@ -22,6 +34,67 @@ export interface NeighborLight {
     right?: Uint8Array;
     front?: Uint8Array;
     back?: Uint8Array;
+}
+
+/**
+ * Copies the border column a neighbor chunk shares with the meshed chunk into
+ * a plane: the LEFT neighbor (cx-1) contributes its lx=15 column, RIGHT its
+ * lx=0, BACK (cz-1) its lz=15, FRONT (cz+1) its lz=0.
+ */
+export function extractBorderPlane(src: Uint8Array, side: 'left' | 'right' | 'front' | 'back'): Uint8Array {
+    const plane = new Uint8Array(NEIGHBOR_PLANE_SIZE);
+    const layer = CHUNK_SIZE * CHUNK_SIZE;
+    if (side === 'left' || side === 'right') {
+        const lx = side === 'left' ? CHUNK_SIZE - 1 : 0;
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            const srcBase = y * layer + lx;
+            const dstBase = y * CHUNK_SIZE;
+            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                plane[dstBase + lz] = src[srcBase + lz * CHUNK_SIZE];
+            }
+        }
+    } else {
+        const lz = side === 'back' ? CHUNK_SIZE - 1 : 0;
+        for (let y = 0; y < WORLD_HEIGHT; y++) {
+            const srcBase = y * layer + lz * CHUNK_SIZE;
+            const dstBase = y * CHUNK_SIZE;
+            for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                plane[dstBase + lx] = src[srcBase + lx];
+            }
+        }
+    }
+    return plane;
+}
+
+export interface NeighborSource {
+    blocks: Uint8Array;
+    light: Uint8Array;
+}
+
+/**
+ * Builds the mesher's neighbor inputs (border planes) from full neighbor
+ * chunk arrays. Single indirection point for the worker transfer protocol.
+ */
+export function buildNeighborInput(
+    left?: NeighborSource,
+    right?: NeighborSource,
+    front?: NeighborSource,
+    back?: NeighborSource,
+): { blocks: NeighborData; light: Omit<NeighborLight, 'center'> } {
+    return {
+        blocks: {
+            left: left && extractBorderPlane(left.blocks, 'left'),
+            right: right && extractBorderPlane(right.blocks, 'right'),
+            front: front && extractBorderPlane(front.blocks, 'front'),
+            back: back && extractBorderPlane(back.blocks, 'back'),
+        },
+        light: {
+            left: left && extractBorderPlane(left.light, 'left'),
+            right: right && extractBorderPlane(right.light, 'right'),
+            front: front && extractBorderPlane(front.light, 'front'),
+            back: back && extractBorderPlane(back.light, 'back'),
+        },
+    };
 }
 
 export interface GeometryAttributes {
@@ -280,16 +353,17 @@ export function generateGeometryData(
         if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
             return lights.center[index3D(x, y, z)];
         }
+        // Border planes: the tangential coordinate is clamped exactly like the
+        // old full-array path clamped lx/lz, so results are byte-identical.
         let t: Uint8Array | undefined;
-        let lx = x; let lz = z;
-        if (x < 0) { t = lights.left; lx += CHUNK_SIZE; }
-        else if (x >= CHUNK_SIZE) { t = lights.right; lx -= CHUNK_SIZE; }
-        else if (z < 0) { t = lights.back; lz += CHUNK_SIZE; }
-        else if (z >= CHUNK_SIZE) { t = lights.front; lz -= CHUNK_SIZE; }
-        if (t && y >= MIN_Y && y <= MAX_Y) {
-            const clampedX = Math.max(0, Math.min(CHUNK_SIZE - 1, lx));
-            const clampedZ = Math.max(0, Math.min(CHUNK_SIZE - 1, lz));
-            return t[index3D(clampedX, y, clampedZ)];
+        let tangent = 0;
+        if (x < 0) { t = lights.left; tangent = z; }
+        else if (x >= CHUNK_SIZE) { t = lights.right; tangent = z; }
+        else if (z < 0) { t = lights.back; tangent = x; }
+        else if (z >= CHUNK_SIZE) { t = lights.front; tangent = x; }
+        if (t) {
+            const clamped = Math.max(0, Math.min(CHUNK_SIZE - 1, tangent));
+            return t[(y - MIN_Y) * CHUNK_SIZE + clamped];
         }
         return (15 << 4);
     };
@@ -304,25 +378,26 @@ export function generateGeometryData(
             return chunk[index3D(x, y, z)] as BlockType;
         }
 
+        const yBase = (y - MIN_Y) * CHUNK_SIZE;
         if (x < 0) {
             if (!neighbors.left) return BlockType.AIR;
             const lz = Math.max(0, Math.min(CHUNK_SIZE - 1, z));
-            return neighbors.left[index3D(CHUNK_SIZE + x, y, lz)] as BlockType;
+            return neighbors.left[yBase + lz] as BlockType;
         }
         if (x >= CHUNK_SIZE) {
             if (!neighbors.right) return BlockType.AIR;
             const lz = Math.max(0, Math.min(CHUNK_SIZE - 1, z));
-            return neighbors.right[index3D(x - CHUNK_SIZE, y, lz)] as BlockType;
+            return neighbors.right[yBase + lz] as BlockType;
         }
         if (z < 0) {
             if (!neighbors.back) return BlockType.AIR;
             const lx = Math.max(0, Math.min(CHUNK_SIZE - 1, x));
-            return neighbors.back[index3D(lx, y, CHUNK_SIZE + z)] as BlockType;
+            return neighbors.back[yBase + lx] as BlockType;
         }
         if (z >= CHUNK_SIZE) {
             if (!neighbors.front) return BlockType.AIR;
             const lx = Math.max(0, Math.min(CHUNK_SIZE - 1, x));
-            return neighbors.front[index3D(lx, y, z - CHUNK_SIZE)] as BlockType;
+            return neighbors.front[yBase + lx] as BlockType;
         }
         return BlockType.AIR;
     };
@@ -783,10 +858,11 @@ export function generateGeometryData(
              else if (nx >= 0 && nx < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
                  nType = chunk[index3D(nx, ny, nz)] as BlockType;
              } else {
-                 if (nx < 0) nType = neighbors.left ? neighbors.left[index3D(CHUNK_SIZE + nx, ny, nz)] as BlockType : BlockType.AIR;
-                 else if (nx >= CHUNK_SIZE) nType = neighbors.right ? neighbors.right[index3D(nx - CHUNK_SIZE, ny, nz)] as BlockType : BlockType.AIR;
-                 else if (nz < 0) nType = neighbors.back ? neighbors.back[index3D(nx, ny, CHUNK_SIZE + nz)] as BlockType : BlockType.AIR;
-                 else if (nz >= CHUNK_SIZE) nType = neighbors.front ? neighbors.front[index3D(nx, ny, nz - CHUNK_SIZE)] as BlockType : BlockType.AIR;
+                 const nyBase = (ny - MIN_Y) * CHUNK_SIZE;
+                 if (nx < 0) nType = neighbors.left ? neighbors.left[nyBase + nz] as BlockType : BlockType.AIR;
+                 else if (nx >= CHUNK_SIZE) nType = neighbors.right ? neighbors.right[nyBase + nz] as BlockType : BlockType.AIR;
+                 else if (nz < 0) nType = neighbors.back ? neighbors.back[nyBase + nx] as BlockType : BlockType.AIR;
+                 else if (nz >= CHUNK_SIZE) nType = neighbors.front ? neighbors.front[nyBase + nx] as BlockType : BlockType.AIR;
              }
              
              const nDef = BLOCKS[nType];

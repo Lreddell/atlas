@@ -606,11 +606,12 @@ export class WorldManager {
    * Round-robin dispatch for chunk jobs. Control messages should use broadcast
    * instead. Returns the chosen slot id (or null when no worker is available).
    */
-  private postToPool(msg: unknown): number | null {
+  private postToPool(msg: unknown, transfer?: Transferable[]): number | null {
       if (this.workers.length === 0) return null;
       const slot = this.workers[this.nextWorkerIndex];
       this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-      slot.worker.postMessage(msg);
+      if (transfer && transfer.length > 0) slot.worker.postMessage(msg, transfer);
+      else slot.worker.postMessage(msg);
       return slot.id;
   }
 
@@ -1297,19 +1298,26 @@ export class WorldManager {
           ) > WorldManager.DARK_CULL_DISTANCE;
           this.pendingMeshDark.set(key, cullDark);
 
-              const neighbors = {
-                  left: WorldStore.getChunkData(this.state, job.cx-1, job.cz),
-                  right: WorldStore.getChunkData(this.state, job.cx+1, job.cz),
-                  front: WorldStore.getChunkData(this.state, job.cx, job.cz+1),
-                  back: WorldStore.getChunkData(this.state, job.cx, job.cz-1)
+              // Neighbor data travels as 1-deep border planes (~48 KiB total)
+              // instead of eight full chunk arrays (~1.03 MiB per job in the
+              // baseline). The planes are fresh copies, so their buffers are
+              // transferred (zero-copy) to the worker; the authoritative
+              // center arrays stay owned by the main thread and are cloned.
+              const source = (ncx: number, ncz: number): Geometry.NeighborSource | undefined => {
+                  const blocks = WorldStore.getChunkData(this.state, ncx, ncz);
+                  if (!blocks) return undefined;
+                  const light = WorldStore.getLightData(this.state, ncx, ncz);
+                  if (!light) return undefined;
+                  return { blocks, light };
               };
-              const neighborLights = {
-                  center: l,
-                  left: WorldStore.getLightData(this.state, job.cx-1, job.cz),
-                  right: WorldStore.getLightData(this.state, job.cx+1, job.cz),
-                  front: WorldStore.getLightData(this.state, job.cx, job.cz+1),
-                  back: WorldStore.getLightData(this.state, job.cx, job.cz-1)
-              };
+              const planes = Geometry.buildNeighborInput(
+                  source(job.cx - 1, job.cz),
+                  source(job.cx + 1, job.cz),
+                  source(job.cx, job.cz + 1),
+                  source(job.cx, job.cz - 1),
+              );
+              const neighbors = planes.blocks;
+              const neighborLights = { center: l, ...planes.light };
 
               if (this.workersEnabled && this.workers.length > 0) {
                   let inputBytes = c.byteLength + m.byteLength + l.byteLength;
@@ -1323,6 +1331,11 @@ export class WorldManager {
                   this.releaseMeshInputBytes(key); // paranoia: no double-count
                   this.inFlightMeshBytes.set(key, inputBytes);
                   this.inFlightMeshBytesTotal += inputBytes;
+                  const transfer: Transferable[] = [];
+                  for (const plane of [neighbors.left, neighbors.right, neighbors.front, neighbors.back,
+                                       planes.light.left, planes.light.right, planes.light.front, planes.light.back]) {
+                      if (plane) transfer.push(plane.buffer);
+                  }
                   const slotId = this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
@@ -1335,7 +1348,7 @@ export class WorldManager {
                       neighbors,
                       lights: neighborLights,
                       cullDarkFaces: cullDark
-                  });
+                  }, transfer);
                   if (slotId !== null) this.meshDispatchedTo.set(key, slotId);
               } else {
                   perf.count('streaming.mainThreadMesh');

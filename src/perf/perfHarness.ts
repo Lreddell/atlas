@@ -19,6 +19,7 @@
 import { worldManager } from '../systems/WorldManager';
 import { perf } from '../systems/perf/perfTelemetry';
 import * as WorldGen from '../systems/world/chunkGeneration';
+import * as Geometry from '../systems/world/geometry';
 import { reseedGlobalNoise } from '../utils/noise';
 import { CHUNK_SIZE } from '../constants';
 import { BlockType } from '../types';
@@ -581,6 +582,50 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
             samples,
             telemetry: perf.snapshot(),
         };
+    },
+
+    /**
+     * Deterministic mesher hash: generates a fixed set of chunk neighborhoods
+     * on the main thread and hashes every geometry buffer the mesher emits
+     * (both with and without dark-face culling). Guards against any change in
+     * visual output from mesher/transfer-protocol work — the hash must remain
+     * identical unless a rendering change is intentional and documented.
+     */
+    async meshHash(opts) {
+        const seed = opts.seed ?? 12345;
+        reseedGlobalNoise(seed);
+        const coords: Array<[number, number]> = [[0, 0], [3, -2], [-5, 5], [100, -100]];
+        const hashes: Record<string, string> = {};
+        const gen = (cx: number, cz: number) => WorldGen.generateChunk(cx, cz);
+        for (const [cx, cz] of coords) {
+            const center = gen(cx, cz);
+            const left = gen(cx - 1, cz);
+            const right = gen(cx + 1, cz);
+            const front = gen(cx, cz + 1);
+            const back = gen(cx, cz - 1);
+            const neighbors = Geometry.buildNeighborInput(
+                { blocks: left.blocks, light: left.light },
+                { blocks: right.blocks, light: right.light },
+                { blocks: front.blocks, light: front.light },
+                { blocks: back.blocks, light: back.light },
+            );
+            for (const cull of [false, true]) {
+                const r = Geometry.generateGeometryData(
+                    cx, cz, center.blocks, center.meta,
+                    neighbors.blocks,
+                    { center: center.light, ...neighbors.light },
+                    cull,
+                );
+                let h = 0x811c9dc5;
+                for (const part of [r.opaque, r.cutout, r.transparent]) {
+                    for (const arr of [part.positions, part.normals, part.uvs, part.colors, part.indices]) {
+                        h = fnv1a(h, new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
+                    }
+                }
+                hashes[`${cx},${cz}${cull ? ',culled' : ''}`] = h.toString(16).padStart(8, '0');
+            }
+        }
+        return { seed, hashes };
     },
 
     /**
