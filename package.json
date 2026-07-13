@@ -14,7 +14,9 @@
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder --win nsis"
+    "electron:build": "npm run build && electron-builder --win nsis",
+    "perf": "node scripts/perf/run-perf.mjs",
+    "test": "node --test 'src/**/*.test.mjs'"
   },
   "dependencies": {
     "@react-three/drei": "^9.99.0",
@@ -39,6 +41,7 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",
+    "playwright-core": "^1.61.1",
     "prettier": "^3.4.2",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.0",

@@ -14,7 +14,7 @@ import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
-import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
+import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
@@ -23,6 +23,13 @@ import { getRegionAt } from './world/regions';
 import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
+import { perf } from './perf/perfTelemetry';
+import { ChunkColumn } from './world/chunkColumn';
+import {
+    isWithinRetention, sortFarthestFirst, budgetLevel, effectiveRadiusSq,
+    evictionDrainBudget, RETENTION_HYSTERESIS,
+    type ChunkCoord, type BudgetConfig, type BudgetLevel,
+} from './world/chunkRetention';
 
 // --- Types ---
 enum ChunkStage {
@@ -105,6 +112,38 @@ class JobQueue {
     }
 }
 
+/**
+ * One pooled worker plus its health bookkeeping. The slot survives restarts of
+ * the underlying Worker so failure counters can apply backoff across restarts.
+ */
+interface WorkerSlot {
+    id: number;
+    worker: Worker;
+    awaitingPong: boolean;
+    missedPongs: number;
+    /** Timestamps (ms) of recent restarts, pruned to the backoff window. */
+    restartTimes: number[];
+    jobErrors: number;
+}
+
+const WORKER_HEARTBEAT_INTERVAL_MS = 5000;
+const WORKER_MAX_MISSED_PONGS = 2;
+const WORKER_RESTART_WINDOW_MS = 60000;
+const WORKER_MAX_RESTARTS_IN_WINDOW = 3;
+const WORKER_RECOVERY_RETRY_MS = 15000;
+/** Successful jobs required to restore one step of throttled concurrency. */
+const THROTTLE_RECOVERY_SUCCESSES = 200;
+
+/**
+ * Per-section mesh delivery to the renderer. `full: true` carries the complete
+ * set of non-empty sections for the chunk (anything not listed must clear);
+ * `full: false` upserts only the listed sections (geo null = section now empty).
+ */
+export interface SectionMeshUpdate {
+    full: boolean;
+    sections: Array<{ sy: number; geo: Geometry.GeometryResult | null }>;
+}
+
 export type LoadingProgressCallback = (phase: string, done: number, total: number, percent: number) => void;
 
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
@@ -118,10 +157,19 @@ export class WorldManager {
   
   // Streaming & Pipeline
   private chunkStages = new Map<string, ChunkStage>();
-  private meshCache = new Map<string, Geometry.GeometryResult>(); // Cached geometries for rendering
-  private meshSubscribers = new Map<string, Set<(geo: Geometry.GeometryResult | null) => void>>();
+  // Complete per-section geometry for chunks meshed before any subscriber
+  // mounted; consumed (ownership transferred) by the first subscribeMesh.
+  private meshCache = new Map<string, Map<number, Geometry.GeometryResult>>();
+  private meshSubscribers = new Map<string, Set<(update: SectionMeshUpdate | null) => void>>();
 
   private pendingRemesh = new Map<string, number>();
+  // Requested mesh sections per queued/pending chunk. -1 = full column
+  // (all occupied sections, resolved at dispatch); otherwise a 24-bit mask.
+  private queuedMeshMasks = new Map<string, number>();
+  private pendingRemeshMasks = new Map<string, number>();
+  // Whether the in-flight mesh job per chunk was a full-column job (tracked
+  // main-side so acceptance doesn't trust worker payloads).
+  private activeMeshFull = new Map<string, boolean>();
 
   private genQueue = new JobQueue();
   private meshQueue = new JobQueue();
@@ -138,10 +186,21 @@ export class WorldManager {
     private desiredUpdateCounter = 0;
     private desiredChunkKeys = new Set<string>();
 
-  private workers: Worker[] = [];
+  private workers: WorkerSlot[] = [];
   private nextWorkerIndex = 0;
+  private nextWorkerId = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
+  private workerRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  // Which worker slot each in-flight job was dispatched to, so a crashed
+  // worker's jobs can be requeued immediately instead of waiting for timeouts.
+  private genDispatchedTo = new Map<string, number>();
+  private meshDispatchedTo = new Map<string, number>();
+  // Configured concurrency ceilings; MAX_*_IN_FLIGHT may be temporarily lowered
+  // after allocation-related worker failures and recovers with successful jobs.
+  private BASE_GEN_IN_FLIGHT = 3;
+  private BASE_MESH_IN_FLIGHT = 2;
+  private throttleRecoveryProgress = 0;
     private streamingPumpScheduled = false;
     private desiredChunkList: string[] = [];
     private desiredChunkCursor = 0;
@@ -159,6 +218,10 @@ export class WorldManager {
 
   private activeSeed: number = 0;
   private activeWorldId: string | null = null; // ID of the currently loaded world
+  // Monotonic world-session id: bumped on reset() and setWorldContext().
+  // Every gen/mesh job carries it and results from a stale session are
+  // discarded before they can touch world storage or mesh caches.
+  private worldSession = 0;
   private gcCounter: number = 0; // Counter for periodic garbage collection
 
   private queuesDirty = false;
@@ -174,6 +237,37 @@ export class WorldManager {
   private darkCulledMeshes = new Set<string>();
   private pendingMeshDark = new Map<string, boolean>();
   
+  // --- Continuous eviction & memory budget ---
+  // Numeric coordinates for every staged chunk so retention scans never parse
+  // string keys, plus the explicit eviction queue (chunks outside the
+  // retention circle awaiting unload, drained every scheduler cycle).
+  private stageCoords = new Map<string, ChunkCoord>();
+  private evictionPending = new Map<string, ChunkCoord>();
+  private evictionSorted: Array<ChunkCoord & { key: string }> = [];
+  private evictionSortDirty = false;
+  private desiredRadius = 0;
+  // Mesh job payloads currently inside workers, so budget accounting can see
+  // in-flight clone volume (released on completion, error, timeout, evict).
+  private inFlightMeshBytes = new Map<string, number>();
+  private inFlightMeshBytesTotal = 0;
+  private meshCacheBytes = 0;
+  // Mesh ownership: geometry delivered to a live subscriber (a mounted
+  // ChunkMesh) is owned by the renderer — WorldManager releases its reference
+  // instead of retaining a duplicate. Tracks delivered byte sizes per chunk
+  // section (the estimate of renderer-resident mesh memory, CPU+GPU). An
+  // entry with an empty inner map still marks the chunk as mesh-resident
+  // (a fully-air chunk has a valid, empty delivered mesh).
+  private deliveredMeshBytes = new Map<string, Map<number, number>>();
+  private deliveredMeshBytesTotal = 0;
+  private budget: BudgetConfig = {
+      // Sized so render distance 24 (~1800 chunks: ~500 MiB raw + ~900 MiB of
+      // delivered mesh buffers) streams unthrottled while still capping far
+      // below the ~4 GiB browser heap ceiling the baseline crashed against.
+      softLimitBytes: 1536 * 1024 * 1024,
+      hardLimitBytes: 2048 * 1024 * 1024,
+      bytesPerChunk: 3 * CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT,
+  };
+
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
   // Per-chunk edit counter, bumped on every dirty-marking edit. The batch save
@@ -191,15 +285,74 @@ export class WorldManager {
             : 4;
         this.MAX_GEN_IN_FLIGHT = Math.min(8, Math.max(3, Math.floor(cpuCores * 0.75)));
         this.MAX_MESH_IN_FLIGHT = Math.min(4, Math.max(2, Math.floor(cpuCores / 2)));
-    
+        this.BASE_GEN_IN_FLIGHT = this.MAX_GEN_IN_FLIGHT;
+        this.BASE_MESH_IN_FLIGHT = this.MAX_MESH_IN_FLIGHT;
+
     if (this.workersEnabled) {
         this.initWorkers();
     } else {
         this.workerStatusMessage = "Workers Disabled";
     }
 
+    // Heartbeat: catches silently hung workers (an onerror never fires for an
+    // infinite loop). A worker missing consecutive pongs is restarted; its
+    // in-flight jobs are requeued by restartWorker.
+    setInterval(() => this.heartbeatWorkers(), WORKER_HEARTBEAT_INTERVAL_MS);
+
     // Auto-save every 3 seconds if dirty
     setInterval(() => this.processSaveQueue(), 3000);
+
+    perf.registerProvider('streaming', () => this.getStreamingStats());
+  }
+
+  /**
+   * Snapshot of streaming-pipeline residency and queue state for telemetry.
+   * Byte figures are computed by summing actual array lengths so they stay
+   * correct if storage layout changes.
+   */
+  public getStreamingStats(): Record<string, unknown> {
+      let rawChunkBytes = 0;
+      for (const col of this.state.columns.values()) rawChunkBytes += col.materializedBytes;
+
+      const cpuMeshBytes = this.meshCacheBytes;
+
+      return {
+          residentChunks: this.state.columns.size,
+          chunkStageEntries: this.chunkStages.size,
+          desiredChunks: this.desiredChunkKeys.size,
+          rawChunkBytes,
+          residentSections: Math.floor(rawChunkBytes / 4096),
+          meshCacheEntries: this.meshCache.size,
+          cpuMeshBytes,
+          deliveredMeshes: this.deliveredMeshBytes.size,
+          deliveredMeshBytes: this.deliveredMeshBytesTotal,
+          estimatedGpuMeshBytes: this.deliveredMeshBytesTotal,
+          genQueue: this.genQueue.length,
+          meshQueue: this.meshQueue.length,
+          inFlightGen: this.inFlightGen,
+          inFlightMesh: this.inFlightMesh,
+          pendingRemesh: this.pendingRemesh.size,
+          dirtyChunks: this.dirtyChunks.size,
+          knownMissingStorageChunks: this.knownMissingStorageChunks.size,
+          meshSubscribers: this.meshSubscribers.size,
+          evictionPending: this.evictionPending.size,
+          inFlightMeshInputBytes: this.inFlightMeshBytesTotal,
+          accountedBytes: this.accountedBytes(),
+          budgetLevel: this.currentBudgetLevel(),
+          budgetSoftLimitBytes: this.budget.softLimitBytes,
+          budgetHardLimitBytes: this.budget.hardLimitBytes,
+          desiredRadius: this.desiredRadius,
+          retentionHysteresis: RETENTION_HYSTERESIS,
+          worldSession: this.worldSession,
+          workers: this.workers.length,
+          workersEnabled: this.workersEnabled,
+          workerStatus: this.workerStatusMessage,
+          workerRecoveryPending: this.workerRecoveryTimer !== null,
+          maxGenInFlight: this.MAX_GEN_IN_FLIGHT,
+          maxMeshInFlight: this.MAX_MESH_IN_FLIGHT,
+          baseGenInFlight: this.BASE_GEN_IN_FLIGHT,
+          baseMeshInFlight: this.BASE_MESH_IN_FLIGHT,
+      };
   }
 
   /**
@@ -208,6 +361,7 @@ export class WorldManager {
    */
   public setWorldContext(worldId: string, seedNum: number) {
     this.knownMissingStorageChunks.clear();
+      this.worldSession++;
       this.activeWorldId = worldId;
       this.activeSeed = seedNum;
       
@@ -228,8 +382,21 @@ export class WorldManager {
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
+      this.meshCacheBytes = 0;
+      this.stageCoords.clear();
+      this.evictionPending.clear();
+      this.evictionSorted = [];
+      this.evictionSortDirty = false;
+      this.desiredRadius = 0;
+      this.inFlightMeshBytes.clear();
+      this.inFlightMeshBytesTotal = 0;
+      this.deliveredMeshBytes.clear();
+      this.deliveredMeshBytesTotal = 0;
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
+      this.queuedMeshMasks.clear();
+      this.pendingRemeshMasks.clear();
+      this.activeMeshFull.clear();
       this.genQueue.clear();
       this.meshQueue.clear();
     this.queuedGenKeys.clear();
@@ -242,6 +409,7 @@ export class WorldManager {
       this.dirtyChunks.clear();
       this.dirtyEditVersion.clear();
       this.activeWorldId = null; // Clear context
+      this.worldSession++;
     this.lastDesiredCenterKey = null;
     this.lastDesiredCount = -1;
     this.desiredUpdateCounter = 0;
@@ -254,7 +422,7 @@ export class WorldManager {
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
 
-      if (this.workers.length > 0) {
+      if (this.workersEnabled) {
           this.terminateWorkers();
           this.initWorkers();
       }
@@ -270,59 +438,255 @@ export class WorldManager {
             const poolSize = Math.min(4, Math.max(2, Math.floor(cores / 2)));
 
             for (let i = 0; i < poolSize; i++) {
-                const worker = new Worker(
-                    new URL("./world/workers/world.worker.ts", import.meta.url),
-                    { type: "module" }
-                );
-
-                worker.onerror = (e) => {
-                    console.error("WorldWorker Error (Disabling Workers):", e);
-                    this.log("WorldWorker Failed - Switching to Main Thread", 'error');
-
-                    this.workersEnabled = false;
-                    this.terminateWorkers();
-                    this.workerStatusMessage = "Workers Disabled (Error)";
-                    this.resetPipeline();
-                };
-
-                worker.onmessage = (e) => this.handleWorkerMessage(e.data);
-                this.workers.push(worker);
+                this.workers.push(this.spawnWorkerSlot());
             }
 
-            this.syncWorkerWorldGenState();
             this.workerStatusMessage = `Workers Active (${this.workers.length})`;
             console.log(`World Worker Pool Initialized (${this.workers.length} workers)`);
       } catch (e) {
+            // Worker construction itself failed (e.g. module load). Do NOT fall
+            // back to main-thread generation: keep jobs queued and retry.
             console.error("Failed to init worker pool", e);
-            this.workersEnabled = false;
-            this.terminateWorkers();
-            this.workerStatusMessage = "Worker Init Failed";
+            this.workerStatusMessage = "Worker Init Failed - Retrying";
+            this.scheduleWorkerRecovery();
+      }
+  }
+
+  private spawnWorkerSlot(existing?: WorkerSlot): WorkerSlot {
+      const worker = new Worker(
+          new URL("./world/workers/world.worker.ts", import.meta.url),
+          { type: "module" }
+      );
+      const slot: WorkerSlot = existing ?? {
+          id: this.nextWorkerId++,
+          worker,
+          awaitingPong: false,
+          missedPongs: 0,
+          restartTimes: [],
+          jobErrors: 0,
+      };
+      slot.worker = worker;
+      slot.awaitingPong = false;
+      slot.missedPongs = 0;
+
+      // An uncaught worker error (not a per-job failure, those arrive as
+      // JOB_ERROR) restarts only THIS worker. The rest of the pool keeps
+      // running; workloads never permanently move to the main thread.
+      worker.onerror = (e) => {
+          console.error(`WorldWorker ${slot.id} error:`, e);
+          this.restartWorker(slot, 'uncaught error');
+      };
+      worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+
+      worker.postMessage({ type: 'INIT', workerId: slot.id });
+      const config = JSON.parse(JSON.stringify(GenConfig));
+      worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+      worker.postMessage({ type: 'SET_GEN_CONFIG', config });
+      return slot;
+  }
+
+  /**
+   * Requeue every in-flight job that was dispatched to `slotId` (used after a
+   * worker restart — those jobs can never complete). Only jobs still inside
+   * the desired set are requeued; others just release their pipeline slot.
+   */
+  private requeueJobsForWorker(slotId: number) {
+      for (const [key, sid] of this.genDispatchedTo) {
+          if (sid !== slotId) continue;
+          this.genDispatchedTo.delete(key);
+          if (!this.activeGenTickets.has(key)) continue;
+          this.activeGenTickets.delete(key);
+          this.genStartedAt.delete(key);
+          this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+          const [cx, cz] = key.split(',').map(Number);
+          if (this.desiredChunkKeys.has(key)) {
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+              this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+          } else {
+              this.setStage(cx, cz, ChunkStage.EMPTY);
+          }
+      }
+      for (const [key, sid] of this.meshDispatchedTo) {
+          if (sid !== slotId) continue;
+          this.meshDispatchedTo.delete(key);
+          if (!this.activeMeshTickets.has(key)) continue;
+          this.activeMeshTickets.delete(key);
+          this.releaseMeshInputBytes(key);
+          this.activeMeshFull.delete(key);
+          this.meshStartedAt.delete(key);
+          this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+          const [cx, cz] = key.split(',').map(Number);
+          if (this.desiredChunkKeys.has(key) && this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+              this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
+              this.enqueueMesh(cx, cz, this.distancePriority(cx, cz));
+          } else if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+              this.setStage(cx, cz, ChunkStage.GENERATED);
+          }
+      }
+      this.markQueuesDirty();
+      this.scheduleStreamingPump();
+  }
+
+  // Reusable scratch for the explicit workers-disabled main-thread mesh path.
+  private static meshScratchBlocks = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+  private static meshScratchMeta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+  private static meshScratchLight = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+
+  /** 1-deep border planes (blocks + light) for the four neighbor columns. */
+  private buildNeighborPlanes(cx: number, cz: number): {
+      blocks: Geometry.NeighborData;
+      light: Omit<Geometry.NeighborLight, 'center'>;
+  } {
+      const blocks: Geometry.NeighborData = {};
+      const light: Omit<Geometry.NeighborLight, 'center'> = {};
+      const sides = [
+          { side: 'left' as const, dx: -1, dz: 0 },
+          { side: 'right' as const, dx: 1, dz: 0 },
+          { side: 'front' as const, dx: 0, dz: 1 },
+          { side: 'back' as const, dx: 0, dz: -1 },
+      ];
+      for (const { side, dx, dz } of sides) {
+          const col = WorldStore.getColumn(this.state, cx + dx, cz + dz);
+          if (!col) continue;
+          const b = new Uint8Array(Geometry.NEIGHBOR_PLANE_SIZE);
+          const l = new Uint8Array(Geometry.NEIGHBOR_PLANE_SIZE);
+          col.fillBorderPlane(b, 'blocks', side);
+          col.fillBorderPlane(l, 'light', side);
+          blocks[side] = b;
+          light[side] = l;
+      }
+      return { blocks, light };
+  }
+
+  private distancePriority(cx: number, cz: number): number {
+      const dx = cx - this.desiredCenter.cx;
+      const dz = cz - this.desiredCenter.cz;
+      return dx * dx + dz * dz;
+  }
+
+  /**
+   * Restart a single failed/hung worker. Repeated restarts inside the backoff
+   * window drop the worker from the pool instead (the pool shrinks); if the
+   * pool empties entirely, jobs stay queued and pool recovery retries on a
+   * timer. Generation/meshing never silently migrate to the main thread.
+   */
+  private restartWorker(slot: WorkerSlot, reason: string) {
+      const idx = this.workers.indexOf(slot);
+      if (idx === -1) return; // already removed
+      perf.count('worker.restart');
+
+      try { slot.worker.terminate(); } catch { /* already dead */ }
+
+      const now = Date.now();
+      slot.restartTimes = slot.restartTimes.filter(t => now - t < WORKER_RESTART_WINDOW_MS);
+      slot.restartTimes.push(now);
+
+      if (slot.restartTimes.length > WORKER_MAX_RESTARTS_IN_WINDOW) {
+          console.error(`[WorldManager] Worker ${slot.id} failed ${slot.restartTimes.length} times in ${WORKER_RESTART_WINDOW_MS}ms (${reason}); removing it from the pool.`);
+          perf.count('worker.removed');
+          this.workers.splice(idx, 1);
+          if (this.nextWorkerIndex >= this.workers.length) this.nextWorkerIndex = 0;
+          this.requeueJobsForWorker(slot.id);
+          if (this.workers.length === 0) {
+              this.workerStatusMessage = "Workers Down - Recovering";
+              this.log("World workers crashed - recovering in background", 'error');
+              this.scheduleWorkerRecovery();
+          } else {
+              this.workerStatusMessage = `Workers Active (${this.workers.length})`;
+          }
+          return;
+      }
+
+      console.warn(`[WorldManager] Restarting worker ${slot.id} (${reason}).`);
+      this.spawnWorkerSlot(slot);
+      this.requeueJobsForWorker(slot.id);
+      this.workerStatusMessage = `Workers Active (${this.workers.length})`;
+  }
+
+  /** Periodically try to rebuild an empty pool (never gives up while enabled). */
+  private scheduleWorkerRecovery() {
+      if (this.workerRecoveryTimer !== null) return;
+      this.workerRecoveryTimer = setTimeout(() => {
+          this.workerRecoveryTimer = null;
+          if (!this.workersEnabled || this.workers.length > 0) return;
+          perf.count('worker.recoveryAttempt');
+          console.warn('[WorldManager] Attempting worker pool recovery...');
+          this.initWorkers();
+          if (this.workers.length > 0) {
+              this.log(`Workers recovered (${this.workers.length})`, 'success');
+              this.resetPipeline();
+          } else {
+              this.scheduleWorkerRecovery();
+          }
+      }, WORKER_RECOVERY_RETRY_MS);
+  }
+
+  /**
+   * Test/benchmark hook: instructs every pooled worker to fail its next
+   * `count` jobs (optionally as allocation errors). Lets the harness verify
+   * error containment against the real pool. No effect on game behavior
+   * unless explicitly invoked.
+   */
+  public devInjectWorkerFault(count: number = 1, kind: 'alloc' | 'generic' = 'generic') {
+      for (const slot of this.workers) {
+          slot.worker.postMessage({ type: 'DEBUG_FAIL_NEXT', count, kind });
+      }
+  }
+
+  private heartbeatWorkers() {
+      if (!this.workersEnabled) return;
+      // Iterate over a copy: restartWorker may splice the array.
+      for (const slot of [...this.workers]) {
+          if (slot.awaitingPong) {
+              slot.missedPongs++;
+              if (slot.missedPongs >= WORKER_MAX_MISSED_PONGS) {
+                  this.restartWorker(slot, `missed ${slot.missedPongs} heartbeats`);
+                  continue;
+              }
+          }
+          slot.awaitingPong = true;
+          try {
+              slot.worker.postMessage({ type: 'PING' });
+          } catch {
+              this.restartWorker(slot, 'postMessage failed');
+          }
       }
   }
 
   private terminateWorkers() {
-    for (const worker of this.workers) {
-        worker.terminate();
+    for (const slot of this.workers) {
+        slot.worker.terminate();
     }
     this.workers = [];
     this.nextWorkerIndex = 0;
+    this.genDispatchedTo.clear();
+    this.meshDispatchedTo.clear();
+    if (this.workerRecoveryTimer !== null) {
+        clearTimeout(this.workerRecoveryTimer);
+        this.workerRecoveryTimer = null;
+    }
   }
 
-  /** Round-robin dispatch for chunk jobs. Control messages should use broadcast instead. */
-  private postToPool(msg: unknown) {
-      if (this.workers.length === 0) return;
-      const worker = this.workers[this.nextWorkerIndex];
+  /**
+   * Round-robin dispatch for chunk jobs. Control messages should use broadcast
+   * instead. Returns the chosen slot id (or null when no worker is available).
+   */
+  private postToPool(msg: unknown, transfer?: Transferable[]): number | null {
+      if (this.workers.length === 0) return null;
+      const slot = this.workers[this.nextWorkerIndex];
       this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-      worker.postMessage(msg);
+      if (transfer && transfer.length > 0) slot.worker.postMessage(msg, transfer);
+      else slot.worker.postMessage(msg);
+      return slot.id;
   }
 
     private syncWorkerWorldGenState() {
             if (this.workers.length === 0) return;
 
             const config = JSON.parse(JSON.stringify(GenConfig));
-            for (const worker of this.workers) {
-                worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
-                worker.postMessage({ type: 'SET_GEN_CONFIG', config });
+            for (const slot of this.workers) {
+                slot.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+                slot.worker.postMessage({ type: 'SET_GEN_CONFIG', config });
             }
     }
 
@@ -367,44 +731,104 @@ export class WorldManager {
 
   private setStage(cx: number, cz: number, stage: ChunkStage) {
       const key = WorldCoords.getChunkKey(cx, cz);
+      if (!this.chunkStages.has(key)) {
+          this.stageCoords.set(key, { cx, cz });
+      }
       this.chunkStages.set(key, stage);
   }
 
   private handleWorkerMessage(data: any) {
       const { type, cx, cz, result, ticket } = data;
+
+      if (type === 'PONG') {
+          const slot = this.workers.find(s => s.id === data.workerId);
+          if (slot) {
+              slot.awaitingPong = false;
+              slot.missedPongs = 0;
+          }
+          return;
+      }
+      // Results minted for a previous world session (a world switch or reset
+      // raced the job) are never allowed into storage or mesh caches.
+      if (data.session !== undefined && data.session !== this.worldSession) {
+          perf.count('streaming.staleSessionDiscarded');
+          return;
+      }
+
+      if (type === 'JOB_ERROR') {
+          this.handleJobError(data);
+          return;
+      }
+
       const key = WorldCoords.getChunkKey(cx, cz);
-      
+
       if (type === 'GEN_DONE') {
           const activeTicket = this.activeGenTickets.get(key);
-          if (activeTicket === undefined || ticket !== activeTicket) return;
+          if (activeTicket === undefined || ticket !== activeTicket) {
+              perf.count('streaming.staleGenDiscarded');
+              return;
+          }
           this.activeGenTickets.delete(key);
+          this.genDispatchedTo.delete(key);
           this.inFlightGen = Math.max(0, this.inFlightGen - 1);
           this.genStartedAt.delete(key);
+          perf.count('streaming.genDone');
+          if (typeof data.durMs === 'number') perf.duration('worker.gen', data.durMs);
+          this.noteJobSuccess();
+
+          // Retention check: the chunk may have left the active area while the
+          // job ran (ticket cancellation can race completion). Don't insert it.
+          if (!this.desiredChunkKeys.has(key)
+              && !isWithinRetention(cx, cz, this.desiredCenter.cx, this.desiredCenter.cz, this.desiredRadius, RETENTION_HYSTERESIS)) {
+              perf.count('streaming.staleGenDiscarded');
+              this.setStage(cx, cz, ChunkStage.EMPTY);
+              this.scheduleStreamingPump();
+              return;
+          }
           
-          WorldStore.setChunkData(this.state, cx, cz, result.blocks);
-          WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
-          
-          Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
-              if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
-                  this.queueMesh(ncx, ncz, 10);
-              }
-          });
+          WorldStore.setColumnFromArrays(this.state, cx, cz, result.blocks, result.light, result.meta);
+
+          Lighting.reconcileChunkBorders(this.state, cx, cz, () => { /* mesh queueing via dirty sweep below */ });
 
           this.setStage(cx, cz, ChunkStage.GENERATED);
-          this.queueMesh(cx, cz, 0); 
+          // The new column gets a full mesh; consume its (fully dirty) mask
+          // first so the sweep below only queues real neighbor light changes.
+          const newCol = WorldStore.getColumn(this.state, cx, cz);
+          if (newCol) newCol.consumeDirtyMask();
+          this.queueMesh(cx, cz, 0);
+          this.sweepDirtySections(cx, cz, 10);
           this.scheduleStreamingPump();
       }
       else if (type === 'MESH_DONE') {
           const activeTicket = this.activeMeshTickets.get(key);
-          if (activeTicket === undefined || ticket !== activeTicket) return;
+          if (activeTicket === undefined || ticket !== activeTicket) {
+              perf.count('streaming.staleMeshDiscarded');
+              return;
+          }
           this.activeMeshTickets.delete(key);
+          this.meshDispatchedTo.delete(key);
+          const wasFull = this.activeMeshFull.get(key) ?? true;
+          this.activeMeshFull.delete(key);
+          this.releaseMeshInputBytes(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
+          perf.count('streaming.meshDone');
+          if (typeof data.durMs === 'number') perf.duration('worker.mesh', data.durMs);
+          this.noteJobSuccess();
 
-          if (!result) {
+          const results = data.results as Array<{ sy: number; result: Geometry.GeometryResult }> | null;
+          if (!results) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
               this.queueMesh(cx, cz, 0);
+              this.scheduleStreamingPump();
+              return;
+          }
+
+          if (!this.desiredChunkKeys.has(key)
+              && !isWithinRetention(cx, cz, this.desiredCenter.cx, this.desiredCenter.cz, this.desiredRadius, RETENTION_HYSTERESIS)) {
+              perf.count('streaming.staleMeshDiscarded');
+              this.pendingMeshDark.delete(key);
+              if (this.getStage(cx, cz) === ChunkStage.MESHING) this.setStage(cx, cz, ChunkStage.GENERATED);
               this.scheduleStreamingPump();
               return;
           }
@@ -414,19 +838,131 @@ export class WorldManager {
           if (wasDarkCulled) this.darkCulledMeshes.add(key);
           else this.darkCulledMeshes.delete(key);
 
-          this.meshCache.set(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
-          
+          perf.count('streaming.sectionsMeshed', results.length);
+
+          // Ownership: with a live subscriber the renderer takes the buffers
+          // (they were transferred from the worker and are wrapped as
+          // BufferAttributes without copying); WorldManager keeps NO duplicate.
+          // Without a subscriber a FULL result is cached until the first
+          // subscribeMesh; a partial result merges into an existing cache or,
+          // with nothing to merge into, is dropped (the chunk remeshes fully
+          // on the next subscribe/repair).
           const subs = this.meshSubscribers.get(key);
-          if (subs) subs.forEach(cb => cb(result));
+          if (subs && subs.size > 0) {
+              if (wasFull) this.dropMeshResult(key);
+              this.deliverMeshSections(key, subs, results, wasFull);
+          } else if (wasFull) {
+              this.storeMeshSectionsFull(key, results);
+          } else if (this.meshCache.has(key)) {
+              this.mergeMeshSections(key, results);
+          } else {
+              perf.count('streaming.partialMeshDropped');
+          }
 
           const pendingPriority = this.pendingRemesh.get(key);
           if (pendingPriority !== undefined) {
               this.pendingRemesh.delete(key);
-              this.queueMesh(cx, cz, pendingPriority);
+              const pendingMask = this.pendingRemeshMasks.get(key) ?? -1;
+              this.pendingRemeshMasks.delete(key);
+              this.queueMesh(cx, cz, pendingPriority, pendingMask);
               this.meshQueue.sort((a, b) => a.priority - b.priority);
           }
           this.scheduleStreamingPump();
+      }
+  }
+
+  /**
+   * A job failed inside a worker (caught there, reported as JOB_ERROR). The
+   * worker itself is still healthy — release the pipeline slot, requeue the
+   * job if it is still wanted, and throttle concurrency after allocation
+   * failures. Only repeated failures restart the worker (via restartWorker's
+   * own backoff); the pool is never disabled and work never permanently moves
+   * to the main thread.
+   */
+  private handleJobError(data: {
+      jobType: 'GEN' | 'MESH';
+      cx: number; cz: number;
+      ticket: number;
+      workerId: number;
+      errorName: string;
+      errorMessage: string;
+      allocationRelated: boolean;
+      inputBytes: number;
+  }) {
+      const { jobType, cx, cz, ticket, workerId, errorName, errorMessage, allocationRelated, inputBytes } = data;
+      const key = WorldCoords.getChunkKey(cx, cz);
+      perf.count('worker.jobError');
+      if (allocationRelated) perf.count('worker.allocationError');
+      console.error(
+          `[WorldWorker ${workerId}] ${jobType} failed for ${key}: ${errorName}: ${errorMessage}`
+          + ` (input ${inputBytes} B, allocation=${allocationRelated})`
+      );
+
+      if (jobType === 'GEN') {
+          if (this.activeGenTickets.get(key) === ticket) {
+              this.activeGenTickets.delete(key);
+              this.genDispatchedTo.delete(key);
+              this.genStartedAt.delete(key);
+              this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+              if (this.desiredChunkKeys.has(key)) {
+                  this.setStage(cx, cz, ChunkStage.REQUESTED);
+                  this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+              } else {
+                  this.setStage(cx, cz, ChunkStage.EMPTY);
+              }
+          }
+      } else if (jobType === 'MESH') {
+          if (this.activeMeshTickets.get(key) === ticket) {
+              this.activeMeshTickets.delete(key);
+              this.meshDispatchedTo.delete(key);
+              this.releaseMeshInputBytes(key);
+              this.activeMeshFull.delete(key);
+              this.meshStartedAt.delete(key);
+              this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+              this.pendingMeshDark.delete(key);
+              if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+                  if (this.desiredChunkKeys.has(key)) {
+                      this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
+                      this.enqueueMesh(cx, cz, this.distancePriority(cx, cz));
+                  } else {
+                      this.setStage(cx, cz, ChunkStage.GENERATED);
+                  }
+              }
+          }
+      }
+
+      if (allocationRelated) {
+          // Memory pressure: halve concurrency (recovers with successful jobs)
+          // and restart the reporting worker to release its scratch buffers.
+          this.MAX_GEN_IN_FLIGHT = Math.max(1, this.MAX_GEN_IN_FLIGHT >> 1);
+          this.MAX_MESH_IN_FLIGHT = Math.max(1, this.MAX_MESH_IN_FLIGHT >> 1);
+          this.throttleRecoveryProgress = 0;
+          console.warn(`[WorldManager] Allocation failure in worker ${workerId}; concurrency now gen=${this.MAX_GEN_IN_FLIGHT} mesh=${this.MAX_MESH_IN_FLIGHT}.`);
+          const slot = this.workers.find(s => s.id === workerId);
+          if (slot) this.restartWorker(slot, 'allocation failure');
+      } else {
+          const slot = this.workers.find(s => s.id === workerId);
+          if (slot) {
+              slot.jobErrors++;
+              // A worker drowning in job errors is likely corrupted state;
+              // restart it (backoff inside restartWorker caps the churn).
+              if (slot.jobErrors % 5 === 0) this.restartWorker(slot, `${slot.jobErrors} job errors`);
+          }
+      }
+
+      this.markQueuesDirty();
+      this.scheduleStreamingPump();
+  }
+
+  /** Gradually restores concurrency lowered after allocation failures. */
+  private noteJobSuccess() {
+      if (this.MAX_GEN_IN_FLIGHT >= this.BASE_GEN_IN_FLIGHT && this.MAX_MESH_IN_FLIGHT >= this.BASE_MESH_IN_FLIGHT) return;
+      this.throttleRecoveryProgress++;
+      if (this.throttleRecoveryProgress >= THROTTLE_RECOVERY_SUCCESSES) {
+          this.throttleRecoveryProgress = 0;
+          if (this.MAX_GEN_IN_FLIGHT < this.BASE_GEN_IN_FLIGHT) this.MAX_GEN_IN_FLIGHT++;
+          if (this.MAX_MESH_IN_FLIGHT < this.BASE_MESH_IN_FLIGHT) this.MAX_MESH_IN_FLIGHT++;
       }
   }
 
@@ -445,8 +981,14 @@ export class WorldManager {
     this.markQueuesDirty();
   }
 
-  private enqueueMesh(cx: number, cz: number, priority: number) {
+  /** Merge section masks; -1 (full column) absorbs everything. */
+  static mergeMask(a: number, b: number): number {
+      return (a === -1 || b === -1) ? -1 : (a | b);
+  }
+
+  private enqueueMesh(cx: number, cz: number, priority: number, mask: number = -1) {
     const key = WorldCoords.getChunkKey(cx, cz);
+    this.queuedMeshMasks.set(key, WorldManager.mergeMask(this.queuedMeshMasks.get(key) ?? 0, mask));
     if (this.queuedMeshKeys.has(key)) {
         const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
         if (existing && priority < existing.priority) {
@@ -466,7 +1008,7 @@ export class WorldManager {
       this.enqueueGen(cx, cz, priority);
   }
 
-  private queueMesh(cx: number, cz: number, priority: number) {
+  private queueMesh(cx: number, cz: number, priority: number, mask: number = -1) {
       const stage = this.getStage(cx, cz);
       if (stage < ChunkStage.GENERATED) return; 
       
@@ -477,10 +1019,12 @@ export class WorldManager {
           if (prev === undefined || priority < prev) {
               this.pendingRemesh.set(key, priority);
           }
+          this.pendingRemeshMasks.set(key, WorldManager.mergeMask(this.pendingRemeshMasks.get(key) ?? 0, mask));
           return;
       }
 
       if (stage === ChunkStage.MESH_QUEUED) {
+          this.queuedMeshMasks.set(key, WorldManager.mergeMask(this.queuedMeshMasks.get(key) ?? 0, mask));
           // Using .find() instead of array.find()
           const job = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
           if (job && priority < job.priority) {
@@ -491,7 +1035,7 @@ export class WorldManager {
       }
       
       this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
-      this.enqueueMesh(cx, cz, priority);
+      this.enqueueMesh(cx, cz, priority, mask);
   }
 
   public setDesiredChunks(chunks: {cx: number, cz: number}[]) {
@@ -512,11 +1056,14 @@ export class WorldManager {
           const { cx, cz } = chunks[i];
           const priority = i;
           const key = WorldCoords.getChunkKey(cx, cz);
-          
+
           wantedKeys.add(key);
+          // A chunk waiting to be evicted that becomes desired again (player
+          // turned around) is simply reclaimed — it never left memory.
+          this.evictionPending.delete(key);
 
           let stage = this.getStage(cx, cz);
-          const hasChunkData = !!WorldStore.getChunkData(this.state, cx, cz);
+          const hasChunkData = !!WorldStore.getColumn(this.state, cx, cz);
 
           if (!hasChunkData && stage >= ChunkStage.GENERATED) {
               this.setStage(cx, cz, ChunkStage.EMPTY);
@@ -529,7 +1076,7 @@ export class WorldManager {
               this.enqueueGen(cx, cz, priority);
           } else if (stage >= ChunkStage.GENERATED && stage < ChunkStage.READY) {
               this.queueMesh(cx, cz, priority);
-          } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
+          } else if (stage === ChunkStage.READY && !this.hasMeshResident(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
               // Player approached a chunk meshed with dark-face culling, rebuild the
@@ -554,45 +1101,277 @@ export class WorldManager {
           const dSq = dx * dx + dz * dz;
           if (dSq > maxDesiredDistSq) maxDesiredDistSq = dSq;
       }
+      this.desiredRadius = Math.ceil(Math.sqrt(maxDesiredDistSq));
 
-      const shouldRunEvictionScan = this.desiredUpdateCounter % 6 === 0;
-      if (shouldRunEvictionScan && this.chunkStages.size > chunks.length) {
-          let evicted = 0;
-          let deferredDirty = false;
-          const maxEvictionsPerPass = 16;
-          const unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
-
-          for (const [key, _stage] of this.chunkStages) {
-              if (!wantedKeys.has(key)) {
-                  const [kcx, kcz] = key.split(',').map(Number);
-                  const dist = Math.sqrt((kcx - center.cx)**2 + (kcz - center.cz)**2);
-                  if (dist > unloadRadius) {
-                      // evict() returns false for a still-dirty chunk (it stays loaded);
-                      // only count real unloads toward the per-pass budget.
-                      if (this.evict(kcx, kcz)) {
-                          evicted++;
-                          if (evicted >= maxEvictionsPerPass) break;
-                      } else {
-                          deferredDirty = true;
-                      }
-                  }
-              }
-          }
-          // Persist any chunks we couldn't evict because they were dirty, so they
-          // become evictable on a later pass instead of lingering in memory.
-          if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
+      // Continuous eviction: EVERY desired-set update moves chunks that left
+      // the retention circle (desired radius + hysteresis) onto the explicit
+      // eviction queue and cancels their queued/in-flight work immediately.
+      // Actual unloading is drained under budget each scheduler cycle in
+      // drainEvictions() — no more occasional 16-chunk scans that fast travel
+      // and teleports outran (baseline: 7,618 resident chunks / 4.4 GiB heap
+      // after a 10k-block flight at render distance 16).
+      for (const [key, coord] of this.stageCoords) {
+          if (wantedKeys.has(key) || this.evictionPending.has(key)) continue;
+          if (isWithinRetention(coord.cx, coord.cz, center.cx, center.cz, this.desiredRadius, RETENTION_HYSTERESIS)) continue;
+          this.evictionPending.set(key, coord);
+          this.evictionSortDirty = true;
+          this.cancelInFlightWork(key, coord.cx, coord.cz);
       }
+
+      this.scheduleStreamingPump();
+  }
+
+  /**
+   * Invalidate the tickets of any in-flight gen/mesh job for a chunk leaving
+   * the retention set, releasing its pipeline slot right away (results that
+   * still arrive are discarded by the ticket check). Queued-but-undispatched
+   * jobs stay in their queues; the dispatch loops discard them on the desired
+   * check before posting to a worker.
+   */
+  private cancelInFlightWork(key: string, cx: number, cz: number) {
+      if (this.activeGenTickets.delete(key)) {
+          this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+          this.genStartedAt.delete(key);
+          this.genDispatchedTo.delete(key);
+          if (this.chunkStages.get(key) === ChunkStage.GENERATING) {
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+          }
+      }
+      if (this.activeMeshTickets.delete(key)) {
+          this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+          this.meshStartedAt.delete(key);
+          this.meshDispatchedTo.delete(key);
+          this.pendingMeshDark.delete(key);
+          this.releaseMeshInputBytes(key);
+          this.activeMeshFull.delete(key);
+          if (this.chunkStages.get(key) === ChunkStage.MESHING) {
+              this.setStage(cx, cz, ChunkStage.GENERATED);
+          }
+      }
+  }
+
+  private releaseMeshInputBytes(key: string) {
+      const bytes = this.inFlightMeshBytes.get(key);
+      if (bytes !== undefined) {
+          this.inFlightMeshBytes.delete(key);
+          this.inFlightMeshBytesTotal -= bytes;
+      }
+  }
+
+  private static geometryResultBytes(result: Geometry.GeometryResult): number {
+      let bytes = 0;
+      for (const geo of [result.opaque, result.cutout, result.transparent]) {
+          bytes += geo.positions.byteLength + geo.normals.byteLength
+              + geo.uvs.byteLength + geo.colors.byteLength + geo.indices.byteLength;
+      }
+      return bytes;
+  }
+
+  private static isEmptyGeometry(result: Geometry.GeometryResult): boolean {
+      return result.opaque.positions.length === 0
+          && result.cutout.positions.length === 0
+          && result.transparent.positions.length === 0;
+  }
+
+  /** All meshCache mutations go through these so byte accounting stays exact. */
+  private storeMeshSectionsFull(key: string, entries: Array<{ sy: number; result: Geometry.GeometryResult }>) {
+      this.dropMeshResult(key);
+      const map = new Map<number, Geometry.GeometryResult>();
+      for (const { sy, result } of entries) {
+          if (WorldManager.isEmptyGeometry(result)) continue;
+          map.set(sy, result);
+          this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+      }
+      this.meshCache.set(key, map);
+  }
+
+  /** Merge a partial result into an existing (complete) cache entry. */
+  private mergeMeshSections(key: string, entries: Array<{ sy: number; result: Geometry.GeometryResult }>) {
+      const map = this.meshCache.get(key);
+      if (!map) return;
+      for (const { sy, result } of entries) {
+          const prev = map.get(sy);
+          if (prev) this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
+          if (WorldManager.isEmptyGeometry(result)) {
+              map.delete(sy);
+          } else {
+              map.set(sy, result);
+              this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+          }
+      }
+  }
+
+  private dropMeshResult(key: string) {
+      const prev = this.meshCache.get(key);
+      if (prev) {
+          for (const geo of prev.values()) this.meshCacheBytes -= WorldManager.geometryResultBytes(geo);
+          this.meshCache.delete(key);
+      }
+  }
+
+  /** Record renderer-side residency for one delivered section. */
+  private markDeliveredSection(key: string, sy: number, bytes: number) {
+      let per = this.deliveredMeshBytes.get(key);
+      if (!per) {
+          per = new Map();
+          this.deliveredMeshBytes.set(key, per);
+      }
+      const prev = per.get(sy) ?? 0;
+      this.deliveredMeshBytesTotal += bytes - prev;
+      if (bytes > 0) per.set(sy, bytes);
+      else per.delete(sy);
+  }
+
+  /** A full delivery replaces everything: zero out sections not re-delivered. */
+  private resetDeliveredSections(key: string) {
+      const per = this.deliveredMeshBytes.get(key);
+      if (per) {
+          for (const bytes of per.values()) this.deliveredMeshBytesTotal -= bytes;
+          per.clear();
+      } else {
+          this.deliveredMeshBytes.set(key, new Map());
+      }
+  }
+
+  private releaseDelivered(key: string) {
+      const per = this.deliveredMeshBytes.get(key);
+      if (per !== undefined) {
+          for (const bytes of per.values()) this.deliveredMeshBytesTotal -= bytes;
+          this.deliveredMeshBytes.delete(key);
+      }
+  }
+
+  /** True when a usable mesh exists for this chunk (cached or delivered). */
+  private hasMeshResident(key: string): boolean {
+      return this.meshCache.has(key) || this.deliveredMeshBytes.has(key);
+  }
+
+  /** Deliver mesh entries to subscribers and account them as renderer-owned. */
+  private deliverMeshSections(
+      key: string,
+      subs: Set<(update: SectionMeshUpdate | null) => void>,
+      entries: Array<{ sy: number; result: Geometry.GeometryResult }>,
+      full: boolean,
+  ) {
+      const update: SectionMeshUpdate = {
+          full,
+          sections: entries.map(({ sy, result }) => ({
+              sy,
+              geo: WorldManager.isEmptyGeometry(result) ? null : result,
+          })),
+      };
+      if (full) this.resetDeliveredSections(key);
+      subs.forEach(cb => cb(update));
+      for (const { sy, result } of entries) {
+          this.markDeliveredSection(key, sy, WorldManager.isEmptyGeometry(result) ? 0 : WorldManager.geometryResultBytes(result));
+      }
+  }
+
+  /** Bytes currently accounted against the streaming memory budget. */
+  private accountedBytes(): number {
+      let raw = 0;
+      for (const col of this.state.columns.values()) raw += col.materializedBytes;
+      return raw
+          + this.meshCacheBytes
+          + this.deliveredMeshBytesTotal
+          + this.inFlightMeshBytesTotal;
+  }
+
+  private currentBudgetLevel(): BudgetLevel {
+      return budgetLevel(this.accountedBytes(), this.budget);
+  }
+
+  /** Adjust soft/hard streaming memory limits (development/settings hook). */
+  public configureMemoryBudget(config: Partial<Pick<BudgetConfig, 'softLimitBytes' | 'hardLimitBytes'>>) {
+      if (config.softLimitBytes !== undefined) this.budget.softLimitBytes = config.softLimitBytes;
+      if (config.hardLimitBytes !== undefined) this.budget.hardLimitBytes = config.hardLimitBytes;
+  }
+
+  /**
+   * Unload chunks queued for eviction, farthest first, under a per-cycle
+   * budget that scales with memory pressure. Dirty chunks are never dropped —
+   * they stay queued, a save is requested, and they unload on a later cycle
+   * once persisted (exactly the old evict() safety contract).
+   */
+  private drainEvictions() {
+      if (this.evictionPending.size === 0) return;
+
+      const level = this.currentBudgetLevel();
+      const maxEvictions = evictionDrainBudget(level);
+      const timeBudgetMs = level === 'ok' ? 2 : 4;
+      const start = performance.now();
+
+      if (this.evictionSortDirty) {
+          this.evictionSorted = [];
+          for (const [key, coord] of this.evictionPending) {
+              this.evictionSorted.push({ key, cx: coord.cx, cz: coord.cz });
+          }
+          sortFarthestFirst(this.evictionSorted, this.desiredCenter.cx, this.desiredCenter.cz);
+          this.evictionSortDirty = false;
+      }
+
+      let evicted = 0;
+      let deferredDirty = false;
+      // One bounded pass over the current queue: each candidate is visited at
+      // most once per cycle, so all-dirty backlogs cannot spin the loop.
+      let remaining = this.evictionSorted.length;
+      const deferred: Array<ChunkCoord & { key: string }> = [];
+      while (remaining-- > 0 && this.evictionSorted.length > 0) {
+          if (evicted >= maxEvictions) break;
+          if (performance.now() - start > timeBudgetMs) break;
+
+          const candidate = this.evictionSorted.shift()!;
+          const kcx = candidate.cx;
+          const kcz = candidate.cz;
+          // Reclaimed by a newer desired set → no longer pending.
+          if (!this.evictionPending.has(candidate.key)) continue;
+
+          // evict() returns false for a still-dirty chunk (it stays loaded);
+          // only count real unloads toward the per-cycle budget.
+          if (this.evict(kcx, kcz)) {
+              evicted++;
+          } else {
+              deferredDirty = true;
+              deferred.push(candidate); // stays pending for a later cycle
+          }
+      }
+      // Dirty chunks keep their farthest-first position at the queue tail.
+      for (const d of deferred) this.evictionSorted.push(d);
+
+      // Persist any chunks we couldn't evict because they were dirty, so they
+      // become evictable on a later pass instead of lingering in memory.
+      if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
   }
 
   public processStreamingJobs() {
     this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
-      while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
+      // Eviction drains before dispatch so freed memory/pipeline slots are
+      // usable in the same cycle. Progress is guaranteed every cycle.
+      this.drainEvictions();
+
+      // Pool down (workers enabled but every worker crashed): keep jobs queued
+      // until recovery restores the pool. Generation/meshing must not silently
+      // migrate to the main thread — that was the old failure mode that froze
+      // the game after a single worker error.
+      const poolDown = this.workersEnabled && this.workers.length === 0;
+
+      // Memory budget: above the soft limit stop outer-ring prefetch and lower
+      // generation concurrency; above the hard limit shrink the effective
+      // streaming radius so the active player area stays stable while far
+      // work is rejected outright.
+      const level = this.currentBudgetLevel();
+      const radiusSqLimit = effectiveRadiusSq(this.desiredRadius, level, this.budget);
+      const genConcurrency = level === 'ok'
+          ? this.MAX_GEN_IN_FLIGHT
+          : Math.max(1, this.MAX_GEN_IN_FLIGHT >> 1);
+
+      while (!poolDown && this.inFlightGen < genConcurrency && this.genQueue.length > 0) {
           const job = this.genQueue.shift();
           if (!job) break;
           this.queuedGenKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
-          
+
           if (this.getStage(job.cx, job.cz) !== ChunkStage.REQUESTED) continue;
 
           const key = WorldCoords.getChunkKey(job.cx, job.cz);
@@ -601,10 +1380,22 @@ export class WorldManager {
               continue;
           }
 
+          if (level !== 'ok' && this.distancePriority(job.cx, job.cz) > radiusSqLimit) {
+              // Over budget: this chunk sits beyond the effective radius. The
+              // queue is distance-ordered, so everything behind it is farther —
+              // push it back and stop generating until pressure drops
+              // (repairDesiredChunks re-enqueues the ring when budget clears).
+              perf.count('streaming.genRejectedOverBudget');
+              this.queuedGenKeys.add(key);
+              this.genQueue.unshift(job);
+              break;
+          }
+
           this.inFlightGen++;
           this.setStage(job.cx, job.cz, ChunkStage.GENERATING);
           this.genStartedAt.set(key, Date.now());
           const ticket = ++this.genTicketCounter;
+          const session = this.worldSession;
           this.activeGenTickets.set(key, ticket);
           
           // Persistence Check: Try load from DB before asking worker to generate
@@ -623,6 +1414,7 @@ export class WorldManager {
                             cx: job.cx,
                             cz: job.cz,
                             ticket,
+                            session,
                             result: { blocks: data.blocks, light: data.light, meta: data.meta }
                         });
                     } else {
@@ -641,7 +1433,7 @@ export class WorldManager {
         }
       }
 
-      while (this.inFlightMesh < this.MAX_MESH_IN_FLIGHT && this.meshQueue.length > 0) {
+      while (!poolDown && this.inFlightMesh < this.MAX_MESH_IN_FLIGHT && this.meshQueue.length > 0) {
           const job = this.meshQueue.shift();
           if (!job) break;
           this.queuedMeshKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
@@ -655,26 +1447,37 @@ export class WorldManager {
               continue;
           }
 
-          const c = WorldStore.getChunkData(this.state, job.cx, job.cz);
-          if (!c) {
+          const column = WorldStore.getColumn(this.state, job.cx, job.cz);
+          if (!column) {
+              this.queuedMeshMasks.delete(key);
               this.setStage(job.cx, job.cz, ChunkStage.REQUESTED);
               this.queueGen(job.cx, job.cz, job.priority);
               continue;
           }
 
-          let m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
-          if (!m) {
-              m = new Uint8Array(c.length);
-              WorldStore.setMetadataData(this.state, job.cx, job.cz, m);
+          // Resolve the requested sections. -1 (full) covers every occupied
+          // section; edits request only the sections they touched.
+          const requestedMask = this.queuedMeshMasks.get(key) ?? -1;
+          this.queuedMeshMasks.delete(key);
+          const jobFull = requestedMask === -1;
+          const sectionMask = jobFull ? column.occupiedSectionMask() : (requestedMask & ((1 << 24) - 1));
+
+          if (sectionMask === 0) {
+              // Nothing to mesh (an all-air column, or a stale empty mask).
+              this.setStage(job.cx, job.cz, ChunkStage.READY);
+              if (jobFull) {
+                  const subs = this.meshSubscribers.get(key);
+                  if (subs && subs.size > 0) {
+                      this.dropMeshResult(key);
+                      this.deliverMeshSections(key, subs, [], true);
+                  } else {
+                      this.storeMeshSectionsFull(key, []);
+                  }
+              }
+              continue;
           }
 
-          let l = WorldStore.getLightData(this.state, job.cx, job.cz);
-          if (!l) {
-              l = new Uint8Array(c.length);
-              l.fill(15 << 4);
-              WorldStore.setLightData(this.state, job.cx, job.cz, l);
-          }
-
+          this.activeMeshFull.set(key, jobFull);
           this.inFlightMesh++;
           this.setStage(job.cx, job.cz, ChunkStage.MESHING);
           this.meshStartedAt.set(key, Date.now());
@@ -687,38 +1490,59 @@ export class WorldManager {
           ) > WorldManager.DARK_CULL_DISTANCE;
           this.pendingMeshDark.set(key, cullDark);
 
-              const neighbors = {
-                  left: WorldStore.getChunkData(this.state, job.cx-1, job.cz),
-                  right: WorldStore.getChunkData(this.state, job.cx+1, job.cz),
-                  front: WorldStore.getChunkData(this.state, job.cx, job.cz+1),
-                  back: WorldStore.getChunkData(this.state, job.cx, job.cz-1)
-              };
-              const neighborLights = {
-                  center: l,
-                  left: WorldStore.getLightData(this.state, job.cx-1, job.cz),
-                  right: WorldStore.getLightData(this.state, job.cx+1, job.cz),
-                  front: WorldStore.getLightData(this.state, job.cx, job.cz+1),
-                  back: WorldStore.getLightData(this.state, job.cx, job.cz-1)
-              };
+              // Center data travels as SECTIONS: uniform sections as single
+              // bytes, materialized sections as fresh 4 KiB copies whose
+              // buffers are transferred. The worker reconstructs them into
+              // reusable scratch arrays. Neighbor data stays 1-deep border
+              // planes, built straight from the neighbor columns.
+              const neighbors = this.buildNeighborPlanes(job.cx, job.cz);
 
               if (this.workersEnabled && this.workers.length > 0) {
-                  this.postToPool({
+                  const payload = column.toSectionPayload();
+                  let inputBytes = payload.bytes;
+                  const transfer: Transferable[] = payload.transfer;
+                  for (const plane of [neighbors.blocks.left, neighbors.blocks.right, neighbors.blocks.front, neighbors.blocks.back,
+                                       neighbors.light.left, neighbors.light.right, neighbors.light.front, neighbors.light.back]) {
+                      if (plane) { inputBytes += plane.byteLength; transfer.push(plane.buffer); }
+                  }
+                  perf.count('streaming.meshInputBytes', inputBytes);
+                  this.releaseMeshInputBytes(key); // paranoia: no double-count
+                  this.inFlightMeshBytes.set(key, inputBytes);
+                  this.inFlightMeshBytesTotal += inputBytes;
+                  const slotId = this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
                       cx: job.cx,
                       cz: job.cz,
                       ticket,
-                      chunk: c,
-                      metaData: m,
-                      neighbors,
-                      lights: neighborLights,
+                      session: this.worldSession,
+                      sections: payload.planes,
+                      sectionMask,
+                      full: jobFull,
+                      neighbors: neighbors.blocks,
+                      lights: neighbors.light,
                       cullDarkFaces: cullDark
-                  });
+                  }, transfer);
+                  if (slotId !== null) this.meshDispatchedTo.set(key, slotId);
               } else {
+                  perf.count('streaming.mainThreadMesh');
+                  const session = this.worldSession;
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
-                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, result: res });
+                      const col = WorldStore.getColumn(this.state, job.cx, job.cz);
+                      if (!col) return;
+                      const c = col.flattenBlocks(WorldManager.meshScratchBlocks);
+                      const m = col.flattenMeta(WorldManager.meshScratchMeta);
+                      const l = col.flattenLight(WorldManager.meshScratchLight);
+                      const results: Array<{ sy: number; result: Geometry.GeometryResult }> = [];
+                      for (let sy = 0; sy < 24; sy++) {
+                          if ((sectionMask & (1 << sy)) === 0) continue;
+                          results.push({
+                              sy,
+                              result: Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors.blocks, { center: l, ...neighbors.light }, cullDark, sy * 16, (sy + 1) * 16),
+                          });
+                      }
+                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, session, results });
                   }, 0);
               }
       }
@@ -751,13 +1575,13 @@ export class WorldManager {
 
           const [cx, cz] = key.split(',').map(Number);
           const stage = this.getStage(cx, cz);
-          const chunk = WorldStore.getChunkData(this.state, cx, cz);
+          const chunk = WorldStore.getColumn(this.state, cx, cz);
           const priority = (cx - this.desiredCenter.cx) * (cx - this.desiredCenter.cx) + (cz - this.desiredCenter.cz) * (cz - this.desiredCenter.cz);
 
           if (!chunk) {
               if (stage >= ChunkStage.GENERATED) {
                   this.setStage(cx, cz, ChunkStage.EMPTY);
-                  this.meshCache.delete(key);
+                  this.dropMeshResult(key);
                   this.pendingRemesh.delete(key);
                   this.genStartedAt.delete(key);
                   this.meshStartedAt.delete(key);
@@ -774,8 +1598,12 @@ export class WorldManager {
           if (stage === ChunkStage.GENERATED) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.MESH_QUEUED) {
-              this.enqueueMesh(cx, cz, priority);
-          } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
+              // Self-heal the queue entry WITHOUT widening the requested
+              // section mask (mask 0 merges as a no-op) — otherwise this
+              // round-robin repair would turn every single-section edit job
+              // into a full-column remesh before it dispatched.
+              this.enqueueMesh(cx, cz, priority, 0);
+          } else if (stage === ChunkStage.READY && !this.hasMeshResident(key)) {
               this.queueMesh(cx, cz, priority);
           }
 
@@ -785,6 +1613,7 @@ export class WorldManager {
                   this.inFlightGen = Math.max(0, this.inFlightGen - 1);
                   this.genStartedAt.delete(key);
                   this.activeGenTickets.delete(key);
+                  this.genDispatchedTo.delete(key);
                   this.setStage(cx, cz, ChunkStage.REQUESTED);
                   this.enqueueGen(cx, cz, priority);
               }
@@ -794,6 +1623,9 @@ export class WorldManager {
                   this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
                   this.meshStartedAt.delete(key);
                   this.activeMeshTickets.delete(key);
+                  this.meshDispatchedTo.delete(key);
+                  this.releaseMeshInputBytes(key);
+                  this.activeMeshFull.delete(key);
                   this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
                   this.enqueueMesh(cx, cz, priority);
               }
@@ -804,12 +1636,26 @@ export class WorldManager {
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
       if (this.workersEnabled && this.workers.length > 0) {
-          this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+          const slotId = this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket, session: this.worldSession });
+          if (slotId !== null) this.genDispatchedTo.set(key, slotId);
+      } else if (this.workersEnabled) {
+          // Pool is down (async storage-miss callback raced a pool crash):
+          // roll the job back into the queue and let pool recovery re-dispatch.
+          if (this.activeGenTickets.get(key) === ticket) {
+              this.activeGenTickets.delete(key);
+              this.genStartedAt.delete(key);
+              this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+              this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+          }
       } else {
+          // Workers explicitly disabled by the user/config: main-thread path.
+          perf.count('streaming.mainThreadGen');
+          const session = this.worldSession;
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
               const res = WorldGen.generateChunk(cx, cz);
-              this.handleWorkerMessage({ type: 'GEN_DONE', cx, cz, ticket, result: res });
+              this.handleWorkerMessage({ type: 'GEN_DONE', cx, cz, ticket, session, result: res });
           }, 0);
       }
   }
@@ -845,17 +1691,21 @@ export class WorldManager {
           const savedKeys: Array<{ key: string; version: number }> = [];
           for (const key of keys) {
               const [cx, cz] = key.split(',').map(Number);
-              const blocks = WorldStore.getChunkData(this.state, cx, cz);
-              const light = WorldStore.getLightData(this.state, cx, cz);
-              const meta = WorldStore.getMetadataData(this.state, cx, cz);
-              if (blocks && light && meta) {
-                  batch.push({ cx, cz, blocks, light, meta });
+              // Boundary flattening: sections are flattened back to the exact
+              // legacy persisted arrays, so the save format (and existing
+              // worlds) are untouched by section storage.
+              const col = WorldStore.getColumn(this.state, cx, cz);
+              if (col) {
+                  batch.push({ cx, cz, blocks: col.flattenBlocks(), light: col.flattenLight(), meta: col.flattenMeta() });
                   savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
               }
           }
           if (batch.length === 0) return;
 
+          const saveStart = performance.now();
           await WorldStorage.saveChunks(worldId, batch);
+          perf.duration('storage.saveBatch', performance.now() - saveStart);
+          perf.count('storage.chunksSaved', batch.length);
 
           for (const s of savedKeys) {
               this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
@@ -868,6 +1718,7 @@ export class WorldManager {
               }
           }
       } catch (e) {
+          perf.count('storage.saveBatchFailed');
           console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
       } finally {
           this.saving = false;
@@ -886,13 +1737,21 @@ export class WorldManager {
       const key = WorldCoords.getChunkKey(cx, cz);
 
       if (this.dirtyChunks.has(key)) {
+          perf.count('streaming.evictDeferredDirty');
           return false; // defer, keep the dirty key + chunk data until confirmed persisted
       }
 
+      perf.count('streaming.evicted');
       WorldStore.evictChunk(this.state, cx, cz);
       this.chunkStages.delete(key);
-      this.meshCache.delete(key);
+      this.stageCoords.delete(key);
+      this.evictionPending.delete(key);
+      this.dropMeshResult(key);
+      this.releaseDelivered(key);
       this.pendingRemesh.delete(key);
+      this.queuedMeshMasks.delete(key);
+      this.pendingRemeshMasks.delete(key);
+      this.activeMeshFull.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
       this.queuedMeshKeys.delete(key);
@@ -905,6 +1764,8 @@ export class WorldManager {
       // fast traversal eventually stalled streaming at MAX_*_IN_FLIGHT.
       if (this.activeGenTickets.delete(key)) this.inFlightGen = Math.max(0, this.inFlightGen - 1);
       if (this.activeMeshTickets.delete(key)) this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+      this.genDispatchedTo.delete(key);
+      this.meshDispatchedTo.delete(key);
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);
@@ -1201,30 +2062,45 @@ export class WorldManager {
   }
 
   public ensureChunk(cx: number, cz: number) {
-      if (!WorldStore.getChunkData(this.state, cx, cz)) {
+      if (!WorldStore.getColumn(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
           const result = WorldGen.generateChunk(cx, cz);
-          WorldStore.setChunkData(this.state, cx, cz, result.blocks);
-          WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setColumnFromArrays(this.state, cx, cz, result.blocks, result.light, result.meta);
           this.setStage(cx, cz, ChunkStage.GENERATED);
           // We don't mesh here, just ensure data exists for collision/spawn checks
       }
   }
 
-  public subscribeMesh(cx: number, cz: number, cb: (geo: Geometry.GeometryResult | null) => void) {
+  public subscribeMesh(cx: number, cz: number, cb: (update: SectionMeshUpdate | null) => void) {
       const key = WorldCoords.getChunkKey(cx, cz);
       if (!this.meshSubscribers.has(key)) {
           this.meshSubscribers.set(key, new Set());
       }
       this.meshSubscribers.get(key)!.add(cb);
       const current = this.meshCache.get(key);
-      if (current) cb(current);
+      if (current) {
+          // Hand the cached sections to the renderer and release our copy —
+          // from here the mounted ChunkMesh owns (and disposes) the buffers.
+          const entries = Array.from(current, ([sy, result]) => ({ sy, result }));
+          this.dropMeshResult(key);
+          this.deliverMeshSections(key, new Set([cb]), entries, true);
+      } else if (this.getStage(cx, cz) === ChunkStage.READY && !this.deliveredMeshBytes.has(key)) {
+          // Remount after this chunk's mesh was released (component unmounted
+          // earlier): rebuild it rather than waiting for a repair sweep.
+          this.queueMesh(cx, cz, this.distancePriority(cx, cz));
+          this.markQueuesDirty();
+          this.scheduleStreamingPump();
+      }
       return () => {
           const set = this.meshSubscribers.get(key);
           if (set) {
               set.delete(cb);
-              if (set.size === 0) this.meshSubscribers.delete(key);
+              if (set.size === 0) {
+                  this.meshSubscribers.delete(key);
+                  // Last subscriber unmounted → it disposed the geometry; the
+                  // mesh is no longer resident anywhere.
+                  this.releaseDelivered(key);
+              }
           }
       };
   }
@@ -1272,14 +2148,26 @@ export class WorldManager {
   tick(delta: number) {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
-      Fluids.processFluids(this.state);
+      // All fluid writes this tick share one edit batch: lighting floods once
+      // per edit cluster and each affected section queues exactly once.
+      const fluidBatch = this.createEditBatch({ tileEntities: true, fluids: true, support: true, stairShapes: true });
+      Fluids.processFluids(this.state, {
+          setBlock: (x, y, z, t, r) => fluidBatch.set(x, y, z, t, r ?? 0),
+          spawnDrop: (t, x, y, z) => this.spawnDrop(t, x, y, z),
+      });
+      fluidBatch.commit();
       tickPlantGrowth({
           getBlock: (x, y, z) => this.getBlock(x, y, z, false),
           tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
           setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
+          runBatch: (fn) => {
+              const b = this.createEditBatch({ tileEntities: true, fluids: true, support: true, stairShapes: true });
+              fn((x, y, z, t, r) => b.set(x, y, z, t, r ?? 0));
+              b.commit();
+          },
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
-          getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+          getChunkColumn: (cx, cz) => WorldStore.getColumn(this.state, cx, cz) ?? null,
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
       });
@@ -1311,43 +2199,44 @@ export class WorldManager {
   subscribeToParticles(cb: ParticleCallback) { this.particleListeners.add(cb); return () => { this.particleListeners.delete(cb); }; }
 
   getTerrainHeight(x: number, z: number): number { return WorldGen.getTerrainHeight(x, z); }
-  hasChunk(cx: number, cz: number): boolean { return !!WorldStore.getChunkData(this.state, cx, cz); }
+  hasChunk(cx: number, cz: number): boolean { return !!WorldStore.getColumn(this.state, cx, cz); }
   tryGetBlock(x: number, y: number, z: number): BlockType | null {
     if (y < MIN_Y || y > MAX_Y) return BlockType.AIR; 
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = WorldStore.getChunkData(this.state, cx, cz);
-    if (!chunk) return null; 
-    return chunk[WorldCoords.index3D(lx, y, lz)];
+    const col = WorldStore.getColumn(this.state, cx, cz);
+    if (!col) return null;
+    return col.getB(WorldCoords.index3D(lx, y, lz));
   }
   getBlock(x: number, y: number, z: number, autoGenerate: boolean = true): BlockType {
     if (y < MIN_Y || y > MAX_Y) return BlockType.AIR; 
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = this.getChunkData(cx, cz, autoGenerate);
-    if (!chunk) return BlockType.AIR;
-    return chunk[WorldCoords.index3D(lx, y, lz)];
+    const col = this.getChunkColumn(cx, cz, autoGenerate);
+    if (!col) return BlockType.AIR;
+    return col.getB(WorldCoords.index3D(lx, y, lz));
   }
-  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint8Array | null {
-    const chunk = WorldStore.getChunkData(this.state, cx, cz);
-    if (chunk) return chunk;
+  getChunkColumn(cx: number, cz: number, autoGenerate: boolean = true): ChunkColumn | null {
+    const col = WorldStore.getColumn(this.state, cx, cz);
+    if (col) return col;
     if (autoGenerate && this.getStage(cx, cz) === ChunkStage.EMPTY) { this.queueGen(cx, cz, 0); }
     return null;
   }
   getMetadata(x: number, y: number, z: number): number {
       if (y < MIN_Y || y > MAX_Y) return 0;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-      const meta = WorldStore.getMetadataData(this.state, cx, cz);
-      if (!meta) return 0;
-      return meta[WorldCoords.index3D(lx, y, lz)];
+      const col = WorldStore.getColumn(this.state, cx, cz);
+      if (!col) return 0;
+      return col.getM(WorldCoords.index3D(lx, y, lz));
   }
   setMetadataAt(x: number, y: number, z: number, value: number) {
       if (y < MIN_Y || y > MAX_Y) return;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-      const meta = WorldStore.ensureMetadata(this.state, cx, cz);
-      meta[WorldCoords.index3D(lx, y, lz)] = value;
+      const col = WorldStore.getColumn(this.state, cx, cz);
+      if (!col) return;
+      col.setM(WorldCoords.index3D(lx, y, lz), value);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
   getLoadedChunkKeys(): string[] {
-      return Array.from(this.state.chunks.keys());
+      return Array.from(this.state.columns.keys());
   }
   /**
    * Whether the player may place/break at this position. A sealed region (one
@@ -1374,8 +2263,44 @@ export class WorldManager {
   updateLightingAround(x: number, y: number, z: number) {
       Lighting.updateLightingAround(this.state, x, y, z, (cx, cz) => {
           WorldStore.notifyChunk(this.state, cx, cz);
-          if (this.getStage(cx, cz) >= ChunkStage.GENERATED) this.queueMesh(cx, cz, 10);
       });
+      // The flood marked exactly the sections whose light actually changed
+      // (no-op light writes are skipped); queue only those for remesh.
+      this.sweepDirtySections(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE), -900);
+  }
+
+  /**
+   * Queue section-scoped remeshes for every section a preceding batch of
+   * writes (block edits + lighting floods) actually changed, across the 3×3
+   * chunk area around (ccx, ccz) — a radius-15 flood cannot reach farther.
+   * Consumes the columns' dirty masks, so each affected section is queued
+   * exactly once per batch.
+   */
+  private sweepDirtySections(ccx: number, ccz: number, priority: number) {
+      for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+              const cx = ccx + dx;
+              const cz = ccz + dz;
+              const col = WorldStore.getColumn(this.state, cx, cz);
+              if (!col) continue;
+              const mask = col.consumeDirtyMask();
+              if (mask === 0) continue;
+              if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+                  this.queueMesh(cx, cz, priority, mask);
+              }
+          }
+      }
+  }
+
+  /** Sections a single-cell edit affects: its own, plus vertical neighbors
+   *  when the cell sits on a section boundary (faces/AO cross the seam). */
+  static editSectionMask(y: number): number {
+      const yOff = y - MIN_Y;
+      const sy = yOff >> 4;
+      let mask = 1 << sy;
+      if ((yOff & 15) === 0 && sy > 0) mask |= 1 << (sy - 1);
+      if ((yOff & 15) === 15 && sy < 23) mask |= 1 << (sy + 1);
+      return mask;
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
@@ -1384,20 +2309,19 @@ export class WorldManager {
     // for internal world simulation (fluids, plant growth, support cascades),
     // which must keep running inside sealed regions.
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = this.getChunkData(cx, cz, true);
-    if (!chunk) return [];
+    const col = this.getChunkColumn(cx, cz, true);
+    if (!col) return [];
     const index = WorldCoords.index3D(lx, y, lz);
-    const oldType = chunk[index];
-    const oldRotation = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+    const oldType = col.getB(index);
+    const oldRotation = col.getM(index);
     // Breaking an unopened natural loot cache (chest with the 0x40 meta bit):
     // seed its contents first so handleBlockReplaced spills the loot as drops
     // instead of silently discarding it.
     if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
         this.ensureChest(x, y, z);
     }
-    chunk[index] = type;
-    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
-    meta[index] = rotation;
+    col.setB(index, type);
+    col.setM(index, rotation);
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
     if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
@@ -1412,20 +2336,25 @@ export class WorldManager {
         // occlusion. A placed/removed stair can turn neighbors into inner/outer corners.
         this.refreshStairShapes(x, y, z);
 
+        // Relight, then queue exactly the sections the edit + flood changed
+        // (updateLightingAround sweeps the dirty masks). A single interior
+        // block edit therefore remeshes ONE section, not a 384-block column.
         this.updateLightingAround(x, y, z);
-        this.queueMesh(cx, cz, -1000);
+        this.queueMesh(cx, cz, -1000, WorldManager.editSectionMask(y));
 
-        // If editing at chunk borders, prioritize neighbor remesh immediately too.
-        if (lx === 0) this.queueMesh(cx - 1, cz, -900);
-        else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -900);
-        if (lz === 0) this.queueMesh(cx, cz - 1, -900);
-        else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
+        // Chunk-border edits change the neighbor's face culling even though
+        // its data didn't change; queue only the matching vertical sections.
+        const borderMask = WorldManager.editSectionMask(y);
+        if (lx === 0) this.queueMesh(cx - 1, cz, -900, borderMask);
+        else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -900, borderMask);
+        if (lz === 0) this.queueMesh(cx, cz - 1, -900, borderMask);
+        else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900, borderMask);
 
         this.markQueuesDirty();
         this.processStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
-        this.queueMesh(cx, cz, -500);
+        this.queueMesh(cx, cz, -500, WorldManager.editSectionMask(y));
         this.markQueuesDirty();
         this.processStreamingJobs();
     }
@@ -1440,48 +2369,114 @@ export class WorldManager {
   }
 
   /**
-   * Batch structural edits (the arena dais / shield crystals): write every block,
-   * then relight and remesh ONCE rather than per block, restoring the ~100-block
-   * dais was triggering ~100 full chunk remeshes and lighting floods, which lagged.
-   * Skips fluid / tile-entity / support cascades, so it is for solid structural
-   * blocks only, not interactive or fluid edits.
+   * Bulk world-edit transaction. Writes are applied IMMEDIATELY (fluid and
+   * growth logic reads world state between its own writes within one tick),
+   * while lighting floods, remesh queueing, and chunk notifications are
+   * deferred and deduplicated until commit():
+   *
+   *   1. block/metadata changes apply on set() (with optional tile-entity
+   *      replacement handling, drop spilling, and fluid scheduling — the same
+   *      semantics as a plain setBlock)
+   *   2. affected sections are collected via the columns' dirty masks
+   *   3. lighting bounds collapse to one flood per ~radius-13 edit cluster
+   *   4. border-chunk face-culling remeshes merge into one mask per chunk
+   *   5. commit() queues each affected section exactly once and notifies
+   *      each touched chunk once
+   *
+   * Used by fluids, tree growth, structure/arena placement, and any future
+   * fill commands or boss environmental effects.
+   */
+  public createEditBatch(opts: { tileEntities?: boolean; fluids?: boolean; support?: boolean; stairShapes?: boolean } = {}) {
+      return new WorldEditBatch(this, opts);
+  }
+
+  /** @internal batch support: raw write + immediate side effects, no lighting/remesh. */
+  applyBatchWrite(
+      x: number, y: number, z: number, type: BlockType, rotation: number,
+      opts: { tileEntities?: boolean; fluids?: boolean },
+      drops: ItemStack[],
+  ): { changed: boolean; typeChanged: boolean } {
+      if (y < MIN_Y || y > MAX_Y) return { changed: false, typeChanged: false };
+      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+      const col = this.getChunkColumn(cx, cz, true);
+      if (!col) return { changed: false, typeChanged: false };
+      const index = WorldCoords.index3D(lx, y, lz);
+      const oldType = col.getB(index);
+      const oldRotation = col.getM(index);
+      if (oldType === type && oldRotation === rotation) return { changed: false, typeChanged: false };
+      if (opts.tileEntities && oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
+          this.ensureChest(x, y, z);
+      }
+      col.setB(index, type);
+      col.setM(index, rotation);
+      if (opts.tileEntities) {
+          const dropped = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
+          for (const item of dropped) {
+              drops.push(item);
+              this.spawnDrop(item, x, y, z);
+          }
+      }
+      if (opts.fluids) {
+          if (type === BlockType.WATER || type === BlockType.LAVA) {
+              Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
+          }
+          for (const [dx, dy, dz] of [[0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
+              const nx = x + dx; const ny = y + dy; const nz = z + dz;
+              const nBlock = this.getBlock(nx, ny, nz, false);
+              if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) {
+                  Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5);
+              }
+          }
+      }
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
+      return { changed: true, typeChanged: oldType !== type };
+  }
+
+  /** @internal batch support (see WorldEditBatch.commit). */
+  finishEditBatch(
+      changedCells: Array<{ x: number; y: number; z: number }>,
+      typeChangedCells: Array<{ x: number; y: number; z: number }>,
+      borderMeshMasks: Map<string, number>,
+      opts: { support?: boolean; stairShapes?: boolean },
+  ) {
+      if (changedCells.length === 0) return;
+      // Stair corner shapes re-resolve BEFORE relighting (parity with setBlock).
+      if (opts.stairShapes) {
+          for (const c of changedCells) this.refreshStairShapes(c.x, c.y, c.z);
+      }
+      // One relight flood per ~radius-13 cluster (a flood covers radius 15 and
+      // reads final block state, so clustered edits share one flood). Each
+      // flood sweeps the net-changed section masks itself.
+      const relit: Array<{ x: number; y: number; z: number }> = [];
+      for (const c of changedCells) {
+          if (!relit.some((p) => Math.abs(p.x - c.x) <= 13 && Math.abs(p.y - c.y) <= 13 && Math.abs(p.z - c.z) <= 13)) {
+              relit.push(c);
+          }
+      }
+      for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
+      // Border chunks whose face culling changed without a data change.
+      for (const [key, mask] of borderMeshMasks) {
+          const comma = key.indexOf(',');
+          this.queueMesh(Number(key.slice(0, comma)), Number(key.slice(comma + 1)), -1000, mask);
+      }
+      this.markQueuesDirty();
+      this.processStreamingJobs();
+      // Support cascades after the whole batch (may recurse into setBlock).
+      if (opts.support) {
+          for (const c of typeChangedCells) this.breakUnsupported(c.x, c.y + 1, c.z);
+      }
+  }
+
+  /**
+   * Batch structural edits (the arena dais / shield crystals): write every
+   * block, then relight and remesh ONCE rather than per block. Parity with
+   * the historical behavior: skips fluid / tile-entity / support cascades,
+   * so it is for solid structural blocks only.
    */
   setBlocks(edits: Array<{ x: number; y: number; z: number; type: BlockType; rotation?: number }>): void {
-    if (edits.length === 0) return;
-    const meshChunks = new Set<string>();
-    const relit: { x: number; y: number; z: number }[] = [];
-    let changed = false;
-    for (const e of edits) {
-      if (e.y < MIN_Y || e.y > MAX_Y) continue;
-      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
-      const chunk = this.getChunkData(cx, cz, true);
-      if (!chunk) continue;
-      const index = WorldCoords.index3D(lx, e.y, lz);
-      const rot = e.rotation ?? 0;
-      const oldType = chunk[index];
-      const oldRot = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
-      if (oldType === e.type && oldRot === rot) continue;
-      chunk[index] = e.type;
-      WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
-      this.markDirty(WorldCoords.getChunkKey(cx, cz));
-      meshChunks.add(`${cx},${cz}`);
-      if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);
-      if (lz === 0) meshChunks.add(`${cx},${cz - 1}`); else if (lz === CHUNK_SIZE - 1) meshChunks.add(`${cx},${cz + 1}`);
-      // One relight flood per ~radius-13 cluster (a flood covers radius 15, and it
-      // reads the final block state below, so clustered edits share one flood).
-      if (!relit.some((p) => Math.abs(p.x - e.x) <= 13 && Math.abs(p.y - e.y) <= 13 && Math.abs(p.z - e.z) <= 13)) {
-        relit.push({ x: e.x, y: e.y, z: e.z });
-      }
-      changed = true;
-    }
-    if (!changed) return;
-    for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
-    for (const key of meshChunks) {
-      const [cx, cz] = key.split(',').map(Number);
-      this.queueMesh(cx, cz, -1000);
-    }
-    this.markQueuesDirty();
-    this.processStreamingJobs();
+    const batch = this.createEditBatch({ tileEntities: false, fluids: false, support: false, stairShapes: false });
+    for (const e of edits) batch.set(e.x, e.y, e.z, e.type, e.rotation ?? 0);
+    batch.commit();
   }
 
 
@@ -1506,10 +2501,9 @@ export class WorldManager {
       const shape = resolveStairShape(facing, upside, getNeighbor);
       const newMeta = (m & 0x07) | (shape << 3); // keep facing + upside, replace shape
       if (newMeta !== m) {
+        // setMetadataAt marks the section dirty; the edit's dirty-section
+        // sweep (after relight) queues the remesh, so no whole-chunk queue.
         this.setMetadataAt(cxw, cyw, czw, newMeta);
-        const ncx = Math.floor(cxw / CHUNK_SIZE);
-        const ncz = Math.floor(czw / CHUNK_SIZE);
-        if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) this.queueMesh(ncx, ncz, -800);
       }
     }
   }
@@ -1574,6 +2568,45 @@ export class WorldManager {
           this.log(`Found ${biomeId} at X=${tx}, Z=${tz}${note}`, 'success', `/tp ${tx} ${ty} ${tz}`);
       } else { this.log(`Could not find ${biomeId} within ${SEARCH_RADIUS} blocks.`, 'error'); }
   }
+}
+
+/** See WorldManager.createEditBatch. */
+export class WorldEditBatch {
+    private changedCells: Array<{ x: number; y: number; z: number }> = [];
+    private typeChangedCells: Array<{ x: number; y: number; z: number }> = [];
+    private borderMeshMasks = new Map<string, number>();
+    private drops: ItemStack[] = [];
+    private committed = false;
+
+    constructor(
+        private manager: WorldManager,
+        private opts: { tileEntities?: boolean; fluids?: boolean; support?: boolean; stairShapes?: boolean },
+    ) {}
+
+    /** Applies the write immediately; lighting/remesh/notify defer to commit(). */
+    set(x: number, y: number, z: number, type: BlockType, rotation: number = 0): void {
+        const res = this.manager.applyBatchWrite(x, y, z, type, rotation, this.opts, this.drops);
+        if (!res.changed) return;
+        this.changedCells.push({ x, y, z });
+        if (res.typeChanged) this.typeChangedCells.push({ x, y, z });
+
+        const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+        const vMask = WorldManager.editSectionMask(y);
+        const add = (bcx: number, bcz: number) => {
+            const k = WorldCoords.getChunkKey(bcx, bcz);
+            this.borderMeshMasks.set(k, WorldManager.mergeMask(this.borderMeshMasks.get(k) ?? 0, vMask));
+        };
+        if (lx === 0) add(cx - 1, cz); else if (lx === CHUNK_SIZE - 1) add(cx + 1, cz);
+        if (lz === 0) add(cx, cz - 1); else if (lz === CHUNK_SIZE - 1) add(cx, cz + 1);
+    }
+
+    /** Flood lighting once per edit cluster, queue each section once, notify. */
+    commit(): ItemStack[] {
+        if (this.committed) return this.drops;
+        this.committed = true;
+        this.manager.finishEditBatch(this.changedCells, this.typeChangedCells, this.borderMeshMasks, this.opts);
+        return this.drops;
+    }
 }
 
 export const worldManager = new WorldManager();

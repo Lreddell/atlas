@@ -1,6 +1,7 @@
 import { BlockType } from '../../types';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import { isSaplingType, getTreeKindForSapling, generateTreeBlocks, isReplaceable, isValidSoil, getMinClearance } from './trees';
+import type { ChunkColumn } from './chunkColumn';
 
 // Interval between growth ticks in world ticks (1 tick = 1 call to WorldManager.tick)
 const GROWTH_TICK_INTERVAL = 60; // ~3 seconds at 20 tps
@@ -19,9 +20,12 @@ interface WorldAccess {
     getBlock(x: number, y: number, z: number): BlockType;
     tryGetBlock(x: number, y: number, z: number): BlockType | null;
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
+    /** Bulk-edit transaction: writes apply immediately inside fn; lighting and
+     *  per-section remeshing flush once when fn returns. */
+    runBatch(fn: (set: (x: number, y: number, z: number, type: BlockType, rotation?: number) => void) => void): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
-    getChunkData(cx: number, cz: number): Uint8Array | null;
+    getChunkColumn(cx: number, cz: number): ChunkColumn | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
 }
@@ -52,9 +56,12 @@ export function tickPlantGrowth(world: WorldAccess) {
     // instead of with the constant 17x17 tick neighbourhood.
     for (let cx = center.cx - GROWTH_TICK_RADIUS; cx <= center.cx + GROWTH_TICK_RADIUS; cx++) {
       for (let cz = center.cz - GROWTH_TICK_RADIUS; cz <= center.cz + GROWTH_TICK_RADIUS; cz++) {
-        const chunk = world.getChunkData(cx, cz);
+        const chunk = world.getChunkColumn(cx, cz);
         if (!chunk) continue;
-        const layers = chunk.length / LAYER;
+        // Occupancy bounds skip the empty sky; saplings can still sit on soil at
+        // any height inside the occupied range.
+        if (chunk.maxOccSection === -1) continue;
+        const layers = (chunk.maxOccSection + 1) * 16;
 
         for (let i = 0; i < PROBES_PER_CHUNK; i++) {
             const r = nextRand();
@@ -64,10 +71,8 @@ export function tickPlantGrowth(world: WorldAccess) {
             const wx = cx * CHUNK_SIZE + lx;
             const wz = cz * CHUNK_SIZE + lz;
 
-            // Direct typed-array scan over the full world column, saplings can sit on
-            // soil at any height (the old 64..199 window silently excluded everything else).
             for (let yi = 0; yi < layers; yi++) {
-                const block = chunk[yi * LAYER + colBase] as BlockType;
+                const block = chunk.getB(yi * LAYER + colBase) as BlockType;
                 if (!isSaplingType(block)) continue;
 
                 const y = yi + MIN_Y;
@@ -118,21 +123,26 @@ function attemptTreeGrowth(world: WorldAccess, saplingType: BlockType, wx: numbe
         if (!isReplaceable(existing)) return; // trunk blocked, abort entirely
     }
 
-    // Phase 2: remove sapling and place tree
-    world.setBlock(wx, wy, wz, BlockType.AIR);
+    // Phase 2: remove sapling and place the whole tree in one bulk-edit
+    // transaction: per-block reads still see prior writes (writes apply
+    // immediately), but lighting floods once per cluster and each affected
+    // section is queued exactly once instead of ~60 whole-column remeshes.
+    world.runBatch((set) => {
+        set(wx, wy, wz, BlockType.AIR);
 
-    for (const tb of treeBlocks) {
-        const existing = world.tryGetBlock(tb.wx, tb.wy, tb.wz);
-        if (existing === null) continue; // skip unloaded areas
-        if (tb.isTrunk) {
-            if (isReplaceable(existing)) {
-                world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
-            }
-        } else {
-            // Leaf, permissive, only place in air or existing leaves
-            if (isReplaceable(existing)) {
-                world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
+        for (const tb of treeBlocks) {
+            const existing = world.tryGetBlock(tb.wx, tb.wy, tb.wz);
+            if (existing === null) continue; // skip unloaded areas
+            if (tb.isTrunk) {
+                if (isReplaceable(existing)) {
+                    set(tb.wx, tb.wy, tb.wz, tb.type);
+                }
+            } else {
+                // Leaf, permissive, only place in air or existing leaves
+                if (isReplaceable(existing)) {
+                    set(tb.wx, tb.wy, tb.wz, tb.type);
+                }
             }
         }
-    }
+    });
 }

@@ -79,4 +79,13 @@ export default defineConfig({
     __APP_DISPLAY_VERSION__: JSON.stringify(packageJson.displayVersion ?? packageJson.version),
   },
   base: "./",
+  build: {
+    rollupOptions: {
+      // The perf harness page is only bundled for benchmark builds
+      // (ATLAS_PERF=1); normal game/Electron builds ship index.html alone.
+      input: process.env.ATLAS_PERF
+        ? { main: resolve(__dirname, 'index.html'), perf: resolve(__dirname, 'perf.html') }
+        : resolve(__dirname, 'index.html'),
+    },
+  },
 })

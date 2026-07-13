@@ -24,6 +24,15 @@ export default [
     },
   },
   {
+    // Node-runtime tooling scripts (perf runner, generators).
+    files: ['scripts/perf/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+  {
     files: ['**/*.{ts,tsx,js}'],
     languageOptions: {
       parser: tsParser,

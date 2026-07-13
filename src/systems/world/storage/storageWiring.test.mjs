@@ -135,7 +135,9 @@ test('WorldManager batches dirty chunks and only clears them after a successful 
 test('eviction never unloads a dirty chunk (no lost edits on a failed save)', () => {
     const wm = read('src/systems/WorldManager.ts');
     // evict() bails out (unloading nothing) while the chunk is still dirty...
-    assert.match(wm, /private evict\(cx: number, cz: number\): boolean \{[\s\S]*?if \(this\.dirtyChunks\.has\(key\)\) \{\s*\n\s*return false;/);
+    // (telemetry counters may precede the bail-out, but `return false` must sit
+    // inside the dirty-check block, before anything can unload)
+    assert.match(wm, /private evict\(cx: number, cz: number\): boolean \{[\s\S]*?if \(this\.dirtyChunks\.has\(key\)\) \{[^}]*?return false;/);
     // ...and the old "delete dirty flag + fire-and-forget save" path is gone.
     assert.doesNotMatch(wm, /this\.dirtyChunks\.delete\(key\);[\s\S]{0,200}?WorldStore\.evictChunk/);
     // the scan only counts real unloads and flushes deferred-dirty chunks for a later pass

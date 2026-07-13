@@ -1,38 +1,28 @@
 
 import { WorldState, ChunkUpdateCallback } from './worldTypes';
 import { getChunkKey } from './worldCoords';
-import { CHUNK_SIZE, WORLD_HEIGHT } from '../../constants';
+import { ChunkColumn } from './chunkColumn';
 
-export function getChunkData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
-    return state.chunks.get(getChunkKey(cx, cz));
+export function getColumn(state: WorldState, cx: number, cz: number): ChunkColumn | undefined {
+    return state.columns.get(getChunkKey(cx, cz));
 }
 
-export function setChunkData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
-    state.chunks.set(getChunkKey(cx, cz), data);
+export function setColumn(state: WorldState, cx: number, cz: number, column: ChunkColumn) {
+    state.columns.set(getChunkKey(cx, cz), column);
 }
 
-export function getLightData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
-    return state.lights.get(getChunkKey(cx, cz));
-}
-
-export function setLightData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
-    state.lights.set(getChunkKey(cx, cz), data);
-}
-
-export function getMetadataData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
-    return state.metadata.get(getChunkKey(cx, cz));
-}
-
-export function setMetadataData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
-    state.metadata.set(getChunkKey(cx, cz), data);
-}
-
-export function ensureMetadata(state: WorldState, cx: number, cz: number): Uint8Array {
-    const key = getChunkKey(cx, cz);
-    if (!state.metadata.has(key)) {
-        state.metadata.set(key, new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT));
-    }
-    return state.metadata.get(key)!;
+/** Ingests legacy full-column arrays (generation output / persisted saves). */
+export function setColumnFromArrays(
+    state: WorldState,
+    cx: number,
+    cz: number,
+    blocks: Uint8Array,
+    light: Uint8Array,
+    meta?: Uint8Array | null,
+): ChunkColumn {
+    const column = ChunkColumn.fromArrays(blocks, light, meta);
+    state.columns.set(getChunkKey(cx, cz), column);
+    return column;
 }
 
 export function subscribe(state: WorldState, cx: number, cz: number, callback: ChunkUpdateCallback) {
@@ -55,8 +45,6 @@ export function notifyChunk(state: WorldState, cx: number, cz: number) {
 
 export function evictChunk(state: WorldState, cx: number, cz: number) {
     const key = getChunkKey(cx, cz);
-    state.chunks.delete(key);
-    state.lights.delete(key);
-    state.metadata.delete(key);
+    state.columns.delete(key);
     state.listeners.delete(key);
 }

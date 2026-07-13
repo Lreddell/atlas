@@ -2,7 +2,8 @@ import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE, MIN_Y, MAX_Y } from '../../constants';
 import { WorldState } from './worldTypes';
-import { getChunkData, getLightData, getMetadataData } from './worldStore';
+import { getColumn } from './worldStore';
+import type { ChunkColumn } from './chunkColumn';
 import { worldToChunk, index3D, getChunkKey } from './worldCoords';
 import { NEIGHBORS, QUEUE_SIZE, SHARED_SKY_Q, SHARED_BLOCK_Q } from './worldConstants';
 import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
@@ -10,22 +11,59 @@ import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
 export function getLight(state: WorldState, x: number, y: number, z: number): { sky: number, block: number } {
     if (y < MIN_Y || y > MAX_Y) return { sky: 15, block: 0 };
     const { cx, cz, lx, lz } = worldToChunk(x, z);
-    
-    const lightData = getLightData(state, cx, cz);
-    if (!lightData) return { sky: 15, block: 0 };
-    
-    const val = lightData[index3D(lx, y, lz)];
+
+    const col = getColumn(state, cx, cz);
+    if (!col) return { sky: 15, block: 0 };
+
+    const val = col.getL(index3D(lx, y, lz));
     return { sky: (val >> 4) & 0xF, block: val & 0xF };
 }
 
 export function setLight(state: WorldState, x: number, y: number, z: number, sky: number, block: number) {
     if (y < MIN_Y || y > MAX_Y) return;
     const { cx, cz, lx, lz } = worldToChunk(x, z);
-    
-    const lightData = getLightData(state, cx, cz);
-    if (!lightData) return;
 
-    lightData[index3D(lx, y, lz)] = (sky << 4) | (block & 0xF);
+    const col = getColumn(state, cx, cz);
+    if (!col) return;
+
+    col.setL(index3D(lx, y, lz), (sky << 4) | (block & 0xF));
+}
+
+// --- Net-change write log for lighting floods ---
+// Floods reset a region's skylight and re-propagate (BFS), so a cell can be
+// written 0 then restored to its old value. Writes during a flood go through
+// setLLogged (no dirty marking); commitLightLog() then compares each FIRST
+// logged old value against the final value and dirties only sections whose
+// light net-changed. This is what keeps a single interior block edit down to
+// a single remeshed section.
+const netKeys = new Set<number>();
+const netCols: ChunkColumn[] = [];
+const netIdxs: number[] = [];
+const netOlds: number[] = [];
+
+function setLLogged(col: ChunkColumn, idx: number, v: number) {
+    const old = col.getL(idx);
+    if (old === v) return;
+    col.writeLightRaw(idx, v);
+    const k = col.colId * 98304 + idx;
+    if (!netKeys.has(k)) {
+        netKeys.add(k);
+        netCols.push(col);
+        netIdxs.push(idx);
+        netOlds.push(old);
+    }
+}
+
+function commitLightLog() {
+    for (let i = 0; i < netCols.length; i++) {
+        if (netCols[i].getL(netIdxs[i]) !== netOlds[i]) {
+            netCols[i].markSectionDirty(netIdxs[i] >> 12);
+        }
+    }
+    netKeys.clear();
+    netCols.length = 0;
+    netIdxs.length = 0;
+    netOlds.length = 0;
 }
 
 export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void) {
@@ -56,16 +94,13 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
 
     let cxCache = -999999999;
     let czCache = -999999999;
-    let chunkCache: Uint8Array | undefined;
-    let lightCache: Uint8Array | undefined;
-    let metaCache: Uint8Array | undefined;
-    const refreshCache = (cx: number, cz: number) => {
+    let colCache: ChunkColumn | undefined;
+    const refreshCache = (cx: number, cz: number): ChunkColumn | undefined => {
         if (cx !== cxCache || cz !== czCache) {
             cxCache = cx; czCache = cz;
-            chunkCache = getChunkData(state, cx, cz);
-            lightCache = getLightData(state, cx, cz);
-            metaCache = getMetadataData(state, cx, cz);
+            colCache = getColumn(state, cx, cz);
         }
+        return colCache;
     };
 
     // Pass 1: recompute vertical skylight + emission for each column in the area.
@@ -74,41 +109,41 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
         const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         for (let z = minZ; z <= maxZ; z++) {
             const cz = Math.floor(z / CHUNK_SIZE);
-            refreshCache(cx, cz);
-            if (!chunkCache || !lightCache) continue;
-            const chunk = chunkCache;
-            const light = lightCache;
-            const meta = metaCache;
+            const col = refreshCache(cx, cz);
+            if (!col) continue;
             const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const colBase = lz * CHUNK_SIZE + lx;
 
-            // Highest non-air block in the column
+            // Highest non-air block in the column (occupancy bounds skip the sky).
             let maxHeight = MIN_Y - 1;
-            for (let y = MAX_Y; y >= MIN_Y; y--) {
-                if (chunk[(y - MIN_Y) * LAYER + colBase] !== 0) { maxHeight = y; break; }
+            const topOcc = col.maxOccSection === -1
+                ? MIN_Y - 1
+                : MIN_Y + col.maxOccSection * 16 + 15;
+            for (let y = Math.min(MAX_Y, topOcc); y >= MIN_Y; y--) {
+                if (col.getB((y - MIN_Y) * LAYER + colBase) !== 0) { maxHeight = y; break; }
             }
 
             // Everything above is sunlit (only write inside the edit bounds)
             for (let y = maxY; y > Math.max(maxHeight, minY - 1); y--) {
-                light[(y - MIN_Y) * LAYER + colBase] = 15 << 4;
+                setLLogged(col, (y - MIN_Y) * LAYER + colBase, 15 << 4);
             }
 
             let sky = 15;
             // Scan from highest non-air downward; stop once below the writable bounds
             for (let y = maxHeight; y >= minY; y--) {
                 const idx = (y - MIN_Y) * LAYER + colBase;
-                const b = chunk[idx];
+                const b = col.getB(idx);
                 // Skylight scans straight down, so probe the cell's downward-entry
                 // (top) face: a top slab seals it (sky=0 below), a bottom slab leaves
                 // it open (sky dims by 1 and keeps falling).
-                const opacity = getDirectionalOpacity(b, meta ? meta[idx] : 0, 0, -1, 0);
+                const opacity = getDirectionalOpacity(b, col.getM(idx), 0, -1, 0);
                 if (opacity >= 15) sky = 0;
                 else if (opacity > 0) sky = Math.max(0, sky - opacity);
 
                 if (y <= maxY) {
                     const def = BLOCKS[b as BlockType];
                     const emission = def ? (def.lightLevel || 0) : 0;
-                    light[idx] = (sky << 4) | (emission & 0xF);
+                    setLLogged(col, idx, (sky << 4) | (emission & 0xF));
                 }
             }
         }
@@ -116,7 +151,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
 
     // Pass 2: seed BFS from every lit cell in (and one beyond) the recomputed region.
     cxCache = -999999999; czCache = -999999999;
-    chunkCache = undefined; lightCache = undefined;
+    colCache = undefined;
     const seedMinY = Math.max(MIN_Y, minY - 1);
     const seedMaxY = Math.min(MAX_Y, maxY + 1);
     for (let x = minX - 1; x <= maxX + 1; x++) {
@@ -124,13 +159,12 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
         const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         for (let z = minZ - 1; z <= maxZ + 1; z++) {
             const cz = Math.floor(z / CHUNK_SIZE);
-            refreshCache(cx, cz);
-            if (!lightCache) continue; // unloaded chunk: propagation would skip it anyway
-            const light = lightCache;
+            const col = refreshCache(cx, cz);
+            if (!col) continue; // unloaded chunk: propagation would skip it anyway
             const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const colBase = lz * CHUNK_SIZE + lx;
             for (let y = seedMinY; y <= seedMaxY; y++) {
-                const val = light[(y - MIN_Y) * LAYER + colBase];
+                const val = col.getL((y - MIN_Y) * LAYER + colBase);
                 if (val === 0) continue;
                 if ((val >> 4) > 0 && qSkyTail < QUEUE_SIZE * 3) {
                     qSky[qSkyTail++] = x; qSky[qSkyTail++] = y; qSky[qSkyTail++] = z;
@@ -143,47 +177,43 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
     }
 
     propagateLightTyped(state, qSky, qSkyTail, qBlock, qBlockTail);
+    commitLightLog();
 }
 
 export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCount: number, qBlock: Int32Array, blockCount: number) {
     let cxCache = -999999999;
     let czCache = -999999999;
-    let chunkCache: Uint8Array | undefined;
-    let lightCache: Uint8Array | undefined;
-    let metaCache: Uint8Array | undefined;
+    let colCache: ChunkColumn | undefined;
 
-    const refreshCache = (cx: number, cz: number) => {
+    const refreshCache = (cx: number, cz: number): ChunkColumn | undefined => {
         if (cx !== cxCache || cz !== czCache) {
             cxCache = cx; czCache = cz;
-            chunkCache = getChunkData(state, cx, cz);
-            lightCache = getLightData(state, cx, cz);
-            metaCache = getMetadataData(state, cx, cz);
+            colCache = getColumn(state, cx, cz);
         }
+        return colCache;
     };
 
     // BFS Block Light
     let head = 0;
     while (head < blockCount) {
         const x = qBlock[head++]; const y = qBlock[head++]; const z = qBlock[head++];
-        
+
         const cx = Math.floor(x / CHUNK_SIZE);
         const cz = Math.floor(z / CHUNK_SIZE);
-        refreshCache(cx, cz);
-        
-        if (!lightCache) continue;
-        const curLight = lightCache as Uint8Array;
+        const srcCol = refreshCache(cx, cz);
+        if (!srcCol) continue;
 
         const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         const index = index3D(lx, y, lz);
-        const lvl = curLight[index] & 0xF;
+        const lvl = srcCol.getL(index) & 0xF;
 
         if (lvl <= 0) continue;
 
-        // Source block/meta (cache currently holds the source chunk), used so a
-        // shaped source can't emit light back out through one of its sealed faces.
-        const srcType = chunkCache ? chunkCache[index] : 0;
-        const srcMeta = metaCache ? metaCache[index] : 0;
+        // Source block/meta, used so a shaped source can't emit light back out
+        // through one of its sealed faces.
+        const srcType = srcCol.getB(index);
+        const srcMeta = srcCol.getM(index);
 
         for(let i=0; i<6; i++) {
             const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
@@ -191,23 +221,22 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
             const ncx = Math.floor(nx / CHUNK_SIZE);
             const ncz = Math.floor(nz / CHUNK_SIZE);
-            refreshCache(ncx, ncz);
-
-            if (!chunkCache || !lightCache) continue;
-            const neighborLight = lightCache as Uint8Array;
+            const nCol = refreshCache(ncx, ncz);
+            if (!nCol) continue;
 
             const nlx = ((nx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nlz = ((nz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nIndex = index3D(nlx, ny, nlz);
 
-            const nType = chunkCache[nIndex];
-            const nMeta = metaCache ? metaCache[nIndex] : 0;
+            const nType = nCol.getB(nIndex);
+            const nMeta = nCol.getM(nIndex);
             const atten = Math.max(1, getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]));
             const nextLvl = lvl - atten;
-            
-            const currentNLvl = neighborLight[nIndex] & 0xF;
+
+            const nVal = nCol.getL(nIndex);
+            const currentNLvl = nVal & 0xF;
             if (nextLvl > currentNLvl) {
-                neighborLight[nIndex] = (neighborLight[nIndex] & 0xF0) | (nextLvl & 0xF);
+                setLLogged(nCol, nIndex, (nVal & 0xF0) | (nextLvl & 0xF));
                 if (blockCount < QUEUE_SIZE * 3) {
                     qBlock[blockCount++] = nx; qBlock[blockCount++] = ny; qBlock[blockCount++] = nz;
                 }
@@ -217,28 +246,26 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
     // BFS Sky Light
     head = 0;
-    cxCache = -999999999; czCache = -999999999; 
-    chunkCache = undefined; lightCache = undefined;
+    cxCache = -999999999; czCache = -999999999;
+    colCache = undefined;
 
     while (head < skyCount) {
         const x = qSky[head++]; const y = qSky[head++]; const z = qSky[head++];
 
         const cx = Math.floor(x / CHUNK_SIZE);
         const cz = Math.floor(z / CHUNK_SIZE);
-        refreshCache(cx, cz);
-
-        if (!lightCache) continue;
-        const curLight = lightCache as Uint8Array;
+        const srcCol = refreshCache(cx, cz);
+        if (!srcCol) continue;
 
         const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
         const index = index3D(lx, y, lz);
-        const lvl = (curLight[index] >> 4) & 0xF;
+        const lvl = (srcCol.getL(index) >> 4) & 0xF;
 
         if (lvl <= 0) continue;
 
-        const srcType = chunkCache ? chunkCache[index] : 0;
-        const srcMeta = metaCache ? metaCache[index] : 0;
+        const srcType = srcCol.getB(index);
+        const srcMeta = srcCol.getM(index);
 
         for(let i=0; i<6; i++) {
             const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
@@ -246,25 +273,24 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
             const ncx = Math.floor(nx / CHUNK_SIZE);
             const ncz = Math.floor(nz / CHUNK_SIZE);
-            refreshCache(ncx, ncz);
-
-            if (!chunkCache || !lightCache) continue;
-            const neighborLight = lightCache as Uint8Array;
+            const nCol = refreshCache(ncx, ncz);
+            if (!nCol) continue;
 
             const nlx = ((nx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nlz = ((nz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const nIndex = index3D(nlx, ny, nlz);
 
-            const nType = chunkCache[nIndex];
-            const nMeta = metaCache ? metaCache[nIndex] : 0;
+            const nType = nCol.getB(nIndex);
+            const nMeta = nCol.getM(nIndex);
             const opacity = getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]);
             let nextLvl = lvl - Math.max(1, opacity);
 
             if (NEIGHBORS[i][1] === -1 && lvl === 15 && opacity === 0) nextLvl = 15;
 
-            const currentNSky = (neighborLight[nIndex] >> 4) & 0xF;
+            const nVal = nCol.getL(nIndex);
+            const currentNSky = (nVal >> 4) & 0xF;
             if (nextLvl > currentNSky) {
-                neighborLight[nIndex] = (nextLvl << 4) | (neighborLight[nIndex] & 0xF);
+                setLLogged(nCol, nIndex, (nextLvl << 4) | (nVal & 0xF));
                 if (skyCount < QUEUE_SIZE * 3) {
                     qSky[skyCount++] = nx; qSky[skyCount++] = ny; qSky[skyCount++] = nz;
                 }
@@ -284,16 +310,16 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
     let sCount = 0;
     let bCount = 0;
 
-    const currentLight = getLightData(state, cx, cz);
-    if(!currentLight) return;
+    const currentCol = getColumn(state, cx, cz);
+    if(!currentCol) return;
     const worldX = cx * CHUNK_SIZE;
     const worldZ = cz * CHUNK_SIZE;
 
     neighbors.forEach(({dx, dz}) => {
         const ncx = cx + dx;
         const ncz = cz + dz;
-        const nLight = getLightData(state, ncx, ncz);
-        if (!nLight) return;
+        const nCol = getColumn(state, ncx, ncz);
+        if (!nCol) return;
 
         const nWorldX = ncx * CHUNK_SIZE;
         const nWorldZ = ncz * CHUNK_SIZE;
@@ -313,7 +339,7 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
             for (let lx = currXStart; lx <= currXEnd; lx++) {
                 for (let lz = currZStart; lz <= currZEnd; lz++) {
                      const cIndex = index3D(lx, y, lz);
-                     const val = currentLight[cIndex];
+                     const val = currentCol.getL(cIndex);
 
                      let nlx = lx; let nlz = lz;
                      if (dx === -1) nlx = CHUNK_SIZE - 1;
@@ -322,7 +348,7 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
                      else if (dz === 1) nlz = 0;
 
                      const nIndex = index3D(nlx, y, nlz);
-                     const nVal = nLight[nIndex];
+                     const nVal = nCol.getL(nIndex);
 
                      // When both sides of the border are fully sunlit (sky=15), neither can
                      // improve the other, this is the overwhelmingly common open-air case
@@ -351,9 +377,10 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
     });
 
     propagateLightTyped(state, qSky, sCount, qBlock, bCount);
-    
+    commitLightLog();
+
     neighbors.forEach(({dx, dz}) => {
-        if (state.chunks.has(getChunkKey(cx+dx, cz+dz))) notifyFn(cx+dx, cz+dz);
+        if (state.columns.has(getChunkKey(cx+dx, cz+dz))) notifyFn(cx+dx, cz+dz);
     });
     notifyFn(cx, cz);
 }
