@@ -2,63 +2,131 @@ import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { normalizeWorkerError, type WorkerJobType } from './streamingProtocol';
 
-// Cast self to Worker
 const ctx = self as unknown as Worker;
 
-ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces } = e.data;
+ctx.onmessage = (event) => {
+    const message = event.data;
+    const {
+        type,
+        id,
+        cx,
+        cz,
+        seed,
+        config,
+        chunk,
+        metaData,
+        neighbors,
+        lights,
+        ticket,
+        cullDarkFaces,
+        workerId = -1,
+        worldSessionId = 0,
+        desiredEpoch = 0,
+        jobInputBytes = 0,
+        sentAt = 0,
+    } = message;
+
+    if (type === 'PING') {
+        ctx.postMessage({ type: 'PONG', workerId, sentAt, receivedAt: Date.now() });
+        return;
+    }
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
-        console.log(`[Worker] Reseeded with: ${seed}`);
+        return;
     }
-    else if (type === 'SET_GEN_CONFIG') {
+
+    if (type === 'SET_GEN_CONFIG') {
         resetGenConfig();
-        if (config) {
-            loadGenConfig(config);
-        }
-        console.log('[Worker] Applied world generation config');
+        if (config) loadGenConfig(config);
+        return;
     }
-    else if (type === 'GEN') {
-        const result = generateChunk(cx, cz);
-        
-        // Transfer the generated buffers directly to the main thread.
-        // The worker no longer maintains a cache, making it stateless.
-        ctx.postMessage({ 
-            type: 'GEN_DONE', 
-            id, cx, cz, 
+
+    const postJobError = (jobType: WorkerJobType, error: unknown) => {
+        ctx.postMessage(normalizeWorkerError({
+            error,
+            jobType,
+            workerId,
+            cx,
+            cz,
             ticket,
-            result: { 
-                blocks: result.blocks, 
-                light: result.light, 
-                meta: result.meta 
-            }
-        }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
-    }
-    else if (type === 'MESH') {
-        if (!chunk) {
-            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result: null });
-            return;
+            worldSessionId,
+            desiredEpoch,
+            jobInputBytes,
+        }));
+    };
+
+    if (type === 'GEN') {
+        try {
+            const result = generateChunk(cx, cz);
+            ctx.postMessage({
+                type: 'GEN_DONE',
+                id,
+                cx,
+                cz,
+                ticket,
+                workerId,
+                worldSessionId,
+                desiredEpoch,
+                jobInputBytes,
+                result: {
+                    blocks: result.blocks,
+                    light: result.light,
+                    meta: result.meta,
+                },
+            }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
+        } catch (error) {
+            postJobError('GEN', error);
         }
-
-        // Generate geometry using data provided in the message.
-        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
-
-        const buffers: Transferable[] = [];
-        [result.opaque, result.cutout, result.transparent].forEach(geo => {
-            if (geo.positions.buffer) buffers.push(geo.positions.buffer);
-            if (geo.normals.buffer) buffers.push(geo.normals.buffer);
-            if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
-            if (geo.colors.buffer) buffers.push(geo.colors.buffer);
-            if (geo.indices.buffer) buffers.push(geo.indices.buffer);
-        });
-
-        const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
-
-        ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
+        return;
     }
-    else if (type === 'EVICT') {
-        // Stateless worker: nothing to evict locally.
+
+    if (type === 'MESH') {
+        try {
+            if (!chunk) {
+                ctx.postMessage({
+                    type: 'MESH_DONE',
+                    id,
+                    cx,
+                    cz,
+                    ticket,
+                    workerId,
+                    worldSessionId,
+                    desiredEpoch,
+                    jobInputBytes,
+                    result: null,
+                });
+                return;
+            }
+
+            const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+            const buffers: Transferable[] = [];
+            [result.opaque, result.cutout, result.transparent].forEach((geometry) => {
+                buffers.push(
+                    geometry.positions.buffer,
+                    geometry.normals.buffer,
+                    geometry.uvs.buffer,
+                    geometry.colors.buffer,
+                    geometry.indices.buffer,
+                );
+            });
+
+            ctx.postMessage({
+                type: 'MESH_DONE',
+                id,
+                cx,
+                cz,
+                ticket,
+                workerId,
+                worldSessionId,
+                desiredEpoch,
+                jobInputBytes,
+                result,
+            }, buffers);
+        } catch (error) {
+            postJobError('MESH', error);
+        }
     }
 };
