@@ -13,6 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint",
+    "test:streaming": "node scripts/perf/run-streaming-tests.mjs",
+    "perf": "npm run test:streaming && node scripts/perf/streaming-model.mjs",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder --win nsis"
   },
