@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import { installStreamingSafety } from "./systems/performance/streamingSafety";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -20,6 +21,7 @@ const renderApplication = async () => {
     return;
   }
 
+  installStreamingSafety();
   root.render(
     <StrictMode>
       <App />
