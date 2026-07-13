@@ -49,6 +49,7 @@ interface Sample {
     rawChunkBytes: number;
     cpuMeshBytes: number;
     meshCacheEntries: number;
+    deliveredMeshBytes: number;
     genQueue: number;
     meshQueue: number;
     inFlightGen: number;
@@ -114,6 +115,7 @@ function takeSample(t: number): Sample {
         rawChunkBytes: s.rawChunkBytes as number,
         cpuMeshBytes: s.cpuMeshBytes as number,
         meshCacheEntries: s.meshCacheEntries as number,
+        deliveredMeshBytes: (s.deliveredMeshBytes as number) ?? 0,
         genQueue: s.genQueue as number,
         meshQueue: s.meshQueue as number,
         inFlightGen: s.inFlightGen as number,
@@ -220,8 +222,35 @@ function runLoop(
     });
 }
 
+// Mesh subscriptions mirroring the game's ChunkMesh mount/unmount lifecycle:
+// App mounts one ChunkMesh per desired chunk, which subscribes and takes
+// ownership of delivered geometry. Without this, delivered-mesh accounting
+// (and the deliver-and-release ownership path) would go unexercised.
+const activeMeshSubs = new Map<string, () => void>();
+
+function clearMeshSubscriptions() {
+    for (const unsub of activeMeshSubs.values()) unsub();
+    activeMeshSubs.clear();
+}
+
 function setCenter(offsets: Array<{ dx: number; dz: number }>, cx: number, cz: number) {
     worldManager.setDesiredChunks(offsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz })));
+
+    const want = new Set<string>();
+    for (const { dx, dz } of offsets) want.add(`${cx + dx},${cz + dz}`);
+    for (const [key, unsub] of activeMeshSubs) {
+        if (!want.has(key)) {
+            unsub();
+            activeMeshSubs.delete(key);
+        }
+    }
+    for (const key of want) {
+        if (activeMeshSubs.has(key)) continue;
+        const comma = key.indexOf(',');
+        const scx = Number(key.slice(0, comma));
+        const scz = Number(key.slice(comma + 1));
+        activeMeshSubs.set(key, worldManager.subscribeMesh(scx, scz, () => { /* geometry consumed by renderer in-game */ }));
+    }
 }
 
 /** Waits until the pipeline has been idle for `holdMs`, up to `maxMs`. */
@@ -244,6 +273,7 @@ function waitForIdle(holdMs: number, maxMs: number) {
 }
 
 function resetWorld(seed: number) {
+    clearMeshSubscriptions();
     worldManager.reset();
     // Empty world id: generation + meshing run normally, storage is bypassed
     // (nothing to load, autosave skipped) so runs never touch IndexedDB/OPFS.
@@ -504,6 +534,7 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
             } else if (phase === 1 && elapsed > 3500) {
                 phase = 2;
                 // Now the normal switch flow: full pipeline reset + reload.
+                clearMeshSubscriptions();
                 worldManager.reset();
                 worldManager.setWorldContext('', seedB);
                 setCenter(offsets, 0, 0);

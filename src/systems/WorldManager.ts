@@ -231,9 +231,18 @@ export class WorldManager {
   private inFlightMeshBytes = new Map<string, number>();
   private inFlightMeshBytesTotal = 0;
   private meshCacheBytes = 0;
+  // Mesh ownership: geometry delivered to a live subscriber (a mounted
+  // ChunkMesh) is owned by the renderer — WorldManager releases its reference
+  // instead of retaining a duplicate. This map tracks delivered byte sizes per
+  // chunk (the estimate of renderer-resident mesh memory, CPU+GPU).
+  private deliveredMeshBytes = new Map<string, number>();
+  private deliveredMeshBytesTotal = 0;
   private budget: BudgetConfig = {
-      softLimitBytes: 800 * 1024 * 1024,
-      hardLimitBytes: 1200 * 1024 * 1024,
+      // Sized so render distance 24 (~1800 chunks: ~500 MiB raw + ~900 MiB of
+      // delivered mesh buffers) streams unthrottled while still capping far
+      // below the ~4 GiB browser heap ceiling the baseline crashed against.
+      softLimitBytes: 1536 * 1024 * 1024,
+      hardLimitBytes: 2048 * 1024 * 1024,
       bytesPerChunk: 3 * CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT,
   };
 
@@ -299,6 +308,9 @@ export class WorldManager {
           rawChunkBytes: blockBytes + lightBytes + metaBytes,
           meshCacheEntries: this.meshCache.size,
           cpuMeshBytes,
+          deliveredMeshes: this.deliveredMeshBytes.size,
+          deliveredMeshBytes: this.deliveredMeshBytesTotal,
+          estimatedGpuMeshBytes: this.deliveredMeshBytesTotal,
           genQueue: this.genQueue.length,
           meshQueue: this.meshQueue.length,
           inFlightGen: this.inFlightGen,
@@ -362,6 +374,8 @@ export class WorldManager {
       this.desiredRadius = 0;
       this.inFlightMeshBytes.clear();
       this.inFlightMeshBytesTotal = 0;
+      this.deliveredMeshBytes.clear();
+      this.deliveredMeshBytesTotal = 0;
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
       this.genQueue.clear();
@@ -771,11 +785,21 @@ export class WorldManager {
           if (wasDarkCulled) this.darkCulledMeshes.add(key);
           else this.darkCulledMeshes.delete(key);
 
-          this.storeMeshResult(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
-          
+
+          // Ownership: with a live subscriber the renderer takes the buffers
+          // (they were transferred from the worker and are wrapped as
+          // BufferAttributes without copying); WorldManager keeps NO duplicate.
+          // Without a subscriber the result is cached only until the first
+          // subscribeMesh, which takes it and releases the cache entry.
           const subs = this.meshSubscribers.get(key);
-          if (subs) subs.forEach(cb => cb(result));
+          if (subs && subs.size > 0) {
+              this.dropMeshResult(key);
+              subs.forEach(cb => cb(result));
+              this.markDelivered(key, result);
+          } else {
+              this.storeMeshResult(key, result);
+          }
 
           const pendingPriority = this.pendingRemesh.get(key);
           if (pendingPriority !== undefined) {
@@ -982,7 +1006,7 @@ export class WorldManager {
               this.enqueueGen(cx, cz, priority);
           } else if (stage >= ChunkStage.GENERATED && stage < ChunkStage.READY) {
               this.queueMesh(cx, cz, priority);
-          } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
+          } else if (stage === ChunkStage.READY && !this.hasMeshResident(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
               // Player approached a chunk meshed with dark-face culling, rebuild the
@@ -1088,11 +1112,32 @@ export class WorldManager {
       }
   }
 
+  private markDelivered(key: string, result: Geometry.GeometryResult) {
+      const bytes = WorldManager.geometryResultBytes(result);
+      const prev = this.deliveredMeshBytes.get(key) ?? 0;
+      this.deliveredMeshBytesTotal += bytes - prev;
+      this.deliveredMeshBytes.set(key, bytes);
+  }
+
+  private releaseDelivered(key: string) {
+      const prev = this.deliveredMeshBytes.get(key);
+      if (prev !== undefined) {
+          this.deliveredMeshBytes.delete(key);
+          this.deliveredMeshBytesTotal -= prev;
+      }
+  }
+
+  /** True when a usable mesh exists for this chunk (cached or delivered). */
+  private hasMeshResident(key: string): boolean {
+      return this.meshCache.has(key) || this.deliveredMeshBytes.has(key);
+  }
+
   /** Bytes currently accounted against the streaming memory budget. */
   private accountedBytes(): number {
       const rawEntries = this.state.chunks.size + this.state.lights.size + this.state.metadata.size;
       return rawEntries * (this.budget.bytesPerChunk / 3)
           + this.meshCacheBytes
+          + this.deliveredMeshBytesTotal
           + this.inFlightMeshBytesTotal;
   }
 
@@ -1413,7 +1458,7 @@ export class WorldManager {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.MESH_QUEUED) {
               this.enqueueMesh(cx, cz, priority);
-          } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
+          } else if (stage === ChunkStage.READY && !this.hasMeshResident(key)) {
               this.queueMesh(cx, cz, priority);
           }
 
@@ -1555,6 +1600,7 @@ export class WorldManager {
       this.stageCoords.delete(key);
       this.evictionPending.delete(key);
       this.dropMeshResult(key);
+      this.releaseDelivered(key);
       this.pendingRemesh.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
@@ -1884,12 +1930,29 @@ export class WorldManager {
       }
       this.meshSubscribers.get(key)!.add(cb);
       const current = this.meshCache.get(key);
-      if (current) cb(current);
+      if (current) {
+          // Hand the cached result to the renderer and release our copy —
+          // from here the mounted ChunkMesh owns (and disposes) the buffers.
+          this.dropMeshResult(key);
+          cb(current);
+          this.markDelivered(key, current);
+      } else if (this.getStage(cx, cz) === ChunkStage.READY && !this.deliveredMeshBytes.has(key)) {
+          // Remount after this chunk's mesh was released (component unmounted
+          // earlier): rebuild it rather than waiting for a repair sweep.
+          this.queueMesh(cx, cz, this.distancePriority(cx, cz));
+          this.markQueuesDirty();
+          this.scheduleStreamingPump();
+      }
       return () => {
           const set = this.meshSubscribers.get(key);
           if (set) {
               set.delete(cb);
-              if (set.size === 0) this.meshSubscribers.delete(key);
+              if (set.size === 0) {
+                  this.meshSubscribers.delete(key);
+                  // Last subscriber unmounted → it disposed the geometry; the
+                  // mesh is no longer resident anywhere.
+                  this.releaseDelivered(key);
+              }
           }
       };
   }

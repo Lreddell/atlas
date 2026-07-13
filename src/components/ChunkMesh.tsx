@@ -330,8 +330,11 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             const geo = new THREE.BufferGeometry();
             // Buffers arrive transferred from the worker and are never mutated again :
             // wrap them directly (Float32BufferAttribute would copy every array).
-            // NOTE: do NOT release the CPU arrays after GPU upload, WorldManager's
-            // meshCache hands these same buffers to chunks that remount later.
+            // OWNERSHIP: once delivered, this component owns the buffers —
+            // WorldManager released its reference on delivery, so disposing the
+            // geometry (unmount/replacement) frees the memory. A chunk that
+            // remounts later is remeshed by the worker instead of served from a
+            // retained CPU copy.
             geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
             geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
             geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
