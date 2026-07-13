@@ -14,7 +14,7 @@ import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
-import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
+import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
 import { WorldStorage } from './world/WorldStorage';
 import { GenConfig } from './world/genConfig';
@@ -24,6 +24,11 @@ import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneti
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
 import { perf } from './perf/perfTelemetry';
+import {
+    isWithinRetention, sortFarthestFirst, budgetLevel, effectiveRadiusSq,
+    evictionDrainBudget, RETENTION_HYSTERESIS,
+    type ChunkCoord, type BudgetConfig, type BudgetLevel,
+} from './world/chunkRetention';
 
 // --- Types ---
 enum ChunkStage {
@@ -208,6 +213,26 @@ export class WorldManager {
   private darkCulledMeshes = new Set<string>();
   private pendingMeshDark = new Map<string, boolean>();
   
+  // --- Continuous eviction & memory budget ---
+  // Numeric coordinates for every staged chunk so retention scans never parse
+  // string keys, plus the explicit eviction queue (chunks outside the
+  // retention circle awaiting unload, drained every scheduler cycle).
+  private stageCoords = new Map<string, ChunkCoord>();
+  private evictionPending = new Map<string, ChunkCoord>();
+  private evictionSorted: Array<ChunkCoord & { key: string }> = [];
+  private evictionSortDirty = false;
+  private desiredRadius = 0;
+  // Mesh job payloads currently inside workers, so budget accounting can see
+  // in-flight clone volume (released on completion, error, timeout, evict).
+  private inFlightMeshBytes = new Map<string, number>();
+  private inFlightMeshBytesTotal = 0;
+  private meshCacheBytes = 0;
+  private budget: BudgetConfig = {
+      softLimitBytes: 800 * 1024 * 1024,
+      hardLimitBytes: 1200 * 1024 * 1024,
+      bytesPerChunk: 3 * CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT,
+  };
+
   // Persistence Tracking
   private dirtyChunks = new Set<string>();
   // Per-chunk edit counter, bumped on every dirty-marking edit. The batch save
@@ -258,13 +283,7 @@ export class WorldManager {
       let metaBytes = 0;
       for (const arr of this.state.metadata.values()) metaBytes += arr.byteLength;
 
-      let cpuMeshBytes = 0;
-      for (const result of this.meshCache.values()) {
-          for (const geo of [result.opaque, result.cutout, result.transparent]) {
-              cpuMeshBytes += geo.positions.byteLength + geo.normals.byteLength
-                  + geo.uvs.byteLength + geo.colors.byteLength + geo.indices.byteLength;
-          }
-      }
+      const cpuMeshBytes = this.meshCacheBytes;
 
       return {
           residentChunks: this.state.chunks.size,
@@ -284,6 +303,14 @@ export class WorldManager {
           dirtyChunks: this.dirtyChunks.size,
           knownMissingStorageChunks: this.knownMissingStorageChunks.size,
           meshSubscribers: this.meshSubscribers.size,
+          evictionPending: this.evictionPending.size,
+          inFlightMeshInputBytes: this.inFlightMeshBytesTotal,
+          accountedBytes: this.accountedBytes(),
+          budgetLevel: this.currentBudgetLevel(),
+          budgetSoftLimitBytes: this.budget.softLimitBytes,
+          budgetHardLimitBytes: this.budget.hardLimitBytes,
+          desiredRadius: this.desiredRadius,
+          retentionHysteresis: RETENTION_HYSTERESIS,
           workers: this.workers.length,
           workersEnabled: this.workersEnabled,
           workerStatus: this.workerStatusMessage,
@@ -321,6 +348,14 @@ export class WorldManager {
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
+      this.meshCacheBytes = 0;
+      this.stageCoords.clear();
+      this.evictionPending.clear();
+      this.evictionSorted = [];
+      this.evictionSortDirty = false;
+      this.desiredRadius = 0;
+      this.inFlightMeshBytes.clear();
+      this.inFlightMeshBytesTotal = 0;
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
       this.genQueue.clear();
@@ -436,6 +471,7 @@ export class WorldManager {
           this.meshDispatchedTo.delete(key);
           if (!this.activeMeshTickets.has(key)) continue;
           this.activeMeshTickets.delete(key);
+          this.releaseMeshInputBytes(key);
           this.meshStartedAt.delete(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           const [cx, cz] = key.split(',').map(Number);
@@ -622,6 +658,9 @@ export class WorldManager {
 
   private setStage(cx: number, cz: number, stage: ChunkStage) {
       const key = WorldCoords.getChunkKey(cx, cz);
+      if (!this.chunkStages.has(key)) {
+          this.stageCoords.set(key, { cx, cz });
+      }
       this.chunkStages.set(key, stage);
   }
 
@@ -679,6 +718,7 @@ export class WorldManager {
           }
           this.activeMeshTickets.delete(key);
           this.meshDispatchedTo.delete(key);
+          this.releaseMeshInputBytes(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
           perf.count('streaming.meshDone');
@@ -697,7 +737,7 @@ export class WorldManager {
           if (wasDarkCulled) this.darkCulledMeshes.add(key);
           else this.darkCulledMeshes.delete(key);
 
-          this.meshCache.set(key, result);
+          this.storeMeshResult(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
           
           const subs = this.meshSubscribers.get(key);
@@ -757,6 +797,7 @@ export class WorldManager {
           if (this.activeMeshTickets.get(key) === ticket) {
               this.activeMeshTickets.delete(key);
               this.meshDispatchedTo.delete(key);
+              this.releaseMeshInputBytes(key);
               this.meshStartedAt.delete(key);
               this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
               this.pendingMeshDark.delete(key);
@@ -887,8 +928,11 @@ export class WorldManager {
           const { cx, cz } = chunks[i];
           const priority = i;
           const key = WorldCoords.getChunkKey(cx, cz);
-          
+
           wantedKeys.add(key);
+          // A chunk waiting to be evicted that becomes desired again (player
+          // turned around) is simply reclaimed — it never left memory.
+          this.evictionPending.delete(key);
 
           let stage = this.getStage(cx, cz);
           const hasChunkData = !!WorldStore.getChunkData(this.state, cx, cz);
@@ -929,39 +973,168 @@ export class WorldManager {
           const dSq = dx * dx + dz * dz;
           if (dSq > maxDesiredDistSq) maxDesiredDistSq = dSq;
       }
+      this.desiredRadius = Math.ceil(Math.sqrt(maxDesiredDistSq));
 
-      const shouldRunEvictionScan = this.desiredUpdateCounter % 6 === 0;
-      if (shouldRunEvictionScan && this.chunkStages.size > chunks.length) {
-          let evicted = 0;
-          let deferredDirty = false;
-          const maxEvictionsPerPass = 16;
-          const unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
-
-          for (const [key, _stage] of this.chunkStages) {
-              if (!wantedKeys.has(key)) {
-                  const [kcx, kcz] = key.split(',').map(Number);
-                  const dist = Math.sqrt((kcx - center.cx)**2 + (kcz - center.cz)**2);
-                  if (dist > unloadRadius) {
-                      // evict() returns false for a still-dirty chunk (it stays loaded);
-                      // only count real unloads toward the per-pass budget.
-                      if (this.evict(kcx, kcz)) {
-                          evicted++;
-                          if (evicted >= maxEvictionsPerPass) break;
-                      } else {
-                          deferredDirty = true;
-                      }
-                  }
-              }
-          }
-          // Persist any chunks we couldn't evict because they were dirty, so they
-          // become evictable on a later pass instead of lingering in memory.
-          if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
+      // Continuous eviction: EVERY desired-set update moves chunks that left
+      // the retention circle (desired radius + hysteresis) onto the explicit
+      // eviction queue and cancels their queued/in-flight work immediately.
+      // Actual unloading is drained under budget each scheduler cycle in
+      // drainEvictions() — no more occasional 16-chunk scans that fast travel
+      // and teleports outran (baseline: 7,618 resident chunks / 4.4 GiB heap
+      // after a 10k-block flight at render distance 16).
+      for (const [key, coord] of this.stageCoords) {
+          if (wantedKeys.has(key) || this.evictionPending.has(key)) continue;
+          if (isWithinRetention(coord.cx, coord.cz, center.cx, center.cz, this.desiredRadius, RETENTION_HYSTERESIS)) continue;
+          this.evictionPending.set(key, coord);
+          this.evictionSortDirty = true;
+          this.cancelInFlightWork(key, coord.cx, coord.cz);
       }
+
+      this.scheduleStreamingPump();
+  }
+
+  /**
+   * Invalidate the tickets of any in-flight gen/mesh job for a chunk leaving
+   * the retention set, releasing its pipeline slot right away (results that
+   * still arrive are discarded by the ticket check). Queued-but-undispatched
+   * jobs stay in their queues; the dispatch loops discard them on the desired
+   * check before posting to a worker.
+   */
+  private cancelInFlightWork(key: string, cx: number, cz: number) {
+      if (this.activeGenTickets.delete(key)) {
+          this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+          this.genStartedAt.delete(key);
+          this.genDispatchedTo.delete(key);
+          if (this.chunkStages.get(key) === ChunkStage.GENERATING) {
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+          }
+      }
+      if (this.activeMeshTickets.delete(key)) {
+          this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+          this.meshStartedAt.delete(key);
+          this.meshDispatchedTo.delete(key);
+          this.pendingMeshDark.delete(key);
+          this.releaseMeshInputBytes(key);
+          if (this.chunkStages.get(key) === ChunkStage.MESHING) {
+              this.setStage(cx, cz, ChunkStage.GENERATED);
+          }
+      }
+  }
+
+  private releaseMeshInputBytes(key: string) {
+      const bytes = this.inFlightMeshBytes.get(key);
+      if (bytes !== undefined) {
+          this.inFlightMeshBytes.delete(key);
+          this.inFlightMeshBytesTotal -= bytes;
+      }
+  }
+
+  private static geometryResultBytes(result: Geometry.GeometryResult): number {
+      let bytes = 0;
+      for (const geo of [result.opaque, result.cutout, result.transparent]) {
+          bytes += geo.positions.byteLength + geo.normals.byteLength
+              + geo.uvs.byteLength + geo.colors.byteLength + geo.indices.byteLength;
+      }
+      return bytes;
+  }
+
+  /** All meshCache mutations go through these two so byte accounting stays exact. */
+  private storeMeshResult(key: string, result: Geometry.GeometryResult) {
+      const prev = this.meshCache.get(key);
+      if (prev) this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
+      this.meshCache.set(key, result);
+      this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+  }
+
+  private dropMeshResult(key: string) {
+      const prev = this.meshCache.get(key);
+      if (prev) {
+          this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
+          this.meshCache.delete(key);
+      }
+  }
+
+  /** Bytes currently accounted against the streaming memory budget. */
+  private accountedBytes(): number {
+      const rawEntries = this.state.chunks.size + this.state.lights.size + this.state.metadata.size;
+      return rawEntries * (this.budget.bytesPerChunk / 3)
+          + this.meshCacheBytes
+          + this.inFlightMeshBytesTotal;
+  }
+
+  private currentBudgetLevel(): BudgetLevel {
+      return budgetLevel(this.accountedBytes(), this.budget);
+  }
+
+  /** Adjust soft/hard streaming memory limits (development/settings hook). */
+  public configureMemoryBudget(config: Partial<Pick<BudgetConfig, 'softLimitBytes' | 'hardLimitBytes'>>) {
+      if (config.softLimitBytes !== undefined) this.budget.softLimitBytes = config.softLimitBytes;
+      if (config.hardLimitBytes !== undefined) this.budget.hardLimitBytes = config.hardLimitBytes;
+  }
+
+  /**
+   * Unload chunks queued for eviction, farthest first, under a per-cycle
+   * budget that scales with memory pressure. Dirty chunks are never dropped —
+   * they stay queued, a save is requested, and they unload on a later cycle
+   * once persisted (exactly the old evict() safety contract).
+   */
+  private drainEvictions() {
+      if (this.evictionPending.size === 0) return;
+
+      const level = this.currentBudgetLevel();
+      const maxEvictions = evictionDrainBudget(level);
+      const timeBudgetMs = level === 'ok' ? 2 : 4;
+      const start = performance.now();
+
+      if (this.evictionSortDirty) {
+          this.evictionSorted = [];
+          for (const [key, coord] of this.evictionPending) {
+              this.evictionSorted.push({ key, cx: coord.cx, cz: coord.cz });
+          }
+          sortFarthestFirst(this.evictionSorted, this.desiredCenter.cx, this.desiredCenter.cz);
+          this.evictionSortDirty = false;
+      }
+
+      let evicted = 0;
+      let deferredDirty = false;
+      // One bounded pass over the current queue: each candidate is visited at
+      // most once per cycle, so all-dirty backlogs cannot spin the loop.
+      let remaining = this.evictionSorted.length;
+      const deferred: Array<ChunkCoord & { key: string }> = [];
+      while (remaining-- > 0 && this.evictionSorted.length > 0) {
+          if (evicted >= maxEvictions) break;
+          if (performance.now() - start > timeBudgetMs) break;
+
+          const candidate = this.evictionSorted.shift()!;
+          const kcx = candidate.cx;
+          const kcz = candidate.cz;
+          // Reclaimed by a newer desired set → no longer pending.
+          if (!this.evictionPending.has(candidate.key)) continue;
+
+          // evict() returns false for a still-dirty chunk (it stays loaded);
+          // only count real unloads toward the per-cycle budget.
+          if (this.evict(kcx, kcz)) {
+              evicted++;
+          } else {
+              deferredDirty = true;
+              deferred.push(candidate); // stays pending for a later cycle
+          }
+      }
+      // Dirty chunks keep their farthest-first position at the queue tail.
+      for (const d of deferred) this.evictionSorted.push(d);
+
+      // Persist any chunks we couldn't evict because they were dirty, so they
+      // become evictable on a later pass instead of lingering in memory.
+      if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
   }
 
   public processStreamingJobs() {
     this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
+
+      // Eviction drains before dispatch so freed memory/pipeline slots are
+      // usable in the same cycle. Progress is guaranteed every cycle.
+      this.drainEvictions();
 
       // Pool down (workers enabled but every worker crashed): keep jobs queued
       // until recovery restores the pool. Generation/meshing must not silently
@@ -969,17 +1142,38 @@ export class WorldManager {
       // the game after a single worker error.
       const poolDown = this.workersEnabled && this.workers.length === 0;
 
-      while (!poolDown && this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
+      // Memory budget: above the soft limit stop outer-ring prefetch and lower
+      // generation concurrency; above the hard limit shrink the effective
+      // streaming radius so the active player area stays stable while far
+      // work is rejected outright.
+      const level = this.currentBudgetLevel();
+      const radiusSqLimit = effectiveRadiusSq(this.desiredRadius, level, this.budget);
+      const genConcurrency = level === 'ok'
+          ? this.MAX_GEN_IN_FLIGHT
+          : Math.max(1, this.MAX_GEN_IN_FLIGHT >> 1);
+
+      while (!poolDown && this.inFlightGen < genConcurrency && this.genQueue.length > 0) {
           const job = this.genQueue.shift();
           if (!job) break;
           this.queuedGenKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
-          
+
           if (this.getStage(job.cx, job.cz) !== ChunkStage.REQUESTED) continue;
 
           const key = WorldCoords.getChunkKey(job.cx, job.cz);
           if (!this.desiredChunkKeys.has(key)) {
               this.setStage(job.cx, job.cz, ChunkStage.EMPTY);
               continue;
+          }
+
+          if (level !== 'ok' && this.distancePriority(job.cx, job.cz) > radiusSqLimit) {
+              // Over budget: this chunk sits beyond the effective radius. The
+              // queue is distance-ordered, so everything behind it is farther —
+              // push it back and stop generating until pressure drops
+              // (repairDesiredChunks re-enqueues the ring when budget clears).
+              perf.count('streaming.genRejectedOverBudget');
+              this.queuedGenKeys.add(key);
+              this.genQueue.unshift(job);
+              break;
           }
 
           this.inFlightGen++;
@@ -1091,6 +1285,9 @@ export class WorldManager {
                       if (n) inputBytes += n.byteLength;
                   }
                   perf.count('streaming.meshInputBytes', inputBytes);
+                  this.releaseMeshInputBytes(key); // paranoia: no double-count
+                  this.inFlightMeshBytes.set(key, inputBytes);
+                  this.inFlightMeshBytesTotal += inputBytes;
                   const slotId = this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
@@ -1148,7 +1345,7 @@ export class WorldManager {
           if (!chunk) {
               if (stage >= ChunkStage.GENERATED) {
                   this.setStage(cx, cz, ChunkStage.EMPTY);
-                  this.meshCache.delete(key);
+                  this.dropMeshResult(key);
                   this.pendingRemesh.delete(key);
                   this.genStartedAt.delete(key);
                   this.meshStartedAt.delete(key);
@@ -1187,6 +1384,7 @@ export class WorldManager {
                   this.meshStartedAt.delete(key);
                   this.activeMeshTickets.delete(key);
                   this.meshDispatchedTo.delete(key);
+                  this.releaseMeshInputBytes(key);
                   this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
                   this.enqueueMesh(cx, cz, priority);
               }
@@ -1303,7 +1501,9 @@ export class WorldManager {
       perf.count('streaming.evicted');
       WorldStore.evictChunk(this.state, cx, cz);
       this.chunkStages.delete(key);
-      this.meshCache.delete(key);
+      this.stageCoords.delete(key);
+      this.evictionPending.delete(key);
+      this.dropMeshResult(key);
       this.pendingRemesh.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
