@@ -9,12 +9,15 @@ const ts = require('typescript');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outDir = join(root, '.tmp', 'streaming-tests');
 const files = [
+  'src/constants.ts',
   'src/systems/world/streamingBudget.ts',
+  'src/systems/world/streamingBorders.ts',
   'src/systems/world/streamingEviction.ts',
   'src/systems/world/streamingGuardState.ts',
   'src/systems/world/streamingMetrics.ts',
   'src/systems/world/workers/streamingProtocol.ts',
   'scripts/perf/tests/streamingBudget.test.ts',
+  'scripts/perf/tests/streamingBorders.test.ts',
   'scripts/perf/tests/streamingEviction.test.ts',
   'scripts/perf/tests/streamingGuardState.test.ts',
   'scripts/perf/tests/streamingProtocol.test.ts',
