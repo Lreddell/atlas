@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { CHUNK_LIGHTING_UNIFORMS } from './chunkLightingState';
+import { FadeBudget } from '../systems/rendering/fadeBudget';
+import { terrainRenderPolicy, lodFromChunkFlags, shadowFromChunkFlags } from '../systems/rendering/terrainLod';
 
 // Use shared texture from manager
 const getChunkTexture = () => textureAtlasManager.getTexture();
@@ -20,20 +22,39 @@ interface ChunkMeshProps {
 
 const setupMaterial = (
   mat: THREE.MeshLambertMaterial,
-  options?: { alphaWeightSample?: boolean; binaryCutoutAlpha?: boolean; minLightBase?: number }
+  options?: { alphaWeightSample?: boolean; binaryCutoutAlpha?: boolean; minLightBase?: number; tiledAtlas?: boolean }
 ) => {
   const alphaWeightSample = options?.alphaWeightSample ?? false;
   const binaryCutoutAlpha = options?.binaryCutoutAlpha ?? false;
   const minLightBase = options?.minLightBase ?? 0.05;
+  const tiledAtlas = options?.tiledAtlas ?? false;
+
+  mat.customProgramCacheKey = () => `atlas-chunk-${tiledAtlas ? 'tiled' : 'plain'}-${binaryCutoutAlpha ? 'cutout' : 'blend'}-${alphaWeightSample ? 'weighted' : 'normal'}-${minLightBase}`;
 
   mat.onBeforeCompile = (shader) => {
     // Link material uniforms directly to the global shared objects
     shader.uniforms.uSunlight = CHUNK_LIGHTING_UNIFORMS.uSunlight;
     shader.uniforms.uBrightness = CHUNK_LIGHTING_UNIFORMS.uBrightness;
 
+    if (tiledAtlas) {
+      shader.vertexShader = `
+attribute vec2 tileUv;
+attribute vec4 tileData;
+varying vec2 vTileUv;
+varying vec4 vTileData;
+${shader.vertexShader}`;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>
+vTileUv = tileUv;
+vTileData = tileData;`,
+      );
+    }
+
     shader.fragmentShader = `
 uniform float uSunlight;
 uniform float uBrightness;
+${tiledAtlas ? 'varying vec2 vTileUv;\nvarying vec4 vTileData;' : ''}
 vec3 myTorchBaseColor;
 ${shader.fragmentShader}
       `;
@@ -43,7 +64,12 @@ ${shader.fragmentShader}
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_fragment>',
       `#ifdef USE_MAP
-  vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+  ${tiledAtlas ? `vec2 atlasSampleUv = vMapUv;
+  if (vTileData.z > 0.0 && vTileData.w > 0.0) {
+    vec2 repeatedTileUv = fract(vTileUv);
+    atlasSampleUv = vTileData.xy + repeatedTileUv * vTileData.zw;
+  }
+  vec4 sampledDiffuseColor = texture2D( map, atlasSampleUv );` : 'vec4 sampledDiffuseColor = texture2D( map, vMapUv );'}
   ${binaryCutoutAlpha ? 'sampledDiffuseColor.a = sampledDiffuseColor.a >= 0.5 ? 1.0 : 0.0;' : ''}
   ${alphaWeightSample ? 'sampledDiffuseColor.rgb *= sampledDiffuseColor.a;' : ''}
   diffuseColor *= sampledDiffuseColor;
@@ -104,7 +130,7 @@ const chunkMaterialTransparent = new THREE.MeshLambertMaterial({
     vertexColors: true
 });
 
-setupMaterial(chunkMaterialSolid);
+setupMaterial(chunkMaterialSolid, { tiledAtlas: true });
 setupMaterial(chunkMaterialCutout, { alphaWeightSample: true, binaryCutoutAlpha: true });
 setupMaterial(chunkMaterialTransparent, { minLightBase: 0.16 });
 
@@ -116,7 +142,7 @@ interface FadeMaterials {
 
 const createFadeMaterials = (startOpacity: number): FadeMaterials => {
   const opaque = chunkMaterialSolid.clone();
-  setupMaterial(opaque);
+  setupMaterial(opaque, { tiledAtlas: true });
   const cutout = chunkMaterialCutout.clone();
   setupMaterial(cutout, { alphaWeightSample: true, binaryCutoutAlpha: true });
   const transparent = chunkMaterialTransparent.clone();
@@ -146,12 +172,23 @@ const disposeFadeMaterials = (mats: FadeMaterials) => {
 // fading chunks register here and a single ticker (mounted once in App's Canvas)
 // drives only the handful of active animations.
 interface FadeAnimation {
+  activate(nowMs: number): void;
   update(nowMs: number): void;
 }
 
-const activeFadeAnimations = new Set<FadeAnimation>();
+const CHUNK_FADE_BUDGET = 32;
+const chunkFadeBudget = new FadeBudget<FadeAnimation>(CHUNK_FADE_BUDGET);
+const activeFadeAnimations = chunkFadeBudget.active;
+const subscribeTerrainPolicy = (listener: () => void) => terrainRenderPolicy.subscribe(listener);
 
 export const ChunkFadeTicker: React.FC = () => {
+  const renderer = useThree((state) => state.gl);
+  useEffect(() => {
+    const api = (window as Window & { __ATLAS_PERFORMANCE__?: { registerRenderer?: (renderer: THREE.WebGLRenderer | null) => void } }).__ATLAS_PERFORMANCE__;
+    api?.registerRenderer?.(renderer);
+    return () => api?.registerRenderer?.(null);
+  }, [renderer]);
+
   useFrame(() => {
     if (activeFadeAnimations.size === 0) return;
     const now = performance.now();
@@ -174,6 +211,13 @@ type Geometries = {
 const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: null };
 
 const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
+  const renderFlags = useSyncExternalStore(
+    subscribeTerrainPolicy,
+    () => terrainRenderPolicy.getChunkFlags(cx, cz, shadowsEnabled),
+    () => terrainRenderPolicy.getChunkFlags(cx, cz, shadowsEnabled),
+  );
+  const terrainLod = lodFromChunkFlags(renderFlags);
+  const castsTerrainShadow = shadowFromChunkFlags(renderFlags);
   const [geometries, setGeometries] = useState<Geometries>(EMPTY_GEOMETRIES);
   const [fadeMats, setFadeMats] = useState<FadeMaterials | null>(null);
 
@@ -220,7 +264,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
 
   const stopFade = useCallback(() => {
     if (fadeAnimRef.current) {
-      activeFadeAnimations.delete(fadeAnimRef.current);
+      const promoted = chunkFadeBudget.cancel(fadeAnimRef.current);
+      const now = performance.now();
+      for (const animation of promoted) animation.activate(now);
       fadeAnimRef.current = null;
     }
     fadeModeRef.current = 'none';
@@ -240,11 +286,13 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       setFadeMats(mats);
     }
     fadeModeRef.current = mode;
-    fadeStartedAtRef.current = performance.now();
-    if (mode === 'in') lastFadeStartMsRef.current = fadeStartedAtRef.current;
 
     if (!fadeAnimRef.current) {
       const anim: FadeAnimation = {
+        activate: (now: number) => {
+          fadeStartedAtRef.current = now;
+          if (fadeModeRef.current === 'in') lastFadeStartMsRef.current = now;
+        },
         update: (now: number) => {
           const m = fadeMatsRef.current;
           if (!m) return;
@@ -269,7 +317,10 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         }
       };
       fadeAnimRef.current = anim;
-      activeFadeAnimations.add(anim);
+      const state = chunkFadeBudget.request(anim);
+      if (state === 'active') anim.activate(performance.now());
+    } else if (activeFadeAnimations.has(fadeAnimRef.current)) {
+      fadeAnimRef.current.activate(performance.now());
     }
   }, [stopFade, queueDispose]);
 
@@ -328,14 +379,15 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         const buildGeo = (buff: any) => {
             if (!buff || buff.positions.length === 0) return null;
             const geo = new THREE.BufferGeometry();
-            // Buffers arrive transferred from the worker and are never mutated again :
-            // wrap them directly (Float32BufferAttribute would copy every array).
-            // NOTE: do NOT release the CPU arrays after GPU upload, WorldManager's
-            // meshCache hands these same buffers to chunks that remount later.
+            // Buffers arrive transferred from the worker and are never mutated again.
             geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
             geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
             geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
             geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 3));
+            if (buff.tileUvs && buff.tileData) {
+                geo.setAttribute('tileUv', new THREE.BufferAttribute(buff.tileUvs, 2));
+                geo.setAttribute('tileData', new THREE.BufferAttribute(buff.tileData, 4));
+            }
             if (buff.indices && buff.indices.length > 0) {
                 geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }
@@ -401,9 +453,10 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       position={[cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE]}
       matrixAutoUpdate={false}
       onUpdate={(g) => g.updateMatrix()}
+      userData={{ terrainLod }}
     >
-        {geometries.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} castShadow={shadowsEnabled} receiveShadow={false} />}
+        {geometries.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={castsTerrainShadow} receiveShadow={shadowsEnabled} />}
+        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} castShadow={castsTerrainShadow} receiveShadow={false} />}
         {geometries.transparent && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
     </group>
   );
