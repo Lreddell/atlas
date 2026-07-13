@@ -51,8 +51,11 @@ for (const file of files) {
     process.exit(1);
   }
 
+  const runtimePrelude = file === 'src/constants.ts'
+    ? "globalThis.__APP_VERSION__ = 'test';\nglobalThis.__APP_DISPLAY_VERSION__ = 'Test';\n"
+    : '';
   mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, result.outputText);
+  writeFileSync(outputPath, runtimePrelude + result.outputText);
 }
 
 const testFiles = files
