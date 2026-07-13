@@ -1,5 +1,6 @@
 import { generateChunk } from "../chunkGeneration";
 import { generateGeometryData } from "../geometry";
+import { mergeOpaqueGeometryQuads } from "../meshing/geometryPostprocess";
 import { reseedGlobalNoise } from "../../../utils/noise";
 import { loadGenConfig, resetGenConfig } from "../genConfig";
 import {
@@ -38,6 +39,17 @@ interface WorkerRequest extends JobIdentity {
   >;
   ticket?: number;
   cullDarkFaces?: boolean;
+}
+
+interface TiledGeometryAttributes {
+  positions: Float32Array;
+  normals: Float32Array;
+  uvs: Float32Array;
+  colors: Float32Array;
+  indices: Uint32Array;
+  tileUvs?: Float32Array;
+  tileData?: Float32Array;
+  mergedQuadCount?: number;
 }
 
 const ctx = self as unknown as Worker;
@@ -214,9 +226,17 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
       neighborLights,
       !!cullDarkFaces,
     );
+    // Scratch accounting tracks the legacy output before compaction because the
+    // source mesher still fills those buffers in this stage.
     updateGeometryScratchEstimate(result);
+    const opaqueBefore = result.opaque.positions.length / 12;
+    const mergedOpaque = mergeOpaqueGeometryQuads(result.opaque) as TiledGeometryAttributes;
+    result.opaque = mergedOpaque;
+    const opaqueAfter = mergedOpaque.positions.length / 12;
+
     const buffers: Transferable[] = [];
     [result.opaque, result.cutout, result.transparent].forEach((geometry) => {
+      const tiled = geometry as TiledGeometryAttributes;
       buffers.push(
         geometry.positions.buffer,
         geometry.normals.buffer,
@@ -224,6 +244,8 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
         geometry.colors.buffer,
         geometry.indices.buffer,
       );
+      if (tiled.tileUvs) buffers.push(tiled.tileUvs.buffer);
+      if (tiled.tileData) buffers.push(tiled.tileData.buffer);
     });
 
     ctx.postMessage(
@@ -236,6 +258,11 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
         ...identityFrom(request),
         jobDurationMs: performance.now() - startedAt,
         scratchCapacities: scratchCapacities(),
+        meshStats: {
+          opaqueQuadsBefore: opaqueBefore,
+          opaqueQuadsAfter: opaqueAfter,
+          opaqueQuadsMerged: mergedOpaque.mergedQuadCount ?? 0,
+        },
         result,
       },
       buffers,
