@@ -175,7 +175,6 @@ export class ChunkColumn {
     if (before !== value) this.markChanged();
   }
 
-
   replaceKindFromLegacy(kind: ColumnArrayKind, data: Uint8Array): void {
     if (data.length !== COLUMN_VOLUME) {
       throw new RangeError(`Invalid ${kind} column length ${data.length}; expected ${COLUMN_VOLUME}.`);
@@ -289,25 +288,31 @@ export class ChunkColumn {
   }
 
   private markChanged(): void {
-    this.datU™\œÚ[Ûˆ
-ÏHNÂˆ\Ë™\HHYNÂˆBŸB‚™^ÜÛÛœÝX]\šX[^™PÛÛ[[\œ˜^HH
-ˆÛÛ[[ŽˆÚ[šÐÛÛ[[‹ˆÚ[™ˆÛÛ[[\œ˜^RÚ[™ŠNˆZ[\œ˜^HOˆÂˆÛÛœÝÝ]]H™]ÈZ[\œ˜^JÓÓSS—Õ“ÓSQJNÂˆYˆ
-Ú[™OOH	ÛYÚ	ÊHÝ]]™š[
-QUSÔÒÖWÓQÒ
-NÂˆ›Üˆ
-]ÙXÝ[Û–HHÈÙXÝ[Û–HÑPÕSÓ—ÐÓÕS•ÈÙXÝ[Û–H
-ÏHJHÂˆÛÛœÝÙXÝ[ÛˆHÛÛ[[‹œÙXÝ[ÛœÖÜÙXÝ[Û–WNÂˆYˆ
-\ÙXÝ[ÛŠHÛÛ[YNÂˆÛÛœÝÛÝ\˜ÙHHÚ[™OOH	Ø›ØÚÜÉÈÈÙXÝ[Û‹˜›ØÚÜÈˆÚ[™OOH	ÛYÚ	ÈÈÙXÝ[Û‹›YÚˆÙXÝ[Û‹›Y]Y]NÂˆYˆ
-\ÛÝ\˜ÙJHÛÛ[YNÂˆ›Üˆ
-]ØØ[HHÈØØ[HÑPÕSÓ—ÔÒV‘NÈØØ[H
-ÏHJHÂˆÛÛœÝSÙ™œÙ]HÙXÝ[Û–H
-ˆÑPÕSÓ—ÔÒV‘H
-ÈØØ[NÂˆÛÛœÝÛÝ\˜ÙP˜\ÙHHØØ[H
-ˆÑPÕSÓ—ÐT‘PNÂˆ›Üˆ
-]ˆHÈˆÒS’×ÔÒV‘NÈˆ
-ÏHJHÂˆÛÛœÝ\™Ù]˜\ÙHHYØXÞR[™^
-SÙ™œÙ]ŠNÂˆÛÛœÝ›ÝÐ˜\ÙHHÛÝ\˜ÙP˜\ÙH
-Èˆ
-ˆÒS’×ÔÒV‘NÂˆÝ]]œÙ]
-ÛÝ\˜ÙKœÝX˜\œ˜^J›ÝÐ˜\ÙK›ÝÐ˜\ÙH
-ÈÒS’×ÔÒV‘JK\™Ù]˜\ÙJNÂˆBˆBˆBˆ™]\›ˆÝ]]ÂŸNÂ
+    this.dataVersion += 1;
+    this.dirty = true;
+  }
+}
+
+export const materializeColumnArray = (
+  column: ChunkColumn,
+  kind: ColumnArrayKind,
+): Uint8Array => {
+  const output = new Uint8Array(COLUMN_VOLUME);
+  if (kind === 'light') output.fill(DEFAULT_SKY_LIGHT);
+  for (let sectionY = 0; sectionY < SECTION_COUNT; sectionY += 1) {
+    const section = column.sections[sectionY];
+    if (!section) continue;
+    const source = kind === 'blocks' ? section.blocks : kind === 'light' ? section.light : section.metadata;
+    if (!source) continue;
+    for (let localY = 0; localY < SECTION_SIZE; localY += 1) {
+      const yOffset = sectionY * SECTION_SIZE + localY;
+      const sourceBase = localY * SECTION_AREA;
+      for (let z = 0; z < CHUNK_SIZE; z += 1) {
+        const targetBase = legacyIndex(0, yOffset, z);
+        const rowBase = sourceBase + z * CHUNK_SIZE;
+        output.set(source.subarray(rowBase, rowBase + CHUNK_SIZE), targetBase);
+      }
+    }
+  }
+  return output;
+};
