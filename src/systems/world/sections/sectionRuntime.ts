@@ -8,6 +8,7 @@ import { materializeUint8Array } from './sectionedColumnMap';
 import type { ChunkColumn } from './chunkColumn';
 import { affectedSectionsForEdit, unpackSectionKey, type SectionKey } from './sectionDirty';
 import type { WorldBlockEdit, WorldEditTransactionResult } from '../worldEditTransaction';
+import { terrainRenderPolicy } from '../../rendering/terrainLod';
 
 export interface WorldEditTransactionHandle {
   setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
@@ -37,6 +38,7 @@ interface ManagerInternals {
   updateLightingAround(x: number, y: number, z: number): void;
   queueMesh(cx: number, cz: number, priority: number): void;
   processStreamingJobs(): void;
+  setDesiredChunks(chunks: Array<{ cx: number; cz: number }>): void;
 }
 
 interface PerformanceSample {
@@ -78,6 +80,7 @@ export const installSectionRuntime = (): SectionWorldManager => {
   const originalPostToPool = manager.postToPool.bind(manager);
   const originalSetBlock = manager.setBlock.bind(manager);
   const originalSetBlocks = manager.setBlocks.bind(manager);
+  const originalSetDesiredChunks = manager.setDesiredChunks.bind(manager);
   const originalSaveChunks = WorldStorage.saveChunks.bind(WorldStorage);
   const dirtySectionKeys = new Set<SectionKey>();
   let activeTransaction: ActiveTransaction | null = null;
@@ -230,6 +233,11 @@ export const installSectionRuntime = (): SectionWorldManager => {
     const result = originalSetBlocks(edits);
     for (const edit of edits) markAffectedSections(edit.x, edit.y, edit.z);
     return result;
+  };
+
+  manager.setDesiredChunks = (chunks) => {
+    if (chunks.length > 0) terrainRenderPolicy.setCenter(chunks[0].cx, chunks[0].cz);
+    originalSetDesiredChunks(chunks);
   };
 
   manager.postToPool = (message: unknown) => {
