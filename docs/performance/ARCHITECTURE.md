@@ -2,7 +2,7 @@
 
 ## Stage 1 streaming safety layer
 
-`src/systems/performance/streamingSafety.ts` installs once, before the main application is dynamically imported. It wraps the existing `WorldManager` singleton instead of changing its public API or save format.
+`src/systems/performance/streamingSafety.ts` installs once from `src/index.tsx` after module initialization and before the React application renders. It wraps the existing `WorldManager` singleton instead of changing its public API or save format.
 
 The adapter is intentionally isolated so the section-storage rewrite can later replace internals without forcing gameplay callers to change.
 
