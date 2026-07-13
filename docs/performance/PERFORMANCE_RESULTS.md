@@ -1,4 +1,85 @@
-# Atlas Performance Results — Stage 1 (crash-proof streaming)
+# Atlas Performance Results
+
+Covers Stage 1 (crash-proof streaming) and Stage 2 (section-based world and
+meshing). Each stage was measured against the previous one on the same
+machine/settings; raw data in `results/`.
+
+# Stage 2 — section-based world and meshing
+
+- **Before:** end of Stage 1 (`d341900`)
+- **After:** the Stage-2 commit series (section storage → section meshing →
+  bulk-edit transaction)
+- **Raw data:** `results/2026-07-13-05-21-55-stage1-after.json` vs
+  `results/2026-07-13-17-46-15-stage2-after.json`
+
+Runtime chunks are now `ChunkColumn`s of 24 16³ sections per plane
+(blocks/light/metadata); uniform sections (air, deep stone, open sky, unset
+metadata) are a single byte value, materialized lazily on first real write.
+Mesh jobs carry 24-bit section masks and return per-section geometry;
+ChunkMesh renders per-section meshes with tight bounds; lighting floods dirty
+only NET-changed sections; fluids/trees/structures batch through one
+transaction. The persisted save format is unchanged (sections flatten at the
+storage boundary), so existing worlds load identically.
+
+## Stage 2 measurements
+
+| Metric | Stage 1 | Stage 2 | Change | Scenario |
+| --- | --- | --- | --- | --- |
+| Raw resident bytes | 55 MiB | 10 MiB | −82% | stationary RD8 |
+| Raw resident bytes | 224 MiB | 44 MiB | −80% | stationary RD16 |
+| Raw resident bytes | 504 MiB | 105 MiB | −79% | stationary RD24 |
+| Heap end (peak) | 584 (589) MiB | 133 (143) MiB | −77% | stationary RD24 |
+| Raw / heap peak | 229 MiB / 585 MiB | 61 MiB / 147 MiB | −73% / −75% | travel 10k RD16 |
+| Resident plateau (desired ≈ 797) | 815 | 811 | still bounded | travel 10k RD16 |
+| Frames > 50 ms | 38 | 20 | −47% | travel 10k RD16 |
+| Mesh worker input | 1.99 GiB | 472 MiB | −76% | travel 10k RD16 |
+| Teleport frame p99 | 44.0 ms | **23.3 ms** | Stage-1 regression erased | teleport RD16 |
+| Teleport heap peak | 320 MiB | 109 MiB | −66% | teleport RD16 |
+| Edit-churn frame p95 / p99 | 31.0 / 46.6 ms | **17.9 / 23.8 ms** | −42% / −49% | editChurn RD8 |
+| Edit-churn mesh input (30 s) | 625 MiB | 176 MiB | −72% | editChurn RD8 |
+| Out-and-back: idle → return resident | 797 → 823 | 797 → 816 | plateau kept | outAndBack RD16 |
+
+## Stage 2 acceptance checklist
+
+- ✅ Existing saves load identically — persisted format untouched (boundary
+  flattening); byte-exact round-trip tests incl. edited chunks
+  (`sectionSaveRoundTrip.test.mjs`, `chunkColumn.test.mjs`); tile entities,
+  boss progression, boats, inventory/equipment, and world time live outside
+  the chunk arrays and their modules are untouched (asserted)
+- ✅ Deterministic generation unchanged (all 9 hashes identical) and
+  whole-column mesher output byte-identical (all 8 hashes)
+- ✅ Union of per-section mesher passes ≡ whole-column output
+  (order-independent quad multiset, `sectionEquivalence`)
+- ✅ A single interior block edit remeshes **1 job / 1 section**; a
+  section-boundary edit **1 job / 2 sections** (`singleSectionEdit`, with the
+  lighting flood's net-change logging keeping transient rewrites clean)
+- ✅ Tree/fluid/structure batches deduplicate: a 300-block structure placement
+  produces **1 mesh job / 2 sections** (`bulkEditBatch`); fluid ticks batch
+- ✅ Raw resident memory substantially lower (−79…82% across scenarios)
+- ✅ Long travel remains bounded (peak resident 811 vs desired 797)
+- ✅ Worker containment and stale-rejection gates still pass
+
+## Stage 2 regressions and caveats
+
+- **Initial load time-to-idle rose** ~15–25% (RD16 24.4 → 32.6 s, RD24
+  55.8 → 68.6 s): a full-column mesh now runs one mesher pass per occupied
+  section (~8×/column) and each pass re-scans the x/z grid for its 16-block
+  slab, plus per-section geometry slices. Candidate Stage-3 work (the greedy
+  rewrite can share per-column scans across sections).
+- Scene object count rises (one mesh per non-empty section per material
+  instead of per chunk, ~2–4× objects) — offset by much tighter frustum
+  culling from 16-block bounds; draw-call measurement is Stage 4's first task.
+- Sapling growth-stage metadata writes now mark sections dirty and are picked
+  up by the next edit's sweep; previously they never triggered a remesh at
+  all. Harmless (stage bits don't change rendering) but visible in telemetry.
+- The in-game smoke test caught (and the series fixes) a real integration
+  bug: the in-flight full-job marker was cleared at dispatch, making partial
+  updates clear all other sections — visible as missing terrain. Runtime
+  verification beyond unit hashes remains essential for renderer changes.
+
+---
+
+# Stage 1 — crash-proof streaming
 
 Scope of this stage: memory growth, chunk residency, mesh ownership, worker
 recovery, streaming lifecycle — the failure mode reported in the field as

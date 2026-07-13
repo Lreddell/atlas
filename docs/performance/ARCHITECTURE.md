@@ -1,8 +1,53 @@
-# Atlas Streaming Architecture (post Stage 1)
+# Atlas Streaming Architecture (post Stage 2)
 
-This documents the world-streaming pipeline after the crash-proof-streaming
-work (Stage 1 of the performance overhaul). It covers memory ownership, the
-worker protocol, eviction, budgets, and failure handling.
+This documents the world-streaming pipeline after crash-proof streaming
+(Stage 1) and the section-based world/meshing migration (Stage 2). It covers
+section storage, memory ownership, the worker protocol, eviction, budgets,
+dirty propagation, the bulk-edit transaction, and failure handling.
+
+## Section storage (`ChunkColumn`)
+
+A resident chunk is a `ChunkColumn` (src/systems/world/chunkColumn.ts): 24
+vertical sections of 16×16×16 cells per data plane (blocks, light, metadata).
+A section is either an implicit **uniform value** (a plain number — empty
+air, deep solid stone, open sky light, unset metadata, ocean water) or a
+materialized `Uint8Array(4096)`. Sections materialize lazily on the first
+write that actually changes a value; no-op writes are free. Columns track
+per-section data/mesh versions, a dirty-section bitmask, non-air occupancy
+bounds, and their materialized byte total (the raw-memory accounting input).
+
+Layout invariant: the section-local index is the low 12 bits of the classic
+`index3D` flat index, so section `i` owns bytes `[i*4096, (i+1)*4096)` of the
+legacy full array. Ingest (`fromArrays`) and flattening are slice copies, and
+all flat-index call sites (lighting floods, fluids, plant growth, accessors)
+address cells with `idx >> 12` / `idx & 4095`.
+
+**Save compatibility by boundary flattening:** the persisted chunk format is
+unchanged. Loads ingest the legacy arrays; saves flatten dirty columns back
+to byte-identical arrays. Existing worlds load identically (round-trip
+tested), and the storage backends know nothing about sections.
+
+### Section dirty propagation
+
+- Block/metadata writes mark their own section in the column's dirty mask.
+- Lighting floods write through a NET-change log: the flood's reset-and-
+  repropagate pass may rewrite a cell transiently (zero it then restore it);
+  only cells whose value differs after the flood mark their section dirty.
+- After an edit + flood, `sweepDirtySections` (3×3 chunks — a radius-15 flood
+  cannot reach farther) consumes the masks and queues one section-masked mesh
+  job per affected chunk. A single interior edit remeshes ONE section; a
+  section-boundary edit adds the vertical neighbor; a chunk-border edit adds
+  the matching sections of the border chunk (face culling).
+
+### Bulk-edit transaction (`WorldEditBatch`)
+
+`worldManager.createEditBatch(opts)` — writes apply immediately (fluid/growth
+logic reads state between its own writes) with setBlock-equivalent side
+effects (tile entities + drops, loot-cache seeding, fluid scheduling, support
+cascades — each behind a parity flag); lighting floods collapse to one per
+~radius-13 edit cluster and remesh queueing dedupes per section at commit().
+Used by the fluid tick (one batch per tick), tree growth, and structure/arena
+placement (`setBlocks`).
 
 ## Pipeline overview
 
@@ -14,7 +59,7 @@ processStreamingJobs (pumped once per frame by ChunkStreamer)
    ├─ repairDesiredChunks (round-robin self-heal, 64 checks/cycle)
    ├─ drainEvictions      (farthest-first, budgeted, every cycle)
    ├─ gen dispatch        (storage load → else worker GEN)
-   └─ mesh dispatch       (center clone + neighbor border planes → worker MESH)
+   └─ mesh dispatch       (center sections + neighbor border planes → worker MESH, section mask)
         ▼
 world.worker.ts (pool of 2–4, stable ids, heartbeats)
         ▼
@@ -29,10 +74,10 @@ MESH_QUEUED → MESHING → READY` (unchanged from before Stage 1).
 | Data | Owner | Freed when |
 | --- | --- | --- |
 | Chunk blocks/light/metadata (`WorldState` maps) | WorldManager (main thread) | chunk evicted (never while dirty) |
-| Mesh job input (center arrays) | main thread; structured-cloned to worker per job | GC after job |
+| Mesh job input (center sections) | uniform sections as numbers; materialized sections as fresh copies, **transferred** to worker, flattened into worker scratch | worker GC after job |
 | Mesh job input (neighbor planes) | freshly extracted per job, **transferred** to worker | worker GC after job |
-| Mesh result buffers | worker → **transferred** to main → **delivered to subscriber** | ChunkMesh disposes on unmount/replacement |
-| Mesh result without subscriber | `meshCache` (byte-accounted), bridges until first `subscribeMesh` | taken by first subscriber, or dropped on evict |
+| Mesh result buffers (per section) | worker → **transferred** to main → **delivered to subscriber** | ChunkMesh disposes on unmount/section replacement |
+| Mesh result without subscriber | `meshCache` (per-section, byte-accounted), bridges until first `subscribeMesh` | taken by first subscriber, or dropped on evict |
 
 **Deliver-and-release contract:** WorldManager never retains a mesh a live
 `ChunkMesh` also holds. On `MESH_DONE` with subscribers, buffers go straight
@@ -52,12 +97,13 @@ Messages **to** workers:
 | `SET_SEED` / `SET_GEN_CONFIG` | seed / config | per-worker on spawn, broadcast on world switch |
 | `PING` | — | heartbeat, every 5 s |
 | `GEN` | `cx, cz, ticket, session` | |
-| `MESH` | `cx, cz, ticket, session, chunk, metaData, lights.center` (cloned) + 8 border planes (transferred) | |
+| `MESH` | `cx, cz, ticket, session, sectionMask, full, sections` (uniform sections as numbers, materialized as transferred 4 KiB copies) + 8 border planes (transferred) | worker flattens sections into reusable scratch |
 | `DEBUG_FAIL_NEXT` | `count, kind` | test/benchmark fault injection only |
 | `EVICT` | — | no-op (workers are stateless) |
 
-Messages **from** workers: `GEN_DONE`, `MESH_DONE` (result buffers
-transferred, `durMs` measured in-worker), `PONG`, and structured `JOB_ERROR`
+Messages **from** workers: `GEN_DONE`, `MESH_DONE` (one geometry result per
+requested section, buffers transferred, `durMs` measured in-worker), `PONG`,
+and structured `JOB_ERROR`
 (`workerId, jobType, cx, cz, ticket, session, errorName, errorMessage,
 allocationRelated, inputBytes`).
 
@@ -148,16 +194,16 @@ and `scripts/perf/run-perf.mjs` are documented in
 
 ## Known limits / remaining bottlenecks (future stages)
 
-- **Full-height chunk storage** (16×384×16, 3 × 96 KiB arrays per chunk) is
-  unchanged — Stage 2 (16³ sections in a `ChunkColumn`, implicit air, lazy
-  metadata) is the next big win for raw residency and edit-scoped remeshing.
-- **Whole-column meshing**: one block edit still remeshes full 384-block
-  columns (plus border neighbors); section meshing belongs to Stage 2/3.
 - The **top/bottom "greedy" path still emits one quad per cell** after rect
-  detection; real merging + tiled atlas sampling is Stage 3.
-- **Renderer**: up to 3 meshes + 1 group per chunk; no batching/LOD (Stage 4);
-  cloud rebuilds (Stage 5), entity/drop/particle/fluid work (Stages 6–8),
-  React/App state breadth (Stage 10) are untouched.
+  detection; real merging + tiled atlas sampling is Stage 3. The Stage-2
+  initial-load time-to-idle regression (~15–25%: one mesher pass per occupied
+  section) should be recovered there by sharing per-column scans.
+- **Renderer**: one mesh per non-empty section per material (~2–4× objects vs
+  per-chunk meshes, offset by tight 16-block culling bounds); no
+  batching/LOD (Stage 4 — measure `renderer.info` first); cloud rebuilds
+  (Stage 5), entity/drop/particle work (Stages 6–7), fluid scheduling
+  internals and plant probing (Stage 8), React/App state breadth (Stage 10)
+  are untouched.
 - Budget levels react to main-thread accounting only; worker scratch
   capacities are bounded by the mesher's existing `HARD_MAX_FACES` guard but
   not yet reported per worker.
