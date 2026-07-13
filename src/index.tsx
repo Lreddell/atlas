@@ -1,8 +1,6 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
 import "./styles.css";
-import { installStreamingSafety } from "./systems/performance/streamingSafety";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -10,18 +8,30 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-const performanceMode =
-  import.meta.env.DEV &&
-  new URLSearchParams(window.location.search).get("perf") === "1";
+const params = new URLSearchParams(window.location.search);
+const performanceMode = import.meta.env.DEV && params.get("perf") === "1";
+const performanceVariant = params.get("variant") === "baseline" ? "baseline" : "stage1";
 
 const renderApplication = async () => {
+  if (performanceMode && performanceVariant === "baseline") {
+    (globalThis as typeof globalThis & { __ATLAS_LEGACY_COLUMNS__?: boolean }).__ATLAS_LEGACY_COLUMNS__ = true;
+  }
+
+  const { installStreamingSafety } = await import("./systems/performance/streamingSafety");
+  installStreamingSafety({ enforce: !performanceMode || performanceVariant !== "baseline" });
+
+  if (!performanceMode || performanceVariant !== "baseline") {
+    const { installSectionRuntime } = await import("./systems/world/sections/sectionRuntime");
+    installSectionRuntime();
+  }
+
   if (performanceMode) {
     const { PerformanceHarness } = await import("./perf/PerformanceHarness");
     root.render(<PerformanceHarness />);
     return;
   }
 
-  installStreamingSafety();
+  const { default: App } = await import("./App");
   root.render(
     <StrictMode>
       <App />
