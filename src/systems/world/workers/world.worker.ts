@@ -2,6 +2,14 @@ import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { ChunkColumn, COLUMN_VOLUME, type SectionPlane } from '../chunkColumn';
+
+// Reusable scratch: center-chunk sections arrive as uniform values + 4 KiB
+// materialized copies and are flattened here once per job, so the mesher keeps
+// its fast flat-array access without the main thread cloning ~295 KiB per job.
+const scratchBlocks = new Uint8Array(COLUMN_VOLUME);
+const scratchMeta = new Uint8Array(COLUMN_VOLUME);
+const scratchLight = new Uint8Array(COLUMN_VOLUME);
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
@@ -29,7 +37,7 @@ const isAllocationError = (e: unknown): boolean => {
 };
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces, session } = e.data;
+    const { type, id, cx, cz, seed, config, sections, neighbors, lights, ticket, cullDarkFaces, session } = e.data;
 
     try {
         if (type === 'INIT') {
@@ -76,15 +84,21 @@ ctx.onmessage = (e) => {
             }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
         }
         else if (type === 'MESH') {
-            if (!chunk) {
+            if (!sections) {
                 ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, result: null });
                 return;
             }
 
             maybeInjectFailure();
-            // Generate geometry using data provided in the message.
             const started = performance.now();
-            const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+            ChunkColumn.flattenPlane(sections.blocks as SectionPlane[], scratchBlocks);
+            ChunkColumn.flattenPlane(sections.meta as SectionPlane[], scratchMeta);
+            ChunkColumn.flattenPlane(sections.light as SectionPlane[], scratchLight);
+            const result = generateGeometryData(
+                cx, cz, scratchBlocks, scratchMeta,
+                neighbors, { center: scratchLight, ...lights },
+                !!cullDarkFaces,
+            );
             const durMs = performance.now() - started;
 
             const buffers: Transferable[] = [];
@@ -109,8 +123,13 @@ ctx.onmessage = (e) => {
         // backoff, and keep every other worker running.
         if (type === 'GEN' || type === 'MESH') {
             let inputBytes = 0;
-            if (chunk) inputBytes += chunk.byteLength ?? 0;
-            if (metaData) inputBytes += metaData.byteLength ?? 0;
+            if (sections) {
+                for (const plane of Object.values(sections)) {
+                    for (const sec of plane as SectionPlane[]) {
+                        if (typeof sec !== 'number') inputBytes += sec.byteLength;
+                    }
+                }
+            }
             if (neighbors) {
                 for (const n of Object.values(neighbors)) {
                     inputBytes += (n as Uint8Array | undefined)?.byteLength ?? 0;

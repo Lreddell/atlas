@@ -545,11 +545,11 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
         // Compare a few resident chunks against fresh seed-B generation.
         const mismatches: string[] = [];
         for (const [cx, cz] of [[0, 0], [2, -1], [-3, 3]] as Array<[number, number]>) {
-            const resident = worldManager.getChunkData(cx, cz, false);
+            const column = worldManager.getChunkColumn(cx, cz, false);
             const expected = WorldGen.generateChunk(cx, cz).blocks;
-            if (!resident) { mismatches.push(`${cx},${cz}: missing`); continue; }
+            if (!column) { mismatches.push(`${cx},${cz}: missing`); continue; }
             let h1 = 0x811c9dc5, h2 = 0x811c9dc5;
-            h1 = fnv1a(h1, resident);
+            h1 = fnv1a(h1, column.flattenBlocks());
             h2 = fnv1a(h2, expected);
             if (h1 !== h2) mismatches.push(`${cx},${cz}: ${h1.toString(16)} != ${h2.toString(16)}`);
         }

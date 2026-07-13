@@ -1,6 +1,7 @@
 import { BlockType } from '../../types';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import { isSaplingType, getTreeKindForSapling, generateTreeBlocks, isReplaceable, isValidSoil, getMinClearance } from './trees';
+import type { ChunkColumn } from './chunkColumn';
 
 // Interval between growth ticks in world ticks (1 tick = 1 call to WorldManager.tick)
 const GROWTH_TICK_INTERVAL = 60; // ~3 seconds at 20 tps
@@ -21,7 +22,7 @@ interface WorldAccess {
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
-    getChunkData(cx: number, cz: number): Uint8Array | null;
+    getChunkColumn(cx: number, cz: number): ChunkColumn | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
 }
@@ -52,9 +53,12 @@ export function tickPlantGrowth(world: WorldAccess) {
     // instead of with the constant 17x17 tick neighbourhood.
     for (let cx = center.cx - GROWTH_TICK_RADIUS; cx <= center.cx + GROWTH_TICK_RADIUS; cx++) {
       for (let cz = center.cz - GROWTH_TICK_RADIUS; cz <= center.cz + GROWTH_TICK_RADIUS; cz++) {
-        const chunk = world.getChunkData(cx, cz);
+        const chunk = world.getChunkColumn(cx, cz);
         if (!chunk) continue;
-        const layers = chunk.length / LAYER;
+        // Occupancy bounds skip the empty sky; saplings can still sit on soil at
+        // any height inside the occupied range.
+        if (chunk.maxOccSection === -1) continue;
+        const layers = (chunk.maxOccSection + 1) * 16;
 
         for (let i = 0; i < PROBES_PER_CHUNK; i++) {
             const r = nextRand();
@@ -64,10 +68,8 @@ export function tickPlantGrowth(world: WorldAccess) {
             const wx = cx * CHUNK_SIZE + lx;
             const wz = cz * CHUNK_SIZE + lz;
 
-            // Direct typed-array scan over the full world column, saplings can sit on
-            // soil at any height (the old 64..199 window silently excluded everything else).
             for (let yi = 0; yi < layers; yi++) {
-                const block = chunk[yi * LAYER + colBase] as BlockType;
+                const block = chunk.getB(yi * LAYER + colBase) as BlockType;
                 if (!isSaplingType(block)) continue;
 
                 const y = yi + MIN_Y;

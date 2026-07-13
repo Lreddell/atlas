@@ -19,9 +19,8 @@ export interface ChestState {
 }
 
 export interface WorldState {
-    chunks: Map<string, Uint8Array>;
-    lights: Map<string, Uint8Array>;
-    metadata: Map<string, Uint8Array>;
+    /** Section-based chunk columns (blocks + light + metadata per column). */
+    columns: Map<string, import('./chunkColumn').ChunkColumn>;
     listeners: Map<string, Set<ChunkUpdateCallback>>;
     furnaces: Map<string, FurnaceState>;
     chests: Map<string, ChestState>;
@@ -29,9 +28,7 @@ export interface WorldState {
 }
 
 export const createWorldState = (): WorldState => ({
-    chunks: new Map(),
-    lights: new Map(),
-    metadata: new Map(),
+    columns: new Map(),
     listeners: new Map(),
     furnaces: new Map(),
     chests: new Map(),

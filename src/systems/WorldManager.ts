@@ -24,6 +24,7 @@ import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneti
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
 import { perf } from './perf/perfTelemetry';
+import { ChunkColumn } from './world/chunkColumn';
 import {
     isWithinRetention, sortFarthestFirst, budgetLevel, effectiveRadiusSq,
     evictionDrainBudget, RETENTION_HYSTERESIS,
@@ -289,23 +290,16 @@ export class WorldManager {
    * correct if storage layout changes.
    */
   public getStreamingStats(): Record<string, unknown> {
-      let blockBytes = 0;
-      for (const arr of this.state.chunks.values()) blockBytes += arr.byteLength;
-      let lightBytes = 0;
-      for (const arr of this.state.lights.values()) lightBytes += arr.byteLength;
-      let metaBytes = 0;
-      for (const arr of this.state.metadata.values()) metaBytes += arr.byteLength;
+      let rawChunkBytes = 0;
+      for (const col of this.state.columns.values()) rawChunkBytes += col.materializedBytes;
 
       const cpuMeshBytes = this.meshCacheBytes;
 
       return {
-          residentChunks: this.state.chunks.size,
+          residentChunks: this.state.columns.size,
           chunkStageEntries: this.chunkStages.size,
           desiredChunks: this.desiredChunkKeys.size,
-          blockBytes,
-          lightBytes,
-          metaBytes,
-          rawChunkBytes: blockBytes + lightBytes + metaBytes,
+          rawChunkBytes,
           meshCacheEntries: this.meshCache.size,
           cpuMeshBytes,
           deliveredMeshes: this.deliveredMeshBytes.size,
@@ -505,6 +499,37 @@ export class WorldManager {
       }
       this.markQueuesDirty();
       this.scheduleStreamingPump();
+  }
+
+  // Reusable scratch for the explicit workers-disabled main-thread mesh path.
+  private static meshScratchBlocks = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+  private static meshScratchMeta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+  private static meshScratchLight = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+
+  /** 1-deep border planes (blocks + light) for the four neighbor columns. */
+  private buildNeighborPlanes(cx: number, cz: number): {
+      blocks: Geometry.NeighborData;
+      light: Omit<Geometry.NeighborLight, 'center'>;
+  } {
+      const blocks: Geometry.NeighborData = {};
+      const light: Omit<Geometry.NeighborLight, 'center'> = {};
+      const sides = [
+          { side: 'left' as const, dx: -1, dz: 0 },
+          { side: 'right' as const, dx: 1, dz: 0 },
+          { side: 'front' as const, dx: 0, dz: 1 },
+          { side: 'back' as const, dx: 0, dz: -1 },
+      ];
+      for (const { side, dx, dz } of sides) {
+          const col = WorldStore.getColumn(this.state, cx + dx, cz + dz);
+          if (!col) continue;
+          const b = new Uint8Array(Geometry.NEIGHBOR_PLANE_SIZE);
+          const l = new Uint8Array(Geometry.NEIGHBOR_PLANE_SIZE);
+          col.fillBorderPlane(b, 'blocks', side);
+          col.fillBorderPlane(l, 'light', side);
+          blocks[side] = b;
+          light[side] = l;
+      }
+      return { blocks, light };
   }
 
   private distancePriority(cx: number, cz: number): number {
@@ -735,10 +760,8 @@ export class WorldManager {
               return;
           }
           
-          WorldStore.setChunkData(this.state, cx, cz, result.blocks);
-          WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
-          
+          WorldStore.setColumnFromArrays(this.state, cx, cz, result.blocks, result.light, result.meta);
+
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
               if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
                   this.queueMesh(ncx, ncz, 10);
@@ -993,7 +1016,7 @@ export class WorldManager {
           this.evictionPending.delete(key);
 
           let stage = this.getStage(cx, cz);
-          const hasChunkData = !!WorldStore.getChunkData(this.state, cx, cz);
+          const hasChunkData = !!WorldStore.getColumn(this.state, cx, cz);
 
           if (!hasChunkData && stage >= ChunkStage.GENERATED) {
               this.setStage(cx, cz, ChunkStage.EMPTY);
@@ -1134,8 +1157,9 @@ export class WorldManager {
 
   /** Bytes currently accounted against the streaming memory budget. */
   private accountedBytes(): number {
-      const rawEntries = this.state.chunks.size + this.state.lights.size + this.state.metadata.size;
-      return rawEntries * (this.budget.bytesPerChunk / 3)
+      let raw = 0;
+      for (const col of this.state.columns.values()) raw += col.materializedBytes;
+      return raw
           + this.meshCacheBytes
           + this.deliveredMeshBytesTotal
           + this.inFlightMeshBytesTotal;
@@ -1311,24 +1335,11 @@ export class WorldManager {
               continue;
           }
 
-          const c = WorldStore.getChunkData(this.state, job.cx, job.cz);
-          if (!c) {
+          const column = WorldStore.getColumn(this.state, job.cx, job.cz);
+          if (!column) {
               this.setStage(job.cx, job.cz, ChunkStage.REQUESTED);
               this.queueGen(job.cx, job.cz, job.priority);
               continue;
-          }
-
-          let m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
-          if (!m) {
-              m = new Uint8Array(c.length);
-              WorldStore.setMetadataData(this.state, job.cx, job.cz, m);
-          }
-
-          let l = WorldStore.getLightData(this.state, job.cx, job.cz);
-          if (!l) {
-              l = new Uint8Array(c.length);
-              l.fill(15 << 4);
-              WorldStore.setLightData(this.state, job.cx, job.cz, l);
           }
 
           this.inFlightMesh++;
@@ -1343,44 +1354,25 @@ export class WorldManager {
           ) > WorldManager.DARK_CULL_DISTANCE;
           this.pendingMeshDark.set(key, cullDark);
 
-              // Neighbor data travels as 1-deep border planes (~48 KiB total)
-              // instead of eight full chunk arrays (~1.03 MiB per job in the
-              // baseline). The planes are fresh copies, so their buffers are
-              // transferred (zero-copy) to the worker; the authoritative
-              // center arrays stay owned by the main thread and are cloned.
-              const source = (ncx: number, ncz: number): Geometry.NeighborSource | undefined => {
-                  const blocks = WorldStore.getChunkData(this.state, ncx, ncz);
-                  if (!blocks) return undefined;
-                  const light = WorldStore.getLightData(this.state, ncx, ncz);
-                  if (!light) return undefined;
-                  return { blocks, light };
-              };
-              const planes = Geometry.buildNeighborInput(
-                  source(job.cx - 1, job.cz),
-                  source(job.cx + 1, job.cz),
-                  source(job.cx, job.cz + 1),
-                  source(job.cx, job.cz - 1),
-              );
-              const neighbors = planes.blocks;
-              const neighborLights = { center: l, ...planes.light };
+              // Center data travels as SECTIONS: uniform sections as single
+              // bytes, materialized sections as fresh 4 KiB copies whose
+              // buffers are transferred. The worker reconstructs them into
+              // reusable scratch arrays. Neighbor data stays 1-deep border
+              // planes, built straight from the neighbor columns.
+              const neighbors = this.buildNeighborPlanes(job.cx, job.cz);
 
               if (this.workersEnabled && this.workers.length > 0) {
-                  let inputBytes = c.byteLength + m.byteLength + l.byteLength;
-                  for (const n of [neighbors.left, neighbors.right, neighbors.front, neighbors.back]) {
-                      if (n) inputBytes += n.byteLength;
-                  }
-                  for (const n of [neighborLights.left, neighborLights.right, neighborLights.front, neighborLights.back]) {
-                      if (n) inputBytes += n.byteLength;
+                  const payload = column.toSectionPayload();
+                  let inputBytes = payload.bytes;
+                  const transfer: Transferable[] = payload.transfer;
+                  for (const plane of [neighbors.blocks.left, neighbors.blocks.right, neighbors.blocks.front, neighbors.blocks.back,
+                                       neighbors.light.left, neighbors.light.right, neighbors.light.front, neighbors.light.back]) {
+                      if (plane) { inputBytes += plane.byteLength; transfer.push(plane.buffer); }
                   }
                   perf.count('streaming.meshInputBytes', inputBytes);
                   this.releaseMeshInputBytes(key); // paranoia: no double-count
                   this.inFlightMeshBytes.set(key, inputBytes);
                   this.inFlightMeshBytesTotal += inputBytes;
-                  const transfer: Transferable[] = [];
-                  for (const plane of [neighbors.left, neighbors.right, neighbors.front, neighbors.back,
-                                       planes.light.left, planes.light.right, planes.light.front, planes.light.back]) {
-                      if (plane) transfer.push(plane.buffer);
-                  }
                   const slotId = this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
@@ -1388,10 +1380,9 @@ export class WorldManager {
                       cz: job.cz,
                       ticket,
                       session: this.worldSession,
-                      chunk: c,
-                      metaData: m,
-                      neighbors,
-                      lights: neighborLights,
+                      sections: payload.planes,
+                      neighbors: neighbors.blocks,
+                      lights: neighbors.light,
                       cullDarkFaces: cullDark
                   }, transfer);
                   if (slotId !== null) this.meshDispatchedTo.set(key, slotId);
@@ -1400,7 +1391,12 @@ export class WorldManager {
                   const session = this.worldSession;
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
+                      const col = WorldStore.getColumn(this.state, job.cx, job.cz);
+                      if (!col) return;
+                      const c = col.flattenBlocks(WorldManager.meshScratchBlocks);
+                      const m = col.flattenMeta(WorldManager.meshScratchMeta);
+                      const l = col.flattenLight(WorldManager.meshScratchLight);
+                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors.blocks, { center: l, ...neighbors.light }, cullDark);
                       this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, session, result: res });
                   }, 0);
               }
@@ -1434,7 +1430,7 @@ export class WorldManager {
 
           const [cx, cz] = key.split(',').map(Number);
           const stage = this.getStage(cx, cz);
-          const chunk = WorldStore.getChunkData(this.state, cx, cz);
+          const chunk = WorldStore.getColumn(this.state, cx, cz);
           const priority = (cx - this.desiredCenter.cx) * (cx - this.desiredCenter.cx) + (cz - this.desiredCenter.cz) * (cz - this.desiredCenter.cz);
 
           if (!chunk) {
@@ -1545,11 +1541,12 @@ export class WorldManager {
           const savedKeys: Array<{ key: string; version: number }> = [];
           for (const key of keys) {
               const [cx, cz] = key.split(',').map(Number);
-              const blocks = WorldStore.getChunkData(this.state, cx, cz);
-              const light = WorldStore.getLightData(this.state, cx, cz);
-              const meta = WorldStore.getMetadataData(this.state, cx, cz);
-              if (blocks && light && meta) {
-                  batch.push({ cx, cz, blocks, light, meta });
+              // Boundary flattening: sections are flattened back to the exact
+              // legacy persisted arrays, so the save format (and existing
+              // worlds) are untouched by section storage.
+              const col = WorldStore.getColumn(this.state, cx, cz);
+              if (col) {
+                  batch.push({ cx, cz, blocks: col.flattenBlocks(), light: col.flattenLight(), meta: col.flattenMeta() });
                   savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
               }
           }
@@ -1912,12 +1909,10 @@ export class WorldManager {
   }
 
   public ensureChunk(cx: number, cz: number) {
-      if (!WorldStore.getChunkData(this.state, cx, cz)) {
+      if (!WorldStore.getColumn(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
           const result = WorldGen.generateChunk(cx, cz);
-          WorldStore.setChunkData(this.state, cx, cz, result.blocks);
-          WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setColumnFromArrays(this.state, cx, cz, result.blocks, result.light, result.meta);
           this.setStage(cx, cz, ChunkStage.GENERATED);
           // We don't mesh here, just ensure data exists for collision/spawn checks
       }
@@ -2007,7 +2002,7 @@ export class WorldManager {
           setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
-          getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+          getChunkColumn: (cx, cz) => WorldStore.getColumn(this.state, cx, cz) ?? null,
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
       });
@@ -2039,43 +2034,44 @@ export class WorldManager {
   subscribeToParticles(cb: ParticleCallback) { this.particleListeners.add(cb); return () => { this.particleListeners.delete(cb); }; }
 
   getTerrainHeight(x: number, z: number): number { return WorldGen.getTerrainHeight(x, z); }
-  hasChunk(cx: number, cz: number): boolean { return !!WorldStore.getChunkData(this.state, cx, cz); }
+  hasChunk(cx: number, cz: number): boolean { return !!WorldStore.getColumn(this.state, cx, cz); }
   tryGetBlock(x: number, y: number, z: number): BlockType | null {
     if (y < MIN_Y || y > MAX_Y) return BlockType.AIR; 
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = WorldStore.getChunkData(this.state, cx, cz);
-    if (!chunk) return null; 
-    return chunk[WorldCoords.index3D(lx, y, lz)];
+    const col = WorldStore.getColumn(this.state, cx, cz);
+    if (!col) return null;
+    return col.getB(WorldCoords.index3D(lx, y, lz));
   }
   getBlock(x: number, y: number, z: number, autoGenerate: boolean = true): BlockType {
     if (y < MIN_Y || y > MAX_Y) return BlockType.AIR; 
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = this.getChunkData(cx, cz, autoGenerate);
-    if (!chunk) return BlockType.AIR;
-    return chunk[WorldCoords.index3D(lx, y, lz)];
+    const col = this.getChunkColumn(cx, cz, autoGenerate);
+    if (!col) return BlockType.AIR;
+    return col.getB(WorldCoords.index3D(lx, y, lz));
   }
-  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint8Array | null {
-    const chunk = WorldStore.getChunkData(this.state, cx, cz);
-    if (chunk) return chunk;
+  getChunkColumn(cx: number, cz: number, autoGenerate: boolean = true): ChunkColumn | null {
+    const col = WorldStore.getColumn(this.state, cx, cz);
+    if (col) return col;
     if (autoGenerate && this.getStage(cx, cz) === ChunkStage.EMPTY) { this.queueGen(cx, cz, 0); }
     return null;
   }
   getMetadata(x: number, y: number, z: number): number {
       if (y < MIN_Y || y > MAX_Y) return 0;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-      const meta = WorldStore.getMetadataData(this.state, cx, cz);
-      if (!meta) return 0;
-      return meta[WorldCoords.index3D(lx, y, lz)];
+      const col = WorldStore.getColumn(this.state, cx, cz);
+      if (!col) return 0;
+      return col.getM(WorldCoords.index3D(lx, y, lz));
   }
   setMetadataAt(x: number, y: number, z: number, value: number) {
       if (y < MIN_Y || y > MAX_Y) return;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-      const meta = WorldStore.ensureMetadata(this.state, cx, cz);
-      meta[WorldCoords.index3D(lx, y, lz)] = value;
+      const col = WorldStore.getColumn(this.state, cx, cz);
+      if (!col) return;
+      col.setM(WorldCoords.index3D(lx, y, lz), value);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
   getLoadedChunkKeys(): string[] {
-      return Array.from(this.state.chunks.keys());
+      return Array.from(this.state.columns.keys());
   }
   /**
    * Whether the player may place/break at this position. A sealed region (one
@@ -2112,20 +2108,19 @@ export class WorldManager {
     // for internal world simulation (fluids, plant growth, support cascades),
     // which must keep running inside sealed regions.
     const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
-    const chunk = this.getChunkData(cx, cz, true);
-    if (!chunk) return [];
+    const col = this.getChunkColumn(cx, cz, true);
+    if (!col) return [];
     const index = WorldCoords.index3D(lx, y, lz);
-    const oldType = chunk[index];
-    const oldRotation = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+    const oldType = col.getB(index);
+    const oldRotation = col.getM(index);
     // Breaking an unopened natural loot cache (chest with the 0x40 meta bit):
     // seed its contents first so handleBlockReplaced spills the loot as drops
     // instead of silently discarding it.
     if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
         this.ensureChest(x, y, z);
     }
-    chunk[index] = type;
-    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
-    meta[index] = rotation;
+    col.setB(index, type);
+    col.setM(index, rotation);
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
     if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
@@ -2182,15 +2177,15 @@ export class WorldManager {
     for (const e of edits) {
       if (e.y < MIN_Y || e.y > MAX_Y) continue;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
-      const chunk = this.getChunkData(cx, cz, true);
-      if (!chunk) continue;
+      const col = this.getChunkColumn(cx, cz, true);
+      if (!col) continue;
       const index = WorldCoords.index3D(lx, e.y, lz);
       const rot = e.rotation ?? 0;
-      const oldType = chunk[index];
-      const oldRot = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+      const oldType = col.getB(index);
+      const oldRot = col.getM(index);
       if (oldType === e.type && oldRot === rot) continue;
-      chunk[index] = e.type;
-      WorldStore.ensureMetadata(this.state, cx, cz)[index] = rot;
+      col.setB(index, e.type);
+      col.setM(index, rot);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
       meshChunks.add(`${cx},${cz}`);
       if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);

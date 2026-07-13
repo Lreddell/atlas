@@ -22,9 +22,10 @@ test('extractBorderPlane maps each side to the shared column', () => {
 });
 
 test('mesh jobs ship border planes, not full neighbor arrays', () => {
-    // Dispatch builds planes through the single indirection point and
+    // Dispatch builds planes straight from the neighbor chunk columns and
     // transfers their buffers (fresh copies) to the worker.
-    assert.match(wm, /Geometry\.buildNeighborInput\(/);
+    assert.match(wm, /buildNeighborPlanes\(/);
+    assert.match(wm, /fillBorderPlane\(b, 'blocks', side\)/);
     assert.match(wm, /postToPool\(\{\s*\n\s*type: 'MESH'[\s\S]*?\}, transfer\)/);
     assert.doesNotMatch(wm, /left: WorldStore\.getChunkData\(this\.state, job\.cx-1, job\.cz\)/);
     // The mesher documents and consumes the plane layout.

@@ -2,7 +2,7 @@
 import { BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { WorldState } from './worldTypes';
-import { getChunkData, getMetadataData } from './worldStore';
+import { getColumn } from './worldStore';
 import { worldToChunk, index3D } from './worldCoords';
 import { MIN_Y, MAX_Y } from '../../constants';
 import { worldManager } from '../WorldManager';
@@ -32,15 +32,11 @@ export function scheduleFluidUpdate(x: number, y: number, z: number, type: Block
 function getBlockAndMeta(state: WorldState, x: number, y: number, z: number) {
     if (y < MIN_Y || y > MAX_Y) return { type: BlockType.BEDROCK, meta: 0 };
     const { cx, cz, lx, lz } = worldToChunk(x, z);
-    const chunk = getChunkData(state, cx, cz);
-    if (!chunk) return { type: BlockType.AIR, meta: 0 };
-    
+    const col = getColumn(state, cx, cz);
+    if (!col) return { type: BlockType.AIR, meta: 0 };
+
     const idx = index3D(lx, y, lz);
-    const type = chunk[idx];
-    const metaArr = getMetadataData(state, cx, cz);
-    const meta = metaArr ? metaArr[idx] : 0;
-    
-    return { type, meta };
+    return { type: col.getB(idx), meta: col.getM(idx) };
 }
 
 function isReplaceable(type: BlockType) {

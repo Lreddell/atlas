@@ -29,7 +29,7 @@ test('results are rejected unless session, ticket, and retention all match', () 
     // its job ran is not inserted into storage or the mesh cache.
     const genDone = wm.split("if (type === 'GEN_DONE')")[1].split("else if (type === 'MESH_DONE')")[0];
     assert.ok(genDone.includes('isWithinRetention'), 'GEN_DONE must verify retention before inserting');
-    assert.ok(genDone.indexOf('isWithinRetention') < genDone.indexOf('WorldStore.setChunkData'),
+    assert.ok(genDone.indexOf('isWithinRetention') < genDone.indexOf('WorldStore.setColumnFromArrays'),
         'retention check must precede chunk data insertion');
     const meshDone = wm.split("else if (type === 'MESH_DONE')")[1];
     assert.ok(meshDone.includes('isWithinRetention'), 'MESH_DONE must verify retention before caching');
