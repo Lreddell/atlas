@@ -48,7 +48,11 @@ export function uniformValueOf(sub: Uint8Array): number | null {
     return v;
 }
 
+let nextColumnId = 1;
+
 export class ChunkColumn {
+    /** Stable per-instance id (used to key cells across columns in write logs). */
+    readonly colId = nextColumnId++;
     blocks: SectionPlane[];
     light: SectionPlane[];
     meta: SectionPlane[];
@@ -138,6 +142,22 @@ export class ChunkColumn {
         if (!this.writePlane(this.light, s, idx & SECTION_MASK, v)) return false;
         this.noteWrite(s);
         return true;
+    }
+
+    /**
+     * Light write WITHOUT dirty marking, for lighting floods that reset and
+     * re-propagate a region: they produce transient writes with zero net
+     * change (a cave cell zeroed then restored), which must not dirty the
+     * section. The flood logs old values and calls markSectionDirty() only
+     * for cells whose value NET-changed.
+     */
+    writeLightRaw(idx: number, v: number): void {
+        this.writePlane(this.light, idx >> SECTION_SHIFT, idx & SECTION_MASK, v);
+    }
+
+    /** Explicit dirty marking for net-change commits (see writeLightRaw). */
+    markSectionDirty(s: number): void {
+        this.noteWrite(s);
     }
 
     setM(idx: number, v: number): boolean {

@@ -341,7 +341,13 @@ export function generateGeometryData(
     // light are skipped entirely. Enclosed cave geometry is only ever visible from
     // inside the cave (i.e. when the chunk is near) so distant chunks don't need
     // it. This typically halves or better the triangle count of a full-depth chunk.
-    cullDarkFaces: boolean = false
+    cullDarkFaces: boolean = false,
+    // Optional Y-offset range [yFromOff, yToOff) restricting which blocks OWN
+    // emitted faces (section-scoped meshing). Faces are always owned by their
+    // block, so a range covering a 16-block section emits exactly that
+    // section's geometry; the default covers the whole column.
+    yFromOff: number = 0,
+    yToOff: number = WORLD_HEIGHT
 ): GeometryResult {
     // Reset pointers
     opaqueBuffer.reset();
@@ -740,8 +746,16 @@ export function generateGeometryData(
         }
         if (occupied) { maxOccY = y; break; }
     }
-    const meshMinY = MIN_Y + minOccY;
-    const meshMaxY = MIN_Y + maxOccY;
+    const meshMinY = MIN_Y + Math.max(minOccY, yFromOff);
+    const meshMaxY = MIN_Y + Math.min(maxOccY, yToOff - 1);
+    if (meshMinY > meshMaxY) {
+        // Requested range holds no blocks.
+        return {
+            opaque: opaqueBuffer.slice(),
+            cutout: cutoutBuffer.slice(),
+            transparent: transparentBuffer.slice()
+        };
+    }
 
     for (let y = meshMinY; y <= meshMaxY; y++) {
         emitGreedySurface(y, true);

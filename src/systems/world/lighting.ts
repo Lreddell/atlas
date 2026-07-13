@@ -29,6 +29,43 @@ export function setLight(state: WorldState, x: number, y: number, z: number, sky
     col.setL(index3D(lx, y, lz), (sky << 4) | (block & 0xF));
 }
 
+// --- Net-change write log for lighting floods ---
+// Floods reset a region's skylight and re-propagate (BFS), so a cell can be
+// written 0 then restored to its old value. Writes during a flood go through
+// setLLogged (no dirty marking); commitLightLog() then compares each FIRST
+// logged old value against the final value and dirties only sections whose
+// light net-changed. This is what keeps a single interior block edit down to
+// a single remeshed section.
+const netKeys = new Set<number>();
+const netCols: ChunkColumn[] = [];
+const netIdxs: number[] = [];
+const netOlds: number[] = [];
+
+function setLLogged(col: ChunkColumn, idx: number, v: number) {
+    const old = col.getL(idx);
+    if (old === v) return;
+    col.writeLightRaw(idx, v);
+    const k = col.colId * 98304 + idx;
+    if (!netKeys.has(k)) {
+        netKeys.add(k);
+        netCols.push(col);
+        netIdxs.push(idx);
+        netOlds.push(old);
+    }
+}
+
+function commitLightLog() {
+    for (let i = 0; i < netCols.length; i++) {
+        if (netCols[i].getL(netIdxs[i]) !== netOlds[i]) {
+            netCols[i].markSectionDirty(netIdxs[i] >> 12);
+        }
+    }
+    netKeys.clear();
+    netCols.length = 0;
+    netIdxs.length = 0;
+    netOlds.length = 0;
+}
+
 export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void) {
     floodLightLocal(state, x, y, z, 15);
     const cx = Math.floor(x / CHUNK_SIZE);
@@ -88,7 +125,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
 
             // Everything above is sunlit (only write inside the edit bounds)
             for (let y = maxY; y > Math.max(maxHeight, minY - 1); y--) {
-                col.setL((y - MIN_Y) * LAYER + colBase, 15 << 4);
+                setLLogged(col, (y - MIN_Y) * LAYER + colBase, 15 << 4);
             }
 
             let sky = 15;
@@ -106,7 +143,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
                 if (y <= maxY) {
                     const def = BLOCKS[b as BlockType];
                     const emission = def ? (def.lightLevel || 0) : 0;
-                    col.setL(idx, (sky << 4) | (emission & 0xF));
+                    setLLogged(col, idx, (sky << 4) | (emission & 0xF));
                 }
             }
         }
@@ -140,6 +177,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
     }
 
     propagateLightTyped(state, qSky, qSkyTail, qBlock, qBlockTail);
+    commitLightLog();
 }
 
 export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCount: number, qBlock: Int32Array, blockCount: number) {
@@ -198,7 +236,7 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
             const nVal = nCol.getL(nIndex);
             const currentNLvl = nVal & 0xF;
             if (nextLvl > currentNLvl) {
-                nCol.setL(nIndex, (nVal & 0xF0) | (nextLvl & 0xF));
+                setLLogged(nCol, nIndex, (nVal & 0xF0) | (nextLvl & 0xF));
                 if (blockCount < QUEUE_SIZE * 3) {
                     qBlock[blockCount++] = nx; qBlock[blockCount++] = ny; qBlock[blockCount++] = nz;
                 }
@@ -252,7 +290,7 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
             const nVal = nCol.getL(nIndex);
             const currentNSky = (nVal >> 4) & 0xF;
             if (nextLvl > currentNSky) {
-                nCol.setL(nIndex, (nextLvl << 4) | (nVal & 0xF));
+                setLLogged(nCol, nIndex, (nextLvl << 4) | (nVal & 0xF));
                 if (skyCount < QUEUE_SIZE * 3) {
                     qSky[skyCount++] = nx; qSky[skyCount++] = ny; qSky[skyCount++] = nz;
                 }
@@ -339,7 +377,8 @@ export function reconcileChunkBorders(state: WorldState, cx: number, cz: number,
     });
 
     propagateLightTyped(state, qSky, sCount, qBlock, bCount);
-    
+    commitLightLog();
+
     neighbors.forEach(({dx, dz}) => {
         if (state.columns.has(getChunkKey(cx+dx, cz+dz))) notifyFn(cx+dx, cz+dz);
     });

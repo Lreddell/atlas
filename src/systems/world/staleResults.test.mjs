@@ -33,6 +33,8 @@ test('results are rejected unless session, ticket, and retention all match', () 
         'retention check must precede chunk data insertion');
     const meshDone = wm.split("else if (type === 'MESH_DONE')")[1];
     assert.ok(meshDone.includes('isWithinRetention'), 'MESH_DONE must verify retention before caching');
-    assert.ok(meshDone.indexOf('isWithinRetention') < meshDone.indexOf('this.storeMeshResult'),
+    assert.ok(meshDone.indexOf('isWithinRetention') < meshDone.indexOf('this.deliverMeshSections'),
+        'retention check must precede mesh delivery');
+    assert.ok(meshDone.indexOf('isWithinRetention') < meshDone.indexOf('this.storeMeshSectionsFull'),
         'retention check must precede mesh cache insertion');
 });

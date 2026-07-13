@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "commit": "2f0ab54356a65fb751e5875b52e3b0deebd35fca",
+    "dirtyWorkingTree": true,
+    "date": "2026-07-13T10:40:46.516Z",
+    "browser": "Chromium 141.0.7390.37",
+    "mode": "vite build+preview",
+    "viewport": "1280x720 (headless, no renderer mounted)",
+    "node": "v22.22.2",
+    "platform": "linux",
+    "notes": [
+      "Harness drives WorldManager + worker pool directly; renderer stats (draw calls, triangles) are not applicable in this mode.",
+      "Heap via performance.memory (--enable-precise-memory-info).",
+      "Storage is bypassed (empty world id): pure generation/meshing/streaming cost."
+    ]
+  },
+  "results": [
+    {
+      "scenario": "singleSectionEdit",
+      "opts": {},
+      "startedAt": 1783939246521,
+      "rendererStats": null,
+      "memoryApi": "performance.memory",
+      "renderDistance": 4,
+      "interiorEdit": {
+        "meshJobs": 6,
+        "sectionsMeshed": 48
+      },
+      "boundaryEdit": {
+        "meshJobs": 5,
+        "sectionsMeshed": 40
+      },
+      "pass": false
+    }
+  ]
+}

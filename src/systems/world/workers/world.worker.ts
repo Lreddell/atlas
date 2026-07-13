@@ -37,7 +37,7 @@ const isAllocationError = (e: unknown): boolean => {
 };
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, sections, neighbors, lights, ticket, cullDarkFaces, session } = e.data;
+    const { type, id, cx, cz, seed, config, sections, sectionMask, full, neighbors, lights, ticket, cullDarkFaces, session } = e.data;
 
     try {
         if (type === 'INIT') {
@@ -85,7 +85,7 @@ ctx.onmessage = (e) => {
         }
         else if (type === 'MESH') {
             if (!sections) {
-                ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, result: null });
+                ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, results: null, full: !!full });
                 return;
             }
 
@@ -94,25 +94,35 @@ ctx.onmessage = (e) => {
             ChunkColumn.flattenPlane(sections.blocks as SectionPlane[], scratchBlocks);
             ChunkColumn.flattenPlane(sections.meta as SectionPlane[], scratchMeta);
             ChunkColumn.flattenPlane(sections.light as SectionPlane[], scratchLight);
-            const result = generateGeometryData(
-                cx, cz, scratchBlocks, scratchMeta,
-                neighbors, { center: scratchLight, ...lights },
-                !!cullDarkFaces,
-            );
-            const durMs = performance.now() - started;
 
+            // One mesher pass per requested section: each pass emits only the
+            // faces owned by blocks in that 16-block slab, so an edit costs one
+            // section, not a 384-block column. Passes share the scratch data.
+            const results: Array<{ sy: number; result: ReturnType<typeof generateGeometryData> }> = [];
             const buffers: Transferable[] = [];
-            [result.opaque, result.cutout, result.transparent].forEach(geo => {
-                if (geo.positions.buffer) buffers.push(geo.positions.buffer);
-                if (geo.normals.buffer) buffers.push(geo.normals.buffer);
-                if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
-                if (geo.colors.buffer) buffers.push(geo.colors.buffer);
-                if (geo.indices.buffer) buffers.push(geo.indices.buffer);
-            });
+            const mask = sectionMask >>> 0;
+            for (let sy = 0; sy < 24; sy++) {
+                if ((mask & (1 << sy)) === 0) continue;
+                const result = generateGeometryData(
+                    cx, cz, scratchBlocks, scratchMeta,
+                    neighbors, { center: scratchLight, ...lights },
+                    !!cullDarkFaces,
+                    sy * 16, (sy + 1) * 16,
+                );
+                results.push({ sy, result });
+                for (const geo of [result.opaque, result.cutout, result.transparent]) {
+                    if (geo.positions.buffer) buffers.push(geo.positions.buffer);
+                    if (geo.normals.buffer) buffers.push(geo.normals.buffer);
+                    if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
+                    if (geo.colors.buffer) buffers.push(geo.colors.buffer);
+                    if (geo.indices.buffer) buffers.push(geo.indices.buffer);
+                }
+            }
+            const durMs = performance.now() - started;
 
             const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
 
-            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, durMs, result }, safeBuffers);
+            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, durMs, results, full: !!full }, safeBuffers);
         }
         else if (type === 'EVICT') {
             // Stateless worker: nothing to evict locally.

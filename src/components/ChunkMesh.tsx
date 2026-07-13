@@ -171,13 +171,30 @@ type Geometries = {
   transparent: THREE.BufferGeometry | null;
 };
 
-const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: null };
+// Per-section geometry (sy = section index 0..23). Sections give the renderer
+// tight bounding spheres (16-block slabs instead of 384-block columns) and let
+// a block edit swap ONE section's geometry instead of rebuilding the chunk.
+type SectionGeometries = Map<number, Geometries>;
+
+const EMPTY_SECTIONS: SectionGeometries = new Map();
+
+const disposeGeometries = (value: Geometries) => {
+  value.opaque?.dispose();
+  value.cutout?.dispose();
+  value.transparent?.dispose();
+};
+
+const disposeAllSections = (map: SectionGeometries) => {
+  for (const geoms of map.values()) disposeGeometries(geoms);
+};
+
+const hasAnyGeometry = (map: SectionGeometries) => map.size > 0;
 
 const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
-  const [geometries, setGeometries] = useState<Geometries>(EMPTY_GEOMETRIES);
+  const [sections, setSections] = useState<SectionGeometries>(EMPTY_SECTIONS);
   const [fadeMats, setFadeMats] = useState<FadeMaterials | null>(null);
 
-  const geometriesRef = useRef(geometries);
+  const sectionsRef = useRef(sections);
   const fadeMatsRef = useRef<FadeMaterials | null>(null);
   const fadeAnimRef = useRef<FadeAnimation | null>(null);
   const fadeModeRef = useRef<'none' | 'in' | 'out'>('none');
@@ -189,17 +206,12 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   const hasRenderedMeshRef = useRef(false);
 
   useEffect(() => {
-    geometriesRef.current = geometries;
-  }, [geometries]);
+    sectionsRef.current = sections;
+  }, [sections]);
 
   useEffect(() => { fadingOutRef.current = fadingOut; }, [fadingOut]);
   useEffect(() => { onFadeOutCompleteRef.current = onFadeOutComplete; }, [onFadeOutComplete]);
 
-  const disposeGeometries = (value: Geometries) => {
-    value.opaque?.dispose();
-    value.cutout?.dispose();
-    value.transparent?.dispose();
-  };
 
   // Replaced geometries are disposed only AFTER the new state commits. Disposing
   // before commit let Three render the disposed geometry for one frame, silently
@@ -216,7 +228,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       for (const g of pendingDisposeRef.current) disposeGeometries(g);
       pendingDisposeRef.current = [];
     }
-  }, [geometries]);
+  }, [sections]);
 
   const stopFade = useCallback(() => {
     if (fadeAnimRef.current) {
@@ -260,9 +272,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             const wasOut = fadeModeRef.current === 'out';
             stopFade();
             if (wasOut) {
-              queueDispose(geometriesRef.current);
-              geometriesRef.current = EMPTY_GEOMETRIES;
-              setGeometries(EMPTY_GEOMETRIES);
+              for (const geoms of sectionsRef.current.values()) queueDispose(geoms);
+              sectionsRef.current = EMPTY_SECTIONS;
+              setSections(EMPTY_SECTIONS);
               onFadeOutCompleteRef.current?.();
             }
           }
@@ -280,8 +292,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         onFadeOutCompleteRef.current?.();
         return;
       }
-      const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
-      if (!hasAny) {
+      if (!hasAnyGeometry(sectionsRef.current)) {
         onFadeOutCompleteRef.current?.();
         return;
       }
@@ -306,8 +317,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         if (!data) {
           if (fadeModeRef.current === 'out') return;
           if (fadingOutRef.current) return;
-          const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
-          if (fadeInEnabled && hasAny) {
+          if (fadeInEnabled && hasAnyGeometry(sectionsRef.current)) {
             lastClearedMsRef.current = performance.now();
             startFade('out'); // geometry stays until fade-out completes
             return;
@@ -315,9 +325,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           // Instant clear (no geometry or fade disabled)
           lastClearedMsRef.current = performance.now();
           stopFade();
-          queueDispose(geometriesRef.current);
-          geometriesRef.current = EMPTY_GEOMETRIES;
-          setGeometries(EMPTY_GEOMETRIES);
+          for (const geoms of sectionsRef.current.values()) queueDispose(geoms);
+          sectionsRef.current = EMPTY_SECTIONS;
+          setSections(EMPTY_SECTIONS);
           return;
         }
 
@@ -325,7 +335,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         // fade finish so onFadeOutComplete always fires.
         if (fadingOutRef.current) return;
 
-        const buildGeo = (buff: any) => {
+        const buildGeo = (buff: { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; indices: Uint32Array } | null | undefined) => {
             if (!buff || buff.positions.length === 0) return null;
             const geo = new THREE.BufferGeometry();
             // Buffers arrive transferred from the worker and are never mutated again :
@@ -342,26 +352,43 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             if (buff.indices && buff.indices.length > 0) {
                 geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }
+            // Section-tight bounds: a 16-block slab culls far better than a
+            // 384-block column.
             geo.computeBoundingSphere();
             return geo;
         };
 
-        const next = {
-          opaque: buildGeo(data.opaque),
-          cutout: buildGeo(data.cutout),
-          transparent: buildGeo(data.transparent)
-        };
+        const wasOutFade = fadeModeRef.current === 'out';
+        // A full update replaces every section; a partial update swaps only
+        // the listed sections (geo null clears a now-empty section).
+        const base = (data.full || wasOutFade) ? new Map<number, Geometries>() : new Map(sectionsRef.current);
+        if (data.full || wasOutFade) {
+          for (const geoms of sectionsRef.current.values()) queueDispose(geoms);
+        }
+        for (const { sy, geo } of data.sections) {
+          if (!data.full) {
+            const prev = base.get(sy);
+            if (prev) queueDispose(prev);
+          }
+          if (!geo) {
+            base.delete(sy);
+            continue;
+          }
+          const built: Geometries = {
+            opaque: buildGeo(geo.opaque),
+            cutout: buildGeo(geo.cutout),
+            transparent: buildGeo(geo.transparent),
+          };
+          if (built.opaque || built.cutout || built.transparent) base.set(sy, built);
+          else base.delete(sy);
+        }
 
         if (fadeInEnabled) {
           // New data while a data-driven fade-out runs: cancel it, treat as clean start
-          if (fadeModeRef.current === 'out') {
-            stopFade();
-            queueDispose(geometriesRef.current);
-            geometriesRef.current = EMPTY_GEOMETRIES;
-          }
+          if (wasOutFade) stopFade();
 
-          const hadAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
-          const hasAny = !!(next.opaque || next.cutout || next.transparent);
+          const hadAny = hasAnyGeometry(sectionsRef.current) && !wasOutFade;
+          const hasAny = base.size > 0;
 
           if (hasAny && !hadAny) {
             const now = performance.now();
@@ -373,10 +400,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           }
         }
 
-        queueDispose(geometriesRef.current);
-        geometriesRef.current = next;
-        setGeometries(next);
-        if (next.opaque || next.cutout || next.transparent) {
+        sectionsRef.current = base;
+        setSections(base);
+        if (base.size > 0) {
           hasRenderedMeshRef.current = true;
         }
     });
@@ -387,8 +413,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         // Unmounting: dispose immediately, including anything still pending.
         for (const g of pendingDisposeRef.current) disposeGeometries(g);
         pendingDisposeRef.current = [];
-        disposeGeometries(geometriesRef.current);
-        geometriesRef.current = EMPTY_GEOMETRIES;
+        disposeAllSections(sectionsRef.current);
+        sectionsRef.current = EMPTY_SECTIONS;
         hasRenderedMeshRef.current = false;
     };
   }, [cx, cz, fadeInEnabled, startFade, stopFade, queueDispose]);
@@ -405,9 +431,13 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       matrixAutoUpdate={false}
       onUpdate={(g) => g.updateMatrix()}
     >
-        {geometries.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} castShadow={shadowsEnabled} receiveShadow={false} />}
-        {geometries.transparent && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
+        {Array.from(sections, ([sy, geoms]) => (
+          <React.Fragment key={sy}>
+            {geoms.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geoms.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
+            {geoms.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geoms.cutout} material={matCutout} castShadow={shadowsEnabled} receiveShadow={false} />}
+            {geoms.transparent && <mesh name="chunk" matrixAutoUpdate={false} geometry={geoms.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
+          </React.Fragment>
+        ))}
     </group>
   );
 };

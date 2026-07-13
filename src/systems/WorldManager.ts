@@ -134,6 +134,16 @@ const WORKER_RECOVERY_RETRY_MS = 15000;
 /** Successful jobs required to restore one step of throttled concurrency. */
 const THROTTLE_RECOVERY_SUCCESSES = 200;
 
+/**
+ * Per-section mesh delivery to the renderer. `full: true` carries the complete
+ * set of non-empty sections for the chunk (anything not listed must clear);
+ * `full: false` upserts only the listed sections (geo null = section now empty).
+ */
+export interface SectionMeshUpdate {
+    full: boolean;
+    sections: Array<{ sy: number; geo: Geometry.GeometryResult | null }>;
+}
+
 export type LoadingProgressCallback = (phase: string, done: number, total: number, percent: number) => void;
 
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
@@ -147,10 +157,19 @@ export class WorldManager {
   
   // Streaming & Pipeline
   private chunkStages = new Map<string, ChunkStage>();
-  private meshCache = new Map<string, Geometry.GeometryResult>(); // Cached geometries for rendering
-  private meshSubscribers = new Map<string, Set<(geo: Geometry.GeometryResult | null) => void>>();
+  // Complete per-section geometry for chunks meshed before any subscriber
+  // mounted; consumed (ownership transferred) by the first subscribeMesh.
+  private meshCache = new Map<string, Map<number, Geometry.GeometryResult>>();
+  private meshSubscribers = new Map<string, Set<(update: SectionMeshUpdate | null) => void>>();
 
   private pendingRemesh = new Map<string, number>();
+  // Requested mesh sections per queued/pending chunk. -1 = full column
+  // (all occupied sections, resolved at dispatch); otherwise a 24-bit mask.
+  private queuedMeshMasks = new Map<string, number>();
+  private pendingRemeshMasks = new Map<string, number>();
+  // Whether the in-flight mesh job per chunk was a full-column job (tracked
+  // main-side so acceptance doesn't trust worker payloads).
+  private activeMeshFull = new Map<string, boolean>();
 
   private genQueue = new JobQueue();
   private meshQueue = new JobQueue();
@@ -234,9 +253,11 @@ export class WorldManager {
   private meshCacheBytes = 0;
   // Mesh ownership: geometry delivered to a live subscriber (a mounted
   // ChunkMesh) is owned by the renderer — WorldManager releases its reference
-  // instead of retaining a duplicate. This map tracks delivered byte sizes per
-  // chunk (the estimate of renderer-resident mesh memory, CPU+GPU).
-  private deliveredMeshBytes = new Map<string, number>();
+  // instead of retaining a duplicate. Tracks delivered byte sizes per chunk
+  // section (the estimate of renderer-resident mesh memory, CPU+GPU). An
+  // entry with an empty inner map still marks the chunk as mesh-resident
+  // (a fully-air chunk has a valid, empty delivered mesh).
+  private deliveredMeshBytes = new Map<string, Map<number, number>>();
   private deliveredMeshBytesTotal = 0;
   private budget: BudgetConfig = {
       // Sized so render distance 24 (~1800 chunks: ~500 MiB raw + ~900 MiB of
@@ -300,6 +321,7 @@ export class WorldManager {
           chunkStageEntries: this.chunkStages.size,
           desiredChunks: this.desiredChunkKeys.size,
           rawChunkBytes,
+          residentSections: Math.floor(rawChunkBytes / 4096),
           meshCacheEntries: this.meshCache.size,
           cpuMeshBytes,
           deliveredMeshes: this.deliveredMeshBytes.size,
@@ -372,6 +394,9 @@ export class WorldManager {
       this.deliveredMeshBytesTotal = 0;
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
+      this.queuedMeshMasks.clear();
+      this.pendingRemeshMasks.clear();
+      this.activeMeshFull.clear();
       this.genQueue.clear();
       this.meshQueue.clear();
     this.queuedGenKeys.clear();
@@ -487,6 +512,7 @@ export class WorldManager {
           if (!this.activeMeshTickets.has(key)) continue;
           this.activeMeshTickets.delete(key);
           this.releaseMeshInputBytes(key);
+          this.activeMeshFull.delete(key);
           this.meshStartedAt.delete(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           const [cx, cz] = key.split(',').map(Number);
@@ -762,14 +788,15 @@ export class WorldManager {
           
           WorldStore.setColumnFromArrays(this.state, cx, cz, result.blocks, result.light, result.meta);
 
-          Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
-              if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
-                  this.queueMesh(ncx, ncz, 10);
-              }
-          });
+          Lighting.reconcileChunkBorders(this.state, cx, cz, () => { /* mesh queueing via dirty sweep below */ });
 
           this.setStage(cx, cz, ChunkStage.GENERATED);
-          this.queueMesh(cx, cz, 0); 
+          // The new column gets a full mesh; consume its (fully dirty) mask
+          // first so the sweep below only queues real neighbor light changes.
+          const newCol = WorldStore.getColumn(this.state, cx, cz);
+          if (newCol) newCol.consumeDirtyMask();
+          this.queueMesh(cx, cz, 0);
+          this.sweepDirtySections(cx, cz, 10);
           this.scheduleStreamingPump();
       }
       else if (type === 'MESH_DONE') {
@@ -780,6 +807,8 @@ export class WorldManager {
           }
           this.activeMeshTickets.delete(key);
           this.meshDispatchedTo.delete(key);
+          const wasFull = this.activeMeshFull.get(key) ?? true;
+          this.activeMeshFull.delete(key);
           this.releaseMeshInputBytes(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
@@ -787,7 +816,8 @@ export class WorldManager {
           if (typeof data.durMs === 'number') perf.duration('worker.mesh', data.durMs);
           this.noteJobSuccess();
 
-          if (!result) {
+          const results = data.results as Array<{ sy: number; result: Geometry.GeometryResult }> | null;
+          if (!results) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
               this.queueMesh(cx, cz, 0);
               this.scheduleStreamingPump();
@@ -809,25 +839,33 @@ export class WorldManager {
           else this.darkCulledMeshes.delete(key);
 
           this.setStage(cx, cz, ChunkStage.READY);
+          perf.count('streaming.sectionsMeshed', results.length);
 
           // Ownership: with a live subscriber the renderer takes the buffers
           // (they were transferred from the worker and are wrapped as
           // BufferAttributes without copying); WorldManager keeps NO duplicate.
-          // Without a subscriber the result is cached only until the first
-          // subscribeMesh, which takes it and releases the cache entry.
+          // Without a subscriber a FULL result is cached until the first
+          // subscribeMesh; a partial result merges into an existing cache or,
+          // with nothing to merge into, is dropped (the chunk remeshes fully
+          // on the next subscribe/repair).
           const subs = this.meshSubscribers.get(key);
           if (subs && subs.size > 0) {
-              this.dropMeshResult(key);
-              subs.forEach(cb => cb(result));
-              this.markDelivered(key, result);
+              if (wasFull) this.dropMeshResult(key);
+              this.deliverMeshSections(key, subs, results, wasFull);
+          } else if (wasFull) {
+              this.storeMeshSectionsFull(key, results);
+          } else if (this.meshCache.has(key)) {
+              this.mergeMeshSections(key, results);
           } else {
-              this.storeMeshResult(key, result);
+              perf.count('streaming.partialMeshDropped');
           }
 
           const pendingPriority = this.pendingRemesh.get(key);
           if (pendingPriority !== undefined) {
               this.pendingRemesh.delete(key);
-              this.queueMesh(cx, cz, pendingPriority);
+              const pendingMask = this.pendingRemeshMasks.get(key) ?? -1;
+              this.pendingRemeshMasks.delete(key);
+              this.queueMesh(cx, cz, pendingPriority, pendingMask);
               this.meshQueue.sort((a, b) => a.priority - b.priority);
           }
           this.scheduleStreamingPump();
@@ -879,6 +917,7 @@ export class WorldManager {
               this.activeMeshTickets.delete(key);
               this.meshDispatchedTo.delete(key);
               this.releaseMeshInputBytes(key);
+              this.activeMeshFull.delete(key);
               this.meshStartedAt.delete(key);
               this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
               this.pendingMeshDark.delete(key);
@@ -942,8 +981,14 @@ export class WorldManager {
     this.markQueuesDirty();
   }
 
-  private enqueueMesh(cx: number, cz: number, priority: number) {
+  /** Merge section masks; -1 (full column) absorbs everything. */
+  private static mergeMask(a: number, b: number): number {
+      return (a === -1 || b === -1) ? -1 : (a | b);
+  }
+
+  private enqueueMesh(cx: number, cz: number, priority: number, mask: number = -1) {
     const key = WorldCoords.getChunkKey(cx, cz);
+    this.queuedMeshMasks.set(key, WorldManager.mergeMask(this.queuedMeshMasks.get(key) ?? 0, mask));
     if (this.queuedMeshKeys.has(key)) {
         const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
         if (existing && priority < existing.priority) {
@@ -963,7 +1008,7 @@ export class WorldManager {
       this.enqueueGen(cx, cz, priority);
   }
 
-  private queueMesh(cx: number, cz: number, priority: number) {
+  private queueMesh(cx: number, cz: number, priority: number, mask: number = -1) {
       const stage = this.getStage(cx, cz);
       if (stage < ChunkStage.GENERATED) return; 
       
@@ -974,10 +1019,12 @@ export class WorldManager {
           if (prev === undefined || priority < prev) {
               this.pendingRemesh.set(key, priority);
           }
+          this.pendingRemeshMasks.set(key, WorldManager.mergeMask(this.pendingRemeshMasks.get(key) ?? 0, mask));
           return;
       }
 
       if (stage === ChunkStage.MESH_QUEUED) {
+          this.queuedMeshMasks.set(key, WorldManager.mergeMask(this.queuedMeshMasks.get(key) ?? 0, mask));
           // Using .find() instead of array.find()
           const job = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
           if (job && priority < job.priority) {
@@ -988,7 +1035,7 @@ export class WorldManager {
       }
       
       this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
-      this.enqueueMesh(cx, cz, priority);
+      this.enqueueMesh(cx, cz, priority, mask);
   }
 
   public setDesiredChunks(chunks: {cx: number, cz: number}[]) {
@@ -1096,6 +1143,7 @@ export class WorldManager {
           this.meshDispatchedTo.delete(key);
           this.pendingMeshDark.delete(key);
           this.releaseMeshInputBytes(key);
+          this.activeMeshFull.delete(key);
           if (this.chunkStages.get(key) === ChunkStage.MESHING) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
           }
@@ -1119,40 +1167,104 @@ export class WorldManager {
       return bytes;
   }
 
-  /** All meshCache mutations go through these two so byte accounting stays exact. */
-  private storeMeshResult(key: string, result: Geometry.GeometryResult) {
-      const prev = this.meshCache.get(key);
-      if (prev) this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
-      this.meshCache.set(key, result);
-      this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+  private static isEmptyGeometry(result: Geometry.GeometryResult): boolean {
+      return result.opaque.positions.length === 0
+          && result.cutout.positions.length === 0
+          && result.transparent.positions.length === 0;
+  }
+
+  /** All meshCache mutations go through these so byte accounting stays exact. */
+  private storeMeshSectionsFull(key: string, entries: Array<{ sy: number; result: Geometry.GeometryResult }>) {
+      this.dropMeshResult(key);
+      const map = new Map<number, Geometry.GeometryResult>();
+      for (const { sy, result } of entries) {
+          if (WorldManager.isEmptyGeometry(result)) continue;
+          map.set(sy, result);
+          this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+      }
+      this.meshCache.set(key, map);
+  }
+
+  /** Merge a partial result into an existing (complete) cache entry. */
+  private mergeMeshSections(key: string, entries: Array<{ sy: number; result: Geometry.GeometryResult }>) {
+      const map = this.meshCache.get(key);
+      if (!map) return;
+      for (const { sy, result } of entries) {
+          const prev = map.get(sy);
+          if (prev) this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
+          if (WorldManager.isEmptyGeometry(result)) {
+              map.delete(sy);
+          } else {
+              map.set(sy, result);
+              this.meshCacheBytes += WorldManager.geometryResultBytes(result);
+          }
+      }
   }
 
   private dropMeshResult(key: string) {
       const prev = this.meshCache.get(key);
       if (prev) {
-          this.meshCacheBytes -= WorldManager.geometryResultBytes(prev);
+          for (const geo of prev.values()) this.meshCacheBytes -= WorldManager.geometryResultBytes(geo);
           this.meshCache.delete(key);
       }
   }
 
-  private markDelivered(key: string, result: Geometry.GeometryResult) {
-      const bytes = WorldManager.geometryResultBytes(result);
-      const prev = this.deliveredMeshBytes.get(key) ?? 0;
+  /** Record renderer-side residency for one delivered section. */
+  private markDeliveredSection(key: string, sy: number, bytes: number) {
+      let per = this.deliveredMeshBytes.get(key);
+      if (!per) {
+          per = new Map();
+          this.deliveredMeshBytes.set(key, per);
+      }
+      const prev = per.get(sy) ?? 0;
       this.deliveredMeshBytesTotal += bytes - prev;
-      this.deliveredMeshBytes.set(key, bytes);
+      if (bytes > 0) per.set(sy, bytes);
+      else per.delete(sy);
+  }
+
+  /** A full delivery replaces everything: zero out sections not re-delivered. */
+  private resetDeliveredSections(key: string) {
+      const per = this.deliveredMeshBytes.get(key);
+      if (per) {
+          for (const bytes of per.values()) this.deliveredMeshBytesTotal -= bytes;
+          per.clear();
+      } else {
+          this.deliveredMeshBytes.set(key, new Map());
+      }
   }
 
   private releaseDelivered(key: string) {
-      const prev = this.deliveredMeshBytes.get(key);
-      if (prev !== undefined) {
+      const per = this.deliveredMeshBytes.get(key);
+      if (per !== undefined) {
+          for (const bytes of per.values()) this.deliveredMeshBytesTotal -= bytes;
           this.deliveredMeshBytes.delete(key);
-          this.deliveredMeshBytesTotal -= prev;
       }
   }
 
   /** True when a usable mesh exists for this chunk (cached or delivered). */
   private hasMeshResident(key: string): boolean {
       return this.meshCache.has(key) || this.deliveredMeshBytes.has(key);
+  }
+
+  /** Deliver mesh entries to subscribers and account them as renderer-owned. */
+  private deliverMeshSections(
+      key: string,
+      subs: Set<(update: SectionMeshUpdate | null) => void>,
+      entries: Array<{ sy: number; result: Geometry.GeometryResult }>,
+      full: boolean,
+  ) {
+      const update: SectionMeshUpdate = {
+          full,
+          sections: entries.map(({ sy, result }) => ({
+              sy,
+              geo: WorldManager.isEmptyGeometry(result) ? null : result,
+          })),
+      };
+      if (full) this.resetDeliveredSections(key);
+      subs.forEach(cb => cb(update));
+      for (const { sy, result } of entries) {
+          this.markDeliveredSection(key, sy, WorldManager.isEmptyGeometry(result) ? 0 : WorldManager.geometryResultBytes(result));
+      }
   }
 
   /** Bytes currently accounted against the streaming memory budget. */
@@ -1337,11 +1449,35 @@ export class WorldManager {
 
           const column = WorldStore.getColumn(this.state, job.cx, job.cz);
           if (!column) {
+              this.queuedMeshMasks.delete(key);
               this.setStage(job.cx, job.cz, ChunkStage.REQUESTED);
               this.queueGen(job.cx, job.cz, job.priority);
               continue;
           }
 
+          // Resolve the requested sections. -1 (full) covers every occupied
+          // section; edits request only the sections they touched.
+          const requestedMask = this.queuedMeshMasks.get(key) ?? -1;
+          this.queuedMeshMasks.delete(key);
+          const jobFull = requestedMask === -1;
+          const sectionMask = jobFull ? column.occupiedSectionMask() : (requestedMask & ((1 << 24) - 1));
+
+          if (sectionMask === 0) {
+              // Nothing to mesh (an all-air column, or a stale empty mask).
+              this.setStage(job.cx, job.cz, ChunkStage.READY);
+              if (jobFull) {
+                  const subs = this.meshSubscribers.get(key);
+                  if (subs && subs.size > 0) {
+                      this.dropMeshResult(key);
+                      this.deliverMeshSections(key, subs, [], true);
+                  } else {
+                      this.storeMeshSectionsFull(key, []);
+                  }
+              }
+              continue;
+          }
+
+          this.activeMeshFull.set(key, jobFull);
           this.inFlightMesh++;
           this.setStage(job.cx, job.cz, ChunkStage.MESHING);
           this.meshStartedAt.set(key, Date.now());
@@ -1381,6 +1517,8 @@ export class WorldManager {
                       ticket,
                       session: this.worldSession,
                       sections: payload.planes,
+                      sectionMask,
+                      full: jobFull,
                       neighbors: neighbors.blocks,
                       lights: neighbors.light,
                       cullDarkFaces: cullDark
@@ -1396,8 +1534,15 @@ export class WorldManager {
                       const c = col.flattenBlocks(WorldManager.meshScratchBlocks);
                       const m = col.flattenMeta(WorldManager.meshScratchMeta);
                       const l = col.flattenLight(WorldManager.meshScratchLight);
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors.blocks, { center: l, ...neighbors.light }, cullDark);
-                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, session, result: res });
+                      const results: Array<{ sy: number; result: Geometry.GeometryResult }> = [];
+                      for (let sy = 0; sy < 24; sy++) {
+                          if ((sectionMask & (1 << sy)) === 0) continue;
+                          results.push({
+                              sy,
+                              result: Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors.blocks, { center: l, ...neighbors.light }, cullDark, sy * 16, (sy + 1) * 16),
+                          });
+                      }
+                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, session, results });
                   }, 0);
               }
       }
@@ -1453,7 +1598,11 @@ export class WorldManager {
           if (stage === ChunkStage.GENERATED) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.MESH_QUEUED) {
-              this.enqueueMesh(cx, cz, priority);
+              // Self-heal the queue entry WITHOUT widening the requested
+              // section mask (mask 0 merges as a no-op) — otherwise this
+              // round-robin repair would turn every single-section edit job
+              // into a full-column remesh before it dispatched.
+              this.enqueueMesh(cx, cz, priority, 0);
           } else if (stage === ChunkStage.READY && !this.hasMeshResident(key)) {
               this.queueMesh(cx, cz, priority);
           }
@@ -1476,6 +1625,7 @@ export class WorldManager {
                   this.activeMeshTickets.delete(key);
                   this.meshDispatchedTo.delete(key);
                   this.releaseMeshInputBytes(key);
+                  this.activeMeshFull.delete(key);
                   this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
                   this.enqueueMesh(cx, cz, priority);
               }
@@ -1599,6 +1749,9 @@ export class WorldManager {
       this.dropMeshResult(key);
       this.releaseDelivered(key);
       this.pendingRemesh.delete(key);
+      this.queuedMeshMasks.delete(key);
+      this.pendingRemeshMasks.delete(key);
+      this.activeMeshFull.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
       this.queuedMeshKeys.delete(key);
@@ -1918,7 +2071,7 @@ export class WorldManager {
       }
   }
 
-  public subscribeMesh(cx: number, cz: number, cb: (geo: Geometry.GeometryResult | null) => void) {
+  public subscribeMesh(cx: number, cz: number, cb: (update: SectionMeshUpdate | null) => void) {
       const key = WorldCoords.getChunkKey(cx, cz);
       if (!this.meshSubscribers.has(key)) {
           this.meshSubscribers.set(key, new Set());
@@ -1926,11 +2079,11 @@ export class WorldManager {
       this.meshSubscribers.get(key)!.add(cb);
       const current = this.meshCache.get(key);
       if (current) {
-          // Hand the cached result to the renderer and release our copy —
+          // Hand the cached sections to the renderer and release our copy —
           // from here the mounted ChunkMesh owns (and disposes) the buffers.
+          const entries = Array.from(current, ([sy, result]) => ({ sy, result }));
           this.dropMeshResult(key);
-          cb(current);
-          this.markDelivered(key, current);
+          this.deliverMeshSections(key, new Set([cb]), entries, true);
       } else if (this.getStage(cx, cz) === ChunkStage.READY && !this.deliveredMeshBytes.has(key)) {
           // Remount after this chunk's mesh was released (component unmounted
           // earlier): rebuild it rather than waiting for a repair sweep.
@@ -2098,8 +2251,44 @@ export class WorldManager {
   updateLightingAround(x: number, y: number, z: number) {
       Lighting.updateLightingAround(this.state, x, y, z, (cx, cz) => {
           WorldStore.notifyChunk(this.state, cx, cz);
-          if (this.getStage(cx, cz) >= ChunkStage.GENERATED) this.queueMesh(cx, cz, 10);
       });
+      // The flood marked exactly the sections whose light actually changed
+      // (no-op light writes are skipped); queue only those for remesh.
+      this.sweepDirtySections(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE), -900);
+  }
+
+  /**
+   * Queue section-scoped remeshes for every section a preceding batch of
+   * writes (block edits + lighting floods) actually changed, across the 3×3
+   * chunk area around (ccx, ccz) — a radius-15 flood cannot reach farther.
+   * Consumes the columns' dirty masks, so each affected section is queued
+   * exactly once per batch.
+   */
+  private sweepDirtySections(ccx: number, ccz: number, priority: number) {
+      for (let dx = -1; dx <= 1; dx++) {
+          for (let dz = -1; dz <= 1; dz++) {
+              const cx = ccx + dx;
+              const cz = ccz + dz;
+              const col = WorldStore.getColumn(this.state, cx, cz);
+              if (!col) continue;
+              const mask = col.consumeDirtyMask();
+              if (mask === 0) continue;
+              if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+                  this.queueMesh(cx, cz, priority, mask);
+              }
+          }
+      }
+  }
+
+  /** Sections a single-cell edit affects: its own, plus vertical neighbors
+   *  when the cell sits on a section boundary (faces/AO cross the seam). */
+  private static editSectionMask(y: number): number {
+      const yOff = y - MIN_Y;
+      const sy = yOff >> 4;
+      let mask = 1 << sy;
+      if ((yOff & 15) === 0 && sy > 0) mask |= 1 << (sy - 1);
+      if ((yOff & 15) === 15 && sy < 23) mask |= 1 << (sy + 1);
+      return mask;
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
@@ -2135,20 +2324,25 @@ export class WorldManager {
         // occlusion. A placed/removed stair can turn neighbors into inner/outer corners.
         this.refreshStairShapes(x, y, z);
 
+        // Relight, then queue exactly the sections the edit + flood changed
+        // (updateLightingAround sweeps the dirty masks). A single interior
+        // block edit therefore remeshes ONE section, not a 384-block column.
         this.updateLightingAround(x, y, z);
-        this.queueMesh(cx, cz, -1000);
+        this.queueMesh(cx, cz, -1000, WorldManager.editSectionMask(y));
 
-        // If editing at chunk borders, prioritize neighbor remesh immediately too.
-        if (lx === 0) this.queueMesh(cx - 1, cz, -900);
-        else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -900);
-        if (lz === 0) this.queueMesh(cx, cz - 1, -900);
-        else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
+        // Chunk-border edits change the neighbor's face culling even though
+        // its data didn't change; queue only the matching vertical sections.
+        const borderMask = WorldManager.editSectionMask(y);
+        if (lx === 0) this.queueMesh(cx - 1, cz, -900, borderMask);
+        else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -900, borderMask);
+        if (lz === 0) this.queueMesh(cx, cz - 1, -900, borderMask);
+        else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900, borderMask);
 
         this.markQueuesDirty();
         this.processStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
-        this.queueMesh(cx, cz, -500);
+        this.queueMesh(cx, cz, -500, WorldManager.editSectionMask(y));
         this.markQueuesDirty();
         this.processStreamingJobs();
     }
@@ -2171,7 +2365,13 @@ export class WorldManager {
    */
   setBlocks(edits: Array<{ x: number; y: number; z: number; type: BlockType; rotation?: number }>): void {
     if (edits.length === 0) return;
-    const meshChunks = new Set<string>();
+    // Border chunks whose face culling changes even though their data didn't:
+    // key -> section mask to remesh.
+    const borderMeshMasks = new Map<string, number>();
+    const addBorderMask = (bcx: number, bcz: number, mask: number) => {
+        const k = WorldCoords.getChunkKey(bcx, bcz);
+        borderMeshMasks.set(k, WorldManager.mergeMask(borderMeshMasks.get(k) ?? 0, mask));
+    };
     const relit: { x: number; y: number; z: number }[] = [];
     let changed = false;
     for (const e of edits) {
@@ -2187,9 +2387,9 @@ export class WorldManager {
       col.setB(index, e.type);
       col.setM(index, rot);
       this.markDirty(WorldCoords.getChunkKey(cx, cz));
-      meshChunks.add(`${cx},${cz}`);
-      if (lx === 0) meshChunks.add(`${cx - 1},${cz}`); else if (lx === CHUNK_SIZE - 1) meshChunks.add(`${cx + 1},${cz}`);
-      if (lz === 0) meshChunks.add(`${cx},${cz - 1}`); else if (lz === CHUNK_SIZE - 1) meshChunks.add(`${cx},${cz + 1}`);
+      const vMask = WorldManager.editSectionMask(e.y);
+      if (lx === 0) addBorderMask(cx - 1, cz, vMask); else if (lx === CHUNK_SIZE - 1) addBorderMask(cx + 1, cz, vMask);
+      if (lz === 0) addBorderMask(cx, cz - 1, vMask); else if (lz === CHUNK_SIZE - 1) addBorderMask(cx, cz + 1, vMask);
       // One relight flood per ~radius-13 cluster (a flood covers radius 15, and it
       // reads the final block state below, so clustered edits share one flood).
       if (!relit.some((p) => Math.abs(p.x - e.x) <= 13 && Math.abs(p.y - e.y) <= 13 && Math.abs(p.z - e.z) <= 13)) {
@@ -2198,10 +2398,13 @@ export class WorldManager {
       changed = true;
     }
     if (!changed) return;
+    // Relights sweep the dirty masks of every touched section themselves;
+    // border chunks (whose data didn't change) still need their matching
+    // sections requeued for face culling.
     for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
-    for (const key of meshChunks) {
-      const [cx, cz] = key.split(',').map(Number);
-      this.queueMesh(cx, cz, -1000);
+    for (const [key, mask] of borderMeshMasks) {
+      const comma = key.indexOf(',');
+      this.queueMesh(Number(key.slice(0, comma)), Number(key.slice(comma + 1)), -1000, mask);
     }
     this.markQueuesDirty();
     this.processStreamingJobs();
@@ -2229,10 +2432,9 @@ export class WorldManager {
       const shape = resolveStairShape(facing, upside, getNeighbor);
       const newMeta = (m & 0x07) | (shape << 3); // keep facing + upside, replace shape
       if (newMeta !== m) {
+        // setMetadataAt marks the section dirty; the edit's dirty-section
+        // sweep (after relight) queues the remesh, so no whole-chunk queue.
         this.setMetadataAt(cxw, cyw, czw, newMeta);
-        const ncx = Math.floor(cxw / CHUNK_SIZE);
-        const ncz = Math.floor(czw / CHUNK_SIZE);
-        if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) this.queueMesh(ncx, ncz, -800);
       }
     }
   }

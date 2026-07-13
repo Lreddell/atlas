@@ -26,6 +26,10 @@ import { BlockType } from '../types';
 
 const FIXED_DT = 1 / 20;
 
+// Scenarios that measure per-edit remesh counts disable world ticking so
+// fluid/plant simulation doesn't interleave its own edits with the probes.
+let worldTickEnabled = true;
+
 interface ScenarioOpts {
     seed?: number;
     renderDistance?: number;
@@ -194,7 +198,7 @@ function runLoop(
             tickAcc += dtSec;
             let steps = 0;
             while (tickAcc >= FIXED_DT && steps < 5) {
-                worldManager.tick(FIXED_DT);
+                if (worldTickEnabled) worldManager.tick(FIXED_DT);
                 tickAcc -= FIXED_DT;
                 steps++;
             }
@@ -657,6 +661,129 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
             }
         }
         return { seed, hashes };
+    },
+
+    /**
+     * Stage-2 acceptance: a single interior block edit (deep underground,
+     * no lighting change) remeshes exactly ONE section, and an edit on a
+     * section boundary remeshes exactly the two adjacent sections.
+     */
+    async singleSectionEdit(opts) {
+        const rd = opts.renderDistance ?? 4;
+        const seed = opts.seed ?? 12345;
+        const maxMs = opts.maxMs ?? 120000;
+        resetWorld(seed);
+        worldTickEnabled = false; // isolate probe edits from fluid/plant ticks
+        const offsets = buildOffsets(rd);
+        setCenter(offsets, 0, 0);
+
+        // Load, settle.
+        const idle = waitForIdle(2000, maxMs);
+        await runLoop((el) => idle.update(el), maxMs);
+
+        const runCase = async (edits: Array<[number, number, number, number]>) => {
+            const jobs0 = perf.getCounter('streaming.meshDone');
+            const sections0 = perf.getCounter('streaming.sectionsMeshed');
+            for (const [x, y, z, type] of edits) worldManager.setBlock(x, y, z, type);
+            const settle = waitForIdle(1500, 30000);
+            await runLoop((el) => settle.update(el), 30000);
+            return {
+                meshJobs: perf.getCounter('streaming.meshDone') - jobs0,
+                sectionsMeshed: perf.getCounter('streaming.sectionsMeshed') - sections0,
+            };
+        };
+
+        // Deep interior: y=-30 (yOff=34, section 2, mid-section), swap stone
+        // for dirt. No skylight there, both blocks emit nothing → light is
+        // untouched, so exactly one section should remesh.
+        const interior = await runCase([[7, -30, 7, BlockType.DIRT]]);
+        // Section boundary: yOff = 48 → y = -16 sits at the bottom row of
+        // section 3; the section below (2) must also remesh, nothing else.
+        const boundary = await runCase([[5, -16, 5, BlockType.DIRT]]);
+
+        worldTickEnabled = true;
+        return {
+            renderDistance: rd,
+            interiorEdit: interior,   // expect meshJobs 1, sectionsMeshed 1
+            boundaryEdit: boundary,   // expect meshJobs 1, sectionsMeshed 2
+            pass: interior.meshJobs === 1 && interior.sectionsMeshed === 1
+                && boundary.meshJobs === 1 && boundary.sectionsMeshed === 2,
+        };
+    },
+
+    /**
+     * Section-mesh equivalence: the union of the 24 per-section mesher passes
+     * must emit exactly the same face set as one whole-column pass. Quads are
+     * compared as an order-independent multiset (per bucket), since section
+     * passes interleave the greedy/per-block emission order.
+     */
+    async sectionEquivalence(opts) {
+        const seed = opts.seed ?? 12345;
+        reseedGlobalNoise(seed);
+        const coords: Array<[number, number]> = [[0, 0], [3, -2], [-5, 5], [100, -100]];
+        const mismatches: string[] = [];
+
+        // Order-independent multiset signature: sum of per-quad FNV hashes.
+        const quadSetSignature = (attrs: Geometry.GeometryAttributes) => {
+            const quadCount = attrs.positions.length / (3 * 4);
+            let sum = 0;
+            const scratch = new Uint8Array(4 * (12 + 12 + 8 + 12)); // pos+normals+uvs+colors per quad
+            for (let q = 0; q < quadCount; q++) {
+                let o = 0;
+                const put = (arr: Float32Array, from: number, count: number) => {
+                    const view = new Uint8Array(arr.buffer, arr.byteOffset + from * 4, count * 4);
+                    scratch.set(view, o);
+                    o += count * 4;
+                };
+                put(attrs.positions, q * 12, 12);
+                put(attrs.normals, q * 12, 12);
+                put(attrs.uvs, q * 8, 8);
+                put(attrs.colors, q * 12, 12);
+                let h = 0x811c9dc5;
+                h = fnv1a(h, scratch);
+                sum = (sum + h) >>> 0;
+            }
+            return { quads: quadCount, sum };
+        };
+
+        for (const [cx, cz] of coords) {
+            const gen = (gx: number, gz: number) => WorldGen.generateChunk(gx, gz);
+            const center = gen(cx, cz);
+            const left = gen(cx - 1, cz);
+            const right = gen(cx + 1, cz);
+            const front = gen(cx, cz + 1);
+            const back = gen(cx, cz - 1);
+            const neighbors = Geometry.buildNeighborInput(
+                { blocks: left.blocks, light: left.light },
+                { blocks: right.blocks, light: right.light },
+                { blocks: front.blocks, light: front.light },
+                { blocks: back.blocks, light: back.light },
+            );
+            const lights = { center: center.light, ...neighbors.light };
+            for (const cull of [false, true]) {
+                const whole = Geometry.generateGeometryData(cx, cz, center.blocks, center.meta, neighbors.blocks, lights, cull);
+                const totals = {
+                    opaque: quadSetSignature(whole.opaque),
+                    cutout: quadSetSignature(whole.cutout),
+                    transparent: quadSetSignature(whole.transparent),
+                };
+                const acc = { opaque: { quads: 0, sum: 0 }, cutout: { quads: 0, sum: 0 }, transparent: { quads: 0, sum: 0 } };
+                for (let sy = 0; sy < 24; sy++) {
+                    const part = Geometry.generateGeometryData(cx, cz, center.blocks, center.meta, neighbors.blocks, lights, cull, sy * 16, (sy + 1) * 16);
+                    for (const bucket of ['opaque', 'cutout', 'transparent'] as const) {
+                        const sig = quadSetSignature(part[bucket]);
+                        acc[bucket].quads += sig.quads;
+                        acc[bucket].sum = (acc[bucket].sum + sig.sum) >>> 0;
+                    }
+                }
+                for (const bucket of ['opaque', 'cutout', 'transparent'] as const) {
+                    if (acc[bucket].quads !== totals[bucket].quads || acc[bucket].sum !== totals[bucket].sum) {
+                        mismatches.push(`${cx},${cz}${cull ? ',culled' : ''} ${bucket}: whole ${totals[bucket].quads}/${totals[bucket].sum.toString(16)} vs sections ${acc[bucket].quads}/${acc[bucket].sum.toString(16)}`);
+                    }
+                }
+            }
+        }
+        return { seed, equivalent: mismatches.length === 0, mismatches };
     },
 
     /**
