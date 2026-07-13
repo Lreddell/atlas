@@ -21,18 +21,21 @@ ctx.onmessage = (e) => {
         console.log('[Worker] Applied world generation config');
     }
     else if (type === 'GEN') {
+        const started = performance.now();
         const result = generateChunk(cx, cz);
-        
+        const durMs = performance.now() - started;
+
         // Transfer the generated buffers directly to the main thread.
         // The worker no longer maintains a cache, making it stateless.
-        ctx.postMessage({ 
-            type: 'GEN_DONE', 
-            id, cx, cz, 
+        ctx.postMessage({
+            type: 'GEN_DONE',
+            id, cx, cz,
             ticket,
-            result: { 
-                blocks: result.blocks, 
-                light: result.light, 
-                meta: result.meta 
+            durMs,
+            result: {
+                blocks: result.blocks,
+                light: result.light,
+                meta: result.meta
             }
         }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
     }
@@ -43,7 +46,9 @@ ctx.onmessage = (e) => {
         }
 
         // Generate geometry using data provided in the message.
+        const started = performance.now();
         const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+        const durMs = performance.now() - started;
 
         const buffers: Transferable[] = [];
         [result.opaque, result.cutout, result.transparent].forEach(geo => {
@@ -56,7 +61,7 @@ ctx.onmessage = (e) => {
 
         const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
 
-        ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
+        ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, durMs, result }, safeBuffers);
     }
     else if (type === 'EVICT') {
         // Stateless worker: nothing to evict locally.

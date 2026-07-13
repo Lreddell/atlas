@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Atlas Perf Harness</title>
+    <style>
+      body { background: #111; color: #9f9; font-family: monospace; margin: 1rem; }
+      pre { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Atlas performance harness</h1>
+    <p>Development benchmark page — drives the streaming pipeline without the renderer. See scripts/perf/run-perf.mjs.</p>
+    <pre id="log"></pre>
+    <script type="module" src="/src/perf/perfHarness.ts"></script>
+  </body>
+</html>

@@ -23,6 +23,7 @@ import { getRegionAt } from './world/regions';
 import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
+import { perf } from './perf/perfTelemetry';
 
 // --- Types ---
 enum ChunkStage {
@@ -200,6 +201,55 @@ export class WorldManager {
 
     // Auto-save every 3 seconds if dirty
     setInterval(() => this.processSaveQueue(), 3000);
+
+    perf.registerProvider('streaming', () => this.getStreamingStats());
+  }
+
+  /**
+   * Snapshot of streaming-pipeline residency and queue state for telemetry.
+   * Byte figures are computed by summing actual array lengths so they stay
+   * correct if storage layout changes.
+   */
+  public getStreamingStats(): Record<string, unknown> {
+      let blockBytes = 0;
+      for (const arr of this.state.chunks.values()) blockBytes += arr.byteLength;
+      let lightBytes = 0;
+      for (const arr of this.state.lights.values()) lightBytes += arr.byteLength;
+      let metaBytes = 0;
+      for (const arr of this.state.metadata.values()) metaBytes += arr.byteLength;
+
+      let cpuMeshBytes = 0;
+      for (const result of this.meshCache.values()) {
+          for (const geo of [result.opaque, result.cutout, result.transparent]) {
+              cpuMeshBytes += geo.positions.byteLength + geo.normals.byteLength
+                  + geo.uvs.byteLength + geo.colors.byteLength + geo.indices.byteLength;
+          }
+      }
+
+      return {
+          residentChunks: this.state.chunks.size,
+          chunkStageEntries: this.chunkStages.size,
+          desiredChunks: this.desiredChunkKeys.size,
+          blockBytes,
+          lightBytes,
+          metaBytes,
+          rawChunkBytes: blockBytes + lightBytes + metaBytes,
+          meshCacheEntries: this.meshCache.size,
+          cpuMeshBytes,
+          genQueue: this.genQueue.length,
+          meshQueue: this.meshQueue.length,
+          inFlightGen: this.inFlightGen,
+          inFlightMesh: this.inFlightMesh,
+          pendingRemesh: this.pendingRemesh.size,
+          dirtyChunks: this.dirtyChunks.size,
+          knownMissingStorageChunks: this.knownMissingStorageChunks.size,
+          meshSubscribers: this.meshSubscribers.size,
+          workers: this.workers.length,
+          workersEnabled: this.workersEnabled,
+          workerStatus: this.workerStatusMessage,
+          maxGenInFlight: this.MAX_GEN_IN_FLIGHT,
+          maxMeshInFlight: this.MAX_MESH_IN_FLIGHT,
+      };
   }
 
   /**
@@ -279,6 +329,7 @@ export class WorldManager {
                     console.error("WorldWorker Error (Disabling Workers):", e);
                     this.log("WorldWorker Failed - Switching to Main Thread", 'error');
 
+                    perf.count('worker.poolDisabled');
                     this.workersEnabled = false;
                     this.terminateWorkers();
                     this.workerStatusMessage = "Workers Disabled (Error)";
@@ -376,10 +427,15 @@ export class WorldManager {
       
       if (type === 'GEN_DONE') {
           const activeTicket = this.activeGenTickets.get(key);
-          if (activeTicket === undefined || ticket !== activeTicket) return;
+          if (activeTicket === undefined || ticket !== activeTicket) {
+              perf.count('streaming.staleGenDiscarded');
+              return;
+          }
           this.activeGenTickets.delete(key);
           this.inFlightGen = Math.max(0, this.inFlightGen - 1);
           this.genStartedAt.delete(key);
+          perf.count('streaming.genDone');
+          if (typeof data.durMs === 'number') perf.duration('worker.gen', data.durMs);
           
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
@@ -397,10 +453,15 @@ export class WorldManager {
       }
       else if (type === 'MESH_DONE') {
           const activeTicket = this.activeMeshTickets.get(key);
-          if (activeTicket === undefined || ticket !== activeTicket) return;
+          if (activeTicket === undefined || ticket !== activeTicket) {
+              perf.count('streaming.staleMeshDiscarded');
+              return;
+          }
           this.activeMeshTickets.delete(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
+          perf.count('streaming.meshDone');
+          if (typeof data.durMs === 'number') perf.duration('worker.mesh', data.durMs);
 
           if (!result) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
@@ -702,6 +763,14 @@ export class WorldManager {
               };
 
               if (this.workersEnabled && this.workers.length > 0) {
+                  let inputBytes = c.byteLength + m.byteLength + l.byteLength;
+                  for (const n of [neighbors.left, neighbors.right, neighbors.front, neighbors.back]) {
+                      if (n) inputBytes += n.byteLength;
+                  }
+                  for (const n of [neighborLights.left, neighborLights.right, neighborLights.front, neighborLights.back]) {
+                      if (n) inputBytes += n.byteLength;
+                  }
+                  perf.count('streaming.meshInputBytes', inputBytes);
                   this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
@@ -715,6 +784,7 @@ export class WorldManager {
                       cullDarkFaces: cullDark
                   });
               } else {
+                  perf.count('streaming.mainThreadMesh');
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
                       const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
@@ -806,6 +876,7 @@ export class WorldManager {
       if (this.workersEnabled && this.workers.length > 0) {
           this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
       } else {
+          perf.count('streaming.mainThreadGen');
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
               const res = WorldGen.generateChunk(cx, cz);
@@ -855,7 +926,10 @@ export class WorldManager {
           }
           if (batch.length === 0) return;
 
+          const saveStart = performance.now();
           await WorldStorage.saveChunks(worldId, batch);
+          perf.duration('storage.saveBatch', performance.now() - saveStart);
+          perf.count('storage.chunksSaved', batch.length);
 
           for (const s of savedKeys) {
               this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
@@ -868,6 +942,7 @@ export class WorldManager {
               }
           }
       } catch (e) {
+          perf.count('storage.saveBatchFailed');
           console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
       } finally {
           this.saving = false;
@@ -886,9 +961,11 @@ export class WorldManager {
       const key = WorldCoords.getChunkKey(cx, cz);
 
       if (this.dirtyChunks.has(key)) {
+          perf.count('streaming.evictDeferredDirty');
           return false; // defer, keep the dirty key + chunk data until confirmed persisted
       }
 
+      perf.count('streaming.evicted');
       WorldStore.evictChunk(this.state, cx, cz);
       this.chunkStages.delete(key);
       this.meshCache.delete(key);
