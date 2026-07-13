@@ -106,6 +106,28 @@ class JobQueue {
     }
 }
 
+/**
+ * One pooled worker plus its health bookkeeping. The slot survives restarts of
+ * the underlying Worker so failure counters can apply backoff across restarts.
+ */
+interface WorkerSlot {
+    id: number;
+    worker: Worker;
+    awaitingPong: boolean;
+    missedPongs: number;
+    /** Timestamps (ms) of recent restarts, pruned to the backoff window. */
+    restartTimes: number[];
+    jobErrors: number;
+}
+
+const WORKER_HEARTBEAT_INTERVAL_MS = 5000;
+const WORKER_MAX_MISSED_PONGS = 2;
+const WORKER_RESTART_WINDOW_MS = 60000;
+const WORKER_MAX_RESTARTS_IN_WINDOW = 3;
+const WORKER_RECOVERY_RETRY_MS = 15000;
+/** Successful jobs required to restore one step of throttled concurrency. */
+const THROTTLE_RECOVERY_SUCCESSES = 200;
+
 export type LoadingProgressCallback = (phase: string, done: number, total: number, percent: number) => void;
 
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
@@ -139,10 +161,21 @@ export class WorldManager {
     private desiredUpdateCounter = 0;
     private desiredChunkKeys = new Set<string>();
 
-  private workers: Worker[] = [];
+  private workers: WorkerSlot[] = [];
   private nextWorkerIndex = 0;
+  private nextWorkerId = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
+  private workerRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  // Which worker slot each in-flight job was dispatched to, so a crashed
+  // worker's jobs can be requeued immediately instead of waiting for timeouts.
+  private genDispatchedTo = new Map<string, number>();
+  private meshDispatchedTo = new Map<string, number>();
+  // Configured concurrency ceilings; MAX_*_IN_FLIGHT may be temporarily lowered
+  // after allocation-related worker failures and recovers with successful jobs.
+  private BASE_GEN_IN_FLIGHT = 3;
+  private BASE_MESH_IN_FLIGHT = 2;
+  private throttleRecoveryProgress = 0;
     private streamingPumpScheduled = false;
     private desiredChunkList: string[] = [];
     private desiredChunkCursor = 0;
@@ -192,12 +225,19 @@ export class WorldManager {
             : 4;
         this.MAX_GEN_IN_FLIGHT = Math.min(8, Math.max(3, Math.floor(cpuCores * 0.75)));
         this.MAX_MESH_IN_FLIGHT = Math.min(4, Math.max(2, Math.floor(cpuCores / 2)));
-    
+        this.BASE_GEN_IN_FLIGHT = this.MAX_GEN_IN_FLIGHT;
+        this.BASE_MESH_IN_FLIGHT = this.MAX_MESH_IN_FLIGHT;
+
     if (this.workersEnabled) {
         this.initWorkers();
     } else {
         this.workerStatusMessage = "Workers Disabled";
     }
+
+    // Heartbeat: catches silently hung workers (an onerror never fires for an
+    // infinite loop). A worker missing consecutive pongs is restarted; its
+    // in-flight jobs are requeued by restartWorker.
+    setInterval(() => this.heartbeatWorkers(), WORKER_HEARTBEAT_INTERVAL_MS);
 
     // Auto-save every 3 seconds if dirty
     setInterval(() => this.processSaveQueue(), 3000);
@@ -247,8 +287,11 @@ export class WorldManager {
           workers: this.workers.length,
           workersEnabled: this.workersEnabled,
           workerStatus: this.workerStatusMessage,
+          workerRecoveryPending: this.workerRecoveryTimer !== null,
           maxGenInFlight: this.MAX_GEN_IN_FLIGHT,
           maxMeshInFlight: this.MAX_MESH_IN_FLIGHT,
+          baseGenInFlight: this.BASE_GEN_IN_FLIGHT,
+          baseMeshInFlight: this.BASE_MESH_IN_FLIGHT,
       };
   }
 
@@ -304,7 +347,7 @@ export class WorldManager {
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
 
-      if (this.workers.length > 0) {
+      if (this.workersEnabled) {
           this.terminateWorkers();
           this.initWorkers();
       }
@@ -320,60 +363,221 @@ export class WorldManager {
             const poolSize = Math.min(4, Math.max(2, Math.floor(cores / 2)));
 
             for (let i = 0; i < poolSize; i++) {
-                const worker = new Worker(
-                    new URL("./world/workers/world.worker.ts", import.meta.url),
-                    { type: "module" }
-                );
-
-                worker.onerror = (e) => {
-                    console.error("WorldWorker Error (Disabling Workers):", e);
-                    this.log("WorldWorker Failed - Switching to Main Thread", 'error');
-
-                    perf.count('worker.poolDisabled');
-                    this.workersEnabled = false;
-                    this.terminateWorkers();
-                    this.workerStatusMessage = "Workers Disabled (Error)";
-                    this.resetPipeline();
-                };
-
-                worker.onmessage = (e) => this.handleWorkerMessage(e.data);
-                this.workers.push(worker);
+                this.workers.push(this.spawnWorkerSlot());
             }
 
-            this.syncWorkerWorldGenState();
             this.workerStatusMessage = `Workers Active (${this.workers.length})`;
             console.log(`World Worker Pool Initialized (${this.workers.length} workers)`);
       } catch (e) {
+            // Worker construction itself failed (e.g. module load). Do NOT fall
+            // back to main-thread generation: keep jobs queued and retry.
             console.error("Failed to init worker pool", e);
-            this.workersEnabled = false;
-            this.terminateWorkers();
-            this.workerStatusMessage = "Worker Init Failed";
+            this.workerStatusMessage = "Worker Init Failed - Retrying";
+            this.scheduleWorkerRecovery();
+      }
+  }
+
+  private spawnWorkerSlot(existing?: WorkerSlot): WorkerSlot {
+      const worker = new Worker(
+          new URL("./world/workers/world.worker.ts", import.meta.url),
+          { type: "module" }
+      );
+      const slot: WorkerSlot = existing ?? {
+          id: this.nextWorkerId++,
+          worker,
+          awaitingPong: false,
+          missedPongs: 0,
+          restartTimes: [],
+          jobErrors: 0,
+      };
+      slot.worker = worker;
+      slot.awaitingPong = false;
+      slot.missedPongs = 0;
+
+      // An uncaught worker error (not a per-job failure, those arrive as
+      // JOB_ERROR) restarts only THIS worker. The rest of the pool keeps
+      // running; workloads never permanently move to the main thread.
+      worker.onerror = (e) => {
+          console.error(`WorldWorker ${slot.id} error:`, e);
+          this.restartWorker(slot, 'uncaught error');
+      };
+      worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+
+      worker.postMessage({ type: 'INIT', workerId: slot.id });
+      const config = JSON.parse(JSON.stringify(GenConfig));
+      worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+      worker.postMessage({ type: 'SET_GEN_CONFIG', config });
+      return slot;
+  }
+
+  /**
+   * Requeue every in-flight job that was dispatched to `slotId` (used after a
+   * worker restart — those jobs can never complete). Only jobs still inside
+   * the desired set are requeued; others just release their pipeline slot.
+   */
+  private requeueJobsForWorker(slotId: number) {
+      for (const [key, sid] of this.genDispatchedTo) {
+          if (sid !== slotId) continue;
+          this.genDispatchedTo.delete(key);
+          if (!this.activeGenTickets.has(key)) continue;
+          this.activeGenTickets.delete(key);
+          this.genStartedAt.delete(key);
+          this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+          const [cx, cz] = key.split(',').map(Number);
+          if (this.desiredChunkKeys.has(key)) {
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+              this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+          } else {
+              this.setStage(cx, cz, ChunkStage.EMPTY);
+          }
+      }
+      for (const [key, sid] of this.meshDispatchedTo) {
+          if (sid !== slotId) continue;
+          this.meshDispatchedTo.delete(key);
+          if (!this.activeMeshTickets.has(key)) continue;
+          this.activeMeshTickets.delete(key);
+          this.meshStartedAt.delete(key);
+          this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+          const [cx, cz] = key.split(',').map(Number);
+          if (this.desiredChunkKeys.has(key) && this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+              this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
+              this.enqueueMesh(cx, cz, this.distancePriority(cx, cz));
+          } else if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+              this.setStage(cx, cz, ChunkStage.GENERATED);
+          }
+      }
+      this.markQueuesDirty();
+      this.scheduleStreamingPump();
+  }
+
+  private distancePriority(cx: number, cz: number): number {
+      const dx = cx - this.desiredCenter.cx;
+      const dz = cz - this.desiredCenter.cz;
+      return dx * dx + dz * dz;
+  }
+
+  /**
+   * Restart a single failed/hung worker. Repeated restarts inside the backoff
+   * window drop the worker from the pool instead (the pool shrinks); if the
+   * pool empties entirely, jobs stay queued and pool recovery retries on a
+   * timer. Generation/meshing never silently migrate to the main thread.
+   */
+  private restartWorker(slot: WorkerSlot, reason: string) {
+      const idx = this.workers.indexOf(slot);
+      if (idx === -1) return; // already removed
+      perf.count('worker.restart');
+
+      try { slot.worker.terminate(); } catch { /* already dead */ }
+
+      const now = Date.now();
+      slot.restartTimes = slot.restartTimes.filter(t => now - t < WORKER_RESTART_WINDOW_MS);
+      slot.restartTimes.push(now);
+
+      if (slot.restartTimes.length > WORKER_MAX_RESTARTS_IN_WINDOW) {
+          console.error(`[WorldManager] Worker ${slot.id} failed ${slot.restartTimes.length} times in ${WORKER_RESTART_WINDOW_MS}ms (${reason}); removing it from the pool.`);
+          perf.count('worker.removed');
+          this.workers.splice(idx, 1);
+          if (this.nextWorkerIndex >= this.workers.length) this.nextWorkerIndex = 0;
+          this.requeueJobsForWorker(slot.id);
+          if (this.workers.length === 0) {
+              this.workerStatusMessage = "Workers Down - Recovering";
+              this.log("World workers crashed - recovering in background", 'error');
+              this.scheduleWorkerRecovery();
+          } else {
+              this.workerStatusMessage = `Workers Active (${this.workers.length})`;
+          }
+          return;
+      }
+
+      console.warn(`[WorldManager] Restarting worker ${slot.id} (${reason}).`);
+      this.spawnWorkerSlot(slot);
+      this.requeueJobsForWorker(slot.id);
+      this.workerStatusMessage = `Workers Active (${this.workers.length})`;
+  }
+
+  /** Periodically try to rebuild an empty pool (never gives up while enabled). */
+  private scheduleWorkerRecovery() {
+      if (this.workerRecoveryTimer !== null) return;
+      this.workerRecoveryTimer = setTimeout(() => {
+          this.workerRecoveryTimer = null;
+          if (!this.workersEnabled || this.workers.length > 0) return;
+          perf.count('worker.recoveryAttempt');
+          console.warn('[WorldManager] Attempting worker pool recovery...');
+          this.initWorkers();
+          if (this.workers.length > 0) {
+              this.log(`Workers recovered (${this.workers.length})`, 'success');
+              this.resetPipeline();
+          } else {
+              this.scheduleWorkerRecovery();
+          }
+      }, WORKER_RECOVERY_RETRY_MS);
+  }
+
+  /**
+   * Test/benchmark hook: instructs every pooled worker to fail its next
+   * `count` jobs (optionally as allocation errors). Lets the harness verify
+   * error containment against the real pool. No effect on game behavior
+   * unless explicitly invoked.
+   */
+  public devInjectWorkerFault(count: number = 1, kind: 'alloc' | 'generic' = 'generic') {
+      for (const slot of this.workers) {
+          slot.worker.postMessage({ type: 'DEBUG_FAIL_NEXT', count, kind });
+      }
+  }
+
+  private heartbeatWorkers() {
+      if (!this.workersEnabled) return;
+      // Iterate over a copy: restartWorker may splice the array.
+      for (const slot of [...this.workers]) {
+          if (slot.awaitingPong) {
+              slot.missedPongs++;
+              if (slot.missedPongs >= WORKER_MAX_MISSED_PONGS) {
+                  this.restartWorker(slot, `missed ${slot.missedPongs} heartbeats`);
+                  continue;
+              }
+          }
+          slot.awaitingPong = true;
+          try {
+              slot.worker.postMessage({ type: 'PING' });
+          } catch {
+              this.restartWorker(slot, 'postMessage failed');
+          }
       }
   }
 
   private terminateWorkers() {
-    for (const worker of this.workers) {
-        worker.terminate();
+    for (const slot of this.workers) {
+        slot.worker.terminate();
     }
     this.workers = [];
     this.nextWorkerIndex = 0;
+    this.genDispatchedTo.clear();
+    this.meshDispatchedTo.clear();
+    if (this.workerRecoveryTimer !== null) {
+        clearTimeout(this.workerRecoveryTimer);
+        this.workerRecoveryTimer = null;
+    }
   }
 
-  /** Round-robin dispatch for chunk jobs. Control messages should use broadcast instead. */
-  private postToPool(msg: unknown) {
-      if (this.workers.length === 0) return;
-      const worker = this.workers[this.nextWorkerIndex];
+  /**
+   * Round-robin dispatch for chunk jobs. Control messages should use broadcast
+   * instead. Returns the chosen slot id (or null when no worker is available).
+   */
+  private postToPool(msg: unknown): number | null {
+      if (this.workers.length === 0) return null;
+      const slot = this.workers[this.nextWorkerIndex];
       this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-      worker.postMessage(msg);
+      slot.worker.postMessage(msg);
+      return slot.id;
   }
 
     private syncWorkerWorldGenState() {
             if (this.workers.length === 0) return;
 
             const config = JSON.parse(JSON.stringify(GenConfig));
-            for (const worker of this.workers) {
-                worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
-                worker.postMessage({ type: 'SET_GEN_CONFIG', config });
+            for (const slot of this.workers) {
+                slot.worker.postMessage({ type: 'SET_SEED', seed: this.activeSeed });
+                slot.worker.postMessage({ type: 'SET_GEN_CONFIG', config });
             }
     }
 
@@ -423,8 +627,22 @@ export class WorldManager {
 
   private handleWorkerMessage(data: any) {
       const { type, cx, cz, result, ticket } = data;
+
+      if (type === 'PONG') {
+          const slot = this.workers.find(s => s.id === data.workerId);
+          if (slot) {
+              slot.awaitingPong = false;
+              slot.missedPongs = 0;
+          }
+          return;
+      }
+      if (type === 'JOB_ERROR') {
+          this.handleJobError(data);
+          return;
+      }
+
       const key = WorldCoords.getChunkKey(cx, cz);
-      
+
       if (type === 'GEN_DONE') {
           const activeTicket = this.activeGenTickets.get(key);
           if (activeTicket === undefined || ticket !== activeTicket) {
@@ -432,10 +650,12 @@ export class WorldManager {
               return;
           }
           this.activeGenTickets.delete(key);
+          this.genDispatchedTo.delete(key);
           this.inFlightGen = Math.max(0, this.inFlightGen - 1);
           this.genStartedAt.delete(key);
           perf.count('streaming.genDone');
           if (typeof data.durMs === 'number') perf.duration('worker.gen', data.durMs);
+          this.noteJobSuccess();
           
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
@@ -458,10 +678,12 @@ export class WorldManager {
               return;
           }
           this.activeMeshTickets.delete(key);
+          this.meshDispatchedTo.delete(key);
           this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
           this.meshStartedAt.delete(key);
           perf.count('streaming.meshDone');
           if (typeof data.durMs === 'number') perf.duration('worker.mesh', data.durMs);
+          this.noteJobSuccess();
 
           if (!result) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
@@ -488,6 +710,98 @@ export class WorldManager {
               this.meshQueue.sort((a, b) => a.priority - b.priority);
           }
           this.scheduleStreamingPump();
+      }
+  }
+
+  /**
+   * A job failed inside a worker (caught there, reported as JOB_ERROR). The
+   * worker itself is still healthy — release the pipeline slot, requeue the
+   * job if it is still wanted, and throttle concurrency after allocation
+   * failures. Only repeated failures restart the worker (via restartWorker's
+   * own backoff); the pool is never disabled and work never permanently moves
+   * to the main thread.
+   */
+  private handleJobError(data: {
+      jobType: 'GEN' | 'MESH';
+      cx: number; cz: number;
+      ticket: number;
+      workerId: number;
+      errorName: string;
+      errorMessage: string;
+      allocationRelated: boolean;
+      inputBytes: number;
+  }) {
+      const { jobType, cx, cz, ticket, workerId, errorName, errorMessage, allocationRelated, inputBytes } = data;
+      const key = WorldCoords.getChunkKey(cx, cz);
+      perf.count('worker.jobError');
+      if (allocationRelated) perf.count('worker.allocationError');
+      console.error(
+          `[WorldWorker ${workerId}] ${jobType} failed for ${key}: ${errorName}: ${errorMessage}`
+          + ` (input ${inputBytes} B, allocation=${allocationRelated})`
+      );
+
+      if (jobType === 'GEN') {
+          if (this.activeGenTickets.get(key) === ticket) {
+              this.activeGenTickets.delete(key);
+              this.genDispatchedTo.delete(key);
+              this.genStartedAt.delete(key);
+              this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+              if (this.desiredChunkKeys.has(key)) {
+                  this.setStage(cx, cz, ChunkStage.REQUESTED);
+                  this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+              } else {
+                  this.setStage(cx, cz, ChunkStage.EMPTY);
+              }
+          }
+      } else if (jobType === 'MESH') {
+          if (this.activeMeshTickets.get(key) === ticket) {
+              this.activeMeshTickets.delete(key);
+              this.meshDispatchedTo.delete(key);
+              this.meshStartedAt.delete(key);
+              this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+              this.pendingMeshDark.delete(key);
+              if (this.getStage(cx, cz) >= ChunkStage.GENERATED) {
+                  if (this.desiredChunkKeys.has(key)) {
+                      this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
+                      this.enqueueMesh(cx, cz, this.distancePriority(cx, cz));
+                  } else {
+                      this.setStage(cx, cz, ChunkStage.GENERATED);
+                  }
+              }
+          }
+      }
+
+      if (allocationRelated) {
+          // Memory pressure: halve concurrency (recovers with successful jobs)
+          // and restart the reporting worker to release its scratch buffers.
+          this.MAX_GEN_IN_FLIGHT = Math.max(1, this.MAX_GEN_IN_FLIGHT >> 1);
+          this.MAX_MESH_IN_FLIGHT = Math.max(1, this.MAX_MESH_IN_FLIGHT >> 1);
+          this.throttleRecoveryProgress = 0;
+          console.warn(`[WorldManager] Allocation failure in worker ${workerId}; concurrency now gen=${this.MAX_GEN_IN_FLIGHT} mesh=${this.MAX_MESH_IN_FLIGHT}.`);
+          const slot = this.workers.find(s => s.id === workerId);
+          if (slot) this.restartWorker(slot, 'allocation failure');
+      } else {
+          const slot = this.workers.find(s => s.id === workerId);
+          if (slot) {
+              slot.jobErrors++;
+              // A worker drowning in job errors is likely corrupted state;
+              // restart it (backoff inside restartWorker caps the churn).
+              if (slot.jobErrors % 5 === 0) this.restartWorker(slot, `${slot.jobErrors} job errors`);
+          }
+      }
+
+      this.markQueuesDirty();
+      this.scheduleStreamingPump();
+  }
+
+  /** Gradually restores concurrency lowered after allocation failures. */
+  private noteJobSuccess() {
+      if (this.MAX_GEN_IN_FLIGHT >= this.BASE_GEN_IN_FLIGHT && this.MAX_MESH_IN_FLIGHT >= this.BASE_MESH_IN_FLIGHT) return;
+      this.throttleRecoveryProgress++;
+      if (this.throttleRecoveryProgress >= THROTTLE_RECOVERY_SUCCESSES) {
+          this.throttleRecoveryProgress = 0;
+          if (this.MAX_GEN_IN_FLIGHT < this.BASE_GEN_IN_FLIGHT) this.MAX_GEN_IN_FLIGHT++;
+          if (this.MAX_MESH_IN_FLIGHT < this.BASE_MESH_IN_FLIGHT) this.MAX_MESH_IN_FLIGHT++;
       }
   }
 
@@ -649,7 +963,13 @@ export class WorldManager {
     this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
-      while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
+      // Pool down (workers enabled but every worker crashed): keep jobs queued
+      // until recovery restores the pool. Generation/meshing must not silently
+      // migrate to the main thread — that was the old failure mode that froze
+      // the game after a single worker error.
+      const poolDown = this.workersEnabled && this.workers.length === 0;
+
+      while (!poolDown && this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
           const job = this.genQueue.shift();
           if (!job) break;
           this.queuedGenKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
@@ -702,7 +1022,7 @@ export class WorldManager {
         }
       }
 
-      while (this.inFlightMesh < this.MAX_MESH_IN_FLIGHT && this.meshQueue.length > 0) {
+      while (!poolDown && this.inFlightMesh < this.MAX_MESH_IN_FLIGHT && this.meshQueue.length > 0) {
           const job = this.meshQueue.shift();
           if (!job) break;
           this.queuedMeshKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
@@ -771,7 +1091,7 @@ export class WorldManager {
                       if (n) inputBytes += n.byteLength;
                   }
                   perf.count('streaming.meshInputBytes', inputBytes);
-                  this.postToPool({
+                  const slotId = this.postToPool({
                       type: 'MESH',
                       id: `mesh-${job.cx}-${job.cz}`,
                       cx: job.cx,
@@ -783,6 +1103,7 @@ export class WorldManager {
                       lights: neighborLights,
                       cullDarkFaces: cullDark
                   });
+                  if (slotId !== null) this.meshDispatchedTo.set(key, slotId);
               } else {
                   perf.count('streaming.mainThreadMesh');
                   setTimeout(() => {
@@ -855,6 +1176,7 @@ export class WorldManager {
                   this.inFlightGen = Math.max(0, this.inFlightGen - 1);
                   this.genStartedAt.delete(key);
                   this.activeGenTickets.delete(key);
+                  this.genDispatchedTo.delete(key);
                   this.setStage(cx, cz, ChunkStage.REQUESTED);
                   this.enqueueGen(cx, cz, priority);
               }
@@ -864,6 +1186,7 @@ export class WorldManager {
                   this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
                   this.meshStartedAt.delete(key);
                   this.activeMeshTickets.delete(key);
+                  this.meshDispatchedTo.delete(key);
                   this.setStage(cx, cz, ChunkStage.MESH_QUEUED);
                   this.enqueueMesh(cx, cz, priority);
               }
@@ -874,8 +1197,20 @@ export class WorldManager {
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
       if (this.workersEnabled && this.workers.length > 0) {
-          this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+          const slotId = this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+          if (slotId !== null) this.genDispatchedTo.set(key, slotId);
+      } else if (this.workersEnabled) {
+          // Pool is down (async storage-miss callback raced a pool crash):
+          // roll the job back into the queue and let pool recovery re-dispatch.
+          if (this.activeGenTickets.get(key) === ticket) {
+              this.activeGenTickets.delete(key);
+              this.genStartedAt.delete(key);
+              this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+              this.setStage(cx, cz, ChunkStage.REQUESTED);
+              this.enqueueGen(cx, cz, this.distancePriority(cx, cz));
+          }
       } else {
+          // Workers explicitly disabled by the user/config: main-thread path.
           perf.count('streaming.mainThreadGen');
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
@@ -982,6 +1317,8 @@ export class WorldManager {
       // fast traversal eventually stalled streaming at MAX_*_IN_FLIGHT.
       if (this.activeGenTickets.delete(key)) this.inFlightGen = Math.max(0, this.inFlightGen - 1);
       if (this.activeMeshTickets.delete(key)) this.inFlightMesh = Math.max(0, this.inFlightMesh - 1);
+      this.genDispatchedTo.delete(key);
+      this.meshDispatchedTo.delete(key);
       this.knownMissingStorageChunks.delete(key);
       this.darkCulledMeshes.delete(key);
       this.pendingMeshDark.delete(key);

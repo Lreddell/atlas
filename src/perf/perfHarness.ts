@@ -476,6 +476,54 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
     },
 
     /**
+     * Worker failure containment check: inject faults (including allocation
+     * errors) into the live pool mid-stream and verify streaming completes
+     * anyway, with workers alive and zero main-thread fallback jobs.
+     */
+    async workerFault(opts) {
+        const rd = opts.renderDistance ?? 6;
+        const seed = opts.seed ?? 12345;
+        const maxMs = opts.maxMs ?? 120000;
+        resetWorld(seed);
+        const offsets = buildOffsets(rd);
+        setCenter(offsets, 0, 0);
+
+        let injectedGeneric = false;
+        let injectedAlloc = false;
+        const idle = waitForIdle(2500, maxMs);
+        const { samples, durationMs } = await runLoop((elapsed) => {
+            // Poison the pool twice while work is in flight.
+            if (!injectedGeneric && elapsed > 500) {
+                injectedGeneric = true;
+                worldManager.devInjectWorkerFault(2, 'generic');
+            }
+            if (!injectedAlloc && elapsed > 2000) {
+                injectedAlloc = true;
+                worldManager.devInjectWorkerFault(1, 'alloc');
+            }
+            return idle.update(elapsed);
+        }, maxMs);
+
+        const end = takeSample(durationMs);
+        const stats = streamingStats();
+        return {
+            renderDistance: rd,
+            durationMs,
+            reachedIdle: pipelineIdle(),
+            jobErrors: perf.getCounter('worker.jobError'),
+            allocationErrors: perf.getCounter('worker.allocationError'),
+            workerRestarts: perf.getCounter('worker.restart'),
+            workersAliveAtEnd: stats.workers,
+            workersEnabledAtEnd: stats.workersEnabled,
+            mainThreadJobs: end.mainThreadJobs,
+            meshCacheEntries: end.meshCacheEntries,
+            desiredChunks: end.desiredChunks,
+            samples,
+            telemetry: perf.snapshot(),
+        };
+    },
+
+    /**
      * Deterministic generation hash over a fixed chunk set (including far and
      * negative coordinates). Must not change across performance work.
      */
