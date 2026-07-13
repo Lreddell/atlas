@@ -20,6 +20,9 @@ interface WorldAccess {
     getBlock(x: number, y: number, z: number): BlockType;
     tryGetBlock(x: number, y: number, z: number): BlockType | null;
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
+    /** Bulk-edit transaction: writes apply immediately inside fn; lighting and
+     *  per-section remeshing flush once when fn returns. */
+    runBatch(fn: (set: (x: number, y: number, z: number, type: BlockType, rotation?: number) => void) => void): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
     getChunkColumn(cx: number, cz: number): ChunkColumn | null;
@@ -120,21 +123,26 @@ function attemptTreeGrowth(world: WorldAccess, saplingType: BlockType, wx: numbe
         if (!isReplaceable(existing)) return; // trunk blocked, abort entirely
     }
 
-    // Phase 2: remove sapling and place tree
-    world.setBlock(wx, wy, wz, BlockType.AIR);
+    // Phase 2: remove sapling and place the whole tree in one bulk-edit
+    // transaction: per-block reads still see prior writes (writes apply
+    // immediately), but lighting floods once per cluster and each affected
+    // section is queued exactly once instead of ~60 whole-column remeshes.
+    world.runBatch((set) => {
+        set(wx, wy, wz, BlockType.AIR);
 
-    for (const tb of treeBlocks) {
-        const existing = world.tryGetBlock(tb.wx, tb.wy, tb.wz);
-        if (existing === null) continue; // skip unloaded areas
-        if (tb.isTrunk) {
-            if (isReplaceable(existing)) {
-                world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
-            }
-        } else {
-            // Leaf, permissive, only place in air or existing leaves
-            if (isReplaceable(existing)) {
-                world.setBlock(tb.wx, tb.wy, tb.wz, tb.type);
+        for (const tb of treeBlocks) {
+            const existing = world.tryGetBlock(tb.wx, tb.wy, tb.wz);
+            if (existing === null) continue; // skip unloaded areas
+            if (tb.isTrunk) {
+                if (isReplaceable(existing)) {
+                    set(tb.wx, tb.wy, tb.wz, tb.type);
+                }
+            } else {
+                // Leaf, permissive, only place in air or existing leaves
+                if (isReplaceable(existing)) {
+                    set(tb.wx, tb.wy, tb.wz, tb.type);
+                }
             }
         }
-    }
+    });
 }

@@ -5,8 +5,18 @@ import { WorldState } from './worldTypes';
 import { getColumn } from './worldStore';
 import { worldToChunk, index3D } from './worldCoords';
 import { MIN_Y, MAX_Y } from '../../constants';
-import { worldManager } from '../WorldManager';
 import { isWashable } from './blockProps';
+
+/**
+ * Write sink for the fluid tick. WorldManager passes a bulk-edit batch so a
+ * tick's worth of fluid changes flood lighting once per cluster and queue
+ * each affected section once, instead of a full relight+remesh per cell.
+ * Writes apply immediately (fluid logic reads state between its own writes).
+ */
+export interface FluidWorldSink {
+    setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
+    spawnDrop(type: BlockType, x: number, y: number, z: number): void;
+}
 
 const MAX_WATER_SPREAD = 7;
 const MAX_LAVA_SPREAD = 3;
@@ -80,19 +90,19 @@ function calculateFlowCost(state: WorldState, sx: number, sy: number, sz: number
     return 1000;
 }
 
-function trySpreadTo(state: WorldState, x: number, y: number, z: number, type: BlockType, newMeta: number) {
+function trySpreadTo(state: WorldState, world: FluidWorldSink, x: number, y: number, z: number, type: BlockType, newMeta: number) {
     const { type: targetType } = getBlockAndMeta(state, x, y, z);
     
     if (isWashable(targetType)) {
-        worldManager.spawnDrop(targetType, x, y, z);
+        world.spawnDrop(targetType, x, y, z);
     }
 
-    worldManager.setBlock(x, y, z, type, newMeta);
+    world.setBlock(x, y, z, type, newMeta);
     const delay = type === BlockType.LAVA ? 30 : 5;
     scheduleFluidUpdate(x, y, z, type, delay);
 }
 
-export function processFluids(state: WorldState) {
+export function processFluids(state: WorldState, world: FluidWorldSink) {
     const now = Date.now();
     const updatesToProcess: FluidUpdate[] = [];
     let processCount = 0;
@@ -117,16 +127,16 @@ export function processFluids(state: WorldState) {
         for(const [dx, dy, dz] of neighbors) {
             const { type: nt } = getBlockAndMeta(state, x+dx, y+dy, z+dz);
             if (type === BlockType.LAVA && nt === BlockType.WATER) {
-                 worldManager.setBlock(x, y, z, BlockType.COBBLESTONE);
+                 world.setBlock(x, y, z, BlockType.COBBLESTONE);
                  turnedToStone = true;
                  break;
             }
             if (type === BlockType.WATER && nt === BlockType.LAVA) {
                  const { meta: nm } = getBlockAndMeta(state, x+dx, y+dy, z+dz);
                  if (nm === 0) { 
-                     worldManager.setBlock(x+dx, y+dy, z+dz, BlockType.OBSIDIAN);
+                     world.setBlock(x+dx, y+dy, z+dz, BlockType.OBSIDIAN);
                  } else {
-                     worldManager.setBlock(x+dx, y+dy, z+dz, BlockType.COBBLESTONE);
+                     world.setBlock(x+dx, y+dy, z+dz, BlockType.COBBLESTONE);
                  }
             }
         }
@@ -143,7 +153,7 @@ export function processFluids(state: WorldState) {
             if (currentMeta === 8) {
                 // Falling fluid is supported only by same-type fluid directly above.
                 if (!fedFromAbove) {
-                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    world.setBlock(x, y, z, BlockType.AIR, 0);
                     continue;
                 }
             } else if (!fedFromAbove) {
@@ -160,17 +170,17 @@ export function processFluids(state: WorldState) {
                 if (minSupplier === Infinity) {
                     // Orphaned, remove; setBlock reschedules fluid neighbors so the
                     // drain cascades outward naturally.
-                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    world.setBlock(x, y, z, BlockType.AIR, 0);
                     continue;
                 }
                 const supportedMeta = minSupplier + 1;
                 if (supportedMeta > maxSpreadDrain) {
-                    worldManager.setBlock(x, y, z, BlockType.AIR, 0);
+                    world.setBlock(x, y, z, BlockType.AIR, 0);
                     continue;
                 }
                 if (supportedMeta > currentMeta) {
                     // Supply weakened, downgrade and re-check next update.
-                    worldManager.setBlock(x, y, z, type, supportedMeta);
+                    world.setBlock(x, y, z, type, supportedMeta);
                     scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
                     continue;
                 }
@@ -184,7 +194,7 @@ export function processFluids(state: WorldState) {
              // Never overwrite a same-type SOURCE below (meta 0), pouring fluid onto a
              // source pool used to rewrite it to falling fluid, destroying the source.
              if (down.type !== type || (down.meta !== 8 && down.meta !== 0)) {
-                 trySpreadTo(state, x, y - 1, z, type, 8);
+                 trySpreadTo(state, world, x, y - 1, z, type, 8);
              }
              if (!isSource) continue;
         }
@@ -220,9 +230,9 @@ export function processFluids(state: WorldState) {
                  const target = getBlockAndMeta(state, nx, y, nz);
                  
                  if (isReplaceable(target.type)) {
-                     trySpreadTo(state, nx, y, nz, type, newMeta);
+                     trySpreadTo(state, world, nx, y, nz, type, newMeta);
                  } else if (target.type === type && target.meta > newMeta) {
-                     trySpreadTo(state, nx, y, nz, type, newMeta);
+                     trySpreadTo(state, world, nx, y, nz, type, newMeta);
                  }
              });
         }
@@ -236,7 +246,7 @@ export function processFluids(state: WorldState) {
             if (sourceNeighbors >= 2) {
                 const downSup = getBlockAndMeta(state, x, y - 1, z);
                 if (!isReplaceable(downSup.type) || (downSup.type === type && downSup.meta === 0)) {
-                    worldManager.setBlock(x, y, z, type, 0); 
+                    world.setBlock(x, y, z, type, 0); 
                 }
             }
         }

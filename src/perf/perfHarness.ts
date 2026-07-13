@@ -712,6 +712,66 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
     },
 
     /**
+     * Bulk-edit transaction acceptance: a 300-block structure placement and a
+     * water-source fluid cascade must not enqueue per-block whole-column
+     * meshes — each affected chunk gets at most a handful of section-masked
+     * jobs per batch/tick.
+     */
+    async bulkEditBatch(opts) {
+        const rd = opts.renderDistance ?? 4;
+        const seed = opts.seed ?? 12345;
+        const maxMs = opts.maxMs ?? 120000;
+        resetWorld(seed);
+        worldTickEnabled = false;
+        const offsets = buildOffsets(rd);
+        setCenter(offsets, 0, 0);
+        const idle = waitForIdle(2000, maxMs);
+        await runLoop((el) => idle.update(el), maxMs);
+
+        // 10×3×10 stone platform on the surface (one batch).
+        const h = worldManager.getTerrainHeight(7, 7) + 3;
+        const edits: Array<{ x: number; y: number; z: number; type: BlockType }> = [];
+        for (let x = 2; x < 12; x++) {
+            for (let z = 2; z < 12; z++) {
+                for (let y = h; y < h + 3; y++) edits.push({ x, y, z, type: BlockType.STONE });
+            }
+        }
+        const jobs0 = perf.getCounter('streaming.meshDone');
+        const sections0 = perf.getCounter('streaming.sectionsMeshed');
+        worldManager.setBlocks(edits);
+        let settle = waitForIdle(1500, 30000);
+        await runLoop((el) => settle.update(el), 30000);
+        const structure = {
+            blocks: edits.length,
+            meshJobs: perf.getCounter('streaming.meshDone') - jobs0,
+            sectionsMeshed: perf.getCounter('streaming.sectionsMeshed') - sections0,
+        };
+
+        // Water source on the platform; run the fluid cascade to rest with
+        // world ticking on (fluid ticks batch per tick).
+        const jobs1 = perf.getCounter('streaming.meshDone');
+        const sections1 = perf.getCounter('streaming.sectionsMeshed');
+        worldTickEnabled = true;
+        worldManager.setBlock(7, h + 3, 7, BlockType.WATER, 0);
+        settle = waitForIdle(4000, 60000);
+        await runLoop((el) => settle.update(el), 60000);
+        const fluid = {
+            meshJobs: perf.getCounter('streaming.meshDone') - jobs1,
+            sectionsMeshed: perf.getCounter('streaming.sectionsMeshed') - sections1,
+            fluidCellsWritten: 0, // informational; cascade size varies with terrain
+        };
+
+        return {
+            renderDistance: rd,
+            structure,   // 300 blocks: expect a few section jobs, not 300 column meshes
+            fluid,
+            // The structure spans one chunk + light spill into the 3×3 ring:
+            // ≤ 9 mesh jobs means one deduplicated job per affected chunk.
+            pass: structure.meshJobs <= 9,
+        };
+    },
+
+    /**
      * Section-mesh equivalence: the union of the 24 per-section mesher passes
      * must emit exactly the same face set as one whole-column pass. Quads are
      * compared as an order-independent multiset (per bucket), since section

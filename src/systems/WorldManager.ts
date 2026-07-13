@@ -982,7 +982,7 @@ export class WorldManager {
   }
 
   /** Merge section masks; -1 (full column) absorbs everything. */
-  private static mergeMask(a: number, b: number): number {
+  static mergeMask(a: number, b: number): number {
       return (a === -1 || b === -1) ? -1 : (a | b);
   }
 
@@ -2148,11 +2148,23 @@ export class WorldManager {
   tick(delta: number) {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
-      Fluids.processFluids(this.state);
+      // All fluid writes this tick share one edit batch: lighting floods once
+      // per edit cluster and each affected section queues exactly once.
+      const fluidBatch = this.createEditBatch({ tileEntities: true, fluids: true, support: true, stairShapes: true });
+      Fluids.processFluids(this.state, {
+          setBlock: (x, y, z, t, r) => fluidBatch.set(x, y, z, t, r ?? 0),
+          spawnDrop: (t, x, y, z) => this.spawnDrop(t, x, y, z),
+      });
+      fluidBatch.commit();
       tickPlantGrowth({
           getBlock: (x, y, z) => this.getBlock(x, y, z, false),
           tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
           setBlock: (x, y, z, t, r) => { this.setBlock(x, y, z, t, r ?? 0); },
+          runBatch: (fn) => {
+              const b = this.createEditBatch({ tileEntities: true, fluids: true, support: true, stairShapes: true });
+              fn((x, y, z, t, r) => b.set(x, y, z, t, r ?? 0));
+              b.commit();
+          },
           getMetadata: (x, y, z) => this.getMetadata(x, y, z),
           setMetadataAt: (x, y, z, v) => this.setMetadataAt(x, y, z, v),
           getChunkColumn: (cx, cz) => WorldStore.getColumn(this.state, cx, cz) ?? null,
@@ -2282,7 +2294,7 @@ export class WorldManager {
 
   /** Sections a single-cell edit affects: its own, plus vertical neighbors
    *  when the cell sits on a section boundary (faces/AO cross the seam). */
-  private static editSectionMask(y: number): number {
+  static editSectionMask(y: number): number {
       const yOff = y - MIN_Y;
       const sy = yOff >> 4;
       let mask = 1 << sy;
@@ -2357,57 +2369,114 @@ export class WorldManager {
   }
 
   /**
-   * Batch structural edits (the arena dais / shield crystals): write every block,
-   * then relight and remesh ONCE rather than per block, restoring the ~100-block
-   * dais was triggering ~100 full chunk remeshes and lighting floods, which lagged.
-   * Skips fluid / tile-entity / support cascades, so it is for solid structural
-   * blocks only, not interactive or fluid edits.
+   * Bulk world-edit transaction. Writes are applied IMMEDIATELY (fluid and
+   * growth logic reads world state between its own writes within one tick),
+   * while lighting floods, remesh queueing, and chunk notifications are
+   * deferred and deduplicated until commit():
+   *
+   *   1. block/metadata changes apply on set() (with optional tile-entity
+   *      replacement handling, drop spilling, and fluid scheduling — the same
+   *      semantics as a plain setBlock)
+   *   2. affected sections are collected via the columns' dirty masks
+   *   3. lighting bounds collapse to one flood per ~radius-13 edit cluster
+   *   4. border-chunk face-culling remeshes merge into one mask per chunk
+   *   5. commit() queues each affected section exactly once and notifies
+   *      each touched chunk once
+   *
+   * Used by fluids, tree growth, structure/arena placement, and any future
+   * fill commands or boss environmental effects.
+   */
+  public createEditBatch(opts: { tileEntities?: boolean; fluids?: boolean; support?: boolean; stairShapes?: boolean } = {}) {
+      return new WorldEditBatch(this, opts);
+  }
+
+  /** @internal batch support: raw write + immediate side effects, no lighting/remesh. */
+  applyBatchWrite(
+      x: number, y: number, z: number, type: BlockType, rotation: number,
+      opts: { tileEntities?: boolean; fluids?: boolean },
+      drops: ItemStack[],
+  ): { changed: boolean; typeChanged: boolean } {
+      if (y < MIN_Y || y > MAX_Y) return { changed: false, typeChanged: false };
+      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+      const col = this.getChunkColumn(cx, cz, true);
+      if (!col) return { changed: false, typeChanged: false };
+      const index = WorldCoords.index3D(lx, y, lz);
+      const oldType = col.getB(index);
+      const oldRotation = col.getM(index);
+      if (oldType === type && oldRotation === rotation) return { changed: false, typeChanged: false };
+      if (opts.tileEntities && oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
+          this.ensureChest(x, y, z);
+      }
+      col.setB(index, type);
+      col.setM(index, rotation);
+      if (opts.tileEntities) {
+          const dropped = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
+          for (const item of dropped) {
+              drops.push(item);
+              this.spawnDrop(item, x, y, z);
+          }
+      }
+      if (opts.fluids) {
+          if (type === BlockType.WATER || type === BlockType.LAVA) {
+              Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5);
+          }
+          for (const [dx, dy, dz] of [[0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1]]) {
+              const nx = x + dx; const ny = y + dy; const nz = z + dz;
+              const nBlock = this.getBlock(nx, ny, nz, false);
+              if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) {
+                  Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5);
+              }
+          }
+      }
+      this.markDirty(WorldCoords.getChunkKey(cx, cz));
+      return { changed: true, typeChanged: oldType !== type };
+  }
+
+  /** @internal batch support (see WorldEditBatch.commit). */
+  finishEditBatch(
+      changedCells: Array<{ x: number; y: number; z: number }>,
+      typeChangedCells: Array<{ x: number; y: number; z: number }>,
+      borderMeshMasks: Map<string, number>,
+      opts: { support?: boolean; stairShapes?: boolean },
+  ) {
+      if (changedCells.length === 0) return;
+      // Stair corner shapes re-resolve BEFORE relighting (parity with setBlock).
+      if (opts.stairShapes) {
+          for (const c of changedCells) this.refreshStairShapes(c.x, c.y, c.z);
+      }
+      // One relight flood per ~radius-13 cluster (a flood covers radius 15 and
+      // reads final block state, so clustered edits share one flood). Each
+      // flood sweeps the net-changed section masks itself.
+      const relit: Array<{ x: number; y: number; z: number }> = [];
+      for (const c of changedCells) {
+          if (!relit.some((p) => Math.abs(p.x - c.x) <= 13 && Math.abs(p.y - c.y) <= 13 && Math.abs(p.z - c.z) <= 13)) {
+              relit.push(c);
+          }
+      }
+      for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
+      // Border chunks whose face culling changed without a data change.
+      for (const [key, mask] of borderMeshMasks) {
+          const comma = key.indexOf(',');
+          this.queueMesh(Number(key.slice(0, comma)), Number(key.slice(comma + 1)), -1000, mask);
+      }
+      this.markQueuesDirty();
+      this.processStreamingJobs();
+      // Support cascades after the whole batch (may recurse into setBlock).
+      if (opts.support) {
+          for (const c of typeChangedCells) this.breakUnsupported(c.x, c.y + 1, c.z);
+      }
+  }
+
+  /**
+   * Batch structural edits (the arena dais / shield crystals): write every
+   * block, then relight and remesh ONCE rather than per block. Parity with
+   * the historical behavior: skips fluid / tile-entity / support cascades,
+   * so it is for solid structural blocks only.
    */
   setBlocks(edits: Array<{ x: number; y: number; z: number; type: BlockType; rotation?: number }>): void {
-    if (edits.length === 0) return;
-    // Border chunks whose face culling changes even though their data didn't:
-    // key -> section mask to remesh.
-    const borderMeshMasks = new Map<string, number>();
-    const addBorderMask = (bcx: number, bcz: number, mask: number) => {
-        const k = WorldCoords.getChunkKey(bcx, bcz);
-        borderMeshMasks.set(k, WorldManager.mergeMask(borderMeshMasks.get(k) ?? 0, mask));
-    };
-    const relit: { x: number; y: number; z: number }[] = [];
-    let changed = false;
-    for (const e of edits) {
-      if (e.y < MIN_Y || e.y > MAX_Y) continue;
-      const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
-      const col = this.getChunkColumn(cx, cz, true);
-      if (!col) continue;
-      const index = WorldCoords.index3D(lx, e.y, lz);
-      const rot = e.rotation ?? 0;
-      const oldType = col.getB(index);
-      const oldRot = col.getM(index);
-      if (oldType === e.type && oldRot === rot) continue;
-      col.setB(index, e.type);
-      col.setM(index, rot);
-      this.markDirty(WorldCoords.getChunkKey(cx, cz));
-      const vMask = WorldManager.editSectionMask(e.y);
-      if (lx === 0) addBorderMask(cx - 1, cz, vMask); else if (lx === CHUNK_SIZE - 1) addBorderMask(cx + 1, cz, vMask);
-      if (lz === 0) addBorderMask(cx, cz - 1, vMask); else if (lz === CHUNK_SIZE - 1) addBorderMask(cx, cz + 1, vMask);
-      // One relight flood per ~radius-13 cluster (a flood covers radius 15, and it
-      // reads the final block state below, so clustered edits share one flood).
-      if (!relit.some((p) => Math.abs(p.x - e.x) <= 13 && Math.abs(p.y - e.y) <= 13 && Math.abs(p.z - e.z) <= 13)) {
-        relit.push({ x: e.x, y: e.y, z: e.z });
-      }
-      changed = true;
-    }
-    if (!changed) return;
-    // Relights sweep the dirty masks of every touched section themselves;
-    // border chunks (whose data didn't change) still need their matching
-    // sections requeued for face culling.
-    for (const p of relit) this.updateLightingAround(p.x, p.y, p.z);
-    for (const [key, mask] of borderMeshMasks) {
-      const comma = key.indexOf(',');
-      this.queueMesh(Number(key.slice(0, comma)), Number(key.slice(comma + 1)), -1000, mask);
-    }
-    this.markQueuesDirty();
-    this.processStreamingJobs();
+    const batch = this.createEditBatch({ tileEntities: false, fluids: false, support: false, stairShapes: false });
+    for (const e of edits) batch.set(e.x, e.y, e.z, e.type, e.rotation ?? 0);
+    batch.commit();
   }
 
 
@@ -2499,6 +2568,45 @@ export class WorldManager {
           this.log(`Found ${biomeId} at X=${tx}, Z=${tz}${note}`, 'success', `/tp ${tx} ${ty} ${tz}`);
       } else { this.log(`Could not find ${biomeId} within ${SEARCH_RADIUS} blocks.`, 'error'); }
   }
+}
+
+/** See WorldManager.createEditBatch. */
+export class WorldEditBatch {
+    private changedCells: Array<{ x: number; y: number; z: number }> = [];
+    private typeChangedCells: Array<{ x: number; y: number; z: number }> = [];
+    private borderMeshMasks = new Map<string, number>();
+    private drops: ItemStack[] = [];
+    private committed = false;
+
+    constructor(
+        private manager: WorldManager,
+        private opts: { tileEntities?: boolean; fluids?: boolean; support?: boolean; stairShapes?: boolean },
+    ) {}
+
+    /** Applies the write immediately; lighting/remesh/notify defer to commit(). */
+    set(x: number, y: number, z: number, type: BlockType, rotation: number = 0): void {
+        const res = this.manager.applyBatchWrite(x, y, z, type, rotation, this.opts, this.drops);
+        if (!res.changed) return;
+        this.changedCells.push({ x, y, z });
+        if (res.typeChanged) this.typeChangedCells.push({ x, y, z });
+
+        const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+        const vMask = WorldManager.editSectionMask(y);
+        const add = (bcx: number, bcz: number) => {
+            const k = WorldCoords.getChunkKey(bcx, bcz);
+            this.borderMeshMasks.set(k, WorldManager.mergeMask(this.borderMeshMasks.get(k) ?? 0, vMask));
+        };
+        if (lx === 0) add(cx - 1, cz); else if (lx === CHUNK_SIZE - 1) add(cx + 1, cz);
+        if (lz === 0) add(cx, cz - 1); else if (lz === CHUNK_SIZE - 1) add(cx, cz + 1);
+    }
+
+    /** Flood lighting once per edit cluster, queue each section once, notify. */
+    commit(): ItemStack[] {
+        if (this.committed) return this.drops;
+        this.committed = true;
+        this.manager.finishEditBatch(this.changedCells, this.typeChangedCells, this.borderMeshMasks, this.opts);
+        return this.drops;
+    }
 }
 
 export const worldManager = new WorldManager();
