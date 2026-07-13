@@ -47,7 +47,9 @@ desktop.ini
 .agents/
 .claude/
 .codex/
-docs/
+# docs/ stays ignored except the tracked performance baseline/results.
+docs/*
+!docs/performance/
 AGENTS.md
 CLAUDE.md
 copilot.patch
