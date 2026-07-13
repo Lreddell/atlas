@@ -198,6 +198,10 @@ export class WorldManager {
 
   private activeSeed: number = 0;
   private activeWorldId: string | null = null; // ID of the currently loaded world
+  // Monotonic world-session id: bumped on reset() and setWorldContext().
+  // Every gen/mesh job carries it and results from a stale session are
+  // discarded before they can touch world storage or mesh caches.
+  private worldSession = 0;
   private gcCounter: number = 0; // Counter for periodic garbage collection
 
   private queuesDirty = false;
@@ -311,6 +315,7 @@ export class WorldManager {
           budgetHardLimitBytes: this.budget.hardLimitBytes,
           desiredRadius: this.desiredRadius,
           retentionHysteresis: RETENTION_HYSTERESIS,
+          worldSession: this.worldSession,
           workers: this.workers.length,
           workersEnabled: this.workersEnabled,
           workerStatus: this.workerStatusMessage,
@@ -328,6 +333,7 @@ export class WorldManager {
    */
   public setWorldContext(worldId: string, seedNum: number) {
     this.knownMissingStorageChunks.clear();
+      this.worldSession++;
       this.activeWorldId = worldId;
       this.activeSeed = seedNum;
       
@@ -370,6 +376,7 @@ export class WorldManager {
       this.dirtyChunks.clear();
       this.dirtyEditVersion.clear();
       this.activeWorldId = null; // Clear context
+      this.worldSession++;
     this.lastDesiredCenterKey = null;
     this.lastDesiredCount = -1;
     this.desiredUpdateCounter = 0;
@@ -675,6 +682,13 @@ export class WorldManager {
           }
           return;
       }
+      // Results minted for a previous world session (a world switch or reset
+      // raced the job) are never allowed into storage or mesh caches.
+      if (data.session !== undefined && data.session !== this.worldSession) {
+          perf.count('streaming.staleSessionDiscarded');
+          return;
+      }
+
       if (type === 'JOB_ERROR') {
           this.handleJobError(data);
           return;
@@ -695,6 +709,16 @@ export class WorldManager {
           perf.count('streaming.genDone');
           if (typeof data.durMs === 'number') perf.duration('worker.gen', data.durMs);
           this.noteJobSuccess();
+
+          // Retention check: the chunk may have left the active area while the
+          // job ran (ticket cancellation can race completion). Don't insert it.
+          if (!this.desiredChunkKeys.has(key)
+              && !isWithinRetention(cx, cz, this.desiredCenter.cx, this.desiredCenter.cz, this.desiredRadius, RETENTION_HYSTERESIS)) {
+              perf.count('streaming.staleGenDiscarded');
+              this.setStage(cx, cz, ChunkStage.EMPTY);
+              this.scheduleStreamingPump();
+              return;
+          }
           
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
@@ -728,6 +752,15 @@ export class WorldManager {
           if (!result) {
               this.setStage(cx, cz, ChunkStage.GENERATED);
               this.queueMesh(cx, cz, 0);
+              this.scheduleStreamingPump();
+              return;
+          }
+
+          if (!this.desiredChunkKeys.has(key)
+              && !isWithinRetention(cx, cz, this.desiredCenter.cx, this.desiredCenter.cz, this.desiredRadius, RETENTION_HYSTERESIS)) {
+              perf.count('streaming.staleMeshDiscarded');
+              this.pendingMeshDark.delete(key);
+              if (this.getStage(cx, cz) === ChunkStage.MESHING) this.setStage(cx, cz, ChunkStage.GENERATED);
               this.scheduleStreamingPump();
               return;
           }
@@ -1180,6 +1213,7 @@ export class WorldManager {
           this.setStage(job.cx, job.cz, ChunkStage.GENERATING);
           this.genStartedAt.set(key, Date.now());
           const ticket = ++this.genTicketCounter;
+          const session = this.worldSession;
           this.activeGenTickets.set(key, ticket);
           
           // Persistence Check: Try load from DB before asking worker to generate
@@ -1198,6 +1232,7 @@ export class WorldManager {
                             cx: job.cx,
                             cz: job.cz,
                             ticket,
+                            session,
                             result: { blocks: data.blocks, light: data.light, meta: data.meta }
                         });
                     } else {
@@ -1294,6 +1329,7 @@ export class WorldManager {
                       cx: job.cx,
                       cz: job.cz,
                       ticket,
+                      session: this.worldSession,
                       chunk: c,
                       metaData: m,
                       neighbors,
@@ -1303,10 +1339,11 @@ export class WorldManager {
                   if (slotId !== null) this.meshDispatchedTo.set(key, slotId);
               } else {
                   perf.count('streaming.mainThreadMesh');
+                  const session = this.worldSession;
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
                       const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
-                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, result: res });
+                      this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, session, result: res });
                   }, 0);
               }
       }
@@ -1395,7 +1432,7 @@ export class WorldManager {
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
       if (this.workersEnabled && this.workers.length > 0) {
-          const slotId = this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+          const slotId = this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket, session: this.worldSession });
           if (slotId !== null) this.genDispatchedTo.set(key, slotId);
       } else if (this.workersEnabled) {
           // Pool is down (async storage-miss callback raced a pool crash):
@@ -1410,10 +1447,11 @@ export class WorldManager {
       } else {
           // Workers explicitly disabled by the user/config: main-thread path.
           perf.count('streaming.mainThreadGen');
+          const session = this.worldSession;
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
               const res = WorldGen.generateChunk(cx, cz);
-              this.handleWorkerMessage({ type: 'GEN_DONE', cx, cz, ticket, result: res });
+              this.handleWorkerMessage({ type: 'GEN_DONE', cx, cz, ticket, session, result: res });
           }, 0);
       }
   }

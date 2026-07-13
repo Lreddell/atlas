@@ -476,6 +476,66 @@ const scenarios: Record<string, (opts: ScenarioOpts) => Promise<ScenarioResult>>
     },
 
     /**
+     * Stale-result rejection check: switch the world context (new seed, new
+     * session) while generation jobs are in flight, WITHOUT resetting the
+     * pipeline, then verify the surviving world matches a fresh main-thread
+     * generation of the new seed (i.e. no old-seed chunk leaked in) and that
+     * stale results were counted and discarded.
+     */
+    async worldSwitch(opts) {
+        const rd = opts.renderDistance ?? 8;
+        const seedA = opts.seed ?? 12345;
+        const seedB = seedA + 999;
+        const maxMs = opts.maxMs ?? 120000;
+        resetWorld(seedA);
+        const offsets = buildOffsets(rd);
+        setCenter(offsets, 0, 0);
+
+        let phase = 0;
+        const idle = waitForIdle(2500, maxMs);
+        const { samples, durationMs } = await runLoop((elapsed) => {
+            if (phase === 0 && elapsed > 1200) {
+                phase = 1;
+                // Deliberately NOT calling reset() yet: live workers still hold
+                // in-flight seed-A jobs whose results must now be
+                // session-rejected instead of landing in the seed-B world.
+                worldManager.setWorldContext('', seedB);
+            } else if (phase === 1 && elapsed > 3500) {
+                phase = 2;
+                // Now the normal switch flow: full pipeline reset + reload.
+                worldManager.reset();
+                worldManager.setWorldContext('', seedB);
+                setCenter(offsets, 0, 0);
+            }
+            return phase === 2 ? idle.update(elapsed) : false;
+        }, maxMs);
+
+        // Compare a few resident chunks against fresh seed-B generation.
+        const mismatches: string[] = [];
+        for (const [cx, cz] of [[0, 0], [2, -1], [-3, 3]] as Array<[number, number]>) {
+            const resident = worldManager.getChunkData(cx, cz, false);
+            const expected = WorldGen.generateChunk(cx, cz).blocks;
+            if (!resident) { mismatches.push(`${cx},${cz}: missing`); continue; }
+            let h1 = 0x811c9dc5, h2 = 0x811c9dc5;
+            h1 = fnv1a(h1, resident);
+            h2 = fnv1a(h2, expected);
+            if (h1 !== h2) mismatches.push(`${cx},${cz}: ${h1.toString(16)} != ${h2.toString(16)}`);
+        }
+
+        return {
+            renderDistance: rd,
+            seedA, seedB,
+            durationMs,
+            reachedIdle: pipelineIdle(),
+            staleSessionDiscarded: perf.getCounter('streaming.staleSessionDiscarded'),
+            staleDiscarded: perf.getCounter('streaming.staleGenDiscarded') + perf.getCounter('streaming.staleMeshDiscarded'),
+            chunkMismatchesVsFreshSeedB: mismatches,
+            end: takeSample(durationMs),
+            samples,
+        };
+    },
+
+    /**
      * Worker failure containment check: inject faults (including allocation
      * errors) into the live pool mid-stream and verify streaming completes
      * anyway, with workers alive and zero main-thread fallback jobs.

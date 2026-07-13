@@ -29,7 +29,7 @@ const isAllocationError = (e: unknown): boolean => {
 };
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces, session } = e.data;
 
     try {
         if (type === 'INIT') {
@@ -65,6 +65,7 @@ ctx.onmessage = (e) => {
                 type: 'GEN_DONE',
                 id, cx, cz,
                 ticket,
+                session,
                 workerId,
                 durMs,
                 result: {
@@ -76,7 +77,7 @@ ctx.onmessage = (e) => {
         }
         else if (type === 'MESH') {
             if (!chunk) {
-                ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, workerId, result: null });
+                ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, result: null });
                 return;
             }
 
@@ -97,7 +98,7 @@ ctx.onmessage = (e) => {
 
             const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
 
-            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, workerId, durMs, result }, safeBuffers);
+            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, session, workerId, durMs, result }, safeBuffers);
         }
         else if (type === 'EVICT') {
             // Stateless worker: nothing to evict locally.
@@ -125,6 +126,7 @@ ctx.onmessage = (e) => {
                 jobType: type,
                 id, cx, cz,
                 ticket,
+                session,
                 workerId,
                 errorName: err instanceof Error ? err.name : 'Error',
                 errorMessage: err instanceof Error ? err.message : String(err),
