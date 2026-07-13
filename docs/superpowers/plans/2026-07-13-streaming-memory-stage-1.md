@@ -102,10 +102,10 @@
 
 ### Task 6: Repository verification
 
-- [ ] Run repository `npm run typecheck`.
-- [ ] Run repository `npm run build`.
-- [ ] Run `npm run test:streaming`.
-- [ ] Run `npm run perf`.
-- [ ] Inspect Vercel status.
+- [x] Run repository `npm run typecheck`.
+- [x] Run repository `npm run build`.
+- [x] Run `npm run test:streaming`.
+- [x] Run `npm run perf`.
+- [x] Inspect Vercel status.
 - [ ] Run browser and Electron long-distance scenarios.
 - [ ] Record before and after runtime captures on the same hardware and settings.
