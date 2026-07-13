@@ -1,11 +1,12 @@
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
-const root = resolve(import.meta.dirname, '../..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const outDir = join(root, '.tmp', 'streaming-tests');
 const files = [
   'src/systems/world/streamingBudget.ts',
