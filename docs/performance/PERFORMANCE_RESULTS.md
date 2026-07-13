@@ -16,14 +16,27 @@ Stage 1 code now includes:
 - soft and hard memory pressure policies
 - desired-set clamping based on estimated safe residency
 - mesh-cache release after renderer ownership transfer
+- compact neighbor-border payloads for mesh workers
 - browser capture API for repeatable scenarios
+
+## Worker payload model
+
+The current whole-column mesher needs the complete center blocks, center metadata, and center light arrays, but it reads only one boundary plane from each horizontal neighbor. Stage 1 now sends those eight neighbor planes rather than eight full-height neighbor arrays.
+
+| Mesh input | Before | Stage 1 |
+|---|---:|---:|
+| Four block neighbors | 384 KiB | 24 KiB |
+| Four light neighbors | 384 KiB | 24 KiB |
+| Total modeled mesh input | 1,056 KiB | 336 KiB |
+
+This reduces the modeled structured-clone input per ordinary mesh job by 720 KiB, or about 68.2 percent. The worker expands the planes into compatibility arrays before invoking the existing mesher, so this improvement targets cross-thread copying and main-thread transfer pressure. Section-aware meshing should remove that worker-side expansion in a later stage.
 
 ## Automated checks completed
 
 | Check | Result |
 |---|---|
 | Repository TypeScript check | Passed in GitHub Actions |
-| Streaming unit tests | 19 passed, 0 failed |
+| Streaming unit tests | 23 passed, 0 failed |
 | Production Vite build | Passed in GitHub Actions and Vercel |
 | Deterministic memory model | Generated successfully |
 | GitHub Actions workflow | Completed successfully |
