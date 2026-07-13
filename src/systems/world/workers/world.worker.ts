@@ -1,64 +1,264 @@
-import { generateChunk } from '../chunkGeneration';
-import { generateGeometryData } from '../geometry';
-import { reseedGlobalNoise } from '../../../utils/noise';
-import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { generateChunk } from "../chunkGeneration";
+import { generateGeometryData } from "../geometry";
+import { reseedGlobalNoise } from "../../../utils/noise";
+import { loadGenConfig, resetGenConfig } from "../genConfig";
+import {
+  inflateNeighborBorders,
+  neighborScratchBytes,
+  type NeighborBorderMap,
+  type NeighborBorderSide,
+} from "./neighborBorders";
 
-// Cast self to Worker
+type JobType = "GEN" | "MESH";
+
+interface JobIdentity {
+  jobType?: JobType;
+  worldSessionId?: number;
+  desiredEpoch?: number;
+  dataVersion?: number;
+  uniqueTicket?: string;
+  workerId?: number;
+  inputByteCount?: number;
+}
+
+interface WorkerRequest extends JobIdentity {
+  type: string;
+  id?: string;
+  cx?: number;
+  cz?: number;
+  seed?: number;
+  config?: unknown;
+  chunk?: Uint8Array;
+  metaData?: Uint8Array;
+  neighbors?: Partial<Record<NeighborBorderSide, Uint8Array>>;
+  neighborBorders?: NeighborBorderMap;
+  lightBorders?: NeighborBorderMap;
+  lights?: { center: Uint8Array } & Partial<
+    Record<NeighborBorderSide, Uint8Array>
+  >;
+  ticket?: number;
+  cullDarkFaces?: boolean;
+}
+
 const ctx = self as unknown as Worker;
+const neighborScratch: Partial<Record<NeighborBorderSide, Uint8Array>> = {};
+const lightScratch: Partial<Record<NeighborBorderSide, Uint8Array>> = {};
+const INITIAL_GEOMETRY_FACES = 8_192;
+const MAX_GEOMETRY_FACES = 300_000;
+const GEOMETRY_BYTES_PER_FACE = 200;
+const geometryCapacityFaces = [
+  INITIAL_GEOMETRY_FACES,
+  INITIAL_GEOMETRY_FACES,
+  INITIAL_GEOMETRY_FACES,
+];
 
-ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces } = e.data;
-
-    if (type === 'SET_SEED') {
-        reseedGlobalNoise(seed);
-        console.log(`[Worker] Reseeded with: ${seed}`);
-    }
-    else if (type === 'SET_GEN_CONFIG') {
-        resetGenConfig();
-        if (config) {
-            loadGenConfig(config);
-        }
-        console.log('[Worker] Applied world generation config');
-    }
-    else if (type === 'GEN') {
-        const result = generateChunk(cx, cz);
-        
-        // Transfer the generated buffers directly to the main thread.
-        // The worker no longer maintains a cache, making it stateless.
-        ctx.postMessage({ 
-            type: 'GEN_DONE', 
-            id, cx, cz, 
-            ticket,
-            result: { 
-                blocks: result.blocks, 
-                light: result.light, 
-                meta: result.meta 
-            }
-        }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
-    }
-    else if (type === 'MESH') {
-        if (!chunk) {
-            ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result: null });
-            return;
-        }
-
-        // Generate geometry using data provided in the message.
-        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
-
-        const buffers: Transferable[] = [];
-        [result.opaque, result.cutout, result.transparent].forEach(geo => {
-            if (geo.positions.buffer) buffers.push(geo.positions.buffer);
-            if (geo.normals.buffer) buffers.push(geo.normals.buffer);
-            if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
-            if (geo.colors.buffer) buffers.push(geo.colors.buffer);
-            if (geo.indices.buffer) buffers.push(geo.indices.buffer);
-        });
-
-        const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
-
-        ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
-    }
-    else if (type === 'EVICT') {
-        // Stateless worker: nothing to evict locally.
-    }
+const nextGeometryCapacity = (current: number, required: number): number => {
+  let capacity = current;
+  while (capacity < required) capacity *= 2;
+  return Math.min(capacity, MAX_GEOMETRY_FACES);
 };
+
+const updateGeometryScratchEstimate = (
+  result: ReturnType<typeof generateGeometryData>,
+): void => {
+  [result.opaque, result.cutout, result.transparent].forEach(
+    (geometry, index) => {
+      const faceCount = Math.ceil(geometry.positions.length / 12);
+      geometryCapacityFaces[index] = nextGeometryCapacity(
+        geometryCapacityFaces[index],
+        faceCount,
+      );
+    },
+  );
+};
+
+const scratchCapacities = () => ({
+  neighborCacheBytes:
+    neighborScratchBytes(neighborScratch) + neighborScratchBytes(lightScratch),
+  geometryScratchBytes:
+    geometryCapacityFaces.reduce((sum, faces) => sum + faces, 0) *
+    GEOMETRY_BYTES_PER_FACE,
+  generationScratchBytes: 0,
+});
+
+const identityFrom = (request: WorkerRequest) => ({
+  jobType: request.jobType,
+  worldSessionId: request.worldSessionId,
+  desiredEpoch: request.desiredEpoch,
+  dataVersion: request.dataVersion,
+  uniqueTicket: request.uniqueTicket,
+  workerId: request.workerId,
+  inputByteCount: request.inputByteCount ?? 0,
+});
+
+const isAllocationError = (error: unknown): boolean => {
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    name === "RangeError" ||
+    /array buffer|allocation|out of memory/i.test(message)
+  );
+};
+
+const sendHeartbeat = (workerId?: number) => {
+  ctx.postMessage({
+    type: "HEARTBEAT",
+    workerId,
+    timestamp: performance.now(),
+    scratchCapacities: scratchCapacities(),
+  });
+};
+
+ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  const request = event.data;
+  const {
+    type,
+    id,
+    cx,
+    cz,
+    seed,
+    config,
+    chunk,
+    metaData,
+    neighbors: legacyNeighbors,
+    neighborBorders,
+    lightBorders,
+    lights,
+    ticket,
+    cullDarkFaces,
+  } = request;
+
+  if (type === "PING") {
+    sendHeartbeat(request.workerId);
+    return;
+  }
+
+  if (type === "SET_SEED") {
+    if (typeof seed === "number") reseedGlobalNoise(seed);
+    sendHeartbeat(request.workerId);
+    return;
+  }
+
+  if (type === "SET_GEN_CONFIG") {
+    resetGenConfig();
+    if (config) loadGenConfig(config as Parameters<typeof loadGenConfig>[0]);
+    sendHeartbeat(request.workerId);
+    return;
+  }
+
+  if (type === "EVICT") {
+    sendHeartbeat(request.workerId);
+    return;
+  }
+
+  const jobType: JobType | null =
+    type === "GEN" || type === "MESH" ? type : null;
+  if (!jobType || cx === undefined || cz === undefined || ticket === undefined)
+    return;
+
+  const startedAt = performance.now();
+  try {
+    if (jobType === "GEN") {
+      const result = generateChunk(cx, cz);
+      ctx.postMessage(
+        {
+          type: "GEN_DONE",
+          id,
+          cx,
+          cz,
+          ticket,
+          ...identityFrom(request),
+          jobDurationMs: performance.now() - startedAt,
+          scratchCapacities: scratchCapacities(),
+          result: {
+            blocks: result.blocks,
+            light: result.light,
+            meta: result.meta,
+          },
+        },
+        [result.blocks.buffer, result.light.buffer, result.meta.buffer],
+      );
+      return;
+    }
+
+    if (!chunk || !lights) {
+      ctx.postMessage({
+        type: "MESH_DONE",
+        id,
+        cx,
+        cz,
+        ticket,
+        ...identityFrom(request),
+        jobDurationMs: performance.now() - startedAt,
+        scratchCapacities: scratchCapacities(),
+        result: null,
+      });
+      return;
+    }
+
+    const neighbors = neighborBorders
+      ? inflateNeighborBorders(neighborBorders, chunk.length, neighborScratch)
+      : (legacyNeighbors ?? {});
+    const neighborLights = lightBorders
+      ? {
+          center: lights.center,
+          ...inflateNeighborBorders(lightBorders, chunk.length, lightScratch),
+        }
+      : lights;
+    const result = generateGeometryData(
+      cx,
+      cz,
+      chunk,
+      metaData,
+      neighbors,
+      neighborLights,
+      !!cullDarkFaces,
+    );
+    updateGeometryScratchEstimate(result);
+    const buffers: Transferable[] = [];
+    [result.opaque, result.cutout, result.transparent].forEach((geometry) => {
+      buffers.push(
+        geometry.positions.buffer,
+        geometry.normals.buffer,
+        geometry.uvs.buffer,
+        geometry.colors.buffer,
+        geometry.indices.buffer,
+      );
+    });
+
+    ctx.postMessage(
+      {
+        type: "MESH_DONE",
+        id,
+        cx,
+        cz,
+        ticket,
+        ...identityFrom(request),
+        jobDurationMs: performance.now() - startedAt,
+        scratchCapacities: scratchCapacities(),
+        result,
+      },
+      buffers,
+    );
+  } catch (error) {
+    // Backward compatibility for commits/configurations that load this worker before
+    // the Stage 1 main-thread protocol is installed: preserve the legacy onerror path.
+    if (request.worldSessionId === undefined) throw error;
+    ctx.postMessage({
+      type: "JOB_ERROR",
+      id,
+      ...identityFrom(request),
+      jobType,
+      cx,
+      cz,
+      ticket,
+      jobDurationMs: performance.now() - startedAt,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : String(error),
+      allocationRelated: isAllocationError(error),
+      scratchCapacities: scratchCapacities(),
+    });
+  }
+};
+
+setInterval(() => sendHeartbeat(), 5_000);
