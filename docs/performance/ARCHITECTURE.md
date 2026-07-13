@@ -41,6 +41,24 @@ Workers return the same identity on success. Job exceptions return a serializabl
 
 The guard does not intentionally move normal generation or meshing onto the main thread. When no worker can be created, streaming pauses and reports the failure instead of running the same allocation-heavy work in the renderer.
 
+## Compact meshing borders
+
+The existing mesher receives four neighboring block arrays and four neighboring light arrays, but horizontal boundary checks use only one 16×384 plane from each neighboring chunk. Before posting a mesh job, the transfer guard extracts those eight planes.
+
+The ordinary modeled mesh input changes from:
+
+- 288 KiB of center blocks, metadata, and light
+- 768 KiB of full neighboring arrays
+- 1,056 KiB total
+
+to:
+
+- 288 KiB of center blocks, metadata, and light
+- 48 KiB of neighboring boundary planes
+- 336 KiB total
+
+The worker expands the planes into sparse compatibility arrays before calling the unchanged mesher. This avoids changing meshing behavior in Stage 1 while reducing structured-clone traffic by about 68.2 percent. The section-based mesher should consume compact boundaries directly and remove the expansion.
+
 ## Stale results
 
 Results from a previous world session are discarded. Results for chunks that have left the desired set are released before they enter world storage or the mesh cache. Ticket checks in the existing manager remain in place.
