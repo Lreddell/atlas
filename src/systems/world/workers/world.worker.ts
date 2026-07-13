@@ -2,6 +2,7 @@ import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { expandNeighborPlanes } from '../streamingBorders';
 import { normalizeWorkerError, type WorkerJobType } from './streamingProtocol';
 
 const ctx = self as unknown as Worker;
@@ -101,7 +102,20 @@ ctx.onmessage = (event) => {
                 return;
             }
 
-            const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+            const expandedNeighbors = expandNeighborPlanes(neighbors);
+            const expandedLights = {
+                ...expandNeighborPlanes(lights),
+                center: lights.center,
+            };
+            const result = generateGeometryData(
+                cx,
+                cz,
+                chunk,
+                metaData,
+                expandedNeighbors,
+                expandedLights,
+                !!cullDarkFaces,
+            );
             const buffers: Transferable[] = [];
             [result.opaque, result.cutout, result.transparent].forEach((geometry) => {
                 buffers.push(
