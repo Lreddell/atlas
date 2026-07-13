@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CHUNK_SIZE = 16;
 const WORLD_HEIGHT = 384;
@@ -41,7 +42,7 @@ const report = {
   note: 'This is a deterministic storage model, not a measured runtime benchmark. Use window.__ATLAS_PERF__ during gameplay for measured samples.',
 };
 
-const root = resolve(import.meta.dirname, '../..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const jsonPath = resolve(root, 'artifacts/performance/streaming-model.json');
 const markdownPath = resolve(root, 'artifacts/performance/streaming-model.md');
 mkdirSync(dirname(jsonPath), { recursive: true });
