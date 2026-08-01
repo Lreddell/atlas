@@ -247,6 +247,25 @@ class ResonantVaultRuntime {
         return this.layout?.vaultId ?? null;
     }
 
+    skipRequirementsBeforeBoss(player: { x: number; y: number; z: number }): {
+        vaultId: string;
+        completed: number;
+        total: number;
+    } | null {
+        this.resolveVault(player);
+        const layout = this.layout;
+        if (!layout) return null;
+
+        const requiredRoomIds = getVaultRequiredRoomIds(layout);
+        const completed = requiredRoomIds.reduce(
+            (count, roomId) => count + (progression.setVaultRoomSolved(layout.vaultId, roomId) ? 1 : 0),
+            0,
+        );
+        this.openHubSeal(layout);
+        this.updateSnapshot();
+        return { vaultId: layout.vaultId, completed, total: requiredRoomIds.length };
+    }
+
     prepareForPlayerRecovery(): void {
         this.restoreEscapePlatforms();
         this.titanCinematicPending = null;

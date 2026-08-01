@@ -29,6 +29,7 @@ export const COMMANDS = [
     '/spawn',
     '/setspawn',
     '/boss',
+    '/vault',
     '/magfields',
 ];
 
@@ -54,6 +55,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/spawn': [],
     '/setspawn': [],
     '/boss': ['spawn', 'kill'],
+    '/vault': ['skip'],
     '/magfields': ['on', 'off', 'toggle'],
 };
 

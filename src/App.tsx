@@ -1872,6 +1872,19 @@ const App: React.FC = () => {
           } else {
               logMsg("Usage: /locate biome <biomeName> | /locate vault", 'error');
           }
+      } else if (parts[0] === '/vault') {
+          if (parts[1] !== 'skip' || parts.length !== 2) {
+              logMsg('Usage: /vault skip', 'error');
+          } else {
+              const result = resonantVaultRuntime.skipRequirementsBeforeBoss(playerPosRef.current);
+              if (!result) {
+                  logMsg('No active Resonant Vault nearby.', 'error');
+              } else if (result.completed === 0) {
+                  logMsg(`Vault requirements already complete (${result.total}/${result.total}).`, 'info');
+              } else {
+                  logMsg(`Skipped ${result.completed} Vault requirement${result.completed === 1 ? '' : 's'}. Bell chamber unlocked (${result.total}/${result.total}).`, 'success');
+              }
+          }
       } else if (parts[0] === '/shootingstar') {
           if (parts[1] === 'spawn') {
               if (typeof window !== 'undefined') {
@@ -2009,7 +2022,7 @@ const App: React.FC = () => {
       } else if (parts[0] === '/help') {
           // Grouped, compact command listing (autocomplete carries the details).
           logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
-          logMsg('Progression: /boss /region /cleanse /seal /magfields', 'info');
+          logMsg('Progression: /boss /vault /region /cleanse /seal /magfields', 'info');
           logMsg('Player: /gamemode /giveitem /equip /unequip /keepinventory', 'info');
           logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
           logMsg('Tab-complete any command for its subcommands and arguments.', 'info');

@@ -31,6 +31,8 @@ test('suggests commands and their known arguments', () => {
 
     assert.deepEqual(complete('/reg', options), ['/region']);
     assert.deepEqual(complete('/boss ', options), ['spawn', 'kill']);
+    assert.deepEqual(complete('/vault ', options), ['skip']);
+    assert.deepEqual(complete('/vault s', options), ['skip']);
     assert.deepEqual(complete('/magf', options), ['/magfields']);
     assert.deepEqual(complete('/magfields ', options), ['on', 'off', 'toggle']);
     assert.deepEqual(complete('/magfields t', options), ['toggle']);
@@ -44,6 +46,21 @@ test('suggests commands and their known arguments', () => {
     assert.deepEqual(complete('/locate v', options), ['vault']);
     assert.deepEqual(complete('/locate biome v', options), ['volcanic']);
     assert.deepEqual(complete('/giveitem stone ', options), ['1', '16', '32', '64']);
+});
+
+test('/vault skip completes only the active Vault requirements and opens its boss seal', () => {
+    const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    const runtimeSource = readFileSync(new URL('../systems/world/ResonantVaultRuntime.ts', import.meta.url), 'utf8');
+    const skipMethod = runtimeSource.slice(
+        runtimeSource.indexOf('skipRequirementsBeforeBoss('),
+        runtimeSource.indexOf('prepareForPlayerRecovery()'),
+    );
+
+    assert.match(appSource, /parts\[0\]\s*===\s*'\/vault'[\s\S]{0,500}skipRequirementsBeforeBoss\(playerPosRef\.current\)/);
+    assert.match(runtimeSource, /skipRequirementsBeforeBoss\([\s\S]{0,500}getVaultRequiredRoomIds\(layout\)/);
+    assert.match(runtimeSource, /skipRequirementsBeforeBoss\([\s\S]{0,900}progression\.setVaultRoomSolved\(layout\.vaultId, roomId\)/);
+    assert.match(runtimeSource, /skipRequirementsBeforeBoss\([\s\S]{0,1100}this\.openHubSeal\(layout\)/);
+    assert.doesNotMatch(skipMethod, /markVaultTitanDefeated|claimVaultCore|startVaultEscape/);
 });
 
 test('/locate vault uses the deterministic vault locator and offers a surface teleport', () => {
