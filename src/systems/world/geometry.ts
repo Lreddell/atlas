@@ -3,6 +3,7 @@ import { CHUNK_SIZE, WORLD_HEIGHT, MIN_Y, MAX_Y } from '../../constants';
 import { FACE_DATA } from './worldConstants';
 import { BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
+import { CROSS_RENDERED_BLOCKS } from '../../data/spriteBlocks';
 import { index3D } from './worldCoords';
 import { resolveTexture } from './textureResolver';
 import { getOpacity } from './blockProps';
@@ -168,6 +169,10 @@ const IS_CUTOUT = new Uint8Array(MAX_BLOCK_ID + 1);
 const IS_TRANSPARENT = new Uint8Array(MAX_BLOCK_ID + 1);
 const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
 
+// Every cross-rendered sprite block (single shared list) plus the cutout cubes
+// (leaves, lava sheets, beds). A cutout block left out of this table meshes
+// into the solid buffer, whose material has no alpha test, so its transparent
+// texels render as black.
 [
     BlockType.LEAVES,
     BlockType.SPRUCE_LEAVES,
@@ -176,31 +181,10 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.JUNGLE_LEAVES,
     BlockType.DARK_OAK_LEAVES,
     BlockType.ACACIA_LEAVES,
-    BlockType.TORCH,
-    BlockType.SAPLING,
-    BlockType.SPRUCE_SAPLING,
-    BlockType.BIRCH_SAPLING,
-    BlockType.CHERRY_SAPLING,
-    BlockType.JUNGLE_SAPLING,
-    BlockType.DARK_OAK_SAPLING,
-    BlockType.ACACIA_SAPLING,
     BlockType.LAVA,
     BlockType.BED_FOOT,
     BlockType.BED_HEAD,
-    BlockType.DEAD_BUSH,
-    BlockType.GRASS_PLANT,
-    BlockType.ROSE,
-    BlockType.DANDELION,
-    BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER,
-    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
-    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
-    BlockType.MAGNETIC_SPIKE,
-    BlockType.MAGNETIC_SHIELD_CRYSTAL,
-    BlockType.MAGNETITE_SHARD,
-    BlockType.POINTED_DRIPSTONE,
-    BlockType.GLOW_LICHEN,
-    BlockType.AMETHYST_CLUSTER
+    ...CROSS_RENDERED_BLOCKS,
 ].forEach(t => { IS_CUTOUT[t] = 1; });
 
 [
@@ -209,30 +193,7 @@ const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
     BlockType.ICE
 ].forEach(t => { IS_TRANSPARENT[t] = 1; });
 
-[
-    BlockType.TORCH,
-    BlockType.SAPLING,
-    BlockType.SPRUCE_SAPLING,
-    BlockType.BIRCH_SAPLING,
-    BlockType.CHERRY_SAPLING,
-    BlockType.JUNGLE_SAPLING,
-    BlockType.DARK_OAK_SAPLING,
-    BlockType.ACACIA_SAPLING,
-    BlockType.DEAD_BUSH,
-    BlockType.GRASS_PLANT,
-    BlockType.ROSE,
-    BlockType.DANDELION,
-    BlockType.DEBUG_CROSS,
-    BlockType.PINK_FLOWER,
-    BlockType.POSITIVE_MAGNETITE_CRYSTAL,
-    BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
-    BlockType.MAGNETIC_SPIKE,
-    BlockType.MAGNETIC_SHIELD_CRYSTAL,
-    BlockType.MAGNETITE_SHARD,
-    BlockType.POINTED_DRIPSTONE,
-    BlockType.GLOW_LICHEN,
-    BlockType.AMETHYST_CLUSTER
-].forEach(t => { IS_CROSS[t] = 1; });
+for (const t of CROSS_RENDERED_BLOCKS) IS_CROSS[t] = 1;
 
 // Slabs / stairs: rendered as partial boxes, never as full cubes or greedy quads.
 const IS_SHAPED = new Uint8Array(MAX_BLOCK_ID + 1);
@@ -800,20 +761,26 @@ export function generateGeometryData(
                  else if (nIsFluid && nType !== type) visible = true;
                  else if (IS_CUTOUT[nType] === 1) visible = true;
                  else if (IS_TRANSPARENT[nType] === 1 && nType !== type) visible = true;
-                 else if (!nDef) visible = true; 
+                 else if (IS_SHAPED[nType] === 1) visible = true;
+                 else if (!nDef) visible = true;
                  else if (dir === 'top' && blockHeight < 1.0) visible = true;
                  else visible = false;
 
              } else {
+                 // A slab/stair neighbour covers at most part of the shared boundary,
+                 // so it can never seal this face. Without this, transparent-flagged
+                 // full blocks (phase blocks, machinery) culled their face against a
+                 // placed slab and opened an x-ray hole into the world.
                  if ((nType as BlockType) === BlockType.AIR) visible = true;
-                 else if (nIsFluid) visible = true; 
-                 else if (!nDef) visible = true; 
+                 else if (nIsFluid) visible = true;
+                 else if (!nDef) visible = true;
+                 else if (IS_SHAPED[nType] === 1) visible = true;
                  else if (IS_CUTOUT[type] === 1 && IS_CUTOUT[nType] === 1 && type === nType) visible = false;
                  else if (def.transparent && IS_CUTOUT[nType] === 1 && type !== nType) visible = true;
                  else if (def.transparent && IS_TRANSPARENT[nType] === 1 && type !== nType) visible = true;
                  else if (def.transparent) visible = false;
                  else if (!def.transparent && nDef.transparent) visible = true;
-                 else if (isBed && (nType as BlockType) === BlockType.AIR) visible = true; 
+                 else if (isBed && (nType as BlockType) === BlockType.AIR) visible = true;
              }
              
              if (visible) {

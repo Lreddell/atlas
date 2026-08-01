@@ -22,10 +22,13 @@ import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
+import { BellTitanCinematic } from './components/BellTitanCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
+import { bellTitanCinematic } from './systems/boss/bellTitanCinematic';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
+import { vaultProjectileSystem } from './systems/combat/VaultProjectileSystem';
 import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
@@ -55,6 +58,7 @@ import { RenderStats } from './components/RenderStats';
 import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
+import { resonantVaultRuntime } from './systems/world/ResonantVaultRuntime';
 import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
 import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
@@ -605,6 +609,9 @@ const App: React.FC = () => {
           },
           // Magnetic field impulse (the Magnetic Warden pushing/pulling the player).
           (x, y, z) => playerRef.current?.applyImpulse(x, y, z),
+          // Authored hazard recovery uses the same physics-safe teleport path as
+          // commands and respawn, which also clears velocity and fall distance.
+          (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
       );
   }, [damagePlayer]);
 
@@ -1034,6 +1041,7 @@ const App: React.FC = () => {
           flush();
       }
       bossSummon.cancel();
+      bellTitanCinematic.cancel();
       setCinematicMode(false);
       // Despawns a live boss (clears its crystals + fires boss:cleared → restores
       // the arena and nulls the ref). If there was no live boss (e.g. quit during
@@ -1074,7 +1082,8 @@ const App: React.FC = () => {
       // boss (debug /boss kill, and later real boss entities) route through here.
       const offDefeated = gameEvents.on('boss:defeated', ({ bossId, regionId }) => {
           progression.markBossDefeated(bossId);
-          if (regionId) progression.cleanseRegion(regionId);
+          const region = regionId ? getRegionById(regionId) : undefined;
+          if (region?.bossId === bossId) progression.cleanseRegion(region.id);
           // Victory sting (editable: sounds/magnetic_warden/defeat).
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.defeat', { volume: 0.9 });
           // Let the defeat eruption breathe, then re-form the altar; the loot drops
@@ -1083,8 +1092,15 @@ const App: React.FC = () => {
       });
       // The summon cutscene pauses player control while the camera is scripted.
       const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
-      const offCineEnd = gameEvents.on('cinematic:end', () => {
+      const offCineEnd = gameEvents.on('cinematic:end', ({ source, returnPosition, returnPitch, returnYaw }) => {
           setCinematicMode(false);
+          if (source === 'bell_titan' && returnPosition) {
+              const feet = new THREE.Vector3(returnPosition.x, returnPosition.y, returnPosition.z);
+              playerRef.current?.teleport(feet);
+              playerPosRef.current.copy(feet);
+              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
+              return;
+          }
           // Hand the player back at the cutscene's return spot (farther from the
           // altar) looking straight at the energy ball, room to run before it blows.
           const rp = bossSummon.returnPos;
@@ -1851,8 +1867,10 @@ const App: React.FC = () => {
       } else if (parts[0] === '/locate') {
           if (parts[1] === 'biome' && parts[2]) {
               worldManager.locateBiome(parts[2], playerPosRef.current.x, playerPosRef.current.z);
+          } else if (parts[1] === 'vault' && parts.length === 2) {
+              void worldManager.locateVault(playerPosRef.current.x, playerPosRef.current.z);
           } else {
-              logMsg("Usage: /locate biome <biomeName>", 'error');
+              logMsg("Usage: /locate biome <biomeName> | /locate vault", 'error');
           }
       } else if (parts[0] === '/shootingstar') {
           if (parts[1] === 'spawn') {
@@ -2484,10 +2502,18 @@ const App: React.FC = () => {
     deathScreenActiveRef.current = false;
     setHealth(20); setHunger(20); setSaturation(5); foodStateRef.current = createFoodState(); setBreath(MAX_BREATH); setRespawnKey(prev => prev + 1); setIsOnFire(false);
     
-    // 1. Try Bed Spawn
+    // An unfinished Vault escape owns an authored safe checkpoint. It is used
+    // only by this existing respawn flow, never as a live-player teleport.
+    const vaultRecovery = progression.getActiveVaultEscapeRecovery(playerPosRef.current);
     let spawn = null as { x: number, y: number, z: number } | null;
+    if (vaultRecovery) {
+        const { x, y, z } = vaultRecovery.checkpoint;
+        spawn = { x, y, z };
+    }
+
+    // 1. Try Bed Spawn
     const bedSpawn = worldManager.getSpawnPoint();
-    if (bedSpawn) {
+    if (!spawn && bedSpawn) {
         worldManager.ensureChunk(Math.floor(bedSpawn.x / CHUNK_SIZE), Math.floor(bedSpawn.z / CHUNK_SIZE));
         const bedType = worldManager.getBlock(Math.floor(bedSpawn.x), Math.floor(bedSpawn.y), Math.floor(bedSpawn.z), false);
         if (bedType === BlockType.BED_FOOT || bedType === BlockType.BED_HEAD) {
@@ -2598,6 +2624,7 @@ const App: React.FC = () => {
       // Leaving mid-fight resets the arena first, so the save (and the world we'd
       // resume) has a clean, re-summonable encounter rather than a flattened dais
       // with the bridges gone and the boss missing.
+      resonantVaultRuntime.reset();
       resetSummonArena();
       const quittingWorldId = activeWorldIdRef.current;
       saveGame({ force: true }).then(() => {
@@ -2677,9 +2704,11 @@ const App: React.FC = () => {
       activeWorldGenConfigRef.current = worldGenConfigSnapshot;
       
       // 2. Configure World Manager
+      resonantVaultRuntime.reset();
       worldManager.reset();
       worldManager.setWorldContext(worldId, meta.seedNum);
       entityManager.clear();
+      vaultProjectileSystem.clear();
       bossSummon.cancel();
       setCinematicMode(false);
       summonArenaRef.current = null;
@@ -2692,6 +2721,7 @@ const App: React.FC = () => {
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
+      const vaultRecovery = progression.getActiveVaultEscapeRecovery(meta.player?.position ?? null);
 
       // Respawn this world's parked boats (entityManager.clear() above removed
       // the previous world's, boats never leak across worlds).
@@ -2719,7 +2749,9 @@ const App: React.FC = () => {
           setCursorStack(meta.player.cursorStack ?? null); // restore a held-on-cursor item
 
           
-          const pos = meta.player.position;
+          // World entry is the other authorized recovery boundary: an active
+          // Vault run resumes at its latest authored checkpoint after reload.
+          const pos = vaultRecovery?.checkpoint ?? meta.player.position;
           const spawnVec = new THREE.Vector3(pos.x, pos.y, pos.z);
 
           if (meta.player.rotation) {
@@ -2823,6 +2855,12 @@ const App: React.FC = () => {
           enterUIMode();
       }
   }, [enterUIMode, setOpenContainer]);
+
+  useEffect(() => gameEvents.on('vault:titan-confirm-request', ({ vaultId, x, y, z }) => {
+      setOpenContainer({ type: 'boss_confirm', bossId: 'bell_titan', regionId: vaultId, x, y, z });
+      isInventoryOpenRef.current = true;
+      enterUIMode();
+  }), [enterUIMode, setOpenContainer]);
 
   const handleSpawnDrop = useCallback((stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => {
       worldManager.spawnDrop(stackOrType, x, y, z);
@@ -3012,9 +3050,17 @@ const App: React.FC = () => {
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
-                            bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : openContainer.bossId}
+                            bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : 'Bell Titan'}
+                            title={openContainer.bossId === 'bell_titan' ? 'Answer the final toll?' : undefined}
+                            description={openContainer.bossId === 'bell_titan' ? 'Beyond this point, the vault will remember your answer.' : undefined}
+                            confirmLabel={openContainer.bossId === 'bell_titan' ? 'Answer' : undefined}
                             onConfirm={() => {
                                 const { x, y, z, bossId, regionId } = openContainer;
+                                if (bossId === 'bell_titan') {
+                                    handleInventoryContainerChange(null);
+                                    if (regionId) gameEvents.emit('vault:titan-confirmed', { vaultId: regionId });
+                                    return;
+                                }
                                 const active = entityManager.getEntities().some((e) => e.bossId === bossId && e.hp > 0);
                                 if (active) {
                                     worldManager.log('The boss is already active.', 'error');
@@ -3053,7 +3099,12 @@ const App: React.FC = () => {
                                     },
                                 });
                             }}
-                            onCancel={() => handleInventoryContainerChange(null)}
+                            onCancel={() => {
+                                if (openContainer.bossId === 'bell_titan' && openContainer.regionId) {
+                                    resonantVaultRuntime.cancelTitanConfirmation(openContainer.regionId);
+                                }
+                                handleInventoryContainerChange(null);
+                            }}
                         />
                     )}
                     <Chat 
@@ -3097,6 +3148,7 @@ const App: React.FC = () => {
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
                     <BossCinematic />
+                    <BellTitanCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                     <FxParticles isPaused={worldPaused} />

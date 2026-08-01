@@ -31,6 +31,13 @@ export const ATLAS_UPDATED_EVENT = 'atlas:textures-updated';
 export const getAtlasURL = () => cachedAtlasURL;
 export const getAtlasCanvas = () => cachedAtlasCanvas;
 
+export const publishAtlasCanvas = (canvas: HTMLCanvasElement): void => {
+    cachedAtlasDimensions = { width: canvas.width, height: canvas.height };
+    cachedAtlasCanvas = canvas;
+    cachedAtlasURL = canvas.toDataURL();
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(ATLAS_UPDATED_EVENT));
+};
+
 export const getAtlasDimensions = () => {
     // If running in a worker or before atlas generation, calculate theoretical dimensions
     // We now use exact dimensions without PoT padding to prevent sampling issues
@@ -1124,10 +1131,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);
     if (!paddedAtlas) return document.createElement('canvas');
 
-    cachedAtlasDimensions = { width: paddedAtlas.width, height: paddedAtlas.height };
-    cachedAtlasCanvas = paddedAtlas.canvas;
-    cachedAtlasURL = paddedAtlas.canvas.toDataURL();
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event(ATLAS_UPDATED_EVENT));
+    publishAtlasCanvas(paddedAtlas.canvas);
     return paddedAtlas.canvas;
 };
 

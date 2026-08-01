@@ -14,7 +14,7 @@ test('WorldStorage keeps every public method its callers rely on, plus the new o
         'getAllWorlds', 'getWorldMeta', 'saveWorldMeta', 'createWorld', 'deleteWorld',
         'saveChunk', 'loadChunk', 'exportWorld', 'importWorld',
         // additive
-        'saveChunks', 'openWorld', 'closeWorld', 'renameWorld',
+        'saveChunks', 'hasAnyChunk', 'openWorld', 'closeWorld', 'renameWorld',
     ]) {
         assert.match(ws, new RegExp(`public async ${m}\\b`), `WorldStorage.${m} missing`);
     }

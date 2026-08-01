@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { entityManager } from '../systems/entities/EntityManager';
 import { ENTITY_KINDS } from '../systems/entities/Entity';
+import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -10,6 +11,13 @@ const PARRY_PURPLE = 0xb388ff;   // deflectable bolt
 const PARRY_RETURN = 0x80ffea;   // deflected, player-owned bolt
 const PROJECTILE_POOL = 48;
 const SHOCKWAVE_POOL = 4;
+const CUSTOM_RENDERED_ENTITY_KINDS = new Set([
+    'vault_guard',
+    'vault_marksman',
+    'bell_hound',
+    'tollkeeper',
+    'bell_titan',
+]);
 
 const BOAT_HULL = 0x8d6e63;
 const BOAT_TRIM = 0x6d4c33;
@@ -196,6 +204,7 @@ export const EntityRenderer: React.FC = () => {
 
     return (
         <>
+            <ResonantVaultEnemyRenderer />
             {ids.map((id) => {
                 const e = entityManager.getEntity(id);
                 if (!e) return null;
@@ -205,13 +214,14 @@ export const EntityRenderer: React.FC = () => {
                 const auraR = Math.max(kind.width, 1) * 1.7;
                 const hasSlam = !!kind.slamThreshold;
                 const slamR = Math.max(kind.width, 2) * 1.7;
+                const customRendered = CUSTOM_RENDERED_ENTITY_KINDS.has(e.kind);
                 return (
                     <React.Fragment key={id}>
                         {kind.id === 'boat' ? (
                             <group ref={(m) => { if (m) meshRefs.current.set(id, m); else meshRefs.current.delete(id); }}>
                                 <BoatModel />
                             </group>
-                        ) : (
+                        ) : customRendered ? null : (
                             <mesh
                                 ref={(m) => { if (m) meshRefs.current.set(id, m); else meshRefs.current.delete(id); }}
                                 castShadow
@@ -220,7 +230,7 @@ export const EntityRenderer: React.FC = () => {
                                 <meshLambertMaterial color={kind.color} />
                             </mesh>
                         )}
-                        {isShieldBoss && (
+                        {isShieldBoss && !customRendered && (
                             <mesh ref={(m) => { if (m) shieldRefs.current.set(id, m); else shieldRefs.current.delete(id); }}>
                                 <sphereGeometry args={[Math.max(kind.width, kind.height) * 0.62, 16, 12]} />
                                 <meshBasicMaterial color={0x9c6bff} wireframe transparent opacity={0.35} />

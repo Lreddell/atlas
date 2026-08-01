@@ -9,6 +9,25 @@ export interface WoodFamily {
     stairs: BlockType;
 }
 
+export interface ShapeBlockFamily {
+    material: BlockType;
+    slab: BlockType;
+    stairs: BlockType;
+}
+
+export const RESONANT_SHAPE_FAMILIES: readonly ShapeBlockFamily[] = [
+    {
+        material: BlockType.ECHO_STONE,
+        slab: BlockType.ECHO_STONE_SLAB,
+        stairs: BlockType.ECHO_STONE_STAIRS,
+    },
+    {
+        material: BlockType.ECHO_BRICKS,
+        slab: BlockType.ECHO_BRICK_SLAB,
+        stairs: BlockType.ECHO_BRICK_STAIRS,
+    },
+];
+
 export const WOOD_FAMILIES: readonly WoodFamily[] = [
     {
         name: 'oak',

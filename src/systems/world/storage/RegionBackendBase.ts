@@ -10,6 +10,7 @@ import type { IndexedDbBackend } from './IndexedDbBackend';
 import { migrateWorlds } from './migration';
 import type {
     ChunkBatchEntry,
+    ChunkCoordinate,
     ChunkStorageData,
     ExportedWorldData,
     WorldMetadata,
@@ -136,6 +137,15 @@ export abstract class RegionBackendBase implements StorageBackend {
 
     async readChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null> {
         return (await this.onFs(worldId)) ? this.api.readChunk(worldId, cx, cz) : this.legacy.readChunk(worldId, cx, cz);
+    }
+
+    async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {
+        if (coordinates.length === 0) return false;
+        if (!(await this.onFs(worldId))) return this.legacy.hasAnyChunk(worldId, coordinates);
+        for (const { cx, cz } of coordinates) {
+            if (await this.api.readChunk(worldId, cx, cz)) return true;
+        }
+        return false;
     }
 
     async writeChunks(worldId: string, chunks: ChunkBatchEntry[]): Promise<void> {

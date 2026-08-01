@@ -7,6 +7,86 @@ source of truth; mirror it into the in-game "What's New" popup
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
+## [v1.2.0-alpha]: 2026-08-01
+
+### Highlights
+- Discover vast underground Resonant Vaults with connected side chambers, distinct
+  puzzles, combat encounters, randomized caches, and two ways back to the surface.
+- Challenge the Bell Titan in a cinematic three-phase fight built around readable
+  attacks, breaking armor, and striking its exposed bell core.
+- Fight a complete Vault enemy roster with voxel-aware navigation, role-specific
+  tactics, dedicated models, animation timing, effects, and sounds.
+- Wield the Vaultsteel Spear, Vault Crossbow, Bellbreaker Maul, Echo Tuning Fork,
+  and the Bell Titan's own hammer.
+- Experience dedicated exploration, combat, boss, and escape music alongside a
+  full positional soundscape for the structure.
+
+### The Resonant Vaults
+- Rare listening spires mark enormous sealed complexes far below the surface. Use
+  `/locate vault` to find the nearest one.
+- Seeded layouts connect a central hall to required challenge wings, an inner seal,
+  the Bell Titan arena, a core chamber, and two terrain-aware escape courses.
+- Challenge rooms include a slowly voiced memory choir, an acoustic relay, a
+  counterweight gallery, guarded halls, a resonance foundry, inner machinery, and
+  a broken crossing with a dangerous lower route.
+- Falling from the crossing begins a separate combat encounter instead of trapping
+  the player. Surviving its waves opens a return path and completes the challenge.
+- Environmental light, floor inlays, symbols, moving mechanisms, particles,
+  directional audio, and a compact objective display communicate progression.
+- Chests draw from seeded provision, masonry, armory, relic, and forge pools, with
+  room placement that introduces useful Vault equipment through play.
+- After claiming the core, choose the longer guarded Grand Ascent or the shorter,
+  hazard-heavy Fracture Stair and reach the actual surface before time expires.
+
+### Bell Titan & Vault Enemies
+- A unique arena confirmation leads into a dedicated Bell Titan awakening cinematic
+  and a fully illuminated battle chamber.
+- The Bell Titan has three escalating phases, breakable shell stages, exposed-core
+  damage windows, and nine attacks ranging from chain lashes and hammer combinations
+  to resonance cages, vault-breaking impacts, and a final bell storm.
+- Attack hit regions and ground telegraphs use the same geometry so warnings align
+  with the danger they represent.
+- Vault Guards block and sweep, Marksmen reposition and fire volleys, Bell Hounds
+  leap and recover, and Tollkeepers control space with tolls and charges.
+- Voxel-aware navigation supports ledge descents, route replanning, combat spacing,
+  and anti-crowding movement across multi-level rooms.
+- Defeating the Titan unlocks the reward chamber and Titan Hammer. The timed escape
+  begins only after the core is claimed.
+
+### Weapons, Materials & Building
+- The Vaultsteel Spear rewards attacks at reach, the Vault Crossbow uses dedicated
+  bolts, and the Bellbreaker Maul breaks guarded and armored targets.
+- The Echo Tuning Fork activates only clearly marked Vault machinery, while the
+  Titan Hammer delivers heavy strikes with a crushing area impact.
+- Added Echo Stone, Echo Bricks, cracked and chiseled variants, mosaics, crystals,
+  pylons, conduits, phase blocks, plates, lamps, spikes, slabs, and stairs.
+- Echo Shards, Echo Dust, Echo Cores, and Fractured Cores support new recipes for
+  Vault masonry, lighting, mechanisms, and decoration.
+- All Resonant content uses reserved IDs within Atlas's existing 8-bit world format
+  without colliding with current blocks and items.
+
+### Music, Sound & Presentation
+- Added distinct gameplay-mixed music for Vault exploration, Sentinel combat, the
+  Bell Titan, and the timed escape.
+- Music follows encounter state instead of room boundaries, loops from its authored
+  ending, and yields when the player leaves or another music state takes priority.
+- Directional, pitch-distinct bells make memory patterns traceable. Machinery,
+  seals, weapons, enemies, rewards, and escape events use dedicated audio assets.
+- The Bell Titan has a custom textured model, square hanging bell, breakable shell
+  presentation, authored animation poses, synchronized telegraphs, debris, and
+  arena lighting. Every Vault enemy has its own visual and sound identity.
+
+### Generation & Reliability
+- Generation validates room connections, doorway planes, protected progression
+  routes, stairs, challenge completion paths, arena clearance, and both surface
+  outlets before committing a Vault.
+- Structural shells prevent cave breaches, while terrain-aware entrances and escape
+  routes account for high ground, low ground, and ocean surfaces.
+- Challenge progress, seal access, boss state, rewards, core claims, chosen escape
+  routes, and cleansed Vaults persist with the world.
+- Music and effects use the shared sound system with stable gain handling across
+  pause, resume, state changes, and repeated loops.
+
 ## [v1.1.0-alpha]: 2026-07-05
 
 ### Highlights
@@ -146,6 +226,7 @@ A large stability, performance, and content update. See the
 
 - Windows installer release.
 
-[v1.1.0-alpha]: https://github.com/Lreddell/atlas/compare/v1.0.2-alpha...release/v1.1.0-alpha
+[v1.2.0-alpha]: https://github.com/Lreddell/atlas/compare/v1.0.2-alpha...v1.2.0-alpha
+[v1.1.0-alpha]: https://github.com/Lreddell/atlas/compare/v1.0.2-alpha...08ee5db4147dd755a7b1516c1f96d8ac40731d5c
 [v1.0.2-alpha]: https://github.com/Lreddell/atlas/releases/tag/v1.0.2-alpha
 [v1.0.1-alpha]: https://github.com/Lreddell/atlas/releases/tag/v1.0.1-alpha

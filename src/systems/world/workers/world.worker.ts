@@ -7,7 +7,7 @@ import { loadGenConfig, resetGenConfig } from '../genConfig';
 const ctx = self as unknown as Worker;
 
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
@@ -21,7 +21,7 @@ ctx.onmessage = (e) => {
         console.log('[Worker] Applied world generation config');
     }
     else if (type === 'GEN') {
-        const result = generateChunk(cx, cz);
+        const result = generateChunk(cx, cz, { rejectedVaultIds });
         
         // Transfer the generated buffers directly to the main thread.
         // The worker no longer maintains a cache, making it stateless.

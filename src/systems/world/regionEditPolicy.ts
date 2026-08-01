@@ -4,7 +4,7 @@ export interface EditPosition {
     z: number;
 }
 
-export const findFirstBlockedEdit = (
-    positions: readonly EditPosition[],
-    canEdit: (position: EditPosition) => boolean,
-): EditPosition | null => positions.find(position => !canEdit(position)) ?? null;
+export const findFirstBlockedEdit = <T extends EditPosition>(
+    positions: readonly T[],
+    canEdit: (position: T) => boolean,
+): T | null => positions.find(position => !canEdit(position)) ?? null;

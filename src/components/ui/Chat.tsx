@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 
 export interface ChatMessage {
@@ -6,7 +5,7 @@ export interface ChatMessage {
     text: string;
     type: 'info' | 'error' | 'success';
     timestamp: number;
-    clickAction?: string; // Add optional action
+    clickAction?: string;
 }
 
 interface ChatProps {
@@ -22,14 +21,14 @@ interface ChatProps {
     interactionsDisabled?: boolean;
 }
 
-export const Chat: React.FC<ChatProps> = ({ 
+export const Chat: React.FC<ChatProps> = ({
     messages, showInput, inputValue, setInputValue, onSubmitInput,
     acCandidates = [], acIndex = 0, onMessageClick, showSuggestions = false,
     interactionsDisabled = false,
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    
+
     useEffect(() => {
         if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }, [messages, showInput]);
@@ -38,9 +37,6 @@ export const Chat: React.FC<ChatProps> = ({
         if (showInput) {
             const el = inputRef.current;
             el?.focus();
-            // Move the caret to the end only when the box first opens. Re-running
-            // this on every inputValue change forced the caret to the end on each
-            // keystroke, making mid-command edits impossible.
             if (el) el.setSelectionRange(el.value.length, el.value.length);
         }
     }, [showInput]);
@@ -49,8 +45,12 @@ export const Chat: React.FC<ChatProps> = ({
         e.stopPropagation();
     };
 
+    const submitInput = () => {
+        onSubmitInput?.();
+    };
+
     return (
-        <div 
+        <div
             className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[500px] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
@@ -58,8 +58,8 @@ export const Chat: React.FC<ChatProps> = ({
         >
             <div className="flex flex-col gap-0.5 justify-end max-h-[300px] overflow-hidden mask-fade-top pb-1">
                 {messages.map((msg) => (
-                    <div 
-                        key={msg.id} 
+                    <div
+                        key={msg.id}
                         className={`
                             px-2 py-0.5 rounded text-shadow-sm font-medium bg-black/40 backdrop-blur-[1px]
                             ${msg.type === 'error' ? 'text-red-400' : msg.type === 'success' ? 'text-green-400' : 'text-white'}
@@ -86,18 +86,17 @@ export const Chat: React.FC<ChatProps> = ({
             </div>
 
             {showInput && (
-                 <div 
+                 <div
                     className="relative bg-black/70 p-2 rounded pointer-events-auto"
                     onClick={stopPropagation}
-                    onMouseDown={stopPropagation} 
+                    onMouseDown={stopPropagation}
                     onMouseUp={stopPropagation}
                     onContextMenu={stopPropagation}
                  >
-                     {/* Autocomplete Suggestions (Above) */}
                      {showSuggestions && acCandidates.length > 0 && (
                          <div className="absolute bottom-[100%] left-0 w-full mb-1 flex flex-col-reverse bg-black/80 rounded overflow-hidden border border-white/20">
                              {acCandidates.map((c, i) => (
-                                 <div 
+                                 <div
                                     key={c}
                                     className={`px-2 py-1 text-sm ${i === acIndex ? 'bg-white/20 text-yellow-300' : 'text-gray-400'}`}
                                  >
@@ -107,17 +106,17 @@ export const Chat: React.FC<ChatProps> = ({
                          </div>
                      )}
 
-                     <input 
+                     <input
                          ref={inputRef}
                          autoFocus
-                         type="text" 
+                         type="text"
                          value={inputValue}
                          onChange={(e) => setInputValue(e.target.value)}
                          onKeyDown={(e) => {
                              if (e.key !== 'Enter') return;
                              e.preventDefault();
                              e.stopPropagation();
-                             onSubmitInput?.();
+                             submitInput();
                          }}
                          className="w-full bg-transparent border-none outline-none text-white font-mono text-lg"
                          placeholder="Type a command..."

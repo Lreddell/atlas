@@ -6,6 +6,7 @@
 import type { StorageBackend } from './StorageBackend';
 import type {
     ChunkBatchEntry,
+    ChunkCoordinate,
     ChunkStorageData,
     ExportedWorldData,
     WorldMetadata,
@@ -124,6 +125,38 @@ export class IndexedDbBackend implements StorageBackend {
         } catch {
             return null;
         }
+    }
+
+    async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {
+        if (!worldId || coordinates.length === 0) return false;
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            let pending = coordinates.length;
+            let settled = false;
+            for (const { cx, cz } of coordinates) {
+                const request = store.getKey(this.chunkKey(worldId, cx, cz));
+                request.onsuccess = () => {
+                    if (settled) return;
+                    if (request.result !== undefined) {
+                        settled = true;
+                        resolve(true);
+                        return;
+                    }
+                    pending -= 1;
+                    if (pending === 0) {
+                        settled = true;
+                        resolve(false);
+                    }
+                };
+                request.onerror = () => {
+                    if (settled) return;
+                    settled = true;
+                    reject(request.error);
+                };
+            }
+        });
     }
 
     async writeChunks(worldId: string, chunks: ChunkBatchEntry[]): Promise<void> {

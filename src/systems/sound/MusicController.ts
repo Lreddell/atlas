@@ -2,6 +2,14 @@
 import { soundManager } from './SoundManager';
 import { gameEvents } from '../events/GameEvents';
 import { MAGNETIC_WARDEN_BOSS_ID } from '../world/magneticFields';
+import {
+    createMusicState,
+    PRIORITY_CROSSFADE_MS,
+    reduceMusicRequest,
+    type MusicTransitionState,
+} from './musicTransitions';
+
+export { createMusicState, reduceMusicRequest } from './musicTransitions';
 
 const MUSIC_DELAY_MIN_KEY = 'atlas.music.delay.min';
 const MUSIC_DELAY_MAX_KEY = 'atlas.music.delay.max';
@@ -32,6 +40,10 @@ const STATE_TAGS: Record<string, string[]> = {
     CREATIVE: ["creative"],
     CAVES: ["caves"],
     BOSS_MAGNETIC: ["boss_magnetic_warden"],
+    VAULT: ["resonant_vault"],
+    VAULT_COMBAT: ["resonant_combat"],
+    BOSS_RESONANT: ["boss_bell_titan"],
+    VAULT_ESCAPE: ["resonant_escape"],
     generic: ["plains"],
 };
 
@@ -72,12 +84,15 @@ const BIOME_TAGS: Record<string, string[]> = {
 // Cave contexts react faster than surface biome travel and are treated together
 // for transition timing. The generic CAVES state plus the cave biomes.
 const CAVE_CONTEXTS = new Set(["CAVES", "lush_caves", "dripstone_caves"]);
+const RESONANT_MUSIC_CONTEXTS = new Set(["VAULT", "VAULT_COMBAT", "BOSS_RESONANT", "VAULT_ESCAPE"]);
+const CONTINUOUS_MUSIC_CONTEXTS = new Set(["VAULT", "VAULT_COMBAT", "BOSS_RESONANT", "VAULT_ESCAPE", "BOSS_MAGNETIC"]);
 
 // Biome Switch Config
 const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
 const CAVE_STABILITY_THRESHOLD = 4000; // Underground should react much faster than biome travel
 const BLOOD_MOON_STABILITY_THRESHOLD = 0;
 const BLOOD_MOON_LOOP_CROSSFADE = 10.0;
+const CONTINUOUS_LOOP_CROSSFADE = 2.5;
 const BLOOD_MOON_LOOP_CROSSFADE_TICKS = BLOOD_MOON_LOOP_CROSSFADE * 20;
 const BLOOD_MOON_LOOP_DISABLE_WINDOW_TICKS = BLOOD_MOON_LOOP_CROSSFADE_TICKS * 2;
 const BLOOD_MOON_FADE_IN = 10.0;
@@ -85,6 +100,7 @@ const BLOOD_MOON_FADE_OUT = 10.0;
 const STANDARD_FADE_IN = 3.0;
 const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
 const TRANSITION_SILENCE = 0; // 0 seconds of absolute silence between tracks
+const PRIORITY_CROSSFADE_SECONDS = PRIORITY_CROSSFADE_MS / 1000;
 
 // Fast Transition Config (Menu Switching)
 const FAST_FADE_OUT = 2.0;
@@ -94,7 +110,6 @@ const FAST_SILENCE = 500;
 // on respawn / leaving to the menu the death music fades out quickly too, then
 // the normal (world or menu) music resumes.
 const DEATH_FADE_OUT = 1.0;
-const DEATH_FADE_IN = 1.5;
 
 class MusicController {
     private currentContext: string = "";
@@ -119,8 +134,8 @@ class MusicController {
     // Transition State
     private isTransitioning: boolean = false;
     private bloodMoonLoopCrossfadePending: boolean = false;
+    private continuousLoopCrossfadePending: boolean = false;
     private isDeathSuspended: boolean = false;
-    private deathStartTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Night slowdown effect (player setting + latest day/night state from update()).
     private nightSlowdownEnabled: boolean = true;
@@ -135,6 +150,14 @@ class MusicController {
     private bossAlive: boolean = false;
     private inCombat: boolean = false;
 
+    // Resonant Vault music state is event-driven so it remains independent of
+    // surface biome/cave detection and changes immediately at authored beats.
+    private vaultActive: boolean = false;
+    private vaultCombat: boolean = false;
+    private vaultTitan: boolean = false;
+    private vaultEscape: boolean = false;
+    private transitionState: MusicTransitionState = createMusicState();
+
     constructor() {
         // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
         gameEvents.on('boss:spawned', ({ bossId }) => {
@@ -144,6 +167,47 @@ class MusicController {
         gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
         gameEvents.on('combat:start', () => { this.inCombat = true; });
         gameEvents.on('combat:stop', () => { this.inCombat = false; });
+
+        gameEvents.on('vault:entered', () => { this.vaultActive = true; });
+        gameEvents.on('vault:left', () => { this.endVaultMusicImmediately(); });
+        gameEvents.on('vault:encounter-started', ({ room }) => {
+            if (room === 'combat') this.vaultCombat = true;
+        });
+        gameEvents.on('vault:encounter-completed', ({ room }) => {
+            if (room === 'combat') {
+                this.vaultCombat = false;
+                if (this.vaultActive && !this.vaultTitan && !this.vaultEscape) {
+                    this.requestImmediateContextCrossfade('VAULT', PRIORITY_CROSSFADE_SECONDS);
+                }
+            }
+            if (room === 'arena') {
+                this.vaultCombat = false;
+                this.vaultTitan = false;
+                if (this.vaultActive && !this.vaultEscape) {
+                    this.requestImmediateContextCrossfade('VAULT', PRIORITY_CROSSFADE_SECONDS);
+                }
+            }
+        });
+        gameEvents.on('vault:titan-awakened', () => {
+            this.vaultActive = true;
+            this.vaultCombat = false;
+            this.vaultTitan = true;
+            this.requestImmediateContextCrossfade('BOSS_RESONANT', PRIORITY_CROSSFADE_SECONDS);
+        });
+        gameEvents.on('vault:titan-defeated', () => {
+            this.vaultTitan = false;
+            this.vaultCombat = false;
+            if (this.vaultActive && !this.vaultEscape) {
+                this.requestImmediateContextCrossfade('VAULT', PRIORITY_CROSSFADE_SECONDS);
+            }
+        });
+        gameEvents.on('vault:escape-started', () => {
+            this.vaultActive = true;
+            this.vaultCombat = false;
+            this.vaultTitan = false;
+            this.vaultEscape = true;
+        });
+        gameEvents.on('vault:escape-completed', () => { this.endVaultMusicImmediately(); });
 
         if (typeof window === 'undefined') return;
 
@@ -171,6 +235,25 @@ class MusicController {
             window.localStorage.setItem(MUSIC_DELAY_MIN_KEY, String(clampedMin));
             window.localStorage.setItem(MUSIC_DELAY_MAX_KEY, String(clampedMin));
         }
+    }
+
+    private clearVaultMusicState(): void {
+        this.vaultActive = false;
+        this.vaultCombat = false;
+        this.vaultTitan = false;
+        this.vaultEscape = false;
+    }
+
+    private endVaultMusicImmediately(): void {
+        this.clearVaultMusicState();
+        if (!RESONANT_MUSIC_CONTEXTS.has(this.currentContext)) return;
+        // Completion and leaving are hard gameplay boundaries. Silence the escape
+        // score now; the next update immediately selects the current world context.
+        soundManager.stopMusic(0.08);
+        this.isPlaying = false;
+        this.isTransitioning = false;
+        this.continuousLoopCrossfadePending = false;
+        this.nextPlayTime = 0;
     }
 
     public setDelayRange(minSeconds: number, maxSeconds: number) {
@@ -245,9 +328,10 @@ class MusicController {
 
     public forcePlayForWorldEntry(gameMode: string, biomeId: string, inCaves: boolean = false, inBloodMoon: boolean = false) {
         this.isDeathSuspended = false;
-        // Defensive: entering a world must never inherit a stale frenzy pitch-up
-        // from a previous session's boss fight.
+        // Defensive: entering a world must never inherit stale boss/vault state
+        // from a previous save or session.
         this.bossFrenzy = false;
+        this.clearVaultMusicState();
 
         let targetContext = 'generic';
         const fadeOut = FAST_FADE_OUT;
@@ -311,6 +395,14 @@ class MusicController {
         
         if (inMenu) {
             targetContext = "MENU";
+        } else if (this.vaultEscape) {
+            targetContext = 'VAULT_ESCAPE';
+        } else if (this.vaultTitan) {
+            targetContext = 'BOSS_RESONANT';
+        } else if (this.vaultCombat) {
+            targetContext = 'VAULT_COMBAT';
+        } else if (this.vaultActive) {
+            targetContext = 'VAULT';
         } else if (this.bossAlive && this.inCombat && gameMode !== 'creative') {
             // Magnetic Warden fight overrides biome/ambient music while engaged.
             targetContext = 'BOSS_MAGNETIC';
@@ -343,7 +435,9 @@ class MusicController {
         const isDeathSwitch = this.currentContext === "DEATH"; // leaving death resumes instantly
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';
         const isCaveSwitch = CAVE_CONTEXTS.has(targetContext) || CAVE_CONTEXTS.has(this.currentContext);
-        const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC';
+        const isBossSwitch = targetContext === 'BOSS_MAGNETIC' || this.currentContext === 'BOSS_MAGNETIC'
+            || targetContext === 'BOSS_RESONANT' || this.currentContext === 'BOSS_RESONANT';
+        const isVaultSwitch = RESONANT_MUSIC_CONTEXTS.has(targetContext) || RESONANT_MUSIC_CONTEXTS.has(this.currentContext);
         // A game-mode change (into or out of CREATIVE) is a deliberate action, not a
         // biome wander, switch promptly instead of waiting out the biome debounce,
         // so the right track starts even when nothing is currently playing.
@@ -356,7 +450,7 @@ class MusicController {
             && targetContext !== 'BOSS_MAGNETIC' && this.bossAlive && !inMenu;
         const threshold = leavingLiveBossFlicker
             ? 3000
-            : (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch)
+            : (isMenuSwitch || isDeathSwitch || isBossSwitch || isCreativeSwitch || isVaultSwitch)
                 ? 0
                 : (isBloodMoonSwitch ? BLOOD_MOON_STABILITY_THRESHOLD : (isCaveSwitch ? CAVE_STABILITY_THRESHOLD : BIOME_STABILITY_THRESHOLD));
 
@@ -368,6 +462,10 @@ class MusicController {
 
         if (this.shouldCrossfadeBloodMoonLoop(targetContext, bloodMoonTicksRemaining)) {
             this.crossfadeBloodMoonLoop();
+            return;
+        }
+        if (this.shouldCrossfadeContinuousTrack(targetContext)) {
+            this.crossfadeContinuousTrack();
             return;
         }
 
@@ -389,6 +487,24 @@ class MusicController {
         }
     }
 
+    private requestImmediateContextCrossfade(newContext: string, fadeSeconds: number): void {
+        if (this.isDeathSuspended) return;
+        const hasNewTracks = this.tagsForContext(newContext)
+            .some((tag) => soundManager.hasTracksForEvent(`music.${tag}`));
+        if (!hasNewTracks || (this.currentContext === newContext && this.isPlaying)) return;
+        this.transitionState = reduceMusicRequest(this.transitionState, {
+            context: newContext,
+            reason: newContext === 'BOSS_RESONANT' ? 'vault:titan-awakened' : 'music:priority-change',
+        });
+        this.currentContext = newContext;
+        this.pendingContext = newContext;
+        this.contextStableTime = Date.now();
+        this.isTransitioning = false;
+        this.bloodMoonLoopCrossfadePending = false;
+        this.continuousLoopCrossfadePending = false;
+        void this.playNextTrack(fadeSeconds, fadeSeconds);
+    }
+
     private switchContext(newContext: string, isFast: boolean = false) {
         // Don't stop current music if the new context has no available tracks
         const newTags = this.tagsForContext(newContext);
@@ -397,6 +513,11 @@ class MusicController {
             console.log(`[Music] Context ${newContext} has no tracks, staying in ${this.currentContext || 'current'}.`);
             this.pendingContext = this.currentContext;
             this.contextStableTime = Date.now();
+            return;
+        }
+
+        if (RESONANT_MUSIC_CONTEXTS.has(newContext) || RESONANT_MUSIC_CONTEXTS.has(this.currentContext)) {
+            this.requestImmediateContextCrossfade(newContext, PRIORITY_CROSSFADE_SECONDS);
             return;
         }
 
@@ -420,7 +541,8 @@ class MusicController {
         const leavingDeath = previousContext === 'DEATH';
         const leavingMenuForWorld = previousContext === 'MENU' && newContext !== 'MENU';
         const enteringMenu = newContext === 'MENU';
-        const enteringBoss = newContext === 'BOSS_MAGNETIC';
+        const enteringBoss = newContext === 'BOSS_MAGNETIC' || newContext === 'BOSS_RESONANT';
+        const enteringVaultAction = newContext === 'VAULT_COMBAT' || newContext === 'VAULT_ESCAPE';
         const leavingBloodMoon = previousContext === 'BLOODMOON' && newContext !== 'BLOODMOON';
 
         let fadeOut = isFast ? FAST_FADE_OUT : TRANSITION_FADE_OUT;
@@ -429,6 +551,9 @@ class MusicController {
         if (enteringBoss) {
             // Quickly duck out whatever was playing; the boss track starts dry.
             fadeOut = 0.5;
+            silence = 0;
+        } else if (enteringVaultAction) {
+            fadeOut = 0.8;
             silence = 0;
         } else if (leavingDeath) {
             // Death music fades out quickly before the world/menu music resumes.
@@ -460,13 +585,18 @@ class MusicController {
         this.nextPlayTime = Date.now() + (fadeOut * 1000) + silence;
     }
 
-    public stopForDeath(fadeOut = DEATH_FADE_OUT) {
+    public stopForDeath() {
         // Player death always ends the boss fight context (music must not resume
         // the boss track on respawn).
         this.bossAlive = false;
         this.inCombat = false;
+        // Vault contexts are set by one-shot events (escape-started fires once
+        // per claim), so they must survive death: the encounter, Titan fight,
+        // and escape all persist across a respawn and their scores resume.
+        // Death music still outranks them while it plays.
         if (this.isDeathSuspended) return; // already in death music, don't restart it
 
+        this.bossFrenzy = false;
         this.isDeathSuspended = true;
         this.isTransitioning = false;
         this.bloodMoonLoopCrossfadePending = false;
@@ -475,24 +605,20 @@ class MusicController {
         this.contextStableTime = Date.now();
         this.lastFinishTime = Date.now();
         this.nextPlayTime = Number.POSITIVE_INFINITY;
+        this.transitionState = reduceMusicRequest(this.transitionState, {
+            context: 'DEATH',
+            reason: 'player:death',
+        });
 
-        // Quickly fade out whatever is playing, then start the death music. The
-        // update() loop is not driven while dead, so the start is scheduled here; it
-        // plays once (see onTrackFinished) and then stays silent until respawn / menu.
-        soundManager.stopMusic(fadeOut);
+        // The death cue is a direct priority crossfade. It plays once, then
+        // onTrackFinished keeps the controller silent until respawn or menu.
         this.isPlaying = false;
-
-        if (this.deathStartTimer) clearTimeout(this.deathStartTimer);
-        this.deathStartTimer = setTimeout(() => {
-            this.deathStartTimer = null;
-            if (this.isDeathSuspended) this.playNextTrack(DEATH_FADE_IN);
-        }, fadeOut * 1000);
+        void this.playNextTrack(PRIORITY_CROSSFADE_SECONDS, PRIORITY_CROSSFADE_SECONDS);
     }
 
     public resumeAfterDeath() {
         if (!this.isDeathSuspended) return;
 
-        if (this.deathStartTimer) { clearTimeout(this.deathStartTimer); this.deathStartTimer = null; }
         this.isDeathSuspended = false;
         // currentContext is still 'DEATH'; the resumed update() loop fast-switches out
         // of it (instant, with a quick fade) into the world or menu music.
@@ -507,6 +633,20 @@ class MusicController {
         return timeRemaining !== null && timeRemaining <= BLOOD_MOON_LOOP_CROSSFADE;
     }
 
+    private shouldCrossfadeContinuousTrack(targetContext: string): boolean {
+        if (targetContext !== this.currentContext || !CONTINUOUS_MUSIC_CONTEXTS.has(this.currentContext)) return false;
+        if (!this.isPlaying || this.isTransitioning || this.continuousLoopCrossfadePending) return false;
+        const timeRemaining = soundManager.getActiveMusicTimeRemaining();
+        return timeRemaining !== null && timeRemaining <= CONTINUOUS_LOOP_CROSSFADE;
+    }
+
+    private crossfadeContinuousTrack(): void {
+        this.continuousLoopCrossfadePending = true;
+        this.playNextTrack(CONTINUOUS_LOOP_CROSSFADE, CONTINUOUS_LOOP_CROSSFADE).finally(() => {
+            this.continuousLoopCrossfadePending = false;
+        });
+    }
+
     private crossfadeBloodMoonLoop() {
         this.bloodMoonLoopCrossfadePending = true;
         this.playNextTrack(BLOOD_MOON_LOOP_CROSSFADE).finally(() => {
@@ -516,7 +656,11 @@ class MusicController {
 
     private getFadeInForContext(context: string) {
         if (context === 'BLOODMOON') return BLOOD_MOON_FADE_IN;
-        if (context === 'BOSS_MAGNETIC') return 0; // boss music starts instantly, no fade-in
+        if (context === 'BOSS_MAGNETIC') return 0;
+        if (context === 'BOSS_RESONANT') return 0.25;
+        if (context === 'VAULT_ESCAPE') return 0.35;
+        if (context === 'VAULT_COMBAT') return 0.75;
+        if (context === 'VAULT') return 2.5;
         return STANDARD_FADE_IN;
     }
 
@@ -535,6 +679,10 @@ class MusicController {
 
         const tag = playableTags[Math.floor(Math.random() * playableTags.length)];
         this.currentTrackTag = tag;
+        this.transitionState = {
+            ...this.transitionState,
+            activeTrack: tag,
+        };
         const trackId = `music.${tag}`;
 
         // Optimistically lock to prevent double triggers
@@ -547,7 +695,8 @@ class MusicController {
         const useNightRate = this.nightSlowdownEnabled && this.isNight
             && this.currentContext !== 'MENU'
             && this.currentContext !== 'DEATH'
-            && this.currentContext !== 'BLOODMOON';
+            && this.currentContext !== 'BLOODMOON'
+            && !RESONANT_MUSIC_CONTEXTS.has(this.currentContext);
         // Frenzy overrides night: the fight track always drives UP +100 cents.
         const playbackRate = this.bossFrenzy ? FRENZY_PLAYBACK_RATE : (useNightRate ? NIGHT_PLAYBACK_RATE : 1.0);
 
@@ -567,14 +716,16 @@ class MusicController {
     private onTrackFinished() {
         this.isPlaying = false;
         this.bloodMoonLoopCrossfadePending = false;
+        this.continuousLoopCrossfadePending = false;
         this.lastFinishTime = Date.now();
         if (this.isDeathSuspended) {
             // Death music plays once, after it ends, stay silent until respawn / menu.
             this.nextPlayTime = Number.POSITIVE_INFINITY;
             return;
         }
-        // Boss music restarts immediately (no delay) so the fight never falls quiet.
-        if (this.currentContext === 'BOSS_MAGNETIC') {
+        // Authored vault states and boss music restart immediately so encounters
+        // and the collapse never fall back to unrelated biome silence.
+        if (CONTINUOUS_MUSIC_CONTEXTS.has(this.currentContext)) {
             this.nextPlayTime = 0;
             return;
         }

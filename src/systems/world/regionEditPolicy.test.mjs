@@ -50,5 +50,5 @@ test('the denial toast requires a deliberate, dwelling mining attempt', () => {
     // the Warden fight must not toast "defeat its guardian" at the player.
     assert.match(ic, /deniedDwellRef/);
     assert.match(ic, /d\.heldFor >= 0\.25/);
-    assert.match(ic, /d\.notified = true;\s*\n\s*canPlayerEdit\(hit\.bx, hit\.by, hit\.bz\);/);
+    assert.match(ic, /d\.notified = true;\s*\n\s*canPlayerEdit\(hit\.bx, hit\.by, hit\.bz, hitBreakEdit\);/);
 });

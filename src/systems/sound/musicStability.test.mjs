@@ -98,3 +98,30 @@ test('music pools songs across a biome\'s tags, with cross-biome continuity', ()
     // Biome tags come from the folder config with a code default fallback.
     assert.match(mc, /soundManager\.getBiomeTags\(context\)/);
 });
+
+test('music transitions never own or truncate gameplay one-shot voices', () => {
+    const stopMusic = sm.slice(sm.indexOf('public stopMusic'), sm.indexOf('public getActiveMusicTimeRemaining'));
+    assert.doesNotMatch(stopMusic, /activeSources|activeByEvent|\.stop\(/);
+    assert.match(sm, /private readonly MAX_EVENT_SOURCES = 4;/);
+    assert.match(sm, /activeByEvent/);
+    assert.match(sm, /source\.onended = \(\) =>/);
+});
+
+test('pause muffling is idempotent and replaces old automation instead of stacking it', () => {
+    const pauseMethod = sm.slice(sm.indexOf('public setGamePaused'), sm.indexOf('public async preload'));
+    assert.match(sm, /private gamePaused: boolean = false;/);
+    assert.match(pauseMethod, /if \(this\.gamePaused === paused\) return;/);
+    assert.match(pauseMethod, /cancelScheduledValues\(now\)/);
+    assert.match(pauseMethod, /linearRampToValueAtTime/);
+    assert.doesNotMatch(pauseMethod, /setTargetAtTime/);
+});
+
+test('authored-only Vault assets log once in development and stay silent in production', () => {
+    assert.match(sm, /missingAuthoredAssetsLogged/);
+    assert.match(sm, /import\.meta[\s\S]{0,100}env\?\.[\s\S]{0,40}DEV/);
+    assert.match(sm, /if \(!allowFallback\)/);
+    assert.match(
+        sm,
+        /if \(!allowFallback\) \{[\s\S]{0,160}reportMissingAuthoredAsset[\s\S]{0,80}return null;[\s\S]{0,40}\}\s*const fallback =/,
+    );
+});

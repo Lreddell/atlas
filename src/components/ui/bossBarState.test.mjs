@@ -6,22 +6,22 @@ import { reduceBossBarState } from './bossBarState.ts';
 test('boss damage is matched by entity id, not only boss kind', () => {
     const state = reduceBossBarState(null, {
         type: 'spawned',
-        bossId: 'cinder_warden',
+        bossId: 'magnetic_warden',
         entityId: 8,
-        name: 'Cinder Warden',
+        name: 'Magnetic Warden',
         maxHp: 200,
     });
 
     const ignored = reduceBossBarState(state, {
         type: 'damaged',
-        bossId: 'cinder_warden',
+        bossId: 'magnetic_warden',
         entityId: 9,
         hp: 50,
         maxHp: 200,
     });
     const updated = reduceBossBarState(state, {
         type: 'damaged',
-        bossId: 'cinder_warden',
+        bossId: 'magnetic_warden',
         entityId: 8,
         hp: 150,
         maxHp: 200,
@@ -33,9 +33,9 @@ test('boss damage is matched by entity id, not only boss kind', () => {
 
 test('clearing the world removes the active boss bar', () => {
     const state = {
-        bossId: 'cinder_warden',
+        bossId: 'magnetic_warden',
         entityId: 8,
-        name: 'Cinder Warden',
+        name: 'Magnetic Warden',
         hp: 200,
         maxHp: 200,
     };

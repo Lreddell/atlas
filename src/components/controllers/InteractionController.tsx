@@ -33,21 +33,73 @@ import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X,
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 import { findFirstBlockedEdit } from '../../systems/world/regionEditPolicy';
 import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
+import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/ResonantVaultRuntime';
+import { getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
+import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
+import { particleFx } from '../../systems/fx/particleFx';
 
 // Scratch vectors for camera origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+const _boltOrigin = new THREE.Vector3();
+const _boltDirection = new THREE.Vector3();
 const MELEE_REACH = 3.2;
 const DEFLECT_REACH = 5.5;
 // Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
 // so holding right-click eats repeatedly with a clear gap between bites.
 const EAT_PAUSE_TICKS = 6;
 
+vaultProjectileSystem.setDependencies({
+    getBlock: (x, y, z) => worldManager.getBlock(x, y, z, false),
+    isBlockingBlock: (type) => type !== null
+        && type !== BlockType.AIR
+        && type !== BlockType.WATER
+        && type !== BlockType.LAVA
+        && BLOCKS[type as BlockType]?.noCollision !== true,
+    raycastEntity: (origin, direction, maxDistance, projectile) => {
+        _boltOrigin.set(origin.x, origin.y, origin.z);
+        _boltDirection.set(direction.x, direction.y, direction.z);
+        const hit = entityManager.raycastEntity(_boltOrigin, _boltDirection, maxDistance, projectile.sourceId);
+        return hit ? { id: hit.id, distance: hit.dist, hitZone: hit.hitZone } : null;
+    },
+    damageEntity: (id, damage, direction, stagger, _owner, hitZone) => {
+        const traits = entityManager.getCombatTraits(id);
+        const resolvedStagger = stagger * (1 - traits.staggerResistance);
+        entityManager.damageEntity(id, damage, direction.x, direction.z, resolvedStagger, hitZone);
+    },
+    onImpact: (position, kind) => particleFx.burst({
+        x: position.x,
+        y: position.y,
+        z: position.z,
+        color: kind === 'entity' ? [0.56, 0.52, 0.42] : [0.42, 0.43, 0.4],
+        color2: [0.7, 0.68, 0.59],
+        count: kind === 'entity' ? 9 : 6,
+        speed: 2.4,
+        upBias: 0.8,
+        spread: 0.7,
+        size: 0.08,
+        life: 0.32,
+        gravity: 4,
+        drag: 1.8,
+    }),
+});
+
 // Sealed-region edit guard: true if the player may edit (x,y,z); otherwise emits
 // the denied event (App throttles the toast) and returns false. Enforced here at
 // the player layer so internal world simulation (which also calls setBlock) is
 // unaffected.
-function canPlayerEdit(x: number, y: number, z: number): boolean {
+function isPlayerEditAllowed(x: number, y: number, z: number, edit: VaultPlayerEdit): boolean {
+    return resonantVaultRuntime.canPlayerEditAt(x, y, z, edit) && worldManager.canEditBlock(x, y, z);
+}
+
+function canPlayerEdit(x: number, y: number, z: number, edit: VaultPlayerEdit): boolean {
+    if (!resonantVaultRuntime.canPlayerEditAt(x, y, z, edit)) {
+        gameEvents.emit('edit:denied', {
+            x, y, z,
+            regionId: resonantVaultRuntime.getActiveVaultId() ?? 'resonant-vault',
+        });
+        return false;
+    }
     if (worldManager.canEditBlock(x, y, z)) return true;
     gameEvents.emit('edit:denied', { x, y, z, regionId: getRegionAt(x, y, z)?.id ?? '' });
     return false;
@@ -101,6 +153,7 @@ export const InteractionController = ({
     const isLeftMouseDown = useRef(false);
     const isRightMouseDown = useRef(false);
     const interactionCooldown = useRef(0);
+    const weaponCooldown = useRef(0);
     const eatingTimer = useRef(0);
     const lastPlacementTime = useRef(0);
     const lastBreakTime = useRef(0);
@@ -197,6 +250,21 @@ export const InteractionController = ({
         }
     }, [camera, gameMode, setInventory, isDead]);
 
+    const consumeInventoryType = useCallback((type: BlockType): boolean => {
+        if (gameMode === 'creative') return true;
+        const index = inventoryRef.current.findIndex((item) => item?.type === type && item.count > 0);
+        if (index < 0) return false;
+        const next = [...inventoryRef.current];
+        const current = next[index];
+        if (!current) return false;
+        next[index] = current.count > 1 ? { ...current, count: current.count - 1 } : null;
+        // Update the ref immediately so two inputs cannot consume the same final
+        // bolt before React publishes the inventory state.
+        inventoryRef.current = next;
+        setInventory(next);
+        return true;
+    }, [gameMode, setInventory]);
+
     const performInteraction = useCallback((isContinuous: boolean, isShiftHeld: boolean = false) => {
         if (gameMode === 'spectator' || isDead) return;
 
@@ -226,7 +294,25 @@ export const InteractionController = ({
 
         const reach = gameMode === 'creative' ? 5.2 : 4.5;
         const hit = castFromCamera(camera, reach);
-
+        const heldForUse = inventoryRef.current[selectedSlotRef.current];
+        if (!isContinuous && heldForUse?.type === BlockType.ECHO_TUNING_FORK) {
+            camera.getWorldPosition(_camPos);
+            camera.getWorldDirection(_camDir);
+            const targetType = hit ? worldManager.tryGetBlock(hit.bx, hit.by, hit.bz) : null;
+            const handled = resonantVaultRuntime.useTuningFork({
+                origin: { x: _camPos.x, y: _camPos.y, z: _camPos.z },
+                direction: { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+                heldItem: heldForUse.type,
+                target: hit && targetType !== null && targetType !== BlockType.AIR
+                    ? { x: hit.bx, y: hit.by, z: hit.bz, type: targetType, metadata: worldManager.getMetadata(hit.bx, hit.by, hit.bz) }
+                    : null,
+                gameMode,
+            });
+            if (handled) {
+                interactionCooldown.current = 2;
+                return;
+            }
+        }
         if (hit) {
             const bx = hit.bx;
             const by = hit.by;
@@ -260,8 +346,9 @@ export const InteractionController = ({
                     } else if (targetType === BlockType.CHEST) {
                         // Worldgen chests have no tile-entity state until first
                         // opened; natural loot caches seed their contents here.
-                        worldManager.ensureChest(bx, by, bz);
-                        setOpenContainer({ type: 'chest', x: bx, y: by, z: bz });
+                        // A still-sealed vault core cache refuses to open.
+                        const chest = worldManager.ensureChest(bx, by, bz);
+                        if (chest) setOpenContainer({ type: 'chest', x: bx, y: by, z: bz });
                         return;
                     } else if (targetType === BlockType.BED_FOOT || targetType === BlockType.BED_HEAD) {
                         const currentTicks = worldManager.getTime();
@@ -331,7 +418,7 @@ export const InteractionController = ({
                             );
                             doubleSlabAABB.expandByScalar(-0.001);
                             if (playerAABB.intersectsBox(doubleSlabAABB)) return;
-                            if (!canPlayerEdit(bx, by, bz)) return;
+                            if (!canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: heldItem.type })) return;
 
                             worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
                             consumeItem(selectedSlotRef.current);
@@ -364,12 +451,11 @@ export const InteractionController = ({
 
                 if (worldManager.tryGetBlock(px, py, pz) === null) return;
 
-                // Sealed regions are read-only for the player.
-                if (!canPlayerEdit(px, py, pz)) return;
-
                 // Only air, fluids, and replaceable plants may be overwritten. Flowers,
                 // torches and saplings are not replaceable, so placement is cancelled.
                 const placementTarget = worldManager.getBlock(px, py, pz, false);
+                const placedBlock = heldItem.type === BlockType.BED_ITEM ? BlockType.BED_FOOT : heldItem.type;
+                if (!canPlayerEdit(px, py, pz, { kind: 'place', currentBlock: placementTarget, placedBlock })) return;
                 if (!isPlacementReplaceable(placementTarget)) return;
                 const replacingPlant = placementTarget === BlockType.GRASS_PLANT || placementTarget === BlockType.DEAD_BUSH;
 
@@ -453,13 +539,17 @@ export const InteractionController = ({
                         }
 
                         const blockedPosition = findFirstBlockedEdit(
-                            [{ x: px, y: py, z: pz }, { x: hx, y: py, z: hz }],
-                            ({ x, y, z }) => worldManager.canEditBlock(x, y, z),
+                            [
+                                { x: px, y: py, z: pz, placedBlock: BlockType.BED_FOOT },
+                                { x: hx, y: py, z: hz, placedBlock: BlockType.BED_HEAD },
+                            ],
+                            ({ x, y, z, placedBlock: bedBlock }) => canPlayerEdit(x, y, z, {
+                                kind: 'place',
+                                currentBlock: worldManager.getBlock(x, y, z, false),
+                                placedBlock: bedBlock,
+                            }),
                         );
-                        if (blockedPosition) {
-                            canPlayerEdit(blockedPosition.x, blockedPosition.y, blockedPosition.z);
-                            return;
-                        }
+                        if (blockedPosition) return;
                         
                         if (worldManager.getBlock(hx, py, hz, false) === BlockType.AIR) {
                             const headAABB = new THREE.Box3(
@@ -497,36 +587,100 @@ export const InteractionController = ({
                 }
             }
         }
-    }, [camera, consumeItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
 
-    // Melee: if the player is looking at an entity within reach, a left click is
-    // an attack (and does not start mining). Damage is a simple weapon lookup for
-    // now; Phase 3 will source it from item-instance stats.
+        if (!isContinuous && heldForUse?.type === BlockType.VAULT_CROSSBOW) {
+            const profile = getVaultWeaponProfile(heldForUse.type);
+            if (!profile || weaponCooldown.current > 0) return;
+            if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
+            camera.getWorldPosition(_camPos);
+            camera.getWorldDirection(_camDir);
+            const projectileId = vaultProjectileSystem.fire(
+                { x: _camPos.x + _camDir.x * 0.25, y: _camPos.y + _camDir.y * 0.25, z: _camPos.z + _camDir.z * 0.25 },
+                { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+                profile.damage,
+                { owner: 'player', speed: 28, gravity: 2.8, stagger: profile.stagger, maxDistance: profile.reach },
+            );
+            if (projectileId === null) return;
+            damageHeldItem(selectedSlotRef.current, profile.durabilityCost);
+            weaponCooldown.current = profile.cooldownSeconds;
+            window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
+        }
+    }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
+
+    // Melee resolves reach and recovery from the selected weapon. Conventional
+    // items retain the original short-range path; the crossbow fires only on use.
     const tryMeleeAttack = useCallback((): boolean => {
+        const held = inventory[selectedSlot];
+        const profile = held ? getVaultWeaponProfile(held.type) : null;
+        const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
         camera.getWorldPosition(_camPos);
         camera.getWorldDirection(_camDir);
-        const hit = entityManager.raycastEntity(_camPos, _camDir, MELEE_REACH);
+        const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
         if (!hit) return false;
-        const blockHit = castFromCamera(camera, MELEE_REACH);
+        const blockHit = castFromCamera(camera, reach);
         if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
-        const held = inventory[selectedSlot];
-        const dmg = getAttackDamage(held);
-        const targetKind = entityManager.getEntity(hit.id)?.kind;
-        const result = entityManager.damageEntity(hit.id, dmg, _camDir.x, _camDir.z);
+        if (profile?.kind === 'crossbow' || weaponCooldown.current > 0) return true;
+        const resolved = held ? resolveVaultMeleeHit(
+            held.type,
+            entityManager.getCombatTraits(hit.id),
+            { distance: hit.dist },
+        ) : null;
+        const damage = resolved?.damage ?? getAttackDamage(held);
+        const stagger = resolved?.stagger ?? 0;
+        const struckEntity = entityManager.getEntity(hit.id);
+        const targetKind = struckEntity?.kind;
+        const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, hit.hitZone);
+        if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
+            const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
+            particleFx.burst({
+                x: struckEntity.pos.x,
+                y: struckEntity.pos.y + struckEntity.height * 0.55,
+                z: struckEntity.pos.z,
+                color: heavy ? [0.62, 0.5, 0.31] : [0.56, 0.61, 0.57],
+                color2: [0.78, 0.7, 0.5],
+                count: heavy ? 18 : 10,
+                speed: heavy ? 4.2 : 2.8,
+                upBias: 0.8,
+                spread: 0.65,
+                size: heavy ? 0.1 : 0.065,
+                life: 0.34,
+                gravity: 4,
+                drag: 1.8,
+            });
+            soundManager.playAt(
+                resolved.technique === 'titan_crush' ? 'vault.enemy.tollkeeper_impact' : 'block.amethyst.hit',
+                { x: struckEntity.pos.x, y: struckEntity.pos.y + struckEntity.height * 0.45, z: struckEntity.pos.z },
+                { volume: heavy ? 0.82 : 0.48, pitch: resolved.technique === 'spear_sweet_spot' ? 1.42 : 0.78, fallback: false },
+            );
+            if (resolved.technique === 'titan_crush') {
+                for (const nearby of entityManager.getEntities()) {
+                    if (nearby.id === hit.id || nearby.hp <= 0 || nearby.kind === 'boat' || nearby.kind === 'bell_titan') continue;
+                    const dx = nearby.pos.x - struckEntity.pos.x;
+                    const dz = nearby.pos.z - struckEntity.pos.z;
+                    const distance = Math.hypot(dx, dz);
+                    if (distance > 2.8 || Math.abs(nearby.pos.y - struckEntity.pos.y) > 2.2) continue;
+                    entityManager.damageEntity(nearby.id, 3.5, dx / (distance || 1), dz / (distance || 1), 0.45);
+                }
+            }
+        }
         // A shield absorbs the blow: a metallic "clink", no hurt cry, so it is
         // obvious the boss is invulnerable until its crystals are gone.
-        if (result === 'blocked') {
+        if (result === 'blocked' && targetKind === 'magnetic_warden') {
             soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
-        } else if (targetKind === 'boat') {
+        } else if (result === 'damaged' && targetKind === 'boat') {
             // Wooden props knock, they don't cry.
             soundManager.play('block.wood.hit', { volume: 0.8 });
-        } else {
+        } else if (result === 'damaged' && targetKind !== 'bell_titan') {
             soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
         }
-        // Attacking costs the weapon 1 use (sword) or 2 (other tools); fists/non-tools none.
-        if (held) damageHeldItem(selectedSlot, isSword(held.type) ? 1 : 2);
+        if (held) damageHeldItem(selectedSlot, profile?.durabilityCost ?? (isSword(held.type) ? 1 : 2));
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
-        interactionCooldown.current = 6;
+        if (profile) {
+            weaponCooldown.current = profile.cooldownSeconds;
+            window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
+        } else {
+            interactionCooldown.current = 6;
+        }
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
@@ -581,6 +735,7 @@ export const InteractionController = ({
     }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
 
     useFrame((_, delta) => {
+        weaponCooldown.current = Math.max(0, weaponCooldown.current - Math.min(delta, 0.1));
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
@@ -630,7 +785,9 @@ export const InteractionController = ({
             highlightMeshRef.current.visible = false;
         }
 
-        if (isLeftMouseDown.current && hit && !worldManager.canEditBlock(hit.bx, hit.by, hit.bz)) {
+        const hitBlockForEdit = hit ? (worldManager.tryGetBlock(hit.bx, hit.by, hit.bz) ?? BlockType.AIR) : BlockType.AIR;
+        const hitBreakEdit: VaultPlayerEdit = { kind: 'break', currentBlock: hitBlockForEdit };
+        if (isLeftMouseDown.current && hit && !isPlayerEditAllowed(hit.bx, hit.by, hit.bz, hitBreakEdit)) {
             // Sealed region: can't mine. Clear any in-progress break, and notify
             // only after the player has held the button on the SAME sealed block
             // for a beat, a missed combat swing that sweeps across sealed terrain
@@ -645,7 +802,7 @@ export const InteractionController = ({
                 d.heldFor += delta;
                 if (!d.notified && d.heldFor >= 0.25) {
                     d.notified = true;
-                    canPlayerEdit(hit.bx, hit.by, hit.bz);
+                    canPlayerEdit(hit.bx, hit.by, hit.bz, hitBreakEdit);
                 }
             }
         } else if (isLeftMouseDown.current && hit) {
@@ -744,8 +901,9 @@ export const InteractionController = ({
                         const counterpartType = worldManager.getBlock(ox, by, oz, false);
                         bedCounterpart = { x: ox, z: oz, type: counterpartType };
                         const counterpartIsBed = counterpartType === BlockType.BED_HEAD || counterpartType === BlockType.BED_FOOT;
-                        if (counterpartIsBed && !worldManager.canEditBlock(ox, by, oz)) {
-                            canPlayerEdit(ox, by, oz);
+                        const counterpartEdit: VaultPlayerEdit = { kind: 'break', currentBlock: counterpartType };
+                        if (counterpartIsBed && !isPlayerEditAllowed(ox, by, oz, counterpartEdit)) {
+                            canPlayerEdit(ox, by, oz, counterpartEdit);
                             breakingRef.current = null;
                             setBreakingVisual(null);
                             return;

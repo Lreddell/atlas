@@ -1,10 +1,11 @@
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { entityManager } from '../systems/entities/EntityManager';
 import { FIXED_DT, MAX_SUBSTEPS } from '../systems/player/playerConstants';
 import { tickFood, FoodState } from '../systems/player/playerFood';
+import { vaultProjectileSystem } from '../systems/combat/VaultProjectileSystem';
 
 interface GameLoopProps {
     isPaused: boolean;
@@ -22,6 +23,12 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
     const lastHungerRef = useRef(Number.NaN);
     const lastSaturationRef = useRef(Number.NaN);
 
+    useEffect(() => {
+        if (isDead) vaultProjectileSystem.clear();
+    }, [isDead]);
+
+    useEffect(() => () => vaultProjectileSystem.clear(), []);
+
     useFrame((_, delta) => {
         if (isPaused) return;
 
@@ -34,6 +41,7 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
         while (accumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
             worldManager.tick(FIXED_DT);
             entityManager.tick(FIXED_DT, gameMode);
+            if (!isDead) vaultProjectileSystem.tick(FIXED_DT);
 
             if (foodStateRef.current) {
                 const newHealth = tickFood(foodStateRef.current, currentHealth, gameMode, isDead);

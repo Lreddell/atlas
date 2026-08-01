@@ -297,7 +297,7 @@ test('arena generator is a large composed structure with the required parts', ()
 });
 
 test('arena build pass is wired into chunk generation, off natural features', () => {
-    const cg = read('src/systems/world/chunkGeneration.ts');
+    const cg = read('src/systems/world/baseChunkGeneration.ts');
     assert.match(cg, /generateMagneticWardenArena/);
     assert.match(cg, /getActiveCenters/);
     // The generator reserves its volume (no caves) and features skip the structure.
@@ -394,7 +394,7 @@ test('new blocks are defined with the right shape', () => {
 });
 
 test('terrain wiring: edge blend + wall magnets + crystal feature pass', () => {
-    const cg = read('src/systems/world/chunkGeneration.ts');
+    const cg = read('src/systems/world/baseChunkGeneration.ts');
     // Outer apron blends down to ambient terrain (soft shore, no hard ocean wall).
     assert.match(cg, /\.apron\b/);
     assert.match(cg, /computeAmbientTerrainInfo/);

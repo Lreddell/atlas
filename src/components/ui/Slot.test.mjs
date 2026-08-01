@@ -27,7 +27,7 @@ test('creative tabs render a bare icon and left-align fifteen-slot rows', () => 
 });
 
 test('hotbar stacks reproduce the five-tick Minecraft item pop', () => {
-    assert.match(hud, /selected=\{selectedSlot === i\} animateChanges/);
+    assert.match(hud, /selected=\{selectedSlot === i\}\s+animateChanges/);
     assert.match(slot, /previous === null \|\| \(previous\.type === current\.type && current\.count > previous\.count\)/);
     assert.match(slot, /classList\.add\('atlas-item-pop'\)/);
     assert.match(styles, /@keyframes atlas-item-pop/);

@@ -4,17 +4,23 @@ import { checkCollision, getSupportTop, isSolid } from '../player/playerCollisio
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
-import { ENTITY_KINDS, type Entity, type EntityKind, type Projectile, type Shockwave } from './Entity';
+import { ENTITY_KINDS, type Entity, type EntityKind, type NavigationRuntimeState, type Projectile, type Shockwave } from './Entity';
 import { inputState } from '../player/playerInput';
 import { addTrauma } from '../player/cameraShake';
 import { particleFx, polarityFxColor, FX_CHARGED } from '../fx/particleFx';
 import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
+import { BLOCKS } from '../../data/blocks';
+import { EntityLocomotion } from './navigation/EntityLocomotion';
+import { NavigationPlanner } from './navigation/NavigationPlanner';
+import { VoxelNavigator } from './navigation/VoxelNavigator';
+import type { NavigationVector } from './navigation/navigationTypes';
 import {
     canTargetPlayer,
     shouldForgetTarget,
     shouldPreserveKnockback,
 } from './entityBehavior';
+import { raycastBellTitanCore, resolveBellTitanHitZone } from './BellTitanEncounterCore';
 
 export interface SpawnOptions {
     bossId?: string;
@@ -37,11 +43,40 @@ export const BOSS_DEFEAT_ALTAR_DELAY_MS = 2500;
 
 const MAX_FALL_SPEED = 40;
 const STEP_HEIGHT = 1.0;
+const NAVIGATION_STUCK_SECONDS = 0.9;
+const NAVIGATION_PROGRESS_DISTANCE = 0.15;
+
+const NAVIGATION_WORLD = {
+    getBlock: (x: number, y: number, z: number): number | null => {
+        if (!worldManager.hasChunk(Math.floor(x / 16), Math.floor(z / 16))) return null;
+        return worldManager.getBlock(x, y, z, false);
+    },
+    isLoaded: (x: number, z: number): boolean => worldManager.hasChunk(Math.floor(x / 16), Math.floor(z / 16)),
+    isSolid: (type: number): boolean => type !== BlockType.AIR
+        && type !== BlockType.WATER
+        && type !== BlockType.LAVA
+        && BLOCKS[type as BlockType]?.noCollision !== true,
+    isHazard: (type: number): boolean => type === BlockType.LAVA
+        || type === BlockType.ECHO_SPIKES
+        || type === BlockType.PHASE_BLOCK
+        || type === BlockType.VAULT_SEAL
+        || type === BlockType.MAGNETIC_SPIKE,
+};
 
 const BOSS_NAMES: Record<string, string> = {
-    cinder_warden: 'Cinder Warden',
     magnetic_warden: 'Magnetic Warden',
+    bell_titan: 'Bell Titan',
 };
+
+type EntityDamageResult = 'damaged' | 'blocked' | 'none';
+type EntityDamageHandler = (
+    entityId: number,
+    amount: number,
+    knockX: number,
+    knockZ: number,
+    stagger: number,
+    hitZone?: string,
+) => EntityDamageResult;
 
 /**
  * Owns all non-player entities. Ticked from the fixed-timestep GameLoop. Keeps
@@ -60,6 +95,26 @@ class EntityManager {
     private nextProjectileId = 1;
     private nextShockwaveId = 1;
     private inCombat = false;
+    private damageHandlers = new Map<string, EntityDamageHandler>();
+    private navigationClock = 0;
+    private readonly navigationValidator = new VoxelNavigator(NAVIGATION_WORLD);
+    private readonly navigationPlanner = new NavigationPlanner(NAVIGATION_WORLD, {
+        isOwnerActive: (entityId) => this.entities.has(entityId) && (this.entities.get(entityId)?.hp ?? 0) > 0,
+    });
+    private readonly locomotionWorld = {
+        canOccupy: (position: NavigationVector, width: number, height: number) => !checkCollision(
+            worldManager,
+            { x: position.x + 0.5, y: position.y, z: position.z + 0.5 },
+            width,
+            height,
+        ),
+        hasSafeLanding: (position: NavigationVector, width: number) => this.isSafeGround(
+            position.x + 0.5,
+            position.y,
+            position.z + 0.5,
+            width,
+        ),
+    };
 
     // Injected by App so entities can chase/damage the player without importing
     // React state.
@@ -67,6 +122,7 @@ class EntityManager {
     private playerDamageHandler: ((amount: number, knockX: number, knockZ: number) => void) | null = null;
     // Optional: apply a velocity impulse to the player (the boss's magnetic field).
     private playerImpulseHandler: ((x: number, y: number, z: number) => void) | null = null;
+    private playerTeleportHandler: ((x: number, y: number, z: number) => void) | null = null;
 
     // Structural-change subscribers (the renderer rebuilds its mesh list on these).
     private structureListeners = new Set<() => void>();
@@ -75,10 +131,22 @@ class EntityManager {
         posProvider: () => { x: number; y: number; z: number } | null,
         damageHandler: (amount: number, knockX: number, knockZ: number) => void,
         impulseHandler?: (x: number, y: number, z: number) => void,
+        teleportHandler?: (x: number, y: number, z: number) => void,
     ): void {
         this.playerPosProvider = posProvider;
         this.playerDamageHandler = damageHandler;
         this.playerImpulseHandler = impulseHandler ?? null;
+        this.playerTeleportHandler = teleportHandler ?? null;
+    }
+
+    teleportPlayer(x: number, y: number, z: number): boolean {
+        if (!this.playerTeleportHandler) return false;
+        this.playerTeleportHandler(x, y, z);
+        return true;
+    }
+
+    impulsePlayer(x: number, y: number, z: number): void {
+        this.playerImpulseHandler?.(x, y, z);
     }
 
     getProjectiles(): Projectile[] {
@@ -125,6 +193,34 @@ class EntityManager {
     getEntity(id: number): Entity | undefined {
         return this.entities.get(id);
     }
+    registerDamageHandler(kind: string, handler: EntityDamageHandler): void {
+        this.damageHandlers.set(kind, handler);
+    }
+    getCombatTraits(id: number): { armored: boolean; staggerResistance: number } {
+        const entity = this.entities.get(id);
+        const kind = entity ? ENTITY_KINDS[entity.kind] : null;
+        return {
+            armored: kind?.armored === true,
+            staggerResistance: Math.min(0.9, Math.max(0, kind?.staggerResistance ?? 0)),
+        };
+    }
+
+    /** Resolves an authored room point through the same clearance/hazard rules as live paths. */
+    resolveNavigationAnchor(kindId: string, target: NavigationVector): NavigationVector | null {
+        const kind = ENTITY_KINDS[kindId];
+        return kind?.navigation ? this.resolveNavigationPoint(target, kind) : null;
+    }
+
+    setNavigationOverride(id: number, target: NavigationVector): boolean {
+        const entity = this.entities.get(id);
+        const kind = entity ? ENTITY_KINDS[entity.kind] : null;
+        if (!entity || !kind?.navigation) return false;
+        const state = this.ensureNavigationState(entity);
+        state.overrideGoal = this.clampToEncounterBounds(entity, target);
+        this.clearNavigationRoute(entity);
+        state.repathAt = this.navigationClock;
+        return true;
+    }
     /** First entity matching pred, iterates the live map, so per-frame callers
      *  (e.g. the boss beam renderer) don't allocate a fresh entity array. */
     findEntity(pred: (e: Entity) => boolean): Entity | undefined {
@@ -147,6 +243,7 @@ class EntityManager {
             height: kind.height,
             hp: kind.maxHp,
             maxHp: kind.maxHp,
+            damageMultiplier: 1,
             grounded: false,
             aggro: false,
             hurtUntil: 0,
@@ -209,11 +306,14 @@ class EntityManager {
     }
 
     despawn(id: number): void {
+        this.navigationPlanner.cancelOwner(id);
         if (this.entities.delete(id)) this.notifyStructure();
     }
 
     clear(): void {
         const hadEntities = this.entities.size > 0;
+        this.navigationPlanner.clear();
+        this.navigationClock = 0;
         this.entities.clear();
         this.projectiles = [];
         this.shockwaves = [];
@@ -228,14 +328,28 @@ class EntityManager {
      * Returns 'blocked' if a shield absorbed it (no damage, no knockback, no hurt
      * flash) so the caller can give distinct feedback, 'damaged' otherwise.
      */
-    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0): 'damaged' | 'blocked' | 'none' {
+    damageEntity(id: number, amount: number, knockX = 0, knockZ = 0, stagger = 0, hitZone?: string): EntityDamageResult {
+        const e = this.entities.get(id);
+        if (!e || e.hp <= 0) return 'none';
+        const damageHandler = this.damageHandlers.get(e.kind);
+        if (damageHandler) return damageHandler(id, amount, knockX, knockZ, stagger, hitZone);
+        return this.applyStandardDamage(id, amount, knockX, knockZ, stagger);
+    }
+
+    /**
+     * The default damage path (shield check, hp, knockback, phase gates, death).
+     * Public so a registered damage handler can fall through to normal damage
+     * after applying its own rule (e.g. a raised guard turning a hit away).
+     */
+    applyStandardDamage(id: number, amount: number, knockX = 0, knockZ = 0, stagger = 0): EntityDamageResult {
         const e = this.entities.get(id);
         if (!e || e.hp <= 0) return 'none';
         // Shielded bosses are fully invulnerable until every crystal is broken:
         // no damage, no knockback, no white hurt flash, only a shield shimmer.
         if (e.shielded) { e.shieldHitUntil = Date.now() + 160; return 'blocked'; }
         const hpBefore = e.hp;
-        e.hp -= amount;
+        const multiplier = Number.isFinite(e.damageMultiplier) ? Math.max(0, e.damageMultiplier) : 1;
+        e.hp -= Math.max(0, amount) * multiplier;
 
         // Phase gate: a hit that would push the boss PAST 50% or 25% is clamped to
         // land EXACTLY on that threshold, so the phase transition fires right at it
@@ -244,7 +358,9 @@ class EntityManager {
         if (e.isBoss && e.hp > 0) {
             const kind = ENTITY_KINDS[e.kind];
             const fb = hpBefore / e.maxHp;
-            const gates: [number, number][] = [[kind?.slamThreshold ?? 0.5, 2], [kind?.frenzyThreshold ?? 0.25, 3]];
+            const gates: [number, number][] = [];
+            if (kind?.slamThreshold !== undefined) gates.push([kind.slamThreshold, 2]);
+            if (kind?.frenzyThreshold !== undefined) gates.push([kind.frenzyThreshold, 3]);
             for (const [thr, ph] of gates) {
                 if (fb > thr && e.hp / e.maxHp <= thr) { e.hp = e.maxHp * thr; phase = ph; break; }
             }
@@ -256,7 +372,9 @@ class EntityManager {
         e.vel.x += (knockX / len) * 6;
         e.vel.z += (knockZ / len) * 6;
         e.vel.y += 3;
-        e.knockbackSeconds = 0.2;
+        const resolvedStagger = Math.max(0, Number.isFinite(stagger) ? stagger : 0);
+        e.knockbackSeconds = Math.max(e.knockbackSeconds, 0.2 + resolvedStagger * 0.35);
+        e.attackCooldown = Math.max(e.attackCooldown, resolvedStagger * 0.45);
 
         if (e.isBoss && e.bossId) {
             gameEvents.emit('boss:damaged', { bossId: e.bossId, entityId: e.id, hp: Math.max(0, e.hp), maxHp: e.maxHp });
@@ -271,6 +389,12 @@ class EntityManager {
         }
         if (e.hp <= 0) this.kill(e);
         return 'damaged';
+    }
+
+    /** Completes an encounter-owned lethal hit through the normal drops/events path. */
+    defeatEntity(id: number): void {
+        const entity = this.entities.get(id);
+        if (entity) this.kill(entity);
     }
 
     /**
@@ -301,6 +425,7 @@ class EntityManager {
                 worldManager.setBlock(c.x, c.y, c.z, BlockType.AIR);
             }
         }
+        this.navigationPlanner.cancelOwner(e.id);
         this.entities.delete(e.id);
         // Any reset wipes the boss's bolts/shockwaves so nothing lingers in the air.
         this.projectiles = [];
@@ -380,7 +505,7 @@ class EntityManager {
                 for (let i = 0; i < count; i++) worldManager.spawnDrop(d.type, dx, dy, dz);
             });
         };
-        if (e.isBoss && e.home) {
+        if (e.kind === 'magnetic_warden' && e.home) {
             // Loot drops one block ABOVE the altar (the summoner sits at home.y+3,
             // i.e. baseY+4; home is the spawn floor baseY+1), and only AFTER the
             // altar finishes re-forming (BOSS_DEFEAT_ALTAR_DELAY_MS later) so it
@@ -404,8 +529,16 @@ class EntityManager {
         } else {
             spawnDrops(e.pos.x, e.pos.y + 0.3, e.pos.z);
         }
+        this.navigationPlanner.cancelOwner(e.id);
         this.entities.delete(e.id);
-        gameEvents.emit('entity:died', { entityId: e.id, type: e.kind });
+        gameEvents.emit('entity:died', {
+            entityId: e.id,
+            type: e.kind,
+            x: e.pos.x,
+            y: e.pos.y,
+            z: e.pos.z,
+            yaw: e.yaw,
+        });
         if (e.isBoss && e.bossId) {
             gameEvents.emit('boss:defeated', { bossId: e.bossId, entityId: e.id, regionId: e.regionId });
         }
@@ -413,20 +546,390 @@ class EntityManager {
     }
 
     /** Ray vs entity AABBs. Returns the nearest entity id within maxDist, or null. */
-    raycastEntity(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): { id: number; dist: number } | null {
-        let best: { id: number; dist: number } | null = null;
+    raycastEntity(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, excludeId?: number): { id: number; dist: number; hitZone?: string } | null {
+        let best: { id: number; dist: number; hitZone?: string } | null = null;
         for (const e of this.entities.values()) {
+            if (e.id === excludeId || e.hp <= 0) continue;
             const hx = e.width / 2;
             const minX = e.pos.x - hx, maxX = e.pos.x + hx;
             const minY = e.pos.y, maxY = e.pos.y + e.height;
             const minZ = e.pos.z - hx, maxZ = e.pos.z + hx;
             const t = rayAabb(origin, dir, minX, minY, minZ, maxX, maxY, maxZ);
-            if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { id: e.id, dist: t };
+            const coreDistance = e.kind === 'bell_titan'
+                ? raycastBellTitanCore(origin, dir, e.pos, e.yaw, maxDist)
+                : null;
+            const distance = coreDistance ?? t;
+            if (distance !== null && distance <= maxDist && (!best || distance < best.dist)) {
+                const hitZone = coreDistance !== null
+                    ? 'core'
+                    : e.kind === 'bell_titan' && t !== null
+                        ? resolveBellTitanHitZone(e.pos, e.yaw, {
+                            x: origin.x + dir.x * t,
+                            y: origin.y + dir.y * t,
+                            z: origin.z + dir.z * t,
+                        })
+                        : undefined;
+                best = { id: e.id, dist: distance, hitZone };
+            }
         }
         return best;
     }
 
+    private ensureNavigationState(e: Entity): NavigationRuntimeState {
+        if (!e.navigationState) {
+            e.navigationState = {
+                path: null,
+                waypointIndex: 0,
+                goalCellKey: '',
+                repathAt: 0,
+                lastProgressPosition: { x: e.pos.x, y: e.pos.y, z: e.pos.z },
+                lastProgressAt: this.navigationClock,
+                recoveryAttempts: 0,
+                replans: 0,
+                strafeDirection: e.id % 2 === 0 ? 1 : -1,
+            };
+        }
+        return e.navigationState;
+    }
+
+    private releaseNavigationTicket(e: Entity): void {
+        const ticket = e.navigationState?.ticket;
+        if (!ticket) return;
+        this.navigationPlanner.release(ticket);
+        delete e.navigationState!.ticket;
+    }
+
+    private clearNavigationRoute(e: Entity): void {
+        this.releaseNavigationTicket(e);
+        if (!e.navigationState) return;
+        e.navigationState.path = null;
+        e.navigationState.waypointIndex = 0;
+    }
+
+    private resolveNavigationPoint(target: { x: number; y: number; z: number }, kind: EntityKind): NavigationVector | null {
+        const profile = kind.navigation;
+        if (!profile) return null;
+        const x = Math.floor(target.x);
+        const z = Math.floor(target.z);
+        const baseY = Math.round(target.y);
+        const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+        for (const offset of offsets) {
+            const point = { x, y: baseY + offset, z };
+            if (this.navigationValidator.inspectStandingCell(point, profile).traversable) return point;
+        }
+        return null;
+    }
+
+    private clampToEncounterBounds(e: Entity, target: NavigationVector): NavigationVector {
+        const bounds = e.encounterBounds;
+        if (!bounds) return target;
+        const inset = Math.max(0.75, e.width * 0.5 + 0.25);
+        return {
+            x: THREE.MathUtils.clamp(target.x, bounds.minX + inset, bounds.maxX - inset),
+            y: THREE.MathUtils.clamp(target.y, bounds.minY, bounds.maxY - e.height),
+            z: THREE.MathUtils.clamp(target.z, bounds.minZ + inset, bounds.maxZ - inset),
+        };
+    }
+
+    private hasNavigationLineOfSight(e: Entity, target: { x: number; y: number; z: number }): boolean {
+        const start = { x: e.pos.x, y: e.pos.y + e.height * 0.65, z: e.pos.z };
+        const end = { x: target.x, y: target.y + PLAYER_HEIGHT * 0.65, z: target.z };
+        const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+        const distance = Math.hypot(dx, dy, dz);
+        const samples = Math.max(1, Math.ceil(distance / 0.25));
+        for (let index = 1; index < samples; index += 1) {
+            const fraction = index / samples;
+            const type = NAVIGATION_WORLD.getBlock(
+                Math.floor(start.x + dx * fraction),
+                Math.floor(start.y + dy * fraction),
+                Math.floor(start.z + dz * fraction),
+            );
+            if (type === null || NAVIGATION_WORLD.isSolid(type)) return false;
+        }
+        return true;
+    }
+
+    private chooseNavigationGoal(
+        e: Entity,
+        kind: EntityKind,
+        target: { x: number; y: number; z: number },
+    ): NavigationVector | null {
+        const profile = kind.navigation;
+        if (!profile) return null;
+        const state = this.ensureNavigationState(e);
+        if (state.overrideGoal) return this.resolveNavigationPoint(this.clampToEncounterBounds(e, state.overrideGoal), kind);
+        if (state.disengaging && e.home) return this.resolveNavigationPoint(this.clampToEncounterBounds(e, e.home), kind);
+        if (state.combatGoal) return this.resolveNavigationPoint(this.clampToEncounterBounds(e, state.combatGoal), kind);
+
+        let destination = target;
+        if (e.home && kind.leashRadius
+            && Math.hypot(target.x - e.home.x, target.z - e.home.z) > kind.leashRadius) {
+            destination = e.home;
+        } else if (profile.preferredRange.min >= 3) {
+            const dx = e.pos.x - target.x;
+            const dz = e.pos.z - target.z;
+            const distance = Math.hypot(dx, dz) || 1;
+            const bandCenter = (profile.preferredRange.min + profile.preferredRange.max) * 0.5;
+            destination = {
+                x: target.x + (dx / distance) * bandCenter,
+                y: target.y,
+                z: target.z + (dz / distance) * bandCenter,
+            };
+        }
+        return this.resolveNavigationPoint(this.clampToEncounterBounds(e, destination), kind);
+    }
+
+    private chooseStrafeGoal(
+        e: Entity,
+        kind: EntityKind,
+        target: { x: number; y: number; z: number },
+        state: NavigationRuntimeState,
+    ): NavigationVector | null {
+        const profile = kind.navigation;
+        if (!profile?.strafe) return null;
+        if (state.combatGoal && this.navigationClock < (state.combatGoalUntil ?? 0)) {
+            return this.resolveNavigationPoint(state.combatGoal, kind);
+        }
+
+        const dx = e.pos.x - target.x;
+        const dz = e.pos.z - target.z;
+        const distance = Math.hypot(dx, dz) || 1;
+        const minimumRadius = profile.preferredRange.min + 0.5;
+        const maximumRadius = Math.max(minimumRadius, profile.preferredRange.max - 0.5);
+        const radius = THREE.MathUtils.clamp(distance, minimumRadius, maximumRadius);
+        const baseAngle = Math.atan2(dz, dx);
+        const arc = THREE.MathUtils.clamp(2.75 / Math.max(1, radius), 0.22, 0.65);
+        const initialDirection = state.strafeDirection ?? (e.id % 2 === 0 ? 1 : -1);
+
+        for (const direction of [initialDirection, -initialDirection] as const) {
+            const angle = baseAngle + arc * direction;
+            const candidate = {
+                x: target.x + Math.cos(angle) * radius,
+                y: target.y,
+                z: target.z + Math.sin(angle) * radius,
+            };
+            const resolved = this.resolveNavigationPoint(this.clampToEncounterBounds(e, candidate), kind);
+            if (!resolved) continue;
+            state.combatGoal = resolved;
+            state.combatGoalUntil = this.navigationClock + 1.1 + (e.id % 3) * 0.15;
+            state.strafeDirection = direction === 1 ? -1 : 1;
+            return resolved;
+        }
+
+        delete state.combatGoal;
+        delete state.combatGoalUntil;
+        return null;
+    }
+
+    private steerWithNavigation(
+        e: Entity,
+        kind: EntityKind,
+        target: { x: number; y: number; z: number },
+        dt: number,
+    ): boolean {
+        const profile = kind.navigation;
+        if (!profile || (e.isBoss && e.shielded)) return false;
+        const state = this.ensureNavigationState(e);
+        const horizontalDistance = Math.hypot(target.x - e.pos.x, target.z - e.pos.z);
+        if (state.disengaging && e.home && Math.hypot(e.pos.x - e.home.x, e.pos.z - e.home.z) < 1.5) {
+            this.clearNavigationRoute(e);
+            state.disengaging = false;
+            state.recoveryAttempts = 0;
+            delete state.overrideGoal;
+            return true;
+        }
+        const inPreferredBand = !state.overrideGoal && !state.disengaging
+            && horizontalDistance >= profile.preferredRange.min
+            && horizontalDistance <= profile.preferredRange.max
+            && this.hasNavigationLineOfSight(e, target);
+        const strafeGoal = inPreferredBand ? this.chooseStrafeGoal(e, kind, target, state) : null;
+        if (!inPreferredBand) {
+            delete state.combatGoal;
+            delete state.combatGoalUntil;
+        }
+        if (inPreferredBand && !strafeGoal) {
+            this.clearNavigationRoute(e);
+            const amount = profile.acceleration * dt;
+            e.vel.x = THREE.MathUtils.lerp(e.vel.x, 0, Math.min(1, amount));
+            e.vel.z = THREE.MathUtils.lerp(e.vel.z, 0, Math.min(1, amount));
+            e.yaw = Math.atan2(target.x - e.pos.x, target.z - e.pos.z);
+            return true;
+        }
+
+        const goal = this.chooseNavigationGoal(e, kind, target);
+        if (!goal) {
+            this.clearNavigationRoute(e);
+            e.vel.x *= 0.6;
+            e.vel.z *= 0.6;
+            return true;
+        }
+        const goalKey = `${goal.x},${goal.y},${goal.z}`;
+        if (goalKey !== state.goalCellKey && this.navigationClock >= state.repathAt) {
+            this.clearNavigationRoute(e);
+            state.goalCellKey = goalKey;
+            state.repathAt = this.navigationClock;
+        }
+
+        if (state.ticket) {
+            const result = this.navigationPlanner.getResult(state.ticket);
+            if (result.status === 'complete') {
+                state.path = result.path;
+                state.waypointIndex = result.path && result.path.nodes.length > 1 ? 1 : 0;
+                state.replans += 1;
+                state.lastProgressPosition = { x: e.pos.x, y: e.pos.y, z: e.pos.z };
+                state.lastProgressAt = this.navigationClock;
+                this.releaseNavigationTicket(e);
+                state.repathAt = this.navigationClock + 0.45;
+            } else if (result.status === 'failed') {
+                this.releaseNavigationTicket(e);
+                state.path = null;
+                state.repathAt = this.navigationClock + 0.2;
+            }
+        }
+
+        if (!state.path && !state.ticket && e.grounded && this.navigationClock >= state.repathAt) {
+            state.ticket = this.navigationPlanner.request(e.id, {
+                start: { x: Math.floor(e.pos.x), y: Math.round(e.pos.y), z: Math.floor(e.pos.z) },
+                goal,
+                profile,
+                maxExpandedNodes: 2048,
+            });
+            state.repathAt = this.navigationClock + 0.2;
+        }
+
+        if (!state.path) {
+            e.vel.x *= 0.7;
+            e.vel.z *= 0.7;
+            return true;
+        }
+        const locomotion = EntityLocomotion.tick(e as Entity & { navigationState: NavigationRuntimeState }, state.path, this.locomotionWorld, dt, profile, kind.speed);
+        if (inPreferredBand && profile.strafe) {
+            e.yaw = Math.atan2(target.x - e.pos.x, target.z - e.pos.z);
+        }
+        if (locomotion.routeInvalid) {
+            state.path = null;
+            state.waypointIndex = 0;
+            state.repathAt = this.navigationClock;
+        } else if (locomotion.routeComplete) {
+            state.path = null;
+            state.waypointIndex = 0;
+            if (state.overrideGoal) delete state.overrideGoal;
+            if (state.combatGoal) {
+                delete state.combatGoal;
+                delete state.combatGoalUntil;
+            }
+            if (state.disengaging && e.home && Math.hypot(e.pos.x - e.home.x, e.pos.z - e.home.z) < 1.5) {
+                state.disengaging = false;
+                state.recoveryAttempts = 0;
+            }
+            state.repathAt = this.navigationClock + 0.35;
+        }
+        return true;
+    }
+
+    private updateNavigationRecovery(e: Entity, kind: EntityKind, target: { x: number; y: number; z: number } | null): void {
+        const state = e.navigationState;
+        if (!kind.navigation || !state?.path) return;
+        const progress = Math.hypot(
+            e.pos.x - state.lastProgressPosition.x,
+            e.pos.z - state.lastProgressPosition.z,
+        );
+        if (progress >= NAVIGATION_PROGRESS_DISTANCE) {
+            state.lastProgressPosition = { x: e.pos.x, y: e.pos.y, z: e.pos.z };
+            state.lastProgressAt = this.navigationClock;
+            state.recoveryAttempts = 0;
+            return;
+        }
+        if (this.navigationClock - state.lastProgressAt < NAVIGATION_STUCK_SECONDS) return;
+
+        const oldPath = state.path;
+        const oldWaypointIndex = state.waypointIndex;
+        state.recoveryAttempts += 1;
+        state.path = null;
+        state.waypointIndex = 0;
+        state.repathAt = this.navigationClock;
+        state.lastProgressAt = this.navigationClock;
+        if (state.recoveryAttempts !== 2) delete state.overrideGoal;
+        if (state.recoveryAttempts === 2 && target) {
+            const dx = target.x - e.pos.x, dz = target.z - e.pos.z;
+            const length = Math.hypot(dx, dz) || 1;
+            const sign = e.id % 2 === 0 ? 1 : -1;
+            state.overrideGoal = {
+                x: e.pos.x + (-dz / length) * 2 * sign,
+                y: e.pos.y,
+                z: e.pos.z + (dx / length) * 2 * sign,
+            };
+        } else if (state.recoveryAttempts === 3) {
+            const visible = oldPath.nodes
+                .slice(oldWaypointIndex)
+                .map((node) => ({ node, distance: Math.hypot(node.x + 0.5 - e.pos.x, node.z + 0.5 - e.pos.z) }))
+                .filter(({ node, distance }) => distance > 0.5
+                    && distance <= 4
+                    && this.hasNavigationLineOfSight(e, { x: node.x + 0.5, y: node.y, z: node.z + 0.5 }))
+                .sort((a, b) => a.distance - b.distance)[0]?.node;
+            if (visible) state.overrideGoal = visible;
+        } else if (state.recoveryAttempts > 3 && this.recoverToAuthoredAnchor(e, kind, state)) {
+            return;
+        } else if (state.recoveryAttempts > 3) {
+            state.disengaging = true;
+            state.overrideGoal = e.home ? { x: e.home.x, y: e.home.y, z: e.home.z } : undefined;
+            e.aggro = false;
+        }
+    }
+
+    private recoverToAuthoredAnchor(e: Entity, kind: EntityKind, state: NavigationRuntimeState): boolean {
+        if (!e.encounterBounds || !e.recoveryAnchors?.length || !kind.navigation) return false;
+        const candidate = e.recoveryAnchors
+            .map((anchor) => this.resolveNavigationPoint(this.clampToEncounterBounds(e, anchor), kind))
+            .filter((anchor): anchor is NavigationVector => anchor !== null)
+            .map((anchor) => ({
+                cell: anchor,
+                position: { x: anchor.x + 0.5, y: anchor.y, z: anchor.z + 0.5 },
+                distance: Math.hypot(anchor.x + 0.5 - e.pos.x, anchor.z + 0.5 - e.pos.z),
+            }))
+            .filter(({ position }) => this.hasNavigationLineOfSight(e, position)
+                && [...this.entities.values()].every((other) => other.id === e.id
+                    || other.hp <= 0
+                    || Math.hypot(other.pos.x - position.x, other.pos.z - position.z) > (other.width + e.width) * 0.5 + 0.35))
+            .sort((a, b) => a.distance - b.distance)[0];
+        if (!candidate) return false;
+
+        this.clearNavigationRoute(e);
+        e.pos.set(candidate.position.x, candidate.position.y, candidate.position.z);
+        e.vel.set(0, 0, 0);
+        e.grounded = true;
+        e.reformingUntil = Date.now() + 450;
+        e.combatAction = {
+            id: 'reform',
+            phase: 'recovery',
+            elapsed: 0,
+            duration: 0.45,
+            locksMovement: true,
+            targetYaw: e.yaw,
+        };
+        state.recoveryAttempts = 0;
+        state.lastProgressPosition = { x: e.pos.x, y: e.pos.y, z: e.pos.z };
+        state.lastProgressAt = this.navigationClock;
+        state.repathAt = this.navigationClock + 0.45;
+        delete state.overrideGoal;
+        return true;
+    }
+
+    private hasCommittedSafeDrop(e: Entity, kind: EntityKind): boolean {
+        const state = e.navigationState;
+        const profile = kind.navigation;
+        if (!state?.path || !profile) return false;
+        return EntityLocomotion.isSafeDropCommitted(
+            e as Entity & { navigationState: NavigationRuntimeState },
+            state.path,
+            this.locomotionWorld,
+            profile,
+        );
+    }
+
     tick(dt: number, gameMode: GameMode): void {
+        this.navigationClock += Math.max(0, dt);
+        this.navigationPlanner.tickBudget();
         if (this.entities.size === 0) {
             if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
             return;
@@ -460,6 +963,18 @@ class EntityManager {
                 }
             }
 
+            // The Bell Titan owns its authored attacks and horizontal movement.
+            // EntityManager still resolves gravity and voxel collision, but never
+            // layers generic pursuit/contact AI over the encounter timeline.
+            if (e.kind === 'bell_titan') {
+                e.aggro = true;
+                anyAggro = true;
+                e.vel.y = Math.max(-MAX_FALL_SPEED, e.vel.y - GRAVITY * dt);
+                this.moveWithCollision(e, kind, dt, true);
+                this.applyLeash(e, kind);
+                continue;
+            }
+
             // --- Post-spawn grace: present (music + bar) but does not attack ---
             if (e.aggroGrace > 0) {
                 e.aggroGrace = Math.max(0, e.aggroGrace - dt);
@@ -473,6 +988,13 @@ class EntityManager {
 
             e.knockbackSeconds = Math.max(0, e.knockbackSeconds - dt);
             const preserveKnockback = shouldPreserveKnockback(e.knockbackSeconds);
+            const actionLocksMovement = (e.reformingUntil ?? 0) > Date.now()
+                || e.combatAction?.locksMovement === true;
+            if (actionLocksMovement && !preserveKnockback) {
+                this.clearNavigationRoute(e);
+                e.vel.x = 0;
+                e.vel.z = 0;
+            }
 
             // --- Slam attack overrides everything while the boss is airborne ---
             if (e.slamState !== 'none') {
@@ -486,26 +1008,30 @@ class EntityManager {
                 const dx = pp.x - e.pos.x;
                 const dz = pp.z - e.pos.z;
                 const distSq = dx * dx + dz * dz;
-                if (distSq < kind.aggroRange * kind.aggroRange) e.aggro = true;
+                if (e.navigationState?.disengaging) e.aggro = false;
+                else if (distSq < kind.aggroRange * kind.aggroRange) e.aggro = true;
                 else if (e.aggro && shouldForgetTarget(distSq, kind.aggroRange)) e.aggro = false;
-                if (e.aggro && !preserveKnockback) {
-                    // Steer toward the player, but if leashed and the player is
-                    // beyond the leash, steer back toward home instead so the boss
-                    // holds the arena (and lets its ranged field do the work).
-                    let tx = dx, tz = dz;
-                    if (e.home && kind.leashRadius) {
-                        const hx = pp.x - e.home.x, hz = pp.z - e.home.z;
-                        if (Math.hypot(hx, hz) > kind.leashRadius) {
-                            tx = e.home.x - e.pos.x;
-                            tz = e.home.z - e.pos.z;
+                if (e.aggro && !preserveKnockback && !actionLocksMovement) {
+                    if (!this.steerWithNavigation(e, kind, pp, dt)) {
+                        // Compatibility path for passive/special entities without a
+                        // navigation profile and airborne shield phases.
+                        let tx = dx, tz = dz;
+                        if (e.home && kind.leashRadius) {
+                            const hx = pp.x - e.home.x, hz = pp.z - e.home.z;
+                            if (Math.hypot(hx, hz) > kind.leashRadius) {
+                                tx = e.home.x - e.pos.x;
+                                tz = e.home.z - e.pos.z;
+                            }
                         }
+                        const tlen = Math.hypot(tx, tz) || 1;
+                        e.vel.x = (tx / tlen) * kind.speed;
+                        e.vel.z = (tz / tlen) * kind.speed;
+                        e.yaw = Math.atan2(dx, dz);
                     }
-                    const tlen = Math.hypot(tx, tz) || 1;
-                    e.vel.x = (tx / tlen) * kind.speed;
-                    e.vel.z = (tz / tlen) * kind.speed;
-                    // Always face the player even while repositioning.
-                    e.yaw = Math.atan2(dx, dz);
+                } else if (!e.aggro && e.navigationState?.disengaging && e.home && !preserveKnockback && !actionLocksMovement) {
+                    this.steerWithNavigation(e, kind, e.home, dt);
                 } else if (!e.aggro && !preserveKnockback) {
+                    this.clearNavigationRoute(e);
                     e.vel.x *= 0.6;
                     e.vel.z *= 0.6;
                 }
@@ -522,7 +1048,7 @@ class EntityManager {
             // While shielded (the player is climbing the pillars to break crystals)
             // the Warden flies UP toward the player's height so it can shoot at them
             // mid-climb; once they drop / the shield breaks it falls back to ground.
-            const shieldHover = e.shielded && e.aggro && pp && targetable;
+            const shieldHover = e.isBoss && e.shielded && e.aggro && pp && targetable;
             if (shieldHover && pp) {
                 // Floaty levitation while shielded: ease vertical velocity toward a
                 // gentle drift that tracks the climbing player's height, capped low
@@ -538,9 +1064,10 @@ class EntityManager {
 
             // Under its own power (grounded, not mid-knockback) the entity refuses
             // to step off ledges or onto lava; knockback can still shove it.
-            const guard = e.grounded && !preserveKnockback;
+            const guard = e.grounded && !preserveKnockback && !this.hasCommittedSafeDrop(e, kind);
             this.moveWithCollision(e, kind, dt, guard);
             this.applyLeash(e, kind);
+            this.updateNavigationRecovery(e, kind, pp);
 
             // --- Contact damage to player ---
             if (e.attackCooldown > 0) e.attackCooldown -= dt;

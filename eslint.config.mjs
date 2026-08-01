@@ -48,4 +48,12 @@ export default [
       'no-unused-vars': 'off',
     },
   },
+  {
+    files: ['src/types.ts'],
+    rules: {
+      // TypeScript declaration merging intentionally extends BlockType without
+      // widening the legacy enum key union.
+      'no-redeclare': 'off',
+    },
+  },
 ]

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { bossSummon } from '../../systems/boss/bossSummon';
+import { bellTitanCinematic } from '../../systems/boss/bellTitanCinematic';
 
 // Black fade layer for the summon cutscene. Reads bossSummon.fade each time the
 // controller ticks (via subscribe) so the fade is frame-accurate without its own
@@ -7,7 +8,12 @@ import { bossSummon } from '../../systems/boss/bossSummon';
 export const CinematicOverlay: React.FC = () => {
     const [fade, setFade] = useState(0);
 
-    useEffect(() => bossSummon.subscribe(() => setFade(bossSummon.fade)), []);
+    useEffect(() => {
+        const update = () => setFade(Math.max(bossSummon.fade, bellTitanCinematic.fade));
+        const offBoss = bossSummon.subscribe(update);
+        const offTitan = bellTitanCinematic.subscribe(update);
+        return () => { offBoss(); offTitan(); };
+    }, []);
 
     if (fade <= 0.001) return null;
     return (

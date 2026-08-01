@@ -51,6 +51,19 @@ export interface WorldMetadata {
     // no boats. Same optional-extension pattern as `progression`, so old worlds
     // and v1/v2 exports load unchanged.
     boats?: { x: number; y: number; z: number; yaw: number }[];
+    /**
+     * Vault footprints accepted before any of their chunks generated. Optional
+     * so older worlds remain byte-for-byte compatible until an acceptance is written.
+     */
+    resonantVaultReservations?: Record<string, {
+        layoutSignature: string;
+        acceptedAtVersion: 1;
+    }>;
+}
+
+export interface ChunkCoordinate {
+    cx: number;
+    cz: number;
 }
 
 export interface ChunkStorageData {

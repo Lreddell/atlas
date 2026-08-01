@@ -10,7 +10,7 @@ const options = {
     regions: ['volcanic'],
     items: ['iron_boots', 'stone'],
     equippableItems: ['iron_boots'],
-    entities: ['cinder_warden', 'slime'],
+    entities: ['bell_titan', 'magnetic_warden'],
     sounds: ['entity.player.hurt', 'ui.click'],
 };
 
@@ -38,8 +38,26 @@ test('suggests commands and their known arguments', () => {
     assert.deepEqual(complete('/giveitem i', options), ['iron_boots']);
     assert.deepEqual(complete('/equip i', options), ['iron_boots']);
     assert.deepEqual(complete('/unequip b', options), ['boots']);
-    assert.deepEqual(complete('/spawn c', options), ['cinder_warden']);
+    assert.deepEqual(complete('/spawn b', options), ['bell_titan']);
     assert.deepEqual(complete('/playsound ui', options), ['ui.click']);
+    assert.deepEqual(complete('/locate ', options), ['biome', 'vault']);
+    assert.deepEqual(complete('/locate v', options), ['vault']);
     assert.deepEqual(complete('/locate biome v', options), ['volcanic']);
     assert.deepEqual(complete('/giveitem stone ', options), ['1', '16', '32', '64']);
+});
+
+test('/locate vault uses the deterministic vault locator and offers a surface teleport', () => {
+    const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    const worldManagerSource = readFileSync(new URL('../systems/WorldManager.ts', import.meta.url), 'utf8');
+
+    assert.match(appSource, /parts\[1\]\s*===\s*'vault'[\s\S]{0,180}worldManager\.locateVault\(/);
+    assert.match(worldManagerSource, /public async locateVault\(startX: number, startZ: number\): Promise<void>/);
+    // The locator must only report candidates that pass preflight; a rejected
+    // candidate never generates and would point players at empty terrain.
+    assert.match(worldManagerSource, /locateVault[\s\S]{0,200}resolveNearestAcceptedVaultCandidate\(startX, startZ, 18000\)/);
+    assert.match(worldManagerSource, /rejectedVaultCandidates\.has\(getVaultId\(entry\)\)/);
+    assert.match(worldManagerSource, /getVaultSpirePosition\(candidate\)/);
+    assert.match(worldManagerSource, /getVaultOpenAirSurfaceY\(this\.getTerrainHeight\(spire\.x, spire\.z\)\)/);
+    assert.match(worldManagerSource, /getVaultSurfaceApproach\(candidate, surfaceY\)/);
+    assert.match(worldManagerSource, /Found Resonant Vault at X=\$\{tx\}, Z=\$\{tz\}[\s\S]{0,100}`\/tp \$\{tx\} \$\{ty\} \$\{tz\}`/);
 });

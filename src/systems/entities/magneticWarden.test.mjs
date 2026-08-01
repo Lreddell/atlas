@@ -110,7 +110,7 @@ test('projectiles aim at the head, boss flies up while shielded, bolts clear on 
     assert.match(manager, /fireParryBolt[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
     // While shielded the boss floats UP toward the climbing player to shoot at
     // them, eased (not snapped) toward a low, weightless drift speed.
-    assert.match(manager, /e\.shielded && e\.aggro && pp && targetable/);
+  assert.match(manager, /e\.isBoss && e\.shielded && e\.aggro && pp && targetable/);
     assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.8, -3, 4\)/);
     assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 3\.2\)/);
     // A despawn/reset wipes all bolts + shockwaves.
@@ -306,8 +306,9 @@ test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers
     // The boss bar shows modular phase markers (slam 50% / frenzy 25%) as
     // Atlas-pixel diamond pips, plus a pulse on transition.
     const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /PHASE_MARKERS = \[0\.5, 0\.25\]/);
-    assert.match(bar, /PHASE_MARKERS\.map\(\(at\) => <PhaseMarker/);
+    assert.match(bar, /magnetic_warden:\s*\[0\.5, 0\.25\]/);
+    assert.match(bar, /bell_titan:\s*\[0\.67, 0\.34\]/);
+    assert.match(bar, /PHASE_MARKERS\[boss\.bossId\]/);
     assert.match(bar, /boss:phase/);
     // The slam goes through a charge windup before launching.
     assert.match(manager, /slamState = 'charging'/);
@@ -563,5 +564,5 @@ test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => 
     // Region is configured (bossId magnetic_warden) and boss:defeated → cleanse.
     const regions = read('src/systems/world/regions.ts');
     assert.match(regions, /magnetic_fields:\s*{[\s\S]*?bossId:\s*'magnetic_warden'/);
-    assert.match(app, /boss:defeated[\s\S]*?cleanseRegion\(regionId\)/);
+    assert.match(app, /boss:defeated[\s\S]*?region\?\.bossId === bossId[\s\S]*?cleanseRegion\(region\.id\)/);
 });
