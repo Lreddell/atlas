@@ -12,13 +12,14 @@ import { createNoiseSet, hashSeed } from '../../utils/noise.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const chunkGen = read('src/systems/world/chunkGeneration.ts');
+const chunkGen = read('src/systems/world/baseChunkGeneration.ts');
 const biomesSrc = read('src/systems/world/biomes.ts');
 const debugScreen = read('src/components/ui/DebugScreen.tsx');
 const worldManagerSrc = read('src/systems/WorldManager.ts');
 const blocks = read('src/data/blocks.ts');
 const types = read('src/types.ts');
 const geometry = read('src/systems/world/geometry.ts');
+const spriteBlocks = read('src/data/spriteBlocks.ts');
 const textures = read('src/utils/textures.ts');
 const cutouts = read('src/utils/atlasTileFamilies.ts');
 const mapping = read('src/systems/textures/textureMapping.ts');
@@ -160,9 +161,11 @@ test('the new cave blocks exist and the cross-plane ones are cutouts', () => {
     // Budding amethyst can't be harvested; glow lichen + amethyst cluster glow.
     assert.match(blocks, /BlockType\.BUDDING_AMETHYST[\s\S]*?drops:\s*\[\]/);
     assert.match(blocks, /BlockType\.GLOW_LICHEN[\s\S]*?lightLevel:\s*\d+/);
-    // The three cross-plane cutouts are registered in geometry + the cutout list.
+    // The three cross-plane cutouts live in the shared sprite list the mesher
+    // builds its cutout/cross tables from.
+    assert.ok(geometry.includes('CROSS_RENDERED_BLOCKS'), 'geometry does not consume the shared sprite list');
     for (const b of ['POINTED_DRIPSTONE', 'GLOW_LICHEN', 'AMETHYST_CLUSTER']) {
-        assert.ok(geometry.includes(`BlockType.${b}`), `${b} not registered in geometry cutout/cross lists`);
+        assert.ok(spriteBlocks.includes(`BlockType.${b}`), `${b} not registered in the shared sprite list`);
     }
     for (const slot of [220, 222, 225]) assert.match(cutouts, new RegExp(`slot:\\s*${slot}\\b`));
     // Every new tile is painted and has a PNG-override mapping.

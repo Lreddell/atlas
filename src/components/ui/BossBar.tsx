@@ -11,7 +11,10 @@ import { soundManager } from '../../systems/sound/SoundManager';
 // segment marker at each so players can read upcoming phase changes, modular:
 // extend this list (or, later, feed it per-boss from boss:spawned) for any number
 // of phases. Magnetic Warden: slam phase at 50%, frenzy at 25%.
-const PHASE_MARKERS = [0.5, 0.25];
+const PHASE_MARKERS: Readonly<Record<string, readonly number[]>> = {
+    magnetic_warden: [0.5, 0.25],
+    bell_titan: [0.67, 0.34],
+};
 
 // A small Atlas-pixel diamond pip that divides the bar at a phase threshold :
 // a segmented health-bar marker, kept crisp (shapeRendering=crispEdges) and
@@ -90,7 +93,9 @@ export const BossBar: React.FC = () => {
     const pct = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
     const shieldPct = shield.max > 0 ? Math.max(0, Math.min(1, shield.crystals / shield.max)) : 0;
     // Health fill tints to the boss's current polarity (red = +, blue = −).
-    const fill = polarity < 0
+    const fill = boss.bossId === 'bell_titan'
+        ? 'linear-gradient(180deg, #d6bd87 0%, #8a6335 55%, #49351f 100%)'
+        : polarity < 0
         ? 'linear-gradient(180deg, #6ab0ff 0%, #1e7ae0 55%, #0a3f8f 100%)'
         : 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)';
 
@@ -122,7 +127,7 @@ export const BossBar: React.FC = () => {
                 )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
                     threshold, the slam phase at 50% HP, frenzy at 25%. */}
-                {PHASE_MARKERS.map((at) => <PhaseMarker key={at} at={at} />)}
+                {(PHASE_MARKERS[boss.bossId] ?? []).map((at) => <PhaseMarker key={at} at={at} />)}
                 {/* White flash when a phase threshold is crossed. */}
                 <div
                     className="absolute inset-0 bg-white transition-opacity duration-200"

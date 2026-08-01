@@ -13,6 +13,7 @@ import { OpfsBackend, opfsBackendSupported } from './storage/OpfsBackend';
 import type { StorageBackend } from './storage/StorageBackend';
 import type {
     ChunkBatchEntry,
+    ChunkCoordinate,
     ChunkStorageData,
     ExportedWorldData,
     WorldMetadata,
@@ -27,6 +28,7 @@ export type {
     ExportedChunkData,
     ExportedWorldData,
     ChunkBatchEntry,
+    ChunkCoordinate,
 } from './storage/types';
 
 class WorldStorageSystem {
@@ -89,7 +91,14 @@ class WorldStorageSystem {
     }
 
     public async saveWorldMeta(meta: WorldMetadata): Promise<void> {
-        return (await this.getBackend()).writeMeta(meta);
+        const backend = await this.getBackend();
+        const existing = await backend.readMeta(meta.id);
+        return backend.writeMeta({
+            ...(existing ?? {}),
+            ...meta,
+            resonantVaultReservations: meta.resonantVaultReservations
+                ?? existing?.resonantVaultReservations,
+        });
     }
 
     public async createWorld(
@@ -173,6 +182,11 @@ class WorldStorageSystem {
     public async loadChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null> {
         if (!worldId) return null;
         return (await this.getBackend()).readChunk(worldId, cx, cz);
+    }
+
+    public async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {
+        if (!worldId || coordinates.length === 0) return false;
+        return (await this.getBackend()).hasAnyChunk(worldId, coordinates);
     }
 
     // --- EXPORT / IMPORT (portable Atlas world file; unchanged format) ---

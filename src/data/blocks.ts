@@ -85,7 +85,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // --- RED MESA ---
   [BlockType.RED_SAND]: { id: BlockType.RED_SAND, color: '#d84315', name: 'Red Sand', textureSlot: 78, hardness: 0.5, preferredTool: 'shovel', smeltsInto: BlockType.GLASS, category: 'natural' },
   [BlockType.RED_SANDSTONE]: { id: BlockType.RED_SANDSTONE, color: '#bf360c', name: 'Red Sandstone', textureSlot: 79, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
-  [BlockType.TERRACOTTA]: { id: BlockType.TERRACOTTA, color: '#a1887f', name: 'Terracotta', textureSlot: 80, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
+  [BlockType.TERRACOTTA]: { id: BlockType.TERRACOTTA, color: '#a1887f', name: 'Terracotta', textureSlot: 80, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.BRICK, category: 'building' },
   [BlockType.TERRACOTTA_YELLOW]: { id: BlockType.TERRACOTTA_YELLOW, color: '#fbc02d', name: 'Yellow Terracotta', textureSlot: 81, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
   [BlockType.TERRACOTTA_RED]: { id: BlockType.TERRACOTTA_RED, color: '#8d6e63', name: 'Red Terracotta', textureSlot: 82, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
   [BlockType.TERRACOTTA_WHITE]: { id: BlockType.TERRACOTTA_WHITE, color: '#d1b1a1', name: 'White Terracotta', textureSlot: 91, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },

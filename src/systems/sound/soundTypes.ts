@@ -7,6 +7,8 @@ export interface SoundEventDefinition {
     pitch?: number | [number, number]; // Fixed or [min, max]
     category?: SoundCategory;
     subtitle?: string;
+    /** Disable procedural substitution when this event must use authored audio. */
+    fallback?: boolean;
 }
 
 // e.g. "block.grass.step": { ... } or just ["path/to/sound"]
@@ -18,4 +20,10 @@ export interface SoundOptions {
     volume?: number;
     pitch?: number;
     loop?: boolean;
+    /** Per-call safety override for authored cues that must fail silent. */
+    fallback?: boolean;
+    /** Positional attenuation overrides for large authored spaces. */
+    refDistance?: number;
+    maxDistance?: number;
+    rolloffFactor?: number;
 }

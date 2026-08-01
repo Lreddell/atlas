@@ -31,6 +31,7 @@ interface SlotProps {
   bare?: boolean;
   /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
   animateChanges?: boolean;
+  cooldownFraction?: number;
 }
 
 interface PixelPerfectItemIconProps {
@@ -131,10 +132,17 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, ta
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
     onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
-    bare = false, animateChanges = false,
+    bare = false, animateChanges = false, cooldownFraction = 0,
 }) => {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
+  const [, setAtlasVersion] = React.useState(0);
+
+  React.useEffect(() => {
+      const refresh = () => setAtlasVersion((version) => version + 1);
+      window.addEventListener(ATLAS_UPDATED_EVENT, refresh);
+      return () => window.removeEventListener(ATLAS_UPDATED_EVENT, refresh);
+  }, []);
   const currentItemType = item?.type;
   const currentItemCount = item?.count;
   const blockDef = item ? BLOCKS[item.type] : null;
@@ -257,30 +265,12 @@ export const Slot: React.FC<SlotProps> = ({
           );
       }
 
-      // Determine if we should render as 3D Block or 2D Item
-      const is3D = !blockDef.isItem && 
-                   item.type !== BlockType.TORCH && 
-                   item.type !== BlockType.SAPLING &&
-                   item.type !== BlockType.SPRUCE_SAPLING &&
-                   item.type !== BlockType.BIRCH_SAPLING &&
-                   item.type !== BlockType.CHERRY_SAPLING &&
-                   item.type !== BlockType.JUNGLE_SAPLING &&
-                   item.type !== BlockType.DARK_OAK_SAPLING &&
-                   item.type !== BlockType.ACACIA_SAPLING &&
-                   item.type !== BlockType.WATER &&
-                   item.type !== BlockType.LAVA &&
-                   item.type !== BlockType.DEAD_BUSH &&
-                   item.type !== BlockType.GRASS_PLANT &&
-                   item.type !== BlockType.ROSE &&
-                   item.type !== BlockType.DANDELION &&
-                   item.type !== BlockType.DEBUG_CROSS &&
-                   item.type !== BlockType.WHEAT_SEEDS &&
-                   item.type !== BlockType.PINK_FLOWER &&
-                   item.type !== BlockType.POSITIVE_MAGNETITE_CRYSTAL &&
-                   item.type !== BlockType.NEGATIVE_MAGNETITE_CRYSTAL &&
-                   item.type !== BlockType.MAGNETIC_SPIKE &&
-                   item.type !== BlockType.MAGNETIC_SHIELD_CRYSTAL &&
-                   item.type !== BlockType.MAGNETITE_SHARD;
+      // Render solid/placeable blocks as isometric cubes. Any transparent,
+      // no-collision block is a cutout sprite; this covers plants, crystals,
+      // spikes, torches, and future cutouts without a per-ID exception list.
+      const isCutoutSprite = Boolean(blockDef.transparent && blockDef.noCollision);
+      const is3D = !blockDef.isItem && !isCutoutSprite;
+
 
       if (is3D) {
           // Top Face (dy=1)
@@ -334,7 +324,7 @@ export const Slot: React.FC<SlotProps> = ({
           // Keep the 16px source on an exact 2x grid. The next whole-pixel
           // scale (48px) fills the slot edge-to-edge and reads oversized.
           const pxSize = 32;
-          const texSlot = blockDef.textureSlot || 0;
+          const texSlot = blockDef.textureSlot ?? 0;
           return (
               <PixelPerfectItemIcon
                   texSlot={texSlot}
@@ -382,6 +372,14 @@ export const Slot: React.FC<SlotProps> = ({
 
         {!bare && (
             <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />
+        )}
+
+        {!bare && cooldownFraction > 0 && (
+            <span
+                data-resonant-cooldown="true"
+                className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-black/65 border-t border-white/25"
+                style={{ height: `${Math.round(Math.max(0, Math.min(1, cooldownFraction)) * 100)}%` }}
+            />
         )}
 
         {selected && !bare && (

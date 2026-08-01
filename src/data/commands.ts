@@ -1,4 +1,3 @@
-
 export interface CommandAutocompleteOptions {
     biomes: string[];
     regions: string[];
@@ -39,8 +38,8 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/keepinventory': ['on', 'off'],
     '/time': ['set', 'add', 'query'],
     '/phase': ['set'],
-    '/locate': ['biome'],
-    '/tp': [], // Coordinates usually
+    '/locate': ['biome', 'vault'],
+    '/tp': [],
     '/sound': ['reload', 'volume'],
     '/music': ['skip'],
     '/playsound': [],
@@ -58,7 +57,6 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/magfields': ['on', 'off', 'toggle'],
 };
 
-// Nested options based on "Command + SubCommand" key
 export const ARGUMENT_OPTIONS: Record<string, string[]> = {
     '/time set': ['day', 'night', 'noon', 'midnight', 'sunrise', 'sunset', '0', '1000', '6000', '12000', '13000', '18000', '23000'],
     '/time add': ['100', '1000', '6000'],
@@ -83,9 +81,7 @@ export function getAutocompleteCandidates(
     const tokenIndex = endsWithSpace ? parts.length : Math.max(0, parts.length - 1);
     const prefix = endsWithSpace ? '' : (parts[tokenIndex] ?? '');
 
-    if (tokenIndex === 0) {
-        return filterPrefix(COMMANDS, prefix);
-    }
+    if (tokenIndex === 0) return filterPrefix(COMMANDS, prefix);
 
     const command = parts[0];
     if (tokenIndex === 1) {
@@ -107,13 +103,8 @@ export function getAutocompleteCandidates(
     }
 
     if (tokenIndex === 2) {
-        if (command === '/locate' && parts[1] === 'biome') {
-            return filterPrefix(options.biomes, prefix);
-        }
-        if (command === '/giveitem') {
-            return filterPrefix(GIVE_COUNTS, prefix);
-        }
-
+        if (command === '/locate' && parts[1] === 'biome') return filterPrefix(options.biomes, prefix);
+        if (command === '/giveitem') return filterPrefix(GIVE_COUNTS, prefix);
         const commandContext = `${command} ${parts[1]}`;
         return filterPrefix(ARGUMENT_OPTIONS[commandContext] ?? [], prefix);
     }

@@ -2,6 +2,9 @@
   "bloodmoon": [
     "assets/rvx/sounds/music/bloodmoon/Blood_Moon_-_Rhino_X.ogg"
   ],
+  "boss_bell_titan": [
+    "assets/rvx/sounds/music/boss_bell_titan/bell_titan.ogg"
+  ],
   "boss_magnetic_warden": [
     "assets/rvx/sounds/music/boss_magnetic_warden/magboss.ogg"
   ],
@@ -36,5 +39,14 @@
     "assets/rvx/sounds/music/plains/plains1.ogg",
     "assets/rvx/sounds/music/plains/plains2.ogg",
     "assets/rvx/sounds/music/plains/plains3.ogg"
+  ],
+  "resonant_combat": [
+    "assets/rvx/sounds/music/resonant_combat/three_wings.ogg"
+  ],
+  "resonant_escape": [
+    "assets/rvx/sounds/music/resonant_escape/the_vault_unravels.ogg"
+  ],
+  "resonant_vault": [
+    "assets/rvx/sounds/music/resonant_vault/echoes_below.ogg"
   ]
 }

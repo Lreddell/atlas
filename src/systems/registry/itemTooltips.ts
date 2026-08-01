@@ -8,10 +8,11 @@
 import type { ItemStack } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { getItemStats, getMaxDurability } from './itemStats';
+import { getResonantHotbarSummary, getResonantPurpose } from '../../data/resonantGuide';
 
 export interface TooltipLine {
     text: string;
-    tone: 'stat';
+    tone: 'stat' | 'purpose';
 }
 
 export interface ItemTooltip {
@@ -78,6 +79,10 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
         lines.push({ text: `Food: +${def.nutrition} hunger, +${Math.round(saturation * 10) / 10} saturation`, tone: 'stat' });
     }
 
+    for (const purpose of getResonantPurpose(stack.type)) {
+        lines.push({ text: purpose, tone: 'purpose' });
+    }
+
     return { name, lines };
 }
 
@@ -98,5 +103,5 @@ export function summarizeItemStats(stack: ItemStack): string {
         const current = stack.instance?.durability ?? max;
         parts.push(`${current}/${max}`);
     }
-    return parts.join(' · ');
+    return parts.join(' · ') || getResonantHotbarSummary(stack.type);
 }

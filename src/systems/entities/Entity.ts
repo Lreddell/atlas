@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { BlockType } from '../../types';
+import type { NavigationPath, NavigationProfile, NavigationVector } from './navigation/navigationTypes';
+import type { NavigationTicket } from './navigation/NavigationPlanner';
 
 // A live entity instance. Positions follow the same convention as the player
 // collision helpers: pos.x/pos.z are the horizontal center, pos.y is the feet
@@ -13,6 +15,8 @@ export interface Entity {
     height: number;
     hp: number;
     maxHp: number;
+    /** Encounter-owned incoming-damage scale. Applied once by EntityManager. */
+    damageMultiplier: number;
     grounded: boolean;
     aggro: boolean;
     /** ms timestamp until which the entity renders a hurt flash. */
@@ -62,6 +66,36 @@ export interface Entity {
     /** Rideable entities (boats): true while the player is aboard, the player's
      *  physics drives the entity's position/yaw instead of its own tick. */
     ridden: boolean;
+    /** Transient pathing state. World/entity persistence deliberately ignores it. */
+    navigationState?: NavigationRuntimeState;
+    /** Runtime-only bounds for an authored room encounter. */
+    encounterBounds?: EntityEncounterBounds;
+    /** Runtime-only supported recovery anchors owned by that same room. */
+    recoveryAnchors?: NavigationVector[];
+    /** Stable authored room identity; never serialized with the entity. */
+    encounterRoomId?: string;
+    /** Authoritative combat phase sampled by rendering and movement. */
+    combatAction?: EntityCombatActionState;
+    /** Short visible recovery after an authored same-room navigation rescue. */
+    reformingUntil?: number;
+}
+
+export interface EntityEncounterBounds {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+}
+
+export interface EntityCombatActionState {
+    id: string;
+    phase: 'anticipation' | 'active' | 'recovery';
+    elapsed: number;
+    duration: number;
+    locksMovement: boolean;
+    targetYaw: number;
 }
 
 // An expanding polarity shockwave ring from a slam. Same polarity as the boss;
@@ -105,6 +139,33 @@ export interface DropSpec {
     chance?: number; // 0..1, default 1
 }
 
+/** Runtime-only movement contract used by voxel navigation and locomotion. */
+export interface EntityMovementAbility extends NavigationProfile {
+    preferredRange: { min: number; max: number };
+    acceleration: number;
+    turnRate: number;
+    jumpImpulse: number;
+    dropSpeedScale: number;
+    strafe?: boolean;
+}
+
+export interface NavigationRuntimeState {
+    path: NavigationPath | null;
+    waypointIndex: number;
+    goalCellKey: string;
+    repathAt: number;
+    lastProgressPosition: NavigationVector;
+    lastProgressAt: number;
+    recoveryAttempts: number;
+    replans: number;
+    ticket?: NavigationTicket;
+    overrideGoal?: NavigationVector;
+    combatGoal?: NavigationVector;
+    combatGoalUntil?: number;
+    strafeDirection?: -1 | 1;
+    disengaging?: boolean;
+}
+
 // Static, data-driven definition of an entity type. Add a new enemy/boss by
 // adding an entry here (and, for bosses, wiring its bossId/region at spawn).
 export interface EntityKind {
@@ -128,8 +189,15 @@ export interface EntityKind {
     floats?: boolean;
     isBoss?: boolean;
     drops?: DropSpec[];
+    /** Explicit pathing body and traversal limits. Added per entity in the
+     * locomotion integration; omitted definitions keep the legacy mover. */
+    navigation?: EntityMovementAbility;
     /** can the entity jump up a 1-block step while chasing. */
     canStep?: boolean;
+    /** Physical armor trait used by conventional blunt weapon profiles. */
+    armored?: boolean;
+    /** Fraction of incoming stagger resisted, clamped to 0..0.9 by combat rules. */
+    staggerResistance?: number;
     /** Boss starts shielded with this many crystals (0/undefined = no shield). */
     shieldCrystals?: number;
     /** Seconds between polarity swaps (undefined = never swaps). */
@@ -193,32 +261,6 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         floats: true,
         drops: [{ type: BlockType.BOAT, min: 1, max: 1 }],
     },
-    slime: {
-        id: 'slime',
-        maxHp: 16,
-        width: 0.9,
-        height: 0.9,
-        speed: 2.6,
-        aggroRange: 14,
-        contactDamage: 3,
-        attackCooldown: 0.8,
-        color: 0x5bbf5b,
-        drops: [{ type: BlockType.DIRT, min: 0, max: 2 }],
-        canStep: true,
-    },
-    cinder_warden: {
-        id: 'cinder_warden',
-        maxHp: 200,
-        width: 1.6,
-        height: 2.6,
-        speed: 2.0,
-        aggroRange: 24,
-        contactDamage: 7,
-        attackCooldown: 1.1,
-        color: 0xff5530,
-        isBoss: true,
-        canStep: true,
-    },
     magnetic_warden: {
         id: 'magnetic_warden',
         maxHp: 240,
@@ -232,6 +274,11 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         attackCooldown: 1.0,
         color: 0x8e24aa,
         isBoss: true,
+        navigation: {
+            width: 1.8, height: 2.8, maxStep: 1, maxJump: 1, maxDrop: 1,
+            preferredRange: { min: 8, max: 15 }, acceleration: 7,
+            turnRate: 5, jumpImpulse: 7, dropSpeedScale: 0.4, strafe: true,
+        },
         canStep: true,
         shieldCrystals: 4,
         polaritySwapInterval: 6,

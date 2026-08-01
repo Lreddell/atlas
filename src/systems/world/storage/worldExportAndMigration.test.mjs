@@ -22,6 +22,7 @@ const meta = () => ({
     spawnPoint: { x: 1, y: 2, z: 3 }, worldSpawn: { x: 0, y: 64, z: 0 },
     worldGenConfig: { a: 1 }, worldGenPresetId: 'p', worldGenPresetName: 'Preset',
     progression: { version: 1, bossesDefeated: ['x'], regionStates: {}, unlockedAbilities: [], unlockedRecipes: [] },
+    resonantVaultReservations: { 'resonant:1:2:test': { layoutSignature: 'v1:test', acceptedAtVersion: 1 } },
 });
 const rawChunk = (cx, cz) => ({ cx, cz, blocks: new Uint8Array([1, 2, 3, cx & 255]), light: new Uint8Array([4, 5]), meta: new Uint8Array([6]), timestamp: 999 });
 
@@ -40,6 +41,7 @@ test('export then import preserves metadata fields and all chunks', () => {
     assert.equal(metaFields.gameMode, 'creative');
     assert.equal(metaFields.time, 12000);
     assert.deepEqual(metaFields.progression.bossesDefeated, ['x']);
+    assert.deepEqual(metaFields.resonantVaultReservations, meta().resonantVaultReservations);
     assert.equal(metaFields.worldGenPresetName, 'Preset');
     assert.equal(chunks.length, 2);
     const c0 = chunks.find((c) => c.cx === 0 && c.cz === 0);

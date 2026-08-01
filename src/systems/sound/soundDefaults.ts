@@ -1,4 +1,3 @@
-
 import { SoundManifest } from './soundTypes';
 
 // These defaults ensure the game tries to play SOMETHING even if the JSON is missing.
@@ -7,10 +6,10 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     // UI
     "ui.click": { category: "ui", sounds: ["ui/click"], volume: 0.25, pitch: 1.0 },
     "ui.hover": { category: "ui", sounds: ["ui/hover"], volume: 0.1, pitch: 1.5 },
-    "ui.slider": { category: "ui", sounds: ["ui/slider"], volume: 0.25, pitch: 1.0 }, 
+    "ui.slider": { category: "ui", sounds: ["ui/slider"], volume: 0.25, pitch: 1.0 },
     "ui.open": { category: "ui", sounds: ["random/chestopen"], volume: 0.5 },
     "ui.close": { category: "ui", sounds: ["random/chestclosed"], volume: 0.5 },
-    
+
     // Player
     "entity.player.hurt": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0 },
     "entity.player.death": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0, pitch: 0.6 },
@@ -54,31 +53,30 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "block.sand.land": { category: "blocks", sounds: ["step/sand1"], volume: 0.7 },
 
     // Water
-    "block.water.swim": { category: "player", sounds: ["liquid/swim1", "liquid/swim2"], "volume": 0.4, "pitch": [0.8, 1.2] },
-    "block.lava.pop": { category: "ambient", "sounds": ["liquid/lavapop"], "volume": 0.8 },
+    "block.water.swim": { category: "player", sounds: ["liquid/swim1", "liquid/swim2"], volume: 0.4, pitch: [0.8, 1.2] },
+    "block.lava.pop": { category: "ambient", sounds: ["liquid/lavapop"], volume: 0.8 },
 
-    // --- MUSIC ---
+    // Music
     "music.menu": { category: "music", sounds: ["music/menu"], volume: 0.5 },
     "music.death": { category: "music", sounds: ["music/death"], volume: 0.5 },
     "music.creative": { category: "music", sounds: ["music/creative"], volume: 0.5 },
-
-    // Exclusive Biome Tracks
     "music.plains": { category: "music", sounds: ["music/plains"], volume: 0.5 },
     "music.forest": { category: "music", sounds: ["music/forest"], volume: 0.5 },
     "music.desert": { category: "music", sounds: ["music/desert"], volume: 0.5 },
     "music.ocean": { category: "music", sounds: ["music/ocean"], volume: 0.5 },
-    "music.cold": { category: "music", sounds: ["music/cold"], volume: 0.5 }, // Tundra, Frozen Ocean/River
+    "music.cold": { category: "music", sounds: ["music/cold"], volume: 0.5 },
     "music.caves": { category: "music", sounds: ["music/caves"], volume: 0.45 },
     "music.bloodmoon": { category: "music", sounds: ["music/bloodmoon"], volume: 0.48 },
-    "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 }, // Red Mesa & Bryce (shared 'mesa' tag)
+    "music.mesa": { category: "music", sounds: ["music/mesa"], volume: 0.5 },
     "music.volcanic": { category: "music", sounds: ["music/volcanic"], volume: 0.5 },
-    "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 }, // Magnetic Fields biome
-    "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 }, // Magnetic Warden fight
+    "music.magnetic_fields": { category: "music", sounds: ["music/magnetic_fields"], volume: 0.5 },
+    "music.boss_magnetic_warden": { category: "music", sounds: ["music/boss_magnetic_warden"], volume: 0.55 },
+    "music.resonant_vault": { category: "music", sounds: ["music/resonant_vault"], volume: 0.42 },
+    "music.resonant_combat": { category: "music", sounds: ["music/resonant_combat"], volume: 0.46 },
+    "music.boss_bell_titan": { category: "music", sounds: ["music/boss_bell_titan"], volume: 0.50 },
+    "music.resonant_escape": { category: "music", sounds: ["music/resonant_escape"], volume: 0.48 },
 
-    // --- Music tags. Each is a folder of songs (music/<tag>/). Biomes activate a
-    // set of tags via music/biomes/<biome>/tags.json; the game pools songs across
-    // a biome's populated tags (see MusicController). Empty tag folders simply
-    // contribute nothing. ---
+    // Music tags
     "music.river": { category: "music", sounds: ["music/river"], volume: 0.5 },
     "music.frozen_river": { category: "music", sounds: ["music/frozen_river"], volume: 0.5 },
     "music.frozen_ocean": { category: "music", sounds: ["music/frozen_ocean"], volume: 0.5 },
@@ -96,24 +94,51 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.stone_shore": { category: "music", sounds: ["music/stone_shore"], volume: 0.5 },
     "music.beach": { category: "music", sounds: ["music/beach"], volume: 0.5 },
     "music.cherry_grove": { category: "music", sounds: ["music/cherry_grove"], volume: 0.5 },
-    // (music.mesa, music.volcanic + music.desert already declared above; red_mesa
-    // and mesa_bryce biomes share the single 'mesa' tag)
     "music.lush_caves": { category: "music", sounds: ["music/lush_caves"], volume: 0.45 },
     "music.dripstone_caves": { category: "music", sounds: ["music/dripstone_caves"], volume: 0.45 },
 
-    // --- Magnetic Warden SFX (drop your own files at public/assets/rvx/sounds/magnetic_warden/) ---
-    "entity.magnetic_warden.polarity": { category: "blocks", sounds: ["magnetic_warden/polarity"], volume: 0.6 },   // polarity swap telegraph
-    "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },   // a hit absorbed by the shield
-    "entity.magnetic_warden.parry": { category: "blocks", sounds: ["magnetic_warden/parry"], volume: 0.7 },         // deflectable purple bolt launched
-    "entity.magnetic_warden.deflect": { category: "blocks", sounds: ["magnetic_warden/deflect"], volume: 0.8 },     // player deflected a bolt back
-    "entity.magnetic_warden.slam_rise": { category: "blocks", sounds: ["magnetic_warden/slam_rise"], volume: 0.7 }, // boss rising for a slam (telegraph)
-    "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },           // slam impact + polarity shockwave
-    "entity.magnetic_warden.enrage": { category: "blocks", sounds: ["magnetic_warden/enrage"], volume: 0.9 },       // crosses a phase threshold (50% slam / 25% frenzy)
-    "entity.magnetic_warden.hurt": { category: "blocks", sounds: ["magnetic_warden/hurt"], volume: 0.7 },           // takes damage (e.g. a deflected bolt lands)
-    "entity.magnetic_warden.crystal_break": { category: "blocks", sounds: ["magnetic_warden/crystal_break"], volume: 0.85 }, // a shield crystal shatters + its beam dissipates
-    "entity.magnetic_warden.crystal_spawn": { category: "blocks", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8 }, // a shield crystal materializes (cutscene)
-    "entity.magnetic_warden.hum": { category: "blocks", sounds: ["magnetic_warden/hum"], volume: 0.7 },             // crystal beams converging on the altar (cutscene)
-    "entity.magnetic_warden.charge": { category: "blocks", sounds: ["magnetic_warden/charge"], volume: 0.85 },      // energy ball forming + swelling at the altar (cutscene)
-    "entity.magnetic_warden.summon": { category: "blocks", sounds: ["magnetic_warden/summon"], volume: 1.0 },       // the energy ball explodes and the boss spawns
-    "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 }         // boss death sting / short song
+    // Magnetic Warden SFX
+    "entity.magnetic_warden.polarity": { category: "blocks", sounds: ["magnetic_warden/polarity"], volume: 0.6 },
+    "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },
+    "entity.magnetic_warden.parry": { category: "blocks", sounds: ["magnetic_warden/parry"], volume: 0.7 },
+    "entity.magnetic_warden.deflect": { category: "blocks", sounds: ["magnetic_warden/deflect"], volume: 0.8 },
+    "entity.magnetic_warden.slam_rise": { category: "blocks", sounds: ["magnetic_warden/slam_rise"], volume: 0.7 },
+    "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },
+    "entity.magnetic_warden.enrage": { category: "blocks", sounds: ["magnetic_warden/enrage"], volume: 0.9 },
+    "entity.magnetic_warden.hurt": { category: "blocks", sounds: ["magnetic_warden/hurt"], volume: 0.7 },
+    "entity.magnetic_warden.crystal_break": { category: "blocks", sounds: ["magnetic_warden/crystal_break"], volume: 0.85 },
+    "entity.magnetic_warden.crystal_spawn": { category: "blocks", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8 },
+    "entity.magnetic_warden.hum": { category: "blocks", sounds: ["magnetic_warden/hum"], volume: 0.7 },
+    "entity.magnetic_warden.charge": { category: "blocks", sounds: ["magnetic_warden/charge"], volume: 0.85 },
+    "entity.magnetic_warden.summon": { category: "blocks", sounds: ["magnetic_warden/summon"], volume: 1.0 },
+    "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 },
+
+    // Resonant Vault authored audio
+    "vault.discovery": { category: "ambient", sounds: ["resonant_vault/listening_stone"], volume: 0.55, fallback: false },
+    "vault.enter": { category: "ambient", sounds: ["resonant_vault/vault_enter"], volume: 0.48, fallback: false },
+    "vault.tuning_fork": { category: "player", sounds: ["resonant_vault/pylon_correct_1"], volume: 0.48, pitch: [1.08, 1.14], fallback: false },
+    "vault.pylon_correct": { category: "blocks", sounds: ["resonant_vault/pylon_correct_1", "resonant_vault/pylon_correct_2", "resonant_vault/pylon_correct_3"], volume: 0.62, pitch: [0.98, 1.02], fallback: false },
+    "vault.echo_step": { category: "blocks", sounds: ["resonant_vault/pylon_correct_1"], volume: 0.78, fallback: false },
+    "vault.route_step": { category: "blocks", sounds: ["resonant_vault/pylon_correct_1"], volume: 0.72, fallback: false },
+    "vault.pylon_wrong": { category: "blocks", sounds: ["resonant_vault/pylon_wrong"], volume: 0.7, fallback: false },
+    "vault.room_complete": { category: "ambient", sounds: ["resonant_vault/wing_complete"], volume: 0.65, fallback: false },
+    "vault.seal_release": { category: "blocks", sounds: ["resonant_vault/seal_release"], volume: 0.72, fallback: false },
+    "vault.sentinel_spawn": { category: "hostile", sounds: ["resonant_vault/sentinel_spawn"], volume: 0.65, fallback: false },
+    "vault.titan_awaken": { category: "hostile", sounds: ["resonant_vault/titan_awaken"], volume: 0.86, fallback: false },
+    "vault.titan_step": { category: "hostile", sounds: ["resonant_vault/titan_step_1", "resonant_vault/titan_step_2"], volume: 0.88, pitch: [0.98, 1.02], fallback: false },
+    "vault.titan_chain": { category: "hostile", sounds: ["resonant_vault/titan_chain_1", "resonant_vault/titan_chain_2"], volume: 0.72, pitch: [0.98, 1.02], fallback: false },
+    "vault.titan_sweep": { category: "hostile", sounds: ["resonant_vault/titan_sweep"], volume: 0.92, fallback: false },
+    "vault.titan_slam": { category: "hostile", sounds: ["resonant_vault/titan_slam"], volume: 1.0, fallback: false },
+    "vault.titan_toll": { category: "hostile", sounds: ["resonant_vault/titan_toll"], volume: 0.96, fallback: false },
+    "vault.titan_core_open": { category: "hostile", sounds: ["resonant_vault/titan_core_open"], volume: 0.78, fallback: false },
+    "vault.titan_shell_break": { category: "hostile", sounds: ["resonant_vault/titan_shell_break"], volume: 1.0, fallback: false },
+    "vault.titan_hurt": { category: "hostile", sounds: ["resonant_vault/titan_hurt_1", "resonant_vault/titan_hurt_2"], volume: 0.74, pitch: [0.98, 1.02], fallback: false },
+    "vault.titan_death": { category: "hostile", sounds: ["resonant_vault/titan_death"], volume: 1.0, fallback: false },
+    "vault.core_claim": { category: "ambient", sounds: ["resonant_vault/core_claim"], volume: 0.72, fallback: false },
+    "vault.escape_start": { category: "ambient", sounds: ["resonant_vault/escape_start"], volume: 0.82, fallback: false },
+    "vault.escape_warning": { category: "ambient", sounds: ["resonant_vault/escape_warning"], volume: 0.62, fallback: false },
+    "vault.escape_complete": { category: "ambient", sounds: ["resonant_vault/escape_complete"], volume: 0.72, fallback: false },
+    "vault.listening_stone": { category: "ambient", sounds: ["resonant_vault/listening_stone"], volume: 0.6, fallback: false },
+    "vault.hazard_warning": { category: "blocks", sounds: ["resonant_vault/marksman_brace", "resonant_vault/tollkeeper_windup"], volume: 0.7, fallback: false },
+    "vault.hazard_strike": { category: "blocks", sounds: ["resonant_vault/tollkeeper_impact", "resonant_vault/guard_step_1"], volume: 0.82, fallback: false },
 };

@@ -2,9 +2,19 @@
 import * as THREE from 'three';
 import { SoundManifest, SoundEventDefinition, SoundOptions } from './soundTypes';
 import { DEFAULT_SOUND_MANIFEST } from './soundDefaults';
+import { getMusicLoopDefinition, type MusicLoopDefinition } from './musicLoops';
+import { buildEqualPowerFadeCurve } from './musicCrossfade';
 
 const SOUND_VOLUME_KEY_PREFIX = 'atlas.sound.volume.';
 const MUSIC_FOLDER_INDEX_PATH = 'assets/rvx/sounds/music-index.json';
+
+interface DecodedMusicVoice {
+    source: AudioBufferSourceNode;
+    gain: GainNode;
+    session: number;
+    startTime: number;
+    endTime: number;
+}
 
 // Helper to build URLs relative to the current location (file or http)
 const assetUrl = (path: string) => {
@@ -30,11 +40,13 @@ class SoundManager {
     private bufferLoadPromises: Map<string, Promise<AudioBuffer | null>> = new Map();
     
     private enabled: boolean = true;
+    private gamePaused: boolean = false;
     
     private activeSources: Set<AudioBufferSourceNode> = new Set();
     private activeByEvent: Map<string, Set<AudioBufferSourceNode>> = new Map();
     private readonly MAX_GLOBAL_SOURCES = 48;
-    private readonly MAX_EVENT_SOURCES = 6;
+    private readonly MAX_EVENT_SOURCES = 4;
+    private missingAuthoredAssetsLogged: Set<string> = new Set();
 
     private musicFolderIndex: Map<string, string[]> = new Map();
     // biomeId -> ordered list of music tags active for that biome (from
@@ -49,6 +61,10 @@ class SoundManager {
     private activeDeck: 'A' | 'B' | null = null;
     private musicStopTimeoutA: number | null = null;
     private musicStopTimeoutB: number | null = null;
+    private musicBufferCache: Map<string, Promise<AudioBuffer | null>> = new Map();
+    private decodedMusicVoices: Set<DecodedMusicVoice> = new Set();
+    private decodedMusicSession = 0;
+    private musicRequestSerial = 0;
 
     // Temp vectors for listener update to reduce GC
     private tmpPos = new THREE.Vector3();
@@ -119,6 +135,7 @@ class SoundManager {
                 await this.loadSoundManifest();
 
                 await this.loadMusicFolderIndex();
+                void this.preloadDecodedMusicLoops();
 
                 const categories = new Set<string>([
                     'master', 'music', 'ambient', 'blocks', 'player', 'ui', 'hostile', 'neutral'
@@ -334,19 +351,22 @@ class SoundManager {
 
     public setGamePaused(paused: boolean, duration: number = 0.8) {
         if (!this.ctx || !this.worldFilter || !this.worldGain) return;
+        if (this.gamePaused === paused) return;
+        this.gamePaused = paused;
         
         try {
             const now = this.ctx.currentTime;
-            
-            if (paused) {
-                // Muffle: Cutoff at 800Hz (less muffled than 400), Volume down to 0.6 (louder than 0.4)
-                this.worldFilter.frequency.setTargetAtTime(800, now, duration);
-                this.worldGain.gain.setTargetAtTime(0.6, now, duration);
-            } else {
-                // Restore: Cutoff at 22kHz, Volume 1.0
-                this.worldFilter.frequency.setTargetAtTime(22000, now, duration);
-                this.worldGain.gain.setTargetAtTime(1.0, now, duration);
-            }
+            const rampEnd = now + Math.max(0.01, duration);
+            const frequency = this.worldFilter.frequency;
+            const gain = this.worldGain.gain;
+            // Replace the previous pause/resume ramp. Leaving old target events on
+            // these shared buses made repeated pause cycles progressively harsher.
+            frequency.cancelScheduledValues(now);
+            gain.cancelScheduledValues(now);
+            frequency.setValueAtTime(frequency.value, now);
+            gain.setValueAtTime(gain.value, now);
+            frequency.linearRampToValueAtTime(paused ? 800 : 22000, rampEnd);
+            gain.linearRampToValueAtTime(paused ? 0.6 : 1.0, rampEnd);
         } catch (e) {
             console.warn("Audio param set failed:", e);
         }
@@ -365,7 +385,7 @@ class SoundManager {
                 if (def.category === 'music') continue;
 
                 try {
-                    await this.getBuffer(path);
+                    await this.getBuffer(path, def.fallback !== false);
                 } catch(e) {
                     // Swallow error during preload
                 }
@@ -453,6 +473,173 @@ class SoundManager {
         }
     }
 
+    private async getDecodedMusicBuffer(fullUrl: string): Promise<AudioBuffer | null> {
+        const cached = this.musicBufferCache.get(fullUrl);
+        if (cached) return cached;
+
+        const promise = (async () => {
+            try {
+                const response = await fetch(fullUrl);
+                if (!response.ok) return null;
+                const encoded = await response.arrayBuffer();
+                if (!this.ctx || encoded.byteLength === 0) return null;
+                return await this.ctx.decodeAudioData(encoded);
+            } catch (error) {
+                console.debug('[SoundManager] Loop music decode failed:', error);
+                return null;
+            }
+        })();
+        this.musicBufferCache.set(fullUrl, promise);
+        void promise.then((buffer) => {
+            if (!buffer && this.musicBufferCache.get(fullUrl) === promise) {
+                this.musicBufferCache.delete(fullUrl);
+            }
+        });
+        return promise;
+    }
+
+    private preloadDecodedMusicLoops(): void {
+        for (const tracks of this.musicFolderIndex.values()) {
+            for (const track of tracks) {
+                if (!getMusicLoopDefinition(track)) continue;
+                void this.getDecodedMusicBuffer(this.resolveMusicTrackUrl(track));
+            }
+        }
+    }
+
+    private retireDecodedMusicVoices(fadeSeconds: number): void {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const fadeDuration = Math.max(0.01, fadeSeconds);
+        for (const voice of this.decodedMusicVoices) {
+            if (voice.startTime > now) {
+                try { voice.source.stop(); } catch { /* already stopped */ }
+                continue;
+            }
+            const remaining = Math.max(0.01, voice.endTime - now);
+            const duration = Math.min(fadeDuration, remaining);
+            voice.gain.gain.cancelScheduledValues(now);
+            voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+            voice.gain.gain.setValueCurveAtTime(
+                buildEqualPowerFadeCurve(false, Math.max(voice.gain.gain.value, 0.0001)),
+                now,
+                duration,
+            );
+            try { voice.source.stop(now + duration + 0.02); } catch { /* already stopped */ }
+        }
+    }
+
+    private retireStreamingMusic(fadeSeconds: number): void {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const retiringDeck = this.activeDeck;
+        if (!retiringDeck) return;
+        const deck = retiringDeck === 'A' ? this.musicDeckA : this.musicDeckB;
+        const gain = retiringDeck === 'A' ? this.musicGainA : this.musicGainB;
+        if (!deck || !gain) return;
+
+        this.clearMusicStopTimeout(retiringDeck);
+        deck.onended = null;
+        deck.onerror = null;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.setValueCurveAtTime(
+            buildEqualPowerFadeCurve(false, Math.max(gain.gain.value, 0.0001)),
+            now,
+            Math.max(0.01, fadeSeconds),
+        );
+        const timeoutId = window.setTimeout(() => {
+            if (this.activeDeck === retiringDeck) return;
+            deck.pause();
+            deck.currentTime = 0;
+        }, Math.max(0.01, fadeSeconds) * 1000 + 100);
+        if (retiringDeck === 'A') this.musicStopTimeoutA = timeoutId;
+        else this.musicStopTimeoutB = timeoutId;
+        this.activeDeck = null;
+    }
+
+    private resolveDecodedLoopBounds(
+        buffer: AudioBuffer,
+        loop: MusicLoopDefinition,
+    ): { startSeconds: number; endSeconds: number } {
+        const startSeconds = Math.max(0, Math.min(buffer.duration, loop.startSample / loop.sampleRate));
+        // AudioContext may decode at the device sample rate rather than the file's
+        // 48 kHz rate. Work in seconds and clamp to the decoded buffer so the final
+        // authored sample is never skipped or rewritten.
+        const authoredEnd = loop.endSample / loop.sampleRate;
+        const endSeconds = Math.max(startSeconds + 1 / buffer.sampleRate, Math.min(buffer.duration, authoredEnd));
+        return { startSeconds, endSeconds };
+    }
+
+    private startDecodedLoopVoice(
+        buffer: AudioBuffer,
+        loop: MusicLoopDefinition,
+        startTime: number,
+        session: number,
+        targetVolume: number,
+        initialFadeSeconds: number,
+    ): void {
+        if (!this.ctx || session !== this.decodedMusicSession) return;
+        const musicBus = this.categoryGains.get('music');
+        if (!musicBus) return;
+
+        const source = this.ctx.createBufferSource();
+        const gain = this.ctx.createGain();
+        const fadeInSeconds = Math.max(0.01, initialFadeSeconds);
+        const bounds = this.resolveDecodedLoopBounds(buffer, loop);
+
+        source.buffer = buffer;
+        source.loop = true;
+        source.loopStart = bounds.startSeconds;
+        source.loopEnd = bounds.endSeconds;
+        source.connect(gain);
+        gain.connect(musicBus);
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.setValueCurveAtTime(
+            buildEqualPowerFadeCurve(true, targetVolume),
+            startTime,
+            fadeInSeconds,
+        );
+        gain.gain.setValueAtTime(targetVolume, startTime + fadeInSeconds);
+
+        const voice: DecodedMusicVoice = { source, gain, session, startTime, endTime: Number.POSITIVE_INFINITY };
+        this.decodedMusicVoices.add(voice);
+        source.onended = () => {
+            this.decodedMusicVoices.delete(voice);
+            try { source.disconnect(); gain.disconnect(); } catch { /* already disconnected */ }
+        };
+        source.start(startTime, bounds.startSeconds);
+    }
+
+    private async playDecodedLoopMusic(
+        fullUrl: string,
+        loop: MusicLoopDefinition,
+        targetVolume: number,
+        fadeInSeconds: number,
+        fadeOutSeconds: number,
+        requestSerial: number,
+    ): Promise<boolean> {
+        const buffer = await this.getDecodedMusicBuffer(fullUrl);
+        if (!buffer || !this.ctx) return false;
+        if (requestSerial !== this.musicRequestSerial) return true;
+
+        this.decodedMusicSession += 1;
+        const session = this.decodedMusicSession;
+        this.retireDecodedMusicVoices(fadeOutSeconds);
+        this.retireStreamingMusic(fadeOutSeconds);
+
+        const firstStartTime = this.ctx.currentTime + 0.01;
+        this.startDecodedLoopVoice(
+            buffer,
+            loop,
+            firstStartTime,
+            session,
+            targetVolume,
+            fadeInSeconds,
+        );
+        return true;
+    }
+
     /**
      * Plays streaming music. Use for long audio files.
      * Guaranteed not to crash on missing files or fetch errors.
@@ -460,6 +647,7 @@ class SoundManager {
     public async playMusic(eventId: string, fadeTime: number = 2.0, onEnded?: () => void, fadeOutTime: number = fadeTime, playbackRate: number = 1.0) {
         if (!this.enabled || !this.ctx) return false;
         if (this.ctx.state !== 'running') return false;
+        const requestSerial = ++this.musicRequestSerial;
 
         const def = this.getDefinition(eventId);
         if (!def || !def.sounds || def.sounds.length === 0) return false;
@@ -469,6 +657,16 @@ class SoundManager {
 
         const selectedTrack = trackPool[Math.floor(Math.random() * trackPool.length)];
         const fullUrl = this.resolveMusicTrackUrl(selectedTrack);
+
+        let targetVol = 1.0;
+        if (def.volume !== undefined) {
+            targetVol = Array.isArray(def.volume) ? def.volume[0] : def.volume;
+        }
+
+        const loop = getMusicLoopDefinition(selectedTrack);
+        if (loop) {
+            return this.playDecodedLoopMusic(fullUrl, loop, targetVol, fadeTime, fadeOutTime, requestSerial);
+        }
 
         // Select Next Deck
         const nextDeckId = this.activeDeck === 'A' ? 'B' : 'A';
@@ -499,12 +697,6 @@ class SoundManager {
             return false;
         }
 
-        // Setup Volume
-        let targetVol = 1.0;
-        if (def.volume !== undefined) {
-            targetVol = Array.isArray(def.volume) ? def.volume[0] : def.volume;
-        }
-
         // Setup Events
         nextDeck.onended = () => {
             if (this.activeDeck === nextDeckId && onEnded) onEnded();
@@ -518,11 +710,15 @@ class SoundManager {
         try {
             await nextDeck.play();
         } catch (e) {
+            if (requestSerial !== this.musicRequestSerial) return true;
             console.warn(`[SoundManager] Play failed (missing file?): ${selectedTrack}`, e);
             return false;
         }
+        if (requestSerial !== this.musicRequestSerial) return true;
 
         const now = this.ctx.currentTime;
+        this.decodedMusicSession += 1;
+        this.retireDecodedMusicVoices(fadeOutTime);
 
         // Crossfade: Fade In Next
         nextGain.gain.cancelScheduledValues(now);
@@ -562,6 +758,8 @@ class SoundManager {
 
     public stopMusic(fadeTime: number = 2.0) {
         if (!this.ctx) return;
+        this.decodedMusicSession += 1;
+        this.retireDecodedMusicVoices(fadeTime);
         const now = this.ctx.currentTime;
 
         [
@@ -711,7 +909,7 @@ class SoundManager {
         }
     }
 
-    private async getBuffer(path: string): Promise<AudioBuffer | null> {
+    private async getBuffer(path: string, allowFallback = true): Promise<AudioBuffer | null> {
         if (!this.ctx) return null;
         
         let url = path;
@@ -720,16 +918,18 @@ class SoundManager {
         }
         
         const fullUrl = assetUrl(`assets/rvx/sounds/${url}`);
+        const cacheKey = `${fullUrl}::${allowFallback ? 'fallback' : 'authored'}`;
         
-        if (this.buffers.has(fullUrl)) return this.buffers.get(fullUrl)!;
-        if (this.bufferLoadPromises.has(fullUrl)) return this.bufferLoadPromises.get(fullUrl)!;
+        if (this.buffers.has(cacheKey)) return this.buffers.get(cacheKey)!;
+        if (this.bufferLoadPromises.has(cacheKey)) return this.bufferLoadPromises.get(cacheKey)!;
 
         const loadPromise = (async () => {
             // Transient failure (network down, 5xx): don't cache anything and clear
             // the in-flight promise so a later play retries the real file instead of
             // being stuck with a synthesized fallback forever.
             const bailTransient = () => {
-                this.bufferLoadPromises.delete(fullUrl);
+                if (!allowFallback) this.reportMissingAuthoredAsset(fullUrl);
+                this.bufferLoadPromises.delete(cacheKey);
                 return null;
             };
             let res: Response;
@@ -751,22 +951,33 @@ class SoundManager {
                 }
 
                 const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
-                this.buffers.set(fullUrl, audioBuffer);
+                this.buffers.set(cacheKey, audioBuffer);
                 return audioBuffer;
             } catch (e) {
-                // Permanent failure (404, empty, or undecodable): substitute a
-                // synthesized cue and cache it so we don't refetch a file that
-                // won't change. Keep the promise cached to avoid refetch storms.
+                // Permanent failure (404, empty, or undecodable): authored-only
+                // events stay silent; other events may cache the legacy fallback.
+                // Keep the promise cached either way to avoid refetch storms.
+                if (!allowFallback) {
+                    this.reportMissingAuthoredAsset(fullUrl);
+                    return null;
+                }
                 const fallback = this.ctx ? this.createFallbackBuffer(url) : null;
-                if (fallback) this.buffers.set(fullUrl, fallback);
+                if (fallback) this.buffers.set(cacheKey, fallback);
                 return fallback;
             }
         })();
 
-        this.bufferLoadPromises.set(fullUrl, loadPromise);
+        this.bufferLoadPromises.set(cacheKey, loadPromise);
         loadPromise.catch(() => {}); // catch internal rejection if any
         
         return loadPromise;
+    }
+
+    private reportMissingAuthoredAsset(fullUrl: string): void {
+        const isDevelopment = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+        if (!isDevelopment || this.missingAuthoredAssetsLogged.has(fullUrl)) return;
+        this.missingAuthoredAssetsLogged.add(fullUrl);
+        console.warn(`[SoundManager] Authored sound unavailable; playing silence: ${fullUrl}`);
     }
 
     private getDefinition(eventId: string): SoundEventDefinition | null {
@@ -811,7 +1022,7 @@ class SoundManager {
             const soundPath = def.sounds[Math.floor(Math.random() * def.sounds.length)];
             if (soundPath === "silence" || soundPath === "none") return;
 
-            const buffer = await this.getBuffer(soundPath);
+            const buffer = await this.getBuffer(soundPath, opts?.fallback ?? (def.fallback !== false));
             if (!buffer || !this.ctx) return;
 
             const source = this.ctx.createBufferSource();
@@ -850,9 +1061,9 @@ class SoundManager {
                     const panner = this.ctx.createPanner();
                     panner.panningModel = 'HRTF';
                     panner.distanceModel = 'inverse';
-                    panner.refDistance = 1.0;
-                    panner.maxDistance = 64.0;
-                    panner.rolloffFactor = 1.0;
+                    panner.refDistance = Math.max(0.1, opts?.refDistance ?? 1.0);
+                    panner.maxDistance = Math.max(panner.refDistance, opts?.maxDistance ?? 64.0);
+                    panner.rolloffFactor = Math.max(0, opts?.rolloffFactor ?? 1.0);
                     
                     panner.positionX.value = pos.x;
                     panner.positionY.value = pos.y;

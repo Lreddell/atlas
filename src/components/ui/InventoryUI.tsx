@@ -805,7 +805,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     {hoverInfo.lines.map((line, i) => (
                         <div
                             key={i}
-                            className="text-[12px] text-gray-300 leading-snug"
+                            className={`text-[12px] leading-snug ${line.tone === 'purpose' ? 'text-[#c8dedb] max-w-[250px]' : 'text-gray-300'}`}
                         >
                             {line.text}
                         </div>

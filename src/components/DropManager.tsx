@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Drop, BlockType, type ItemStack } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
+import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
@@ -108,28 +109,7 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
             return buildShapedBlockGeometry(type, parentType, 0.25);
         }
 
-        const is2D = def.isItem ||
-                     type === BlockType.TORCH || 
-                     type === BlockType.BED_ITEM ||
-                     type === BlockType.DEAD_BUSH ||
-                     type === BlockType.GRASS_PLANT ||
-                     type === BlockType.ROSE ||
-                     type === BlockType.DANDELION ||
-                     type === BlockType.DEBUG_CROSS ||
-                     type === BlockType.WHEAT_SEEDS ||
-                     type === BlockType.PINK_FLOWER ||
-                     type === BlockType.SAPLING ||
-                     type === BlockType.SPRUCE_SAPLING ||
-                     type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING ||
-                     type === BlockType.JUNGLE_SAPLING ||
-                     type === BlockType.DARK_OAK_SAPLING ||
-                     type === BlockType.ACACIA_SAPLING ||
-                     type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
-                     type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
-                     type === BlockType.MAGNETIC_SPIKE ||
-                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
-                     type === BlockType.MAGNETITE_SHARD;
+        const is2D = isSpriteRenderedType(type);
 
         if (is2D) {
             const geo = new THREE.PlaneGeometry(0.4, 0.4);
@@ -241,29 +221,7 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
              dummy.rotation.set(0, time * 2 + (drop.id.charCodeAt(0)), 0);
              
              // If block is 2D item, face camera mostly or just spin around Y
-             const def = BLOCKS[type];
-             const is2D = def.isItem || 
-                     type === BlockType.TORCH || 
-                     type === BlockType.BED_ITEM ||
-                     type === BlockType.DEAD_BUSH ||
-                     type === BlockType.GRASS_PLANT ||
-                     type === BlockType.ROSE ||
-                     type === BlockType.DANDELION ||
-                     type === BlockType.DEBUG_CROSS ||
-                     type === BlockType.WHEAT_SEEDS ||
-                     type === BlockType.PINK_FLOWER ||
-                     type === BlockType.SAPLING ||
-                     type === BlockType.SPRUCE_SAPLING ||
-                     type === BlockType.BIRCH_SAPLING ||
-                     type === BlockType.CHERRY_SAPLING ||
-                     type === BlockType.JUNGLE_SAPLING ||
-                     type === BlockType.DARK_OAK_SAPLING ||
-                     type === BlockType.ACACIA_SAPLING ||
-                     type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
-                     type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
-                     type === BlockType.MAGNETIC_SPIKE ||
-                     type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
-                     type === BlockType.MAGNETITE_SHARD;
+             const is2D = isSpriteRenderedType(type);
 
              if (!is2D) {
                  dummy.rotation.x = Math.sin(time) * 0.5;

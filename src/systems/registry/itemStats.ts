@@ -83,7 +83,24 @@ export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
     [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
     // Upgraded polarity boots, adds an on/off toggle (N); unbreakable.
     [BlockType.UPGRADED_POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
+
+    // Resonant Vault conventional weapons. Task-specific reach, recovery, and
+    // stagger live in vaultWeapons.ts; this shared registry owns base damage and durability.
+    [BlockType.VAULTSTEEL_SPEAR]: { attack: 6, maxDurability: 420 },
+    [BlockType.VAULT_CROSSBOW]: { attack: 7, maxDurability: 360 },
+    [BlockType.BELLBREAKER_MAUL]: { attack: 9, maxDurability: 480 },
+    [BlockType.TITAN_HAMMER]: { attack: 11, maxDurability: 720 },
 };
+
+const VAULT_WEAPONS = new Set<BlockType>([
+    BlockType.VAULTSTEEL_SPEAR,
+    BlockType.VAULT_CROSSBOW,
+    BlockType.BELLBREAKER_MAUL,
+    BlockType.TITAN_HAMMER,
+]);
+
+export const isVaultWeapon = (type: BlockType): boolean => VAULT_WEAPONS.has(type);
+export const isVaultRangedWeapon = (type: BlockType): boolean => type === BlockType.VAULT_CROSSBOW;
 
 /** True for swords (durability-cost rules differ from other tools). */
 const SWORDS = new Set<BlockType>([

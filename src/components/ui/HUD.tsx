@@ -7,6 +7,7 @@ import { MAX_BREATH } from '../../systems/player/playerConstants';
 import { totalDefense, type Equipment } from '../../systems/registry/equipment';
 import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
 import { summarizeItemStats } from '../../systems/registry/itemTooltips';
+import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
 
 interface HUDProps {
     health: number;
@@ -127,7 +128,6 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
 };
 
 export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment }) => {
-    
     const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
     const [isFlashing, setIsFlashing] = useState(false);
     const [hungerShake, setHungerShake] = useState<number[]>(Array(10).fill(0));
@@ -166,6 +166,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
 
     return (
         <>
+            <ResonantObjectiveHUD inventory={inventory} />
             {gameMode === 'spectator' ? (
                  <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/40 px-3 py-1 rounded text-white font-bold text-shadow-sm z-40">
                     Spectator Mode
@@ -258,7 +259,14 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                         </div>
                     )}
                     <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
-                        {inventory.slice(0, 9).map((it, i) => <Slot key={i} item={it} selected={selectedSlot === i} animateChanges />)}
+                        {inventory.slice(0, 9).map((it, i) => (
+                            <Slot
+                                key={i}
+                                item={it}
+                                selected={selectedSlot === i}
+                                animateChanges
+                            />
+                        ))}
                     </div>
                 </div>
             )}

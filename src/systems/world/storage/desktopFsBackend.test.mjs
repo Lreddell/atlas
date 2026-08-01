@@ -55,6 +55,7 @@ function makeLegacy(worlds, chunksByWorld) {
         async renameWorld(id, name) { const w = worlds.find((w) => w.id === id); if (w) w.name = name; },
         async deleteWorld(id) { const i = worlds.findIndex((w) => w.id === id); if (i >= 0) worlds.splice(i, 1); delete chunksByWorld[id]; },
         async readChunk(id, cx, cz) { return (chunksByWorld[id] || []).find((c) => c.cx === cx && c.cz === cz) || null; },
+        async hasAnyChunk(id, coordinates) { return coordinates.some(({ cx, cz }) => (chunksByWorld[id] || []).some((c) => c.cx === cx && c.cz === cz)); },
         async writeChunks(id, batch) { chunksByWorld[id] = chunksByWorld[id] || []; for (const c of batch) chunksByWorld[id].push(c); },
     };
 }
@@ -115,6 +116,8 @@ test('create + write + read + export/import round-trips through the filesystem b
     await be.createWorld(meta('w2', 'Fresh'));
     await be.writeChunks('w2', [chunk(0, 0, 11), chunk(-1, 3, 12)]);
     assert.deepEqual([...(await be.readChunk('w2', -1, 3)).blocks], [...chunk(-1, 3, 12).blocks]);
+    assert.equal(await be.hasAnyChunk('w2', [{ cx: 8, cz: 8 }, { cx: -1, cz: 3 }]), true);
+    assert.equal(await be.hasAnyChunk('w2', [{ cx: 8, cz: 8 }, { cx: 9, cz: 9 }]), false);
 
     // Export then import => a brand-new world with identical chunks + a unique name.
     const exported = await be.exportWorld('w2');

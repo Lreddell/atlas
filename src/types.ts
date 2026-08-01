@@ -208,24 +208,20 @@ export enum BlockType {
 
   // --- Biome-specific surface blocks (Task ID 5) ---
   // Grass-topped biome blocks (each uses a top + side texture pair)
-  MOSSY_GRASS = 211,       // Birch Forest
-  LUSH_GRASS = 212,        // Flower Forest
-  DARK_GRASS = 213,        // Dark Forest
-  MEADOW_GRASS = 214,      // Meadow
-  SAVANNA_GRASS = 215,     // Savanna
-  JUNGLE_GRASS = 216,      // Jungle
-  PODZOL = 217,            // Taiga
-  // Mountain stone variants
+  MOSSY_GRASS = 211,
+  LUSH_GRASS = 212,
+  DARK_GRASS = 213,
+  MEADOW_GRASS = 214,
+  SAVANNA_GRASS = 215,
+  JUNGLE_GRASS = 216,
+  PODZOL = 217,
   ANDESITE = 218,
   DIORITE = 219,
   GRANITE = 220,
-  // Other biome surfaces
-  COARSE_DIRT = 221,       // Dead Forest
-  MUD = 222,               // Swamp
-  MOSSY_COBBLESTONE = 223, // Stone Shore
+  COARSE_DIRT = 221,
+  MUD = 222,
+  MOSSY_COBBLESTONE = 223,
 
-  // --- New tree wood families (Task ID 6): Jungle, Dark Oak, Acacia ---
-  // Each family: LOG, LEAVES, PLANKS, SAPLING, SLAB, STAIRS
   JUNGLE_LOG = 224,
   JUNGLE_LEAVES = 225,
   JUNGLE_PLANKS = 226,
@@ -247,49 +243,32 @@ export enum BlockType {
   ACACIA_SLAB = 240,
   ACACIA_STAIRS = 241,
 
-  // --- Magnetic Fields biome (signature terrain + traversal + boss content) ---
-  // Magnetite Block: plain gray metallic terrain block (NOT a magnetic source).
   MAGNETITE_BLOCK = 242,
-  // Resource crystals (cross-plane, red = positive, blue = negative).
   POSITIVE_MAGNETITE_CRYSTAL = 243,
   NEGATIVE_MAGNETITE_CRYSTAL = 244,
-  // Hazard spike (cross-plane, multiplies fall damage on landing).
   MAGNETIC_SPIKE = 245,
-  // Arena content blocks.
   MAGNETIC_BOSS_SUMMONER = 246,
   MAGNETIC_SHIELD_CRYSTAL = 247,
-  // Contrast decoration: emissive accent block + bright cross-plane shard.
   CHARGED_MAGNETITE = 248,
   MAGNETITE_SHARD = 249,
-
-  // --- Magnetite building set (for the Magnetic Warden arena) ---
   MAGNETITE_SLAB = 250,
   MAGNETITE_STAIRS = 251,
   MAGNETITE_BRICKS = 252,
   MAGNETITE_BRICK_SLAB = 253,
   MAGNETITE_BRICK_STAIRS = 254,
   CHISELED_MAGNETITE = 255,
-  // NOTE: the solid "Positive/Negative Magnetite Block" traversal sources reuse
-  // the existing POSITIVE_MAGNET (190) / NEGATIVE_MAGNET (191) ids for save
-  // compatibility; only their user-facing names are magnetite-themed.
 
-  // --- Cave content (deep-stone, dripstone, lush, amethyst) ---
-  // Block ids 211-255 are packed, so these reuse free low ids (50-59). Texture
-  // slots 217-226 (the atlas grows to fit). See systems/world/caves.ts.
-  DEEPSLATE = 50,           // deep-stone below the deepslate band; harder than stone
-  COBBLED_DEEPSLATE = 51,   // deepslate's cobble (mining drop / building block)
-  DRIPSTONE_BLOCK = 52,     // dripstone-cave bedrock lumps
-  POINTED_DRIPSTONE = 53,   // cross-plane stalactite/stalagmite
-  MOSS_BLOCK = 54,          // lush-cave floor carpeting
-  GLOW_LICHEN = 55,         // cross-plane emissive cave lichen (natural cave light)
-  AMETHYST_BLOCK = 56,      // amethyst geode inner lining
-  BUDDING_AMETHYST = 57,    // amethyst geode core (grows clusters; drops nothing)
-  AMETHYST_CLUSTER = 58,    // cross-plane emissive amethyst crystal cluster
-  CALCITE = 59,             // amethyst geode shell / white deep-cave accent
+  DEEPSLATE = 50,
+  COBBLED_DEEPSLATE = 51,
+  DRIPSTONE_BLOCK = 52,
+  POINTED_DRIPSTONE = 53,
+  MOSS_BLOCK = 54,
+  GLOW_LICHEN = 55,
+  AMETHYST_BLOCK = 56,
+  BUDDING_AMETHYST = 57,
+  AMETHYST_CLUSTER = 58,
+  CALCITE = 59,
 
-  // --- Deepslate ore variants (spawn when an ore rolls inside the deepslate
-  // band; same drops as the stone ores, tougher to mine). Free ids 60-66,
-  // texture slots 227-233. ---
   DEEPSLATE_COAL_ORE = 60,
   DEEPSLATE_IRON_ORE = 61,
   DEEPSLATE_COPPER_ORE = 62,
@@ -298,20 +277,59 @@ export enum BlockType {
   DEEPSLATE_LAPIS_ORE = 65,
   DEEPSLATE_EMERALD_ORE = 66,
 
-  // --- Foods (Atlas-original identity, not Minecraft imports). Free ids 67-69,
-  // texture slots 234-236. ---
-  BANANA = 67,          // rare jungle-leaf drop
-  LUMEN_BERRY = 68,     // glowing berry foraged from cave glow lichen
-  FORAGERS_BOWL = 69,   // crafted hearty meal (apple + banana + lumen berry)
+  BANANA = 67,
+  LUMEN_BERRY = 68,
+  FORAGERS_BOWL = 69,
+}
+
+// Resonant Vault IDs merge onto the enum object while dedicated catalogs own
+// their world-block and inventory-item classification.
+export namespace BlockType {
+  export const ECHO_STONE = 70 as BlockType;
+  export const ECHO_BRICKS = 71 as BlockType;
+  export const CRACKED_ECHO_BRICKS = 72 as BlockType;
+  export const CHISELED_ECHO_STONE = 73 as BlockType;
+  export const ECHO_MOSAIC = 74 as BlockType;
+  export const ECHO_CRYSTAL = 75 as BlockType;
+  export const RESONANCE_PYLON = 76 as BlockType;
+  // ID 77 was RESONANCE_DOOR, a planned multi-block door mechanism that was
+  // never implemented (VAULT_SEAL gates ended up owning every doorway). The ID
+  // stays retired rather than reassigned, matching the item-ID convention below.
+  export const PULSE_CONDUIT = 78 as BlockType;
+  export const PHASE_BLOCK = 79 as BlockType;
+  export const RESONANCE_PLATE = 80 as BlockType;
+  export const RESONANT_LAMP = 81 as BlockType;
+  export const ECHO_SPIKES = 82 as BlockType;
+  export const SENTINEL_CORE = 83 as BlockType;
+  export const LISTENING_STONE = 84 as BlockType;
+  export const VAULT_SEAL = 85 as BlockType;
+
+  export const ECHO_SHARD = 170 as BlockType;
+  export const ECHO_DUST = 171 as BlockType;
+  export const ECHO_CORE = 173 as BlockType;
+  export const FRACTURED_CORE = 177 as BlockType;
+
+  // Definitive Resonant Vault additions. Retired prototype item IDs remain
+  // unregistered instead of being converted or reassigned.
+  export const ECHO_STONE_SLAB = 178 as BlockType;
+  export const ECHO_STONE_STAIRS = 179 as BlockType;
+  export const ECHO_BRICK_SLAB = 180 as BlockType;
+  export const ECHO_BRICK_STAIRS = 181 as BlockType;
+  export const VAULTSTEEL_SPEAR = 182 as BlockType;
+  export const VAULT_CROSSBOW = 183 as BlockType;
+  export const VAULT_BOLT = 184 as BlockType;
+  export const BELLBREAKER_MAUL = 185 as BlockType;
+  export const ECHO_TUNING_FORK = 186 as BlockType;
+  export const TITAN_HAMMER = 187 as BlockType;
 }
 
 export type ToolType = 'pickaxe' | 'axe' | 'shovel' | 'none';
-export type ToolTier = 0 | 1 | 2 | 3 | 4; // 0: Hand, 1: Wood, 2: Stone, 3: Iron/Copper, 4: Diamond/Gold
+export type ToolTier = 0 | 1 | 2 | 3 | 4;
 export type CreativeTab = 'building' | 'natural' | 'functional' | 'tools' | 'food' | 'ingredients';
 
 export interface DropEntry {
     type: BlockType;
-    chance: number; // 0-1
+    chance: number;
     min: number;
     max: number;
 }
@@ -321,55 +339,39 @@ export interface BlockDef {
   color: string;
   name: string;
   transparent?: boolean;
-  textureSlot?: number; 
-  hardness: number; 
-  isItem?: boolean; 
-  toolSpeed?: number; 
-  toolType?: ToolType; 
+  textureSlot?: number;
+  hardness: number;
+  isItem?: boolean;
+  toolSpeed?: number;
+  toolType?: ToolType;
   toolTier?: ToolTier;
-  preferredTool?: ToolType; 
-  minHarvestTier?: number; // Tier required to get a drop
-  drops?: DropEntry[]; 
+  preferredTool?: ToolType;
+  minHarvestTier?: number;
+  drops?: DropEntry[];
   isFuel?: boolean;
-  fuelValue?: number; // Duration in ms
+  fuelValue?: number;
   smeltsInto?: BlockType;
-  lightLevel?: number; // 0-15 Emission
+  lightLevel?: number;
   noCollision?: boolean;
   category?: CreativeTab;
-  soundGroup?: string; // Optional sound group override
-
-  // Non-cube shapes (slabs, stairs). The block is rendered/collided as a set of
-  // partial AABBs (see systems/world/blockShapes.ts) instead of a full cube.
+  soundGroup?: string;
   shape?: 'slab' | 'stairs';
-  // For shaped blocks, resolve textures as if this parent block (so e.g. a
-  // sandstone slab gets sandstone's top/side faces). Defaults to the block itself.
   textureParent?: BlockType;
-  
-  // Food Properties
-  nutrition?: number; // Hunger restored
-  saturationModifier?: number; // Saturation restored = nutrition * modifier * 2
+  nutrition?: number;
+  saturationModifier?: number;
 }
 
-// Optional per-item-instance data. Absent on ordinary stackable commodities
-// (so existing behavior and saves are unchanged); present on items that carry
-// state such as durability or rolled stats. Serializes with the inventory.
 export interface ItemInstance {
   durability?: number;
   maxDurability?: number;
-  /** Stat overrides that take precedence over the static ITEM_STATS registry. */
   stats?: ItemStats;
-  /** Freeform tags, e.g. build-archetype affinity ('mobility', 'relic'). */
   tags?: string[];
 }
 
 export interface ItemStats {
-  /** Melee damage dealt to entities (half-hearts). */
   attack?: number;
-  /** Incoming-damage reduction when equipped (future armor). */
   defense?: number;
-  /** Equipment slot this item occupies, if any. */
   slot?: EquipmentSlot;
-  /** Max durability (uses) for tools/weapons; absent = unbreakable. */
   maxDurability?: number;
 }
 
@@ -389,10 +391,7 @@ export interface Drop {
     position: [number, number, number];
     velocity: [number, number, number];
     createdAt: number;
-    pickupDelay: number; // Timestamp when it can be picked up
-    // Despawn clock (ms). Like dropped-item entities generally, this only advances while
-    // the drop is in a loaded chunk near the player; it pauses when the player wanders
-    // far, so leaving the area never deletes a drop. Despawns at DROP_LIFETIME_MS.
+    pickupDelay: number;
     age: number;
 }
 

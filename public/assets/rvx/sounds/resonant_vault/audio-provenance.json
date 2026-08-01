@@ -1,0 +1,822 @@
+{
+  "schemaVersion": 2,
+  "notes": "Active Resonant Vault one-shots use traceable recorded foley. Runtime music is shipped only as exact-frame Ogg/Vorbis; editable FL Studio projects, MIDI, stems, and WAV masters remain local to the project owner.",
+  "sources": [
+    {
+      "id": "dull_thud",
+      "sourceKind": "foley",
+      "title": "Dull Thud",
+      "author": "gregoryweir",
+      "license": "Public domain dedication",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Dull_thud.ogg#Licensing",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Dull_thud.ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/5/5b/Dull_thud.ogg",
+      "sha256": "5b91906d41bd57f1f6551e446d30fbff06ec59a39d22725140293ef4aec6cdb3"
+    },
+    {
+      "id": "metal_thump",
+      "sourceKind": "foley",
+      "title": "Metal drop thump",
+      "author": "stephan",
+      "license": "Public domain dedication",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Metal_drop_thump.ogg#Licensing",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Metal_drop_thump.ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/8/8d/Metal_drop_thump.ogg",
+      "sha256": "b8f5506893d2871c86f5c7e01305bff788dfe156a265e63bb9b00cbbd51647c5"
+    },
+    {
+      "id": "rattle",
+      "sourceKind": "foley",
+      "title": "Baby's rattle",
+      "author": "ezwa",
+      "license": "Public domain dedication",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Babys_rattle.ogg#Licensing",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Babys_rattle.ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Babys_rattle.ogg",
+      "sha256": "a775b4784962e8350829592344a314b7e176a8cb65f3480953dcbdaf897caa7e"
+    },
+    {
+      "id": "ratchet",
+      "sourceKind": "foley",
+      "title": "Tools Ratchet",
+      "author": "CapsLok",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Tools_Ratchet.ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/d/da/Tools_Ratchet.ogg",
+      "sha256": "8db2e949d65af8e9a3818455a7eebce035be8458f08b92c8791bf9d6f9e40e9b"
+    },
+    {
+      "id": "thin_metal",
+      "sourceKind": "foley",
+      "title": "Putting down thin metal object",
+      "author": "stephan",
+      "license": "Public domain dedication",
+      "licenseUrl": "https://commons.wikimedia.org/wiki/File:Putting_down_thin_metal_object.ogg#Licensing",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Putting_down_thin_metal_object.ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/7/74/Putting_down_thin_metal_object.ogg",
+      "sha256": "619f4c2dab5a30dadc5c4a7b706e5be68c94d28abb9072531a8bd9562a0d8a16"
+    },
+    {
+      "id": "bell_vibrant",
+      "sourceKind": "recorded",
+      "title": "Gong or bell vibrant (short)",
+      "author": "Stephan / PDSounds",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Gong_or_bell_vibrant_(short).ogg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/4/42/Gong_or_bell_vibrant_%28short%29.ogg",
+      "sha256": "f57283d08a0ecb052425af1ac1457f827fa27f423d49158963b3370c89fc942d"
+    }
+  ],
+  "assets": {
+    "bolt_deflect_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded latch snap and armor movement layered into a compact projectile deflection.",
+      "durationSeconds": 0.520333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -23.64,
+      "terminalPeakDb": -120,
+      "sha256": "9159909e8da02ff756b4eb0db498e7f7084fdf480a5a393e8efdea61717a5d8b"
+    },
+    "bolt_deflect_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Alternate recorded latch and chain contact, pitch-shifted and faded after the ricochet.",
+      "durationSeconds": 0.85,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -12.02,
+      "terminalPeakDb": -120,
+      "sha256": "caf10ef8763a8ba84352f989599fa26ce5d42c066077a9a0dd827b0bc62a1dc2"
+    },
+    "core_claim.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded bell body and opening mechanism layered into a restrained reward cadence.",
+      "durationSeconds": 4.86,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -13.05,
+      "terminalPeakDb": -120,
+      "sha256": "f5b43632e6c65641b055f002daa9ca350a8c5f6dcf19f2ff362a13acf73068bc"
+    },
+    "escape_complete.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump",
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump, ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded bell resolution and light chain settle layered with a complete final decay.",
+      "durationSeconds": 4.96,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -11.47,
+      "terminalPeakDb": -120,
+      "sha256": "c9d5dc882ef7043b4b9338cc91724bdb1987bd670ff5b82263442f3aebfb5438"
+    },
+    "escape_start.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump",
+        "thin_metal",
+        "dull_thud",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump, thin_metal, dull_thud, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded shell break and low bell ring layered for the collapse start, preserving both tails.",
+      "durationSeconds": 4.039979,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -3.56,
+      "terminalPeakDb": -120,
+      "sha256": "66b18aa60bf338dc7b1a92d2f2e81fa74f5e036708dcb6c6af4ec2e6085f6757"
+    },
+    "escape_warning.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump",
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump, ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded mechanism wind-up and damped bell body layered into a readable route warning.",
+      "durationSeconds": 2.209979,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -4.28,
+      "terminalPeakDb": -120,
+      "sha256": "7b3e63653315ba5066e08d77908255f4de219573475b11e0c6b63eb22ab767f1"
+    },
+    "guard_step_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "dull_thud",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: dull_thud, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Layered dry thud and quiet high-passed metal contact; trimmed and faded with retained impact tail.",
+      "durationSeconds": 0.545667,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -27.72,
+      "terminalPeakDb": -120,
+      "sha256": "dd5b0453de1cbf5faf2ae6cbea375c9a1c181282e1fcd7ed98ee7d31392dcbb0"
+    },
+    "guard_step_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Lower-pitched metal body with delayed light armor contact and a natural decay.",
+      "durationSeconds": 0.69325,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.29,
+      "terminalPeakDb": -120,
+      "sha256": "d8a0d2c0a0436873717aa39748bd00f1e13202e6f8ac293e68dac231b972378d"
+    },
+    "guard_swing.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "rattle",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: rattle, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Reversed recorded rattle movement layered with a high-passed ratchet stroke for armor and spear motion.",
+      "durationSeconds": 0.371,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -11.64,
+      "terminalPeakDb": -120,
+      "sha256": "b4b7d479638535f102eb00cfc94e7b4c69e2404d09113c86fe1192de5389e400"
+    },
+    "hound_land.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "dull_thud",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: dull_thud, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Dry recorded landing layered with a lowered metal body impact and full decay.",
+      "durationSeconds": 0.699479,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.04,
+      "terminalPeakDb": -120,
+      "sha256": "4a1bba76f02d654470a76b67fa2bbc3779443ad8ebd9ae401d5c335404067bb5"
+    },
+    "hound_leap.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "rattle",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: rattle, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Two brief recorded mechanical movements pitched and filtered for a compact collar launch cue.",
+      "durationSeconds": 0.285333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -19.63,
+      "terminalPeakDb": -120,
+      "sha256": "ecf8eaf2718a56ab256e11f42fd8516c9609d8caabd4641112d722358cb59501"
+    },
+    "listening_stone.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded bell ring darkened and narrowed for the listening stone, retaining a long decay.",
+      "durationSeconds": 4.81,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -12.99,
+      "terminalPeakDb": -120,
+      "sha256": "104e6382c6224629ff3c2bcc2b4d69a5db77dd7cda0067565a45233de2dbb63a"
+    },
+    "marksman_brace.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Short ratchet take with a delayed metal latch contact.",
+      "durationSeconds": 0.45,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -18.15,
+      "terminalPeakDb": -120,
+      "sha256": "7053d308232ca7bc4f6f107d3ce187f3e25f1fbeb5436243db64977c73548e41"
+    },
+    "marksman_fire.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "dull_thud",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, dull_thud, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded ratchet snap, restrained body thud, and metal latch transient.",
+      "durationSeconds": 0.456979,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -22.8,
+      "terminalPeakDb": -120,
+      "sha256": "7dc6d37459c32dadfbff86f472b61af050a83fdc74907e6e154a145942c60d20"
+    },
+    "marksman_reload.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "A complete close-miked ratchet movement, trimmed without cutting its room tail.",
+      "durationSeconds": 1.45,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -3.28,
+      "terminalPeakDb": -120,
+      "sha256": "274e304cae7d1a5e40c26d4814fbd52e44da6ecfabcfcf63632b3c01bb072112"
+    },
+    "phase_shift.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded mechanism motion reversed, filtered, trimmed, and faded as a physical phase transition.",
+      "durationSeconds": 1.81,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -13.5,
+      "terminalPeakDb": -120,
+      "sha256": "77d2d34b7ef86a1e5d967fa58e3d02344e66b126961fb1e1003e086ee67de69d"
+    },
+    "pylon_correct_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "First recorded bell response, focused to the puzzle register and faded after the natural ring.",
+      "durationSeconds": 3.06,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -14.14,
+      "terminalPeakDb": -120,
+      "sha256": "c3cc99e28cd82c8902030535966befdf24e538fd8c964cd7356cb91034d1a39d"
+    },
+    "pylon_correct_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Second recorded bell response, pitch-shifted and filtered to form the middle echo symbol.",
+      "durationSeconds": 2.91,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -28.87,
+      "terminalPeakDb": -120,
+      "sha256": "6008d6dfd3eb9b69092c5991538aa9140a935bdc7b3629f8f41d68f7f406fa51"
+    },
+    "pylon_correct_3.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Third recorded bell response, pitch-shifted upward and filtered for the high echo symbol.",
+      "durationSeconds": 2.71,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -29.79,
+      "terminalPeakDb": -120,
+      "sha256": "02eaf415ab2cfe99f177fad54ef9c60e3ed4617b6c7bac255d72b46500959f0f"
+    },
+    "pylon_wrong.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "dull_thud",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, dull_thud, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded failed mechanism impact lowered, darkened, limited, and released into silence.",
+      "durationSeconds": 1.263333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -6.85,
+      "terminalPeakDb": -120,
+      "sha256": "45c2921764599d7d6668a6d635f81411df5741e5cf29c57f63474fb35e1c5af9"
+    },
+    "resonator_pulse_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Bell-body and recorded mechanism layers trimmed, band-limited, balanced, and given a complete release.",
+      "durationSeconds": 2.959333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -10.3,
+      "terminalPeakDb": -120,
+      "sha256": "eecf77033c5cb386d1aeadde40b51cb69063a2c63f04339dd535a9b03683cbcb"
+    },
+    "resonator_pulse_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Lower-pitched alternate bell-body and mechanism take, filtered and faded through its release.",
+      "durationSeconds": 3.102104,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -13.1,
+      "terminalPeakDb": -120,
+      "sha256": "83674c1b40fe3a77f02b5e28abc702a8884ae39c8cb175170d17b9dc178ce9c5"
+    },
+    "resonator_pulse_3.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Higher-pitched alternate bell-body and mechanism take, filtered and faded through its release.",
+      "durationSeconds": 2.757521,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -12.64,
+      "terminalPeakDb": -120,
+      "sha256": "df65857a429d55999dc02888f02ecf77e725f8f3090b8f7337ab92f94826d01b"
+    },
+    "seal_release.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "thin_metal",
+        "dull_thud",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, thin_metal, dull_thud, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded shell and latch release filtered for the stone seal, with the collapse tail retained.",
+      "durationSeconds": 2.2,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -8.15,
+      "terminalPeakDb": -120,
+      "sha256": "f11b08e39b16717b0e57dce37bcb1998297c17f2d3a17d2592678832a345438a"
+    },
+    "sentinel_spawn.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "dull_thud",
+        "metal_thump",
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: dull_thud, metal_thump, ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded armor landing and mechanism wind-up layered for an enemy arrival with a full release.",
+      "durationSeconds": 1.403333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -7.02,
+      "terminalPeakDb": -120,
+      "sha256": "0e95aabace720a119238d3fdde3aedc1c7197f716e0a5bebebd55b813fbb1a2b"
+    },
+    "titan_awaken.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Full bell decay with restrained chain movement and a delayed body impact.",
+      "durationSeconds": 5.66,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -8.97,
+      "terminalPeakDb": -120,
+      "sha256": "122e8b52d5c2545d5a1431ed508a86371de6df2879c9a16a5d1adfd9d89f3f52"
+    },
+    "titan_chain_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Long ratchet pull layered with a quiet high-passed loose-metal take.",
+      "durationSeconds": 1.64,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -4.76,
+      "terminalPeakDb": -120,
+      "sha256": "1d14eba161de2189b5e66ab2d3250cdaded833eafcc6c727bfa5914f79d411c3"
+    },
+    "titan_chain_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Slowed alternate ratchet movement with a delayed armor settle.",
+      "durationSeconds": 1.906062,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -4.2,
+      "terminalPeakDb": -120,
+      "sha256": "ced2066eb44d75bf4cac018a6b84d4c2c26489adcd82b11f83bfa48db60028cb"
+    },
+    "titan_core_open.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Filtered bell body with a complete cage-opening ratchet movement.",
+      "durationSeconds": 3.310667,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -9.17,
+      "terminalPeakDb": -120,
+      "sha256": "76fb057e67658089d2c8254e532f1402484c6726835283e3bdf562aa1f38204e"
+    },
+    "titan_death.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump",
+        "dull_thud",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump, dull_thud, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Slowed full bell decay with staggered shell, stone, and joint-collapse layers.",
+      "durationSeconds": 5.86,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -6.95,
+      "terminalPeakDb": -120,
+      "sha256": "5a21301cbdcb62374cffeca218862eb4cbae0ecc25b528e92081ca1692773dfb"
+    },
+    "titan_hurt_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Slowed joint strain with a delayed plate response.",
+      "durationSeconds": 1.595667,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -7.45,
+      "terminalPeakDb": -120,
+      "sha256": "aebaf007fe550de8e4a5605e9b81c64bdcde48531c48e5b3ea8876e06817731e"
+    },
+    "titan_hurt_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Alternate slowed mechanical strain with a loose-metal response.",
+      "durationSeconds": 1.83625,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.87,
+      "terminalPeakDb": -120,
+      "sha256": "7db2bd0ef2c569ba3585af607b84b10447650929aa4bf652052867bbf92f3f29"
+    },
+    "titan_shell_break.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "thin_metal",
+        "dull_thud",
+        "ratchet"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, thin_metal, dull_thud, ratchet. Full credits and license pages are listed in this manifest.",
+      "editChain": "Layered shell impact, plate drop, stone hit, and delayed joint collapse.",
+      "durationSeconds": 2.205417,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.29,
+      "terminalPeakDb": -120,
+      "sha256": "0fd1144eaa69b1a96774567cadbbf41ce89a19d4fe9638ce447c001d3be4c7af"
+    },
+    "titan_slam.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "dull_thud",
+        "bell_vibrant"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, dull_thud, bell_vibrant. Full credits and license pages are listed in this manifest.",
+      "editChain": "Slowed metal and stone impacts beneath the opening portion of the bell decay.",
+      "durationSeconds": 3.76,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.11,
+      "terminalPeakDb": -120,
+      "sha256": "7e73cdb84e6247ce68e853adc629497792ceecb0677e0fe4bf0927019100f33a"
+    },
+    "titan_step_1.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "dull_thud",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: dull_thud, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Low stone thud over a slowed metal body resonance with its decay retained.",
+      "durationSeconds": 1.591271,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.01,
+      "terminalPeakDb": -120,
+      "sha256": "7af8805ff7e68727f4b21acd02cfa6b05268acd5d4dce5d2320d63f9ec966a94"
+    },
+    "titan_step_2.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "dull_thud",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, dull_thud, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Alternate slowed body impact with delayed stone and armor contacts.",
+      "durationSeconds": 1.663646,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -2.04,
+      "terminalPeakDb": -120,
+      "sha256": "354f413ef0703383d80507a5910c34814ce1dd666416f9327a850fcf6c649ad2"
+    },
+    "titan_sweep.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "rattle",
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: rattle, ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Reversed recorded movement into a ratchet stroke and trailing armor contact.",
+      "durationSeconds": 1.423333,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -3.34,
+      "terminalPeakDb": -120,
+      "sha256": "d2561a48988557793d38fdf7c97faa3361607119b7e79d54677949d85a3359ed"
+    },
+    "titan_toll.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump. Full credits and license pages are listed in this manifest.",
+      "editChain": "Complete bell recording with a quiet physical strike layer and an uncut tail.",
+      "durationSeconds": 5.66,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -9.71,
+      "terminalPeakDb": -120,
+      "sha256": "b93bcdff12cc42348cc837cdfb61b32ef34b58954a9cb70321aa41d7447293f9"
+    },
+    "tollkeeper_impact.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "metal_thump",
+        "dull_thud",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: metal_thump, dull_thud, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Lowered metal thump and dry impact with a delayed bright debris contact; the full recorded tail remains.",
+      "durationSeconds": 1.14,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -5.92,
+      "terminalPeakDb": -120,
+      "sha256": "0b395056e3d77ca42e5e5267175494d06665b0303c77b1ad3a4cc70db3f6b6b1"
+    },
+    "tollkeeper_windup.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "ratchet",
+        "rattle"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: ratchet, rattle. Full credits and license pages are listed in this manifest.",
+      "editChain": "Long close-miked ratchet pull with late recorded loose-metal movement.",
+      "durationSeconds": 1.45,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -3.04,
+      "terminalPeakDb": -120,
+      "sha256": "07f777bf55ba752cfe9972f616dfd657daa8713a9fc6fce534823b1e7fd0ecc5"
+    },
+    "vault_enter.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "metal_thump",
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, metal_thump, ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded chain movement and damped bell body layered into the threshold response.",
+      "durationSeconds": 3.829979,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -6.9,
+      "terminalPeakDb": -120,
+      "sha256": "3373d9b1d4808ec31a1778b710a4574ac84c94b5cbf7fc9ffcabccbc99fc8a9b"
+    },
+    "wing_complete.ogg": {
+      "sourceKind": "foley",
+      "sourceIds": [
+        "bell_vibrant",
+        "ratchet",
+        "thin_metal"
+      ],
+      "sourceNote": "CC0 or public-domain recorded source IDs: bell_vibrant, ratchet, thin_metal. Full credits and license pages are listed in this manifest.",
+      "editChain": "Recorded bell resolution layered with restrained mechanism movement and a complete decay.",
+      "durationSeconds": 4.46,
+      "sampleRate": 48000,
+      "channels": 2,
+      "peakDb": -12.21,
+      "terminalPeakDb": -120,
+      "sha256": "0d611e7866722f4a1764fb743a008d729138a58e16d5e865a510166c24ef4efe"
+    }
+  },
+  "music": {
+    "echoes_below": {
+      "sourceKind": "licensed_music",
+      "sourceNote": "Original D-minor Vault exploration composition using Trial's processed-instrument and spatial-effect language without reusing Trial's form or chord progression.",
+      "editableSource": "Local-only FL Studio project, editable MIDI, stems, and WAV masters retained outside the repository by the project owner.",
+      "arrangementRole": "Sparse exploration with slow harmonic movement, a new vault-glyph mallet motif, low machinery, choir haze, and large silent-feeling spaces for gameplay cues.",
+      "editChain": "FL Studio 2025 three-cycle 80 BPM render; settled middle cycle; 48 kHz 24-bit game master; +5 dB fixed gain with no added limiter; Ogg/Vorbis quality 8; two-second equal-power runtime overlap.",
+      "file": "assets/rvx/sounds/music/resonant_vault/echoes_below.ogg",
+      "loopId": "echoes_below",
+      "tempoBpm": 80,
+      "timeSignature": "4/4",
+      "bars": 64,
+      "key": "D minor",
+      "originalComposition": true,
+      "trialMotifAppearances": 1,
+      "trialMotifTreatment": "Four-note inner-voice fragment, inverted and rhythmically augmented.",
+      "tempoBoundLoopsUsed": false,
+      "durationSeconds": 192,
+      "frameCount": 9216000,
+      "sampleRate": 48000,
+      "channels": 2,
+      "integratedLufs": -20.5,
+      "truePeakDb": -1.3,
+      "sha256": "a9054177b035c4030bded253f89eea1a2ff9b6b611fda1fd1f7e574c5bfb3cf6"
+    },
+    "three_wings": {
+      "sourceKind": "licensed_music",
+      "sourceNote": "Original D-minor combat composition using Trial's processed mallet, string, bass, and spatial-effect language without quoting Trial's melody.",
+      "editableSource": "Local-only FL Studio project, editable MIDI, stems, and WAV masters retained outside the repository by the project owner.",
+      "arrangementRole": "Sentinel combat built on a new 3+3+2 mechanical groove, mobile bass, resonant percussion, and a new gear-shaped mallet motif.",
+      "editChain": "FL Studio 2025 three-cycle 118 BPM render; settled middle cycle; 48 kHz 24-bit game master; +2.5 dB fixed gain with no added limiter; Ogg/Vorbis quality 8; two-second equal-power runtime overlap.",
+      "file": "assets/rvx/sounds/music/resonant_combat/three_wings.ogg",
+      "loopId": "three_wings",
+      "tempoBpm": 118,
+      "timeSignature": "4/4",
+      "bars": 64,
+      "key": "D minor",
+      "originalComposition": true,
+      "trialMotifAppearances": 0,
+      "tempoBoundLoopsUsed": false,
+      "durationSeconds": 130.169479,
+      "frameCount": 6248135,
+      "sampleRate": 48000,
+      "channels": 2,
+      "integratedLufs": -16.7,
+      "truePeakDb": -1.1,
+      "sha256": "68480e2959f432f28d9a41cec6dd99fcc55e4d7e1c632ea950f15ae8f4525f49"
+    },
+    "bell_titan": {
+      "sourceKind": "licensed_music",
+      "sourceNote": "The complete immutable Trial composition used as the Bell Titan theme with no arrangement, instrument, automation, or mix redesign.",
+      "editableSource": "Local-only immutable Trial FL Studio project retained outside the repository by the project owner.",
+      "arrangementRole": "Full and fastest statement of the Trial leitmotif for the Bell Titan fight.",
+      "editChain": "Complete authored Trial float export with its full release; high-order 128-tap resample to 48 kHz; transparent -1.8 dB output correction; Ogg/Vorbis quality 8.",
+      "file": "assets/rvx/sounds/music/boss_bell_titan/bell_titan.ogg",
+      "loopId": "bell_titan",
+      "tempoBpm": 150,
+      "timeSignature": "4/4",
+      "form": "Complete Trial arrangement",
+      "durationSeconds": 198.446958,
+      "frameCount": 9525454,
+      "sampleRate": 48000,
+      "channels": 2,
+      "integratedLufs": -10.4,
+      "truePeakDb": -1.1,
+      "sha256": "519e6042e5443f1cf0da0ca312d23ac19bb09d154b9455df6d3a84cd7769211e"
+    },
+    "the_vault_unravels": {
+      "sourceKind": "licensed_music",
+      "sourceNote": "Original D-minor escape composition using Trial's processed-instrument and spatial-effect language without reusing the boss or combat form.",
+      "editableSource": "Local-only FL Studio project, editable MIDI, stems, and WAV masters retained outside the repository by the project owner.",
+      "arrangementRole": "Timed escape driven by a new rising collapse ostinato, chromatic bass instability, accumulating machinery, and clear space for warnings.",
+      "editChain": "FL Studio 2025 three-cycle 140 BPM render; settled middle cycle; 48 kHz 24-bit game master; +2.5 dB fixed gain with no added limiter; Ogg/Vorbis quality 8; two-second equal-power runtime overlap.",
+      "file": "assets/rvx/sounds/music/resonant_escape/the_vault_unravels.ogg",
+      "loopId": "the_vault_unravels",
+      "tempoBpm": 140,
+      "timeSignature": "4/4",
+      "bars": 64,
+      "key": "D minor",
+      "originalComposition": true,
+      "trialMotifAppearances": 1,
+      "trialMotifTreatment": "Four-note diminished and rhythmically displaced fragment late in the cue.",
+      "tempoBoundLoopsUsed": false,
+      "durationSeconds": 109.714292,
+      "frameCount": 5266286,
+      "sampleRate": 48000,
+      "channels": 2,
+      "integratedLufs": -15.8,
+      "truePeakDb": -2,
+      "sha256": "7683e79b6f817af99d81e0717bf2aa4d680eee4608890e70ebd7dad817b5b3b2"
+    }
+  }
+}

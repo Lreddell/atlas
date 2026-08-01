@@ -4,6 +4,7 @@ import { useFrame, useThree, createPortal } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ItemStack, BlockType } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
+import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
 import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
@@ -17,6 +18,14 @@ interface HeldItemProps {
     inventory: (ItemStack | null)[];
     isLocked: boolean;
     brightness: number;
+}
+
+type HeldWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer';
+
+interface HeldWeaponAnimation {
+    kind: HeldWeaponKind;
+    startedAt: number;
+    duration: number;
 }
 
 const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
@@ -79,6 +88,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const isLeftMouseDown = useRef(false);
     const moveSway = useRef(0);
     const isLockedRef = useRef(isLocked);
+    const weaponAnimation = useRef<HeldWeaponAnimation | null>(null);
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
@@ -88,6 +98,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         isLockedRef.current = isLocked;
         if (!isLocked) {
             isLeftMouseDown.current = false;
+            weaponAnimation.current = null;
         }
     }, [isLocked]);
 
@@ -134,6 +145,20 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         const onPlacement = () => {
             pendingPlacementSwing.current = true;
         };
+        const onWeaponUsed = (event: Event) => {
+            if (!isLockedRef.current) return;
+            const kind = (event as CustomEvent<{ kind?: HeldWeaponKind }>).detail?.kind;
+            if (kind !== 'spear' && kind !== 'crossbow' && kind !== 'maul' && kind !== 'hammer') return;
+            weaponAnimation.current = {
+                kind,
+                startedAt: -1,
+                duration: kind === 'spear' ? 0.34 : kind === 'crossbow' ? 0.5 : 0.7,
+            };
+            // The successful-use animation owns the hand until its authored motion
+            // finishes. This prevents the generic mining arc from obscuring it.
+            animState.current.swingPhase = 0;
+            isLeftMouseDown.current = false;
+        };
         
         const onMouseDown = (e: MouseEvent) => {
             if (!isLockedRef.current) {
@@ -154,6 +179,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         window.addEventListener('mousedown', onMouseDown);
         window.addEventListener('mouseup', onMouseUp);
         window.addEventListener('atlas:block-placed', onPlacement as EventListener);
+        window.addEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
         
         return () => {
             window.removeEventListener('keydown', onKeyDown);
@@ -161,6 +187,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             window.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('mouseup', onMouseUp);
             window.removeEventListener('atlas:block-placed', onPlacement as EventListener);
+            window.removeEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
         };
     }, []);
 
@@ -174,28 +201,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             return buildShapedBlockGeometry(itemType, parentType, 0.4);
         }
 
-        const is2D = def.isItem ||
-                     itemType === BlockType.TORCH || 
-                     itemType === BlockType.BED_ITEM ||
-                     itemType === BlockType.DEAD_BUSH ||
-                     itemType === BlockType.GRASS_PLANT ||
-                     itemType === BlockType.ROSE ||
-                     itemType === BlockType.DANDELION ||
-                     itemType === BlockType.DEBUG_CROSS ||
-                     itemType === BlockType.WHEAT_SEEDS ||
-                     itemType === BlockType.PINK_FLOWER ||
-                     itemType === BlockType.SAPLING ||
-                     itemType === BlockType.SPRUCE_SAPLING ||
-                     itemType === BlockType.BIRCH_SAPLING ||
-                     itemType === BlockType.CHERRY_SAPLING ||
-                     itemType === BlockType.JUNGLE_SAPLING ||
-                     itemType === BlockType.DARK_OAK_SAPLING ||
-                     itemType === BlockType.ACACIA_SAPLING ||
-                     itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
-                     itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
-                     itemType === BlockType.MAGNETIC_SPIKE ||
-                     itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
-                     itemType === BlockType.MAGNETITE_SHARD;
+        const is2D = isSpriteRenderedType(itemType);
 
         if (!is2D) {
             const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
@@ -315,34 +321,42 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             // Set local rotation relative to camera
             groupRef.current.rotation.set(0.2 + swingRot, -0.2 + (swingRot * 0.3), 0);
             
-            const is2D = itemType && (
-                BLOCKS[itemType].isItem || 
-                itemType === BlockType.TORCH ||
-                itemType === BlockType.BED_ITEM ||
-                itemType === BlockType.DEAD_BUSH ||
-                itemType === BlockType.GRASS_PLANT ||
-                itemType === BlockType.ROSE ||
-                itemType === BlockType.DANDELION ||
-                itemType === BlockType.DEBUG_CROSS ||
-                itemType === BlockType.WHEAT_SEEDS ||
-                itemType === BlockType.PINK_FLOWER ||
-                itemType === BlockType.SAPLING ||
-                itemType === BlockType.SPRUCE_SAPLING ||
-                itemType === BlockType.BIRCH_SAPLING ||
-                itemType === BlockType.CHERRY_SAPLING ||
-                itemType === BlockType.JUNGLE_SAPLING ||
-                itemType === BlockType.DARK_OAK_SAPLING ||
-                itemType === BlockType.ACACIA_SAPLING ||
-                itemType === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
-                itemType === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
-                itemType === BlockType.MAGNETIC_SPIKE ||
-                itemType === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
-                itemType === BlockType.MAGNETITE_SHARD
-            );
+            const is2D = itemType && isSpriteRenderedType(itemType);
 
             if (itemType && !is2D) {
                  groupRef.current.rotateY(-0.2);
                  groupRef.current.rotateZ(0.2);
+            }
+
+            const activeWeapon = weaponAnimation.current;
+            if (activeWeapon) {
+                if (activeWeapon.startedAt < 0) activeWeapon.startedAt = time;
+                const progress = Math.min(1, Math.max(0, (time - activeWeapon.startedAt) / activeWeapon.duration));
+                if (progress >= 1) {
+                    weaponAnimation.current = null;
+                } else {
+                    const arc = Math.sin(progress * Math.PI);
+                    const settle = Math.sin(Math.min(1, progress * 1.6) * Math.PI);
+                    const { kind } = activeWeapon;
+                    if (kind === 'spear') {
+                        // A short brace followed by a long, level thrust makes the
+                        // spear read as reach rather than another mining swing.
+                        const thrust = Math.sin(Math.min(1, progress * 1.35) * Math.PI);
+                        groupRef.current.position.set(0.46 + bobX, -0.46 + bobY, -0.74 - thrust * 0.42);
+                        groupRef.current.rotation.set(0.08 - thrust * 0.13, -0.18, 0.04);
+                    } else if (kind === 'crossbow') {
+                        // Hold the sightline steady, then let the stock recoil into
+                        // the hand. The longer settle reinforces the reload cadence.
+                        groupRef.current.position.set(0.42 + bobX, -0.45 + bobY - arc * 0.06, -0.82 + arc * 0.17);
+                        groupRef.current.rotation.set(0.12 + arc * 0.19, -0.13, -0.02);
+                    } else if (kind === 'maul' || kind === 'hammer') {
+                        // Heavy weapons rise high and commit through a broad downward
+                        // arc, distinct from both the spear jab and ordinary tools.
+                        const windup = Math.sin(Math.min(1, progress * 1.9) * Math.PI / 2);
+                        groupRef.current.position.set(0.52 + bobX - arc * 0.13, -0.48 + bobY + windup * 0.13 - arc * 0.23, -0.78);
+                        groupRef.current.rotation.set(0.22 - settle * 1.2, -0.24 - arc * 0.2, arc * 0.5);
+                    }
+                }
             }
         }
     });

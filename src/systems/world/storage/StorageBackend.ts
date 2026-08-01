@@ -9,6 +9,7 @@
 
 import type {
     ChunkBatchEntry,
+    ChunkCoordinate,
     ChunkStorageData,
     ExportedWorldData,
     WorldMetadata,
@@ -37,6 +38,8 @@ export interface StorageBackend {
 
     // --- Chunks ---
     readChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null>;
+    /** True when any coordinate already has persisted data. */
+    hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean>;
     /** Persist a batch of chunks. Backends group by region and commit per region. */
     writeChunks(worldId: string, chunks: ChunkBatchEntry[]): Promise<void>;
 

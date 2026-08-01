@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BlockType } from '../types';
 import { BLOCKS } from '../data/blocks';
+import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
@@ -122,32 +123,7 @@ const setupParticleMaterial = (mat: THREE.MeshLambertMaterial, is2D: boolean) =>
 const MAX_PARTICLES_PER_GROUP = 300;
 
 // Helper to reliably identify 2D blocks across both Spawner and Renderer
-const is2DBlock = (type: BlockType): boolean => {
-    const def = BLOCKS[type];
-    if (!def) return false;
-    return !!def.isItem || 
-           type === BlockType.TORCH || 
-           type === BlockType.BED_ITEM ||
-           type === BlockType.DEAD_BUSH ||
-           type === BlockType.GRASS_PLANT ||
-           type === BlockType.ROSE ||
-           type === BlockType.DANDELION ||
-           type === BlockType.DEBUG_CROSS ||
-           type === BlockType.WHEAT_SEEDS ||
-           type === BlockType.PINK_FLOWER ||
-           type === BlockType.SAPLING ||
-           type === BlockType.SPRUCE_SAPLING ||
-           type === BlockType.BIRCH_SAPLING ||
-           type === BlockType.CHERRY_SAPLING ||
-           type === BlockType.JUNGLE_SAPLING ||
-           type === BlockType.DARK_OAK_SAPLING ||
-           type === BlockType.ACACIA_SAPLING ||
-           type === BlockType.POSITIVE_MAGNETITE_CRYSTAL ||
-           type === BlockType.NEGATIVE_MAGNETITE_CRYSTAL ||
-           type === BlockType.MAGNETIC_SPIKE ||
-           type === BlockType.MAGNETIC_SHIELD_CRYSTAL ||
-           type === BlockType.MAGNETITE_SHARD;
-};
+const is2DBlock = (type: BlockType): boolean => isSpriteRenderedType(type);
 
 // Cache for scanning pixel data
 const validPixelsCache: Record<number, [number, number, number, number][]> = {};

@@ -1,0 +1,26 @@
+{
+  "echoes_below": {
+    "sampleRate": 48000,
+    "startSample": 0,
+    "endSample": 9216000,
+    "crossfadeSamples": 0
+  },
+  "three_wings": {
+    "sampleRate": 48000,
+    "startSample": 0,
+    "endSample": 6248135,
+    "crossfadeSamples": 0
+  },
+  "bell_titan": {
+    "sampleRate": 48000,
+    "startSample": 0,
+    "endSample": 9525454,
+    "crossfadeSamples": 0
+  },
+  "the_vault_unravels": {
+    "sampleRate": 48000,
+    "startSample": 0,
+    "endSample": 5266286,
+    "crossfadeSamples": 0
+  }
+}

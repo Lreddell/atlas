@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 // genConfig.ts is enum-free/erasable, so it can be imported directly under
-// Node's type-stripping runner. biomes.ts/chunkGeneration.ts import the
+// Node's type-stripping runner. biomes.ts/baseChunkGeneration.ts import the
 // BlockType enum, so their behavior is asserted via source text instead.
 import { DEFAULTS, GenConfig, loadGenConfig, resetGenConfig } from './genConfig.ts';
 import * as genConfigModule from './genConfig.ts';
@@ -12,7 +12,7 @@ import * as genConfigModule from './genConfig.ts';
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 const biomesSource = read('src/systems/world/biomes.ts');
-const chunkGenSource = read('src/systems/world/chunkGeneration.ts');
+const chunkGenSource = read('src/systems/world/baseChunkGeneration.ts');
 const regionsSource = read('src/systems/world/regions.ts');
 
 test('temperate weirdness sub-bands are not shadowed by the mountain rule', () => {
@@ -52,7 +52,7 @@ test('land shaping modifiers are masked away from oceans', () => {
     // getBiomeHeightInfo computes the land mask before the biome blends and
     // multiplies the mountain factor by it.
     assert.match(biomesSource, /mountainWeird\s*\*[^;]*landFactor/);
-    // chunkGeneration's additive modifiers (volcanic, mountain ridges, mesa
+    // baseChunkGeneration's additive modifiers (volcanic, mountain ridges, mesa
     // plateaus) are all gated on the same land mask.
     assert.match(chunkGenSource, /volcanicFactor\s*=\s*tFactor\s*\*\s*wFactor\s*\*\s*landFactor/);
     assert.match(chunkGenSource, /peakBlend\s*\*[^;]*landFactor/);

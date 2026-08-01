@@ -23,6 +23,25 @@ import { getRegionAt } from './world/regions';
 import { MAGNETIC_FIELDS_REGION_ID, getMagneticCacheLoot } from './world/magneticFields';
 import { SEALED_MINEABLE_BLOCKS } from './world/magneticFieldsBlocks';
 import { progression } from './progression/ProgressionStore';
+import {
+    findNearestVaultCandidate,
+    getVaultCandidatesTouchingBox,
+    getVaultId,
+    getVaultLayout,
+    getVaultOpenAirSurfaceY,
+    getVaultSpirePosition,
+    getVaultSurfaceApproach,
+    type VaultCandidate,
+} from './world/resonantVaults';
+import { preflightVaultCandidate } from './world/resonantVaultPreflight';
+import {
+    VAULT_CACHE_FLAG,
+    decodeVaultCacheMetadata,
+    findVaultCacheDescriptor,
+    getVaultCacheLoot,
+    seedVaultCache,
+    type VaultCacheDescriptor,
+} from './world/resonantVaultLoot';
 
 // --- Types ---
 enum ChunkStage {
@@ -163,6 +182,10 @@ export class WorldManager {
 
   private queuesDirty = false;
   private knownMissingStorageChunks = new Set<string>();
+  private vaultPreflightPromises = new Map<string, Promise<boolean>>();
+  private acceptedVaultCandidates = new Set<string>();
+  private rejectedVaultCandidates = new Set<string>();
+  private vaultPreflightSerial: Promise<void> = Promise.resolve();
 
   // Dark-face culling: chunks beyond this chebyshev distance are meshed without
   // fully-unlit (cave) faces, enclosed geometry is only visible from inside the
@@ -208,6 +231,10 @@ export class WorldManager {
    */
   public setWorldContext(worldId: string, seedNum: number) {
     this.knownMissingStorageChunks.clear();
+      this.vaultPreflightPromises.clear();
+      this.acceptedVaultCandidates.clear();
+      this.rejectedVaultCandidates.clear();
+      this.vaultPreflightSerial = Promise.resolve();
       this.activeWorldId = worldId;
       this.activeSeed = seedNum;
       
@@ -225,6 +252,10 @@ export class WorldManager {
   public reset() {
     this.queuesDirty = false;
     this.knownMissingStorageChunks.clear();
+      this.vaultPreflightPromises.clear();
+      this.acceptedVaultCandidates.clear();
+      this.rejectedVaultCandidates.clear();
+      this.vaultPreflightSerial = Promise.resolve();
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
@@ -611,9 +642,12 @@ export class WorldManager {
           // MUST have an active world ID to load
         if (this.activeWorldId) {
             if (this.knownMissingStorageChunks.has(key)) {
-                this.triggerWorkerGen(job.cx, job.cz, ticket);
+                void this.preflightThenGenerate(job.cx, job.cz, ticket);
             } else {
-                WorldStorage.loadChunk(this.activeWorldId, job.cx, job.cz).then(data => {
+                WorldStorage.loadChunk(this.activeWorldId, job.cx, job.cz).then(async data => {
+                    if (this.activeGenTickets.get(key) !== ticket) return;
+
+                    await this.ensureVaultCandidatesPreflighted(job.cx, job.cz);
                     if (this.activeGenTickets.get(key) !== ticket) return;
 
                     if (data) {
@@ -801,14 +835,157 @@ export class WorldManager {
       }
   }
 
+  private async preflightThenGenerate(cx: number, cz: number, ticket: number): Promise<void> {
+      await this.ensureVaultCandidatesPreflighted(cx, cz);
+      const key = WorldCoords.getChunkKey(cx, cz);
+      if (this.activeGenTickets.get(key) === ticket) this.triggerWorkerGen(cx, cz, ticket);
+  }
+
+  private async ensureVaultCandidatesPreflighted(cx: number, cz: number): Promise<void> {
+      const worldId = this.activeWorldId;
+      if (!worldId) return;
+      const minX = cx * CHUNK_SIZE;
+      const minZ = cz * CHUNK_SIZE;
+      const candidates = getVaultCandidatesTouchingBox(
+          minX,
+          minZ,
+          minX + CHUNK_SIZE - 1,
+          minZ + CHUNK_SIZE - 1,
+          this.activeSeed,
+      );
+      await Promise.all(candidates.map((candidate) => this.ensureVaultCandidatePreflighted(worldId, candidate)));
+  }
+
+  /**
+   * Preflight status for a vault candidate this session. 'unknown' means no
+   * decision has been made yet (its chunks were never approached); callers
+   * that need an answer can request one with requestVaultCandidatePreflight.
+   */
+  public getVaultCandidateStatus(candidate: VaultCandidate): 'accepted' | 'rejected' | 'unknown' {
+      const vaultId = getVaultId(candidate);
+      if (this.acceptedVaultCandidates.has(vaultId)) return 'accepted';
+      if (this.rejectedVaultCandidates.has(vaultId)) return 'rejected';
+      return 'unknown';
+  }
+
+  public requestVaultCandidatePreflight(candidate: VaultCandidate): void {
+      const worldId = this.activeWorldId;
+      if (!worldId || this.getVaultCandidateStatus(candidate) !== 'unknown') return;
+      void this.ensureVaultCandidatePreflighted(worldId, candidate);
+  }
+
+  /**
+   * Nearest candidate that passes (or has passed) preflight. Unlike the raw
+   * grid lookup this never points at a vault that will be rejected and thus
+   * never generated - a rejected candidate has no structure to find.
+   */
+  public async resolveNearestAcceptedVaultCandidate(
+      startX: number,
+      startZ: number,
+      maxDistance = 18000,
+  ): Promise<VaultCandidate | null> {
+      const worldId = this.activeWorldId;
+      if (!worldId) return null;
+      const excluded = new Set<string>();
+      for (let attempt = 0; attempt < 96; attempt += 1) {
+          if (this.activeWorldId !== worldId) return null;
+          const candidate = findNearestVaultCandidate(
+              startX,
+              startZ,
+              this.activeSeed,
+              maxDistance,
+              (entry) => excluded.has(getVaultId(entry)) || this.rejectedVaultCandidates.has(getVaultId(entry)),
+          );
+          if (!candidate) return null;
+          const vaultId = getVaultId(candidate);
+          if (this.acceptedVaultCandidates.has(vaultId)) return candidate;
+          if (await this.ensureVaultCandidatePreflighted(worldId, candidate)) return candidate;
+          excluded.add(vaultId);
+      }
+      return null;
+  }
+
+  private ensureVaultCandidatePreflighted(worldId: string, candidate: VaultCandidate): Promise<boolean> {
+      const vaultId = getVaultId(candidate);
+      const existing = this.vaultPreflightPromises.get(vaultId);
+      if (existing) return existing;
+
+      let resolveDecision!: (accepted: boolean) => void;
+      const decisionPromise = new Promise<boolean>((resolve) => { resolveDecision = resolve; });
+      this.vaultPreflightPromises.set(vaultId, decisionPromise);
+      const run = async () => {
+          try {
+              if (this.activeWorldId !== worldId) {
+                  resolveDecision(false);
+                  return;
+              }
+              const spire = getVaultSpirePosition(candidate);
+              const biomeId = getBiome(spire.x, spire.z, GlobalNoise).id;
+              if (biomeId === 'magnetic_fields' || biomeId === 'ocean' || biomeId === 'deep_ocean') {
+                  this.rejectedVaultCandidates.add(vaultId);
+                  resolveDecision(false);
+                  return;
+              }
+              const centerSurfaceY = WorldGen.getTerrainHeight(spire.x, spire.z);
+              const layout = getVaultLayout(
+                  candidate,
+                  centerSurfaceY,
+                  (x, z) => WorldGen.getTerrainHeight(x, z),
+              );
+              const decision = await preflightVaultCandidate({
+                  worldId,
+                  candidate,
+                  layout,
+                  hasMemoryChunk: ({ cx: footprintCx, cz: footprintCz }) => (
+                      !!WorldStore.getChunkData(this.state, footprintCx, footprintCz)
+                  ),
+                  hasAnyPersistedChunk: (id, coordinates) => WorldStorage.hasAnyChunk(id, coordinates),
+                  readMeta: (id) => WorldStorage.getWorldMeta(id),
+                  writeMeta: async (meta) => {
+                      // A synchronous spawn chunk may have generated inside this
+                      // footprint (and suppressed the vault) while preflight was
+                      // awaiting storage; never persist a reservation for it.
+                      if (this.activeWorldId !== worldId) throw new Error('stale vault preflight context');
+                      if (this.rejectedVaultCandidates.has(vaultId)) throw new Error('vault suppressed by synchronous chunk generation');
+                      await WorldStorage.saveWorldMeta(meta);
+                  },
+              });
+              if (decision.accepted && this.rejectedVaultCandidates.has(vaultId)) {
+                  // The suppression landed after the reservation write: undo it so
+                  // later sessions do not generate a vault this session's persisted
+                  // chunks lack (a torn structure).
+                  const meta = await WorldStorage.getWorldMeta(worldId);
+                  if (meta?.resonantVaultReservations?.[vaultId]) {
+                      const reservations = { ...meta.resonantVaultReservations };
+                      delete reservations[vaultId];
+                      await WorldStorage.saveWorldMeta({ ...meta, resonantVaultReservations: reservations });
+                  }
+                  resolveDecision(false);
+                  return;
+              }
+              if (decision.accepted) this.acceptedVaultCandidates.add(vaultId);
+              else this.rejectedVaultCandidates.add(vaultId);
+              resolveDecision(decision.accepted);
+          } catch (error) {
+              this.rejectedVaultCandidates.add(vaultId);
+              this.acceptedVaultCandidates.delete(vaultId);
+              console.warn(`[WorldManager] Rejected ${vaultId} because its footprint preflight failed.`, error);
+              resolveDecision(false);
+          }
+      };
+      this.vaultPreflightSerial = this.vaultPreflightSerial.then(run, run);
+      return decisionPromise;
+  }
+
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
+      const rejectedVaultIds = [...this.rejectedVaultCandidates];
       if (this.workersEnabled && this.workers.length > 0) {
-          this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket });
+          this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket, rejectedVaultIds });
       } else {
           setTimeout(() => {
               if (this.activeGenTickets.get(key) !== ticket) return;
-              const res = WorldGen.generateChunk(cx, cz);
+              const res = WorldGen.generateChunk(cx, cz, { rejectedVaultIds });
               this.handleWorkerMessage({ type: 'GEN_DONE', cx, cz, ticket, result: res });
           }, 0);
       }
@@ -1203,7 +1380,26 @@ export class WorldManager {
   public ensureChunk(cx: number, cz: number) {
       if (!WorldStore.getChunkData(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
-          const result = WorldGen.generateChunk(cx, cz);
+          const minX = cx * CHUNK_SIZE;
+          const minZ = cz * CHUNK_SIZE;
+          for (const candidate of getVaultCandidatesTouchingBox(
+              minX,
+              minZ,
+              minX + CHUNK_SIZE - 1,
+              minZ + CHUNK_SIZE - 1,
+              this.activeSeed,
+          )) {
+              const vaultId = getVaultId(candidate);
+              if (this.acceptedVaultCandidates.has(vaultId)) continue;
+              // A synchronous spawn/respawn query cannot await storage preflight.
+              // Reject unknown candidates for this session rather than stamping
+              // authored terrain over chunks preflight might have refused.
+              this.rejectedVaultCandidates.add(vaultId);
+              if (!this.vaultPreflightPromises.has(vaultId)) {
+                  this.vaultPreflightPromises.set(vaultId, Promise.resolve(false));
+              }
+          }
+          const result = WorldGen.generateChunk(cx, cz, { rejectedVaultIds: [...this.rejectedVaultCandidates] });
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataData(this.state, cx, cz, result.meta);
@@ -1236,19 +1432,50 @@ export class WorldManager {
   createChest(x: number, y: number, z: number) { TileEntities.createChest(this.state, x, y, z); }
   removeChest(x: number, y: number, z: number) { TileEntities.removeChest(this.state, x, y, z); }
 
+  private resolveGeneratedVaultCache(
+      x: number,
+      y: number,
+      z: number,
+      metadata: number,
+  ): { vaultId: string; descriptor: VaultCacheDescriptor } | null {
+      const decoded = decodeVaultCacheMetadata(metadata);
+      if (!decoded) return null;
+      const candidates = getVaultCandidatesTouchingBox(x, z, x, z, this.activeSeed);
+      for (const candidate of candidates) {
+          if (this.rejectedVaultCandidates.has(getVaultId(candidate))) continue;
+          const layout = getVaultLayout(
+              candidate,
+              WorldGen.getTerrainHeight(candidate.centerX, candidate.centerZ),
+              (surfaceX, surfaceZ) => WorldGen.getTerrainHeight(surfaceX, surfaceZ),
+          );
+          const descriptor = findVaultCacheDescriptor(layout, decoded.cacheId, { x, y, z });
+          if (descriptor) return { vaultId: layout.vaultId, descriptor };
+      }
+      return null;
+  }
+
   /**
    * Chest state for (x, y, z), created on demand. Worldgen-placed chests have no
    * tile-entity state until first opened; natural loot caches additionally carry
-   * the 0x40 metadata bit, which seeds deterministic Magnetic Fields cache loot
-   * exactly once (the bit is cleared so re-opening never re-rolls).
+   * the 0x40 metadata bit, which seeds deterministic Magnetic Fields cache loot.
+   * Resonant Vault caches use the separate 0x80 flag and an authored cache id;
+   * both paths clear only their unopened flag so re-opening never re-rolls.
    */
   ensureChest(x: number, y: number, z: number) {
+      const meta = this.getMetadata(x, y, z);
+      const pendingVaultCache = this.resolveGeneratedVaultCache(x, y, z, meta);
+      if (pendingVaultCache?.descriptor.id === 'core'
+          && !progression.getVaultProgress(pendingVaultCache.vaultId).coreClaimed) {
+          // The vault's final reward stays sealed until the core is claimed, so
+          // the unique first-clear loot cannot be lifted before the fight.
+          this.log('The core cache remains sealed until the Bell Titan is defeated and the core is claimed.', 'error');
+          return null;
+      }
       let chest = TileEntities.getChest(this.state, x, y, z);
       if (!chest) {
           TileEntities.createChest(this.state, x, y, z);
           chest = TileEntities.getChest(this.state, x, y, z);
       }
-      const meta = this.getMetadata(x, y, z);
       if (chest && (meta & 0x40) !== 0) {
           const loot = getMagneticCacheLoot(x, y, z, this.activeSeed | 0, {
               magnetiteBlock: BlockType.MAGNETITE_BLOCK,
@@ -1265,6 +1492,13 @@ export class WorldManager {
               chest.items[entry.slot] = { type: entry.itemId as BlockType, count: entry.count };
           }
           this.setMetadataAt(x, y, z, meta & ~0x40);
+      }
+      const vaultCache = chest ? pendingVaultCache : null;
+      if (chest && vaultCache) {
+          const firstClear = vaultCache.descriptor.id === 'core';
+          const entries = getVaultCacheLoot(vaultCache.vaultId, vaultCache.descriptor.id, firstClear);
+          seedVaultCache(chest, entries);
+          this.setMetadataAt(x, y, z, meta & ~VAULT_CACHE_FLAG);
       }
       return chest;
   }
@@ -1393,6 +1627,8 @@ export class WorldManager {
     // seed its contents first so handleBlockReplaced spills the loot as drops
     // instead of silently discarding it.
     if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & 0x40) !== 0) {
+        this.ensureChest(x, y, z);
+    } else if (oldType === BlockType.CHEST && type !== BlockType.CHEST && (oldRotation & VAULT_CACHE_FLAG) !== 0) {
         this.ensureChest(x, y, z);
     }
     chunk[index] = type;
@@ -1573,6 +1809,21 @@ export class WorldManager {
           const note = caveTarget ? ' (dig down)' : '';
           this.log(`Found ${biomeId} at X=${tx}, Z=${tz}${note}`, 'success', `/tp ${tx} ${ty} ${tz}`);
       } else { this.log(`Could not find ${biomeId} within ${SEARCH_RADIUS} blocks.`, 'error'); }
+  }
+  public async locateVault(startX: number, startZ: number): Promise<void> {
+      this.log('Locating Resonant Vault...', 'info');
+      const candidate = await this.resolveNearestAcceptedVaultCandidate(startX, startZ, 18000);
+      if (!candidate) {
+          this.log('Could not find an accepted Resonant Vault within 18000 blocks.', 'error');
+          return;
+      }
+      const spire = getVaultSpirePosition(candidate);
+      const surfaceY = getVaultOpenAirSurfaceY(this.getTerrainHeight(spire.x, spire.z));
+      const approach = getVaultSurfaceApproach(candidate, surfaceY);
+      const tx = approach.x;
+      const ty = approach.y;
+      const tz = approach.z;
+      this.log(`Found Resonant Vault at X=${tx}, Z=${tz}`, 'success', `/tp ${tx} ${ty} ${tz}`);
   }
 }
 

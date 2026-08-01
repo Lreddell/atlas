@@ -29,6 +29,74 @@ export interface ChangelogEntry {
 // Ordered newest -> oldest.
 export const CHANGELOG: ChangelogEntry[] = [
     {
+        version: 'v1.2.0-alpha',
+        displayVersion: 'Alpha 1.2.0',
+        date: '2026-08-01',
+        tagline: 'Descend into the Resonant Vaults, face the Bell Titan, and escape before the halls collapse.',
+        highlights: [
+            'Discover vast underground Resonant Vaults with seeded layouts, connected side chambers, distinct puzzles, combat encounters, hidden caches, and two ways back to the surface.',
+            'Challenge the Bell Titan in a cinematic three-phase fight built around readable attacks, breaking armor, and striking its exposed bell core.',
+            'Fight Vault Guards, Marksmen, Bell Hounds, and Tollkeepers with improved navigation, roles, reactions, and room-specific encounter compositions.',
+            'Wield the Vaultsteel Spear, Vault Crossbow, Bellbreaker Maul, Echo Tuning Fork, and the Bell Titan\'s own hammer.',
+            'Experience a complete Vault soundscape with exploration, combat, boss, and escape music plus directional bells, machinery, impacts, and creature foley.',
+        ],
+        sections: [
+            {
+                title: 'The Resonant Vaults',
+                items: [
+                    'Rare listening spires mark enormous sealed complexes far below the surface. The new /locate vault command can find the nearest one.',
+                    'Each Vault is assembled from connected architectural wings around a central hall. Challenge rooms occupy the side routes, while the single inner seal protects the Bell Titan chamber until every required challenge is complete.',
+                    'Environmental lighting, floor inlays, symbols, moving mechanisms, particles, directional audio, and a compact objective display communicate progress without lengthy instruction text.',
+                    'Challenge rooms include a slowly voiced memory choir, an acoustic relay, a counterweight gallery, guarded halls, a resonance foundry, inner machinery, and a broken crossing with a dangerous combat route beneath it.',
+                    'Falling from the broken crossing begins a separate lower-hall encounter instead of causing a dead end. Surviving its waves opens a return path and completes the challenge.',
+                    'Vault chests draw from multiple seeded loot pools for provisions, masonry, armory supplies, relics, and forge materials, with room placement that introduces useful gear through play.',
+                    'After claiming the core, choose between the longer guarded Grand Ascent and the shorter, hazard-heavy Fracture Stair. Both routes adapt to terrain height, reach the real surface, and remain protected from cave breaches.',
+                ],
+            },
+            {
+                title: 'Bell Titan & Vault Enemies',
+                items: [
+                    'A unique confirmation at the arena threshold leads into a dedicated Bell Titan awakening cinematic and fully illuminated battle chamber.',
+                    'The Bell Titan uses three escalating phases with sweeps, advances, slams, chain lashes, hammer combinations, double tolls, resonance cages, vault-breaking impacts, and a final bell storm.',
+                    'Its stone shell blocks ordinary damage. Committed attacks expose the hanging bell core for a clear punish window, and each broken shell stage changes the fight before the Titan accelerates again.',
+                    'Attack hit regions and ground telegraphs share the same authored geometry, keeping visible warnings aligned with the actual danger zones.',
+                    'Vault Guards block and sweep, Marksmen reposition and fire deliberate volleys, Bell Hounds leap and recover, and Tollkeepers control space with tolls and charges.',
+                    'Vault enemies use voxel-aware navigation, ledge descents, route replanning, role-specific spacing, and anti-crowding movement so encounters remain active across multi-level rooms.',
+                    'Defeating the Titan unlocks its reward chamber and the Titan Hammer, records the clear, and begins the timed escape only after the core is claimed.',
+                ],
+            },
+            {
+                title: 'Weapons, Materials & Building',
+                items: [
+                    'The Vaultsteel Spear rewards accurate attacks at reach, the Vault Crossbow fires dedicated Vault Bolts, and the Bellbreaker Maul breaks guarded and armored targets.',
+                    'The Echo Tuning Fork is a focused Vault tool used only on marked machinery, while the Titan Hammer delivers heavy strikes with a crushing area impact.',
+                    'Added Echo Stone, Echo Bricks, cracked and chiseled variants, mosaics, crystals, pylons, conduits, phase blocks, plates, lamps, spikes, slabs, and stairs.',
+                    'Echo Shards, Echo Dust, Echo Cores, and Fractured Cores support a new set of recipes for Vault masonry, lighting, mechanisms, and decorative blocks.',
+                    'All Resonant world blocks and items occupy reserved IDs below the existing 8-bit world-storage limit without colliding with current Atlas content.',
+                ],
+            },
+            {
+                title: 'Music, Sound & Presentation',
+                items: [
+                    'Added distinct, gameplay-mixed music for Vault exploration, Sentinel combat, the Bell Titan, and the timed escape.',
+                    'Music changes by encounter state instead of room boundaries, loops from the authored ending, and relinquishes control when the player leaves the Vault or another higher-priority music state takes over.',
+                    'Directional, pitch-distinct bell notes make memory patterns traceable, while machinery, seals, weapons, enemies, the Titan, rewards, and escape events use dedicated recorded audio assets.',
+                    'The Bell Titan has a custom textured model, square hanging bell, layered shell-break states, authored animation poses, synchronized telegraphs, impact effects, debris, and arena lighting.',
+                    'Resonant enemies have dedicated textures, silhouettes, held equipment, movement poses, attack animation timing, particles, and sound identities.',
+                ],
+            },
+            {
+                title: 'Generation & Reliability',
+                items: [
+                    'Vault generation validates room connections, doorway planes, protected progression routes, entrance stairs, challenge completion paths, arena clearance, and both surface outlets before committing the structure.',
+                    'Structural shells seal rooms from intersecting caves, while terrain-aware entrances and escape courses account for high ground, low ground, and ocean surfaces.',
+                    'Challenge completion, inner-seal access, boss state, rewards, core claims, escape routes, and cleansed Vaults persist with the world.',
+                    'Vault music and effects are registered through the shared sound system, with stable gain handling across pause, resume, state changes, and repeated loops.',
+                ],
+            },
+        ],
+    },
+    {
         version: 'v1.1.0-alpha',
         displayVersion: 'Alpha 1.1.0',
         date: '2026-07-05',
