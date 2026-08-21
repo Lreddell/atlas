@@ -24,7 +24,8 @@ expectIncludes(index, ':root.js #atlas-static-fallback', 'JavaScript fallback vi
 expectIncludes(index, 'atlas.menu.startupPanoramaPreview.v1', 'startup panorama preview cache key');
 expectIncludes(index, '__STARTUP_PREVIEW_VERSION__', 'startup preview build-version placeholder');
 expectIncludes(index, "document.documentElement.classList.add('has-startup-preview')", 'pre-paint panorama preview activation');
-expectIncludes(index, ':root.has-startup-preview #root::before', 'startup preview image layer');
+expectIncludes(index, ':root.has-startup-preview body::before', 'startup preview image layer');
+expectIncludes(index, 'background-color: #2f5cab', 'startup fallback color');
 
 const panoramaBackground = read('src/components/ui/MenuPanoramaBackground.tsx');
 expectIncludes(panoramaBackground, 'startupPreviewId?: string', 'startup preview panorama identity prop');
@@ -32,17 +33,15 @@ expectIncludes(panoramaBackground, 'atlas.menu.startupPanoramaPreview.v1', 'runt
 expectIncludes(panoramaBackground, '__APP_DISPLAY_VERSION__', 'runtime startup preview version');
 expectIncludes(panoramaBackground, "toDataURL('image/webp'", 'compressed startup preview capture');
 expectIncludes(panoramaBackground, 'startupPreviewDataUrl', 'cached panorama placeholder state');
-
-const loadingScreen = read('src/components/ui/LoadingScreen.tsx');
-expectIncludes(loadingScreen, 'startupPreviewId?: string', 'loading screen startup preview prop');
-expectIncludes(loadingScreen, 'startupPreviewId={startupPreviewId}', 'loading screen preview pass-through');
-
-const app = read('src/App.tsx');
-expectIncludes(app, "const startupPanoramaPreviewId = menuPanoramaPath ?? 'default';", 'active panorama preview identity');
-expectIncludes(app, 'startupPreviewId={startupPanoramaPreviewId}', 'active panorama preview wiring');
+expectIncludes(panoramaBackground, "document.documentElement.classList.remove('has-startup-preview')", 'startup preview handoff');
 
 const viteConfig = read('vite.config.ts');
-expectIncludes(viteConfig, '__STARTUP_PREVIEW_VERSION__', 'startup preview version transform');
+expectIncludes(viteConfig, "replace('__STARTUP_PREVIEW_VERSION__', JSON.stringify(appVersion))", 'startup preview version transform');
+
+const packageJson = JSON.parse(read('package.json'));
+if (!String(packageJson.scripts?.build ?? '').includes('npm run seo:check')) {
+  failures.push('SEO checks in production build');
+}
 
 const robots = read('public/robots.txt');
 expectIncludes(robots, 'User-agent: *', 'robots user-agent');
