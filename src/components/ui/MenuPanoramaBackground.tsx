@@ -270,11 +270,13 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
     useEffect(() => {
         if (!canRenderWebGLPanorama || !debugHostEl || !cubeFaceMap) return;
 
+        const activePreviewId = startupPreviewId ?? getStoredPanoramaId();
+        const shouldCaptureStartupPreview = !debugFlyMode && readStartupPreview(activePreviewId) === null;
         const renderer = new THREE.WebGLRenderer({
             antialias: true,
             alpha: false,
             powerPreference: 'high-performance',
-            preserveDrawingBuffer: true,
+            preserveDrawingBuffer: shouldCaptureStartupPreview,
         });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setClearColor(0x2f5cab, 1);
@@ -338,7 +340,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
         const debugPosition = new THREE.Vector3();
         let rafId = 0;
         let lastTick = performance.now();
-        let previewSaved = false;
+        let previewSaved = !shouldCaptureStartupPreview;
         let panoramaCanvasVisible = false;
 
         const onResize = () => {
@@ -409,23 +411,17 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
             renderer.render(scene, camera);
 
             const texturesReady = loadedTextureCount >= 6;
-            if (texturesReady && !panoramaCanvasVisible) {
-                panoramaCanvasVisible = true;
-                renderer.domElement.style.visibility = 'visible';
-                requestAnimationFrame(() => {
-                    renderer.domElement.style.opacity = '1';
-                });
-            }
-
             if (!previewSaved && !debugFlyModeRef.current && texturesReady) {
                 previewSaved = true;
+                const liveRotation = camera.rotation.clone();
                 try {
+                    camera.rotation.set(THREE.MathUtils.degToRad(-12), 0, 0);
+                    renderer.render(scene, camera);
                     const dataUrl = captureStartupPreview(renderer.domElement);
                     if (dataUrl) {
-                        const panoramaId = startupPreviewId ?? getStoredPanoramaId();
                         const record: StartupPanoramaPreview = {
                             version: __APP_DISPLAY_VERSION__,
-                            panoramaId,
+                            panoramaId: activePreviewId,
                             dataUrl,
                         };
                         window.localStorage.setItem(STARTUP_PREVIEW_STORAGE_KEY, JSON.stringify(record));
@@ -433,7 +429,18 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
                     }
                 } catch {
                     // Startup preview caching is best-effort; never interrupt the menu renderer.
+                } finally {
+                    camera.rotation.copy(liveRotation);
+                    renderer.render(scene, camera);
                 }
+            }
+
+            if (texturesReady && !panoramaCanvasVisible) {
+                panoramaCanvasVisible = true;
+                renderer.domElement.style.visibility = 'visible';
+                requestAnimationFrame(() => {
+                    renderer.domElement.style.opacity = '1';
+                });
             }
 
             rafId = requestAnimationFrame(animate);
@@ -467,7 +474,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
                 debugHostEl.removeChild(renderer.domElement);
             }
         };
-    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap, startupPreviewId]);
+    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap, startupPreviewId, debugFlyMode]);
 
     return (
         <>
