@@ -9,7 +9,9 @@ const appVersion = packageJson.displayVersion ?? packageJson.version
 const faviconVersionPlugin = {
   name: 'atlas-favicon-version',
   transformIndexHtml(html: string) {
-    return html.replace('__FAVICON_VERSION__', encodeURIComponent(appVersion))
+    return html
+      .replace('__FAVICON_VERSION__', encodeURIComponent(appVersion))
+      .replace('__STARTUP_PREVIEW_VERSION__', JSON.stringify(appVersion))
   },
 }
 
