@@ -29,6 +29,7 @@
       }
     </script>
     <script>
+      document.documentElement.classList.add('js');
       const USE_MONOCRAFT_FONT = false;
       document.documentElement.dataset.atlasFont = USE_MONOCRAFT_FONT ? 'monocraft' : 'default';
     </script>
@@ -168,6 +169,9 @@
         gap: 12px;
         padding: 24px;
         text-align: center;
+      }
+      :root.js #atlas-static-fallback {
+        display: none;
       }
       #atlas-static-fallback h1,
       #atlas-static-fallback p {

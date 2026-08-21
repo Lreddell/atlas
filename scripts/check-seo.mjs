@@ -19,6 +19,8 @@ expectIncludes(index, `<meta property="og:url" content="${siteUrl}" />`, 'Open G
 expectIncludes(index, 'type="application/ld+json"', 'JSON-LD');
 expectIncludes(index, '<h1>Atlas</h1>', 'static Atlas heading');
 expectIncludes(index, `<p>${description}</p>`, 'static Atlas description');
+expectIncludes(index, "document.documentElement.classList.add('js');", 'pre-paint JavaScript marker');
+expectIncludes(index, ':root.js #atlas-static-fallback', 'JavaScript fallback visibility guard');
 
 const robots = read('public/robots.txt');
 expectIncludes(robots, 'User-agent: *', 'robots user-agent');
