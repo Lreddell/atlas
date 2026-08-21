@@ -30,6 +30,40 @@
     </script>
     <script>
       document.documentElement.classList.add('js');
+
+      try {
+        const startupPreviewKey = 'atlas.menu.startupPanoramaPreview.v1';
+        const startupPreviewVersion = __STARTUP_PREVIEW_VERSION__;
+        const backgroundMode = window.localStorage.getItem('atlas.menu.backgroundMode') || 'panorama';
+        const panoramaId = window.localStorage.getItem('atlas.menu.panoramaPath') || 'default';
+        const cachedPreview = window.localStorage.getItem(startupPreviewKey);
+
+        if (backgroundMode === 'panorama' && cachedPreview) {
+          const parsedPreview = JSON.parse(cachedPreview);
+          const previewMatches =
+            parsedPreview &&
+            parsedPreview.version === startupPreviewVersion &&
+            parsedPreview.panoramaId === panoramaId &&
+            typeof parsedPreview.dataUrl === 'string' &&
+            parsedPreview.dataUrl.startsWith('data:image/');
+
+          if (previewMatches) {
+            const rawBlur = Number(window.localStorage.getItem('atlas.menu.panoramaBlur'));
+            const rawGradient = Number(window.localStorage.getItem('atlas.menu.panoramaGradient'));
+            const blur = Number.isFinite(rawBlur) ? Math.max(0, Math.min(12, rawBlur)) : 3;
+            const gradient = Number.isFinite(rawGradient) ? Math.max(0, Math.min(0.9, rawGradient)) : 0.35;
+
+            document.documentElement.style.setProperty('--atlas-startup-preview', `url("${parsedPreview.dataUrl}")`);
+            document.documentElement.style.setProperty('--atlas-startup-blur', `${blur}px`);
+            document.documentElement.style.setProperty('--atlas-startup-gradient', String(gradient));
+            document.documentElement.style.setProperty('--atlas-startup-gradient-mid', String(gradient * 0.45));
+            document.documentElement.classList.add('has-startup-preview');
+          }
+        }
+      } catch {
+        // Startup preview is best-effort. A bad cache must never delay Atlas boot.
+      }
+
       const USE_MONOCRAFT_FONT = false;
       document.documentElement.dataset.atlasFont = USE_MONOCRAFT_FONT ? 'monocraft' : 'default';
     </script>
@@ -137,10 +171,39 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background-color: #87CEEB; /* Sky blue */
+        background-color: #2f5cab;
         font-family: var(--atlas-ui-font-family);
         font-synthesis: none;
         user-select: none;
+      }
+      #root {
+        position: relative;
+        z-index: 1;
+      }
+      :root.has-startup-preview #root {
+        background-color: transparent;
+      }
+      :root.has-startup-preview body::before {
+        content: '';
+        position: fixed;
+        inset: -16px;
+        z-index: 0;
+        pointer-events: none;
+        background-color: #2f5cab;
+        background-image:
+          linear-gradient(
+            to bottom,
+            rgba(0, 0, 0, var(--atlas-startup-gradient, 0.35)),
+            rgba(0, 0, 0, var(--atlas-startup-gradient-mid, 0.1575)) 45%,
+            rgba(0, 0, 0, var(--atlas-startup-gradient, 0.35))
+          ),
+          var(--atlas-startup-preview);
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+        filter: blur(var(--atlas-startup-blur, 3px));
+        transform: scale(1.03);
+        transform-origin: center;
       }
       button,
       input,

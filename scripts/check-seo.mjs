@@ -12,6 +12,12 @@ const expectIncludes = (contents, expected, label) => {
   if (!contents.includes(expected)) failures.push(label);
 };
 
+const expectBefore = (contents, first, second, label) => {
+  const firstIndex = contents.indexOf(first);
+  const secondIndex = contents.indexOf(second);
+  if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) failures.push(label);
+};
+
 const index = read('index.html');
 expectIncludes(index, `<link rel="canonical" href="${siteUrl}" />`, 'canonical link');
 expectIncludes(index, `<meta name="description" content="${description}" />`, 'meta description');
@@ -21,6 +27,39 @@ expectIncludes(index, '<h1>Atlas</h1>', 'static Atlas heading');
 expectIncludes(index, `<p>${description}</p>`, 'static Atlas description');
 expectIncludes(index, "document.documentElement.classList.add('js');", 'pre-paint JavaScript marker');
 expectIncludes(index, ':root.js #atlas-static-fallback', 'JavaScript fallback visibility guard');
+expectIncludes(index, 'atlas.menu.startupPanoramaPreview.v1', 'startup panorama preview cache key');
+expectIncludes(index, '__STARTUP_PREVIEW_VERSION__', 'startup preview build-version placeholder');
+expectIncludes(index, "document.documentElement.classList.add('has-startup-preview')", 'pre-paint panorama preview activation');
+expectIncludes(index, ':root.has-startup-preview body::before', 'startup preview image layer');
+expectIncludes(index, 'background-color: #2f5cab', 'startup fallback color');
+
+const panoramaBackground = read('src/components/ui/MenuPanoramaBackground.tsx');
+expectIncludes(panoramaBackground, 'startupPreviewId?: string', 'startup preview panorama identity prop');
+expectIncludes(panoramaBackground, 'atlas.menu.startupPanoramaPreview.v1', 'runtime startup preview cache key');
+expectIncludes(panoramaBackground, '__APP_DISPLAY_VERSION__', 'runtime startup preview version');
+expectIncludes(panoramaBackground, "toDataURL('image/webp'", 'compressed startup preview capture');
+expectIncludes(panoramaBackground, 'startupPreviewDataUrl', 'cached panorama placeholder state');
+expectIncludes(panoramaBackground, "document.documentElement.classList.remove('has-startup-preview')", 'startup preview handoff');
+expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'hidden';", 'WebGL canvas hidden before textures');
+expectIncludes(panoramaBackground, 'const texturesReady = loadedTextureCount >= 6;', 'all panorama textures gate the handoff');
+expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'visible';", 'WebGL canvas revealed after textures');
+expectIncludes(panoramaBackground, 'const shouldCaptureStartupPreview =', 'startup preview capture only when needed');
+expectIncludes(panoramaBackground, 'preserveDrawingBuffer: shouldCaptureStartupPreview', 'drawing buffer preserved only for preview capture');
+expectIncludes(panoramaBackground, 'camera.rotation.set(THREE.MathUtils.degToRad(-12), 0, 0);', 'deterministic startup preview camera');
+expectBefore(
+  panoramaBackground,
+  'const dataUrl = captureStartupPreview(renderer.domElement);',
+  "renderer.domElement.style.visibility = 'visible';",
+  'startup preview captured before live canvas reveal',
+);
+
+const viteConfig = read('vite.config.ts');
+expectIncludes(viteConfig, "replace('__STARTUP_PREVIEW_VERSION__', JSON.stringify(appVersion))", 'startup preview version transform');
+
+const packageJson = JSON.parse(read('package.json'));
+if (!String(packageJson.scripts?.build ?? '').includes('npm run seo:check')) {
+  failures.push('SEO checks in production build');
+}
 
 const robots = read('public/robots.txt');
 expectIncludes(robots, 'User-agent: *', 'robots user-agent');
