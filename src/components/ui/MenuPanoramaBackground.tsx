@@ -4,6 +4,16 @@ import { getDirtBackground } from '../../utils/textures';
 
 const PANORAMA_SPIN_DURATION_SECONDS = 520;
 const PANORAMA_REFERENCE_VERTICAL_FOV_DEG = 70;
+const STARTUP_PREVIEW_STORAGE_KEY = 'atlas.menu.startupPanoramaPreview.v1';
+const MENU_PANORAMA_PATH_KEY = 'atlas.menu.panoramaPath';
+const DEFAULT_STARTUP_PREVIEW_ID = 'default';
+const STARTUP_PREVIEW_WIDTH = 256;
+
+type StartupPanoramaPreview = {
+    version: string;
+    panoramaId: string;
+    dataUrl: string;
+};
 
 let panoramaSpinPhaseSeconds = 0;
 let panoramaSpinLastTickMs = Date.now();
@@ -24,6 +34,40 @@ const advancePanoramaPhase = () => {
     panoramaSpinLastTickMs = now;
 };
 
+const getStoredPanoramaId = () => {
+    if (typeof window === 'undefined') return DEFAULT_STARTUP_PREVIEW_ID;
+    return window.localStorage.getItem(MENU_PANORAMA_PATH_KEY) || DEFAULT_STARTUP_PREVIEW_ID;
+};
+
+const readStartupPreview = (panoramaId: string): string | null => {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const raw = window.localStorage.getItem(STARTUP_PREVIEW_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<StartupPanoramaPreview>;
+        if (parsed.version !== __APP_DISPLAY_VERSION__) return null;
+        if (parsed.panoramaId !== panoramaId) return null;
+        if (typeof parsed.dataUrl !== 'string' || !parsed.dataUrl.startsWith('data:image/')) return null;
+        return parsed.dataUrl;
+    } catch {
+        return null;
+    }
+};
+
+const captureStartupPreview = (sourceCanvas: HTMLCanvasElement): string | null => {
+    if (sourceCanvas.width <= 0 || sourceCanvas.height <= 0) return null;
+
+    const preview = document.createElement('canvas');
+    preview.width = STARTUP_PREVIEW_WIDTH;
+    preview.height = Math.max(1, Math.round(STARTUP_PREVIEW_WIDTH * (sourceCanvas.height / sourceCanvas.width)));
+    const context = preview.getContext('2d');
+    if (!context) return null;
+
+    context.drawImage(sourceCanvas, 0, 0, preview.width, preview.height);
+    return preview.toDataURL('image/webp', 0.58);
+};
+
 interface MenuPanoramaBackgroundProps {
     backgroundMode: 'dirt' | 'panorama';
     panoramaBackgroundDataUrl: string | null;
@@ -31,6 +75,7 @@ interface MenuPanoramaBackgroundProps {
     panoramaBlur: number;
     panoramaGradient: number;
     panoramaRotationSpeed: number;
+    startupPreviewId?: string;
     debugFlyMode?: boolean;
 }
 
@@ -41,16 +86,25 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
     panoramaBlur,
     panoramaGradient,
     panoramaRotationSpeed,
+    startupPreviewId,
     debugFlyMode = false,
 }) => {
     const [bgPattern, setBgPattern] = useState('');
     const [isDocumentVisible, setIsDocumentVisible] = useState(() => (
         typeof document === 'undefined' ? true : document.visibilityState === 'visible'
     ));
+    const resolvedStartupPreviewId = startupPreviewId ?? getStoredPanoramaId();
+    const [startupPreviewDataUrl, setStartupPreviewDataUrl] = useState<string | null>(() => (
+        readStartupPreview(resolvedStartupPreviewId)
+    ));
 
     useEffect(() => {
         setBgPattern(getDirtBackground());
     }, []);
+
+    useEffect(() => {
+        setStartupPreviewDataUrl(readStartupPreview(resolvedStartupPreviewId));
+    }, [resolvedStartupPreviewId]);
 
     useEffect(() => {
         if (typeof document === 'undefined') return;
@@ -66,6 +120,14 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
     const debugPanoramaActive = debugFlyMode && (!!panoramaBackgroundDataUrl || hasFaceCubemap);
     const effectiveUsingPanorama = usingPanorama || debugPanoramaActive;
     const [atlasFaceDataUrls, setAtlasFaceDataUrls] = useState<string[] | null>(null);
+
+    useEffect(() => {
+        if (!effectiveUsingPanorama || typeof document === 'undefined') return;
+        const id = requestAnimationFrame(() => {
+            document.documentElement.classList.remove('has-startup-preview');
+        });
+        return () => cancelAnimationFrame(id);
+    }, [effectiveUsingPanorama]);
 
     const clampedRotationSpeed = useMemo(() => {
         if (!Number.isFinite(panoramaRotationSpeed)) return 1;
@@ -224,9 +286,12 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
         camera.rotation.order = 'YXZ';
         camera.rotation.set(THREE.MathUtils.degToRad(-12), -((panoramaSpinPhaseSeconds / PANORAMA_SPIN_DURATION_SECONDS) * Math.PI * 2), 0);
 
+        let loadedTextureCount = 0;
         const loader = new THREE.TextureLoader();
         const mkTex = (src: string, rotDeg = 0) => {
-            const tex = loader.load(src);
+            const tex = loader.load(src, () => {
+                loadedTextureCount += 1;
+            });
             tex.colorSpace = THREE.SRGBColorSpace;
             tex.wrapS = THREE.ClampToEdgeWrapping;
             tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -265,6 +330,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
         const debugPosition = new THREE.Vector3();
         let rafId = 0;
         let lastTick = performance.now();
+        let previewSaved = false;
 
         const onResize = () => {
             const w = Math.max(1, debugHostEl.clientWidth);
@@ -332,6 +398,26 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
             }
 
             renderer.render(scene, camera);
+
+            if (!previewSaved && !debugFlyModeRef.current && loadedTextureCount >= 6) {
+                previewSaved = true;
+                try {
+                    const dataUrl = captureStartupPreview(renderer.domElement);
+                    if (dataUrl) {
+                        const panoramaId = startupPreviewId ?? getStoredPanoramaId();
+                        const record: StartupPanoramaPreview = {
+                            version: __APP_DISPLAY_VERSION__,
+                            panoramaId,
+                            dataUrl,
+                        };
+                        window.localStorage.setItem(STARTUP_PREVIEW_STORAGE_KEY, JSON.stringify(record));
+                        setStartupPreviewDataUrl(dataUrl);
+                    }
+                } catch {
+                    // Startup preview caching is best-effort; never interrupt the menu renderer.
+                }
+            }
+
             rafId = requestAnimationFrame(animate);
         };
 
@@ -363,7 +449,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
                 debugHostEl.removeChild(renderer.domElement);
             }
         };
-    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap]);
+    }, [canRenderWebGLPanorama, debugHostEl, cubeFaceMap, startupPreviewId]);
 
     return (
         <>
@@ -379,7 +465,16 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
             )}
 
             {effectiveUsingPanorama && (
-                <div className="absolute inset-0" style={{ backgroundColor: '#2f5cab' }} />
+                <div
+                    className="absolute inset-0"
+                    style={startupPreviewDataUrl ? {
+                        backgroundColor: '#2f5cab',
+                        backgroundImage: `url(${startupPreviewDataUrl})`,
+                        backgroundPosition: 'center',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: 'cover',
+                    } : { backgroundColor: '#2f5cab' }}
+                />
             )}
 
             {canRenderWebGLPanorama && (
