@@ -12,6 +12,12 @@ const expectIncludes = (contents, expected, label) => {
   if (!contents.includes(expected)) failures.push(label);
 };
 
+const expectBefore = (contents, first, second, label) => {
+  const firstIndex = contents.indexOf(first);
+  const secondIndex = contents.indexOf(second);
+  if (firstIndex < 0 || secondIndex < 0 || firstIndex >= secondIndex) failures.push(label);
+};
+
 const index = read('index.html');
 expectIncludes(index, `<link rel="canonical" href="${siteUrl}" />`, 'canonical link');
 expectIncludes(index, `<meta name="description" content="${description}" />`, 'meta description');
@@ -37,6 +43,15 @@ expectIncludes(panoramaBackground, "document.documentElement.classList.remove('h
 expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'hidden';", 'WebGL canvas hidden before textures');
 expectIncludes(panoramaBackground, 'const texturesReady = loadedTextureCount >= 6;', 'all panorama textures gate the handoff');
 expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'visible';", 'WebGL canvas revealed after textures');
+expectIncludes(panoramaBackground, 'const shouldCaptureStartupPreview =', 'startup preview capture only when needed');
+expectIncludes(panoramaBackground, 'preserveDrawingBuffer: shouldCaptureStartupPreview', 'drawing buffer preserved only for preview capture');
+expectIncludes(panoramaBackground, 'camera.rotation.set(THREE.MathUtils.degToRad(-12), 0, 0);', 'deterministic startup preview camera');
+expectBefore(
+  panoramaBackground,
+  'const dataUrl = captureStartupPreview(renderer.domElement);',
+  "renderer.domElement.style.visibility = 'visible';",
+  'startup preview captured before live canvas reveal',
+);
 
 const viteConfig = read('vite.config.ts');
 expectIncludes(viteConfig, "replace('__STARTUP_PREVIEW_VERSION__', JSON.stringify(appVersion))", 'startup preview version transform');
