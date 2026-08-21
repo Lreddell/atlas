@@ -270,11 +270,19 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
     useEffect(() => {
         if (!canRenderWebGLPanorama || !debugHostEl || !cubeFaceMap) return;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: false,
+            powerPreference: 'high-performance',
+            preserveDrawingBuffer: true,
+        });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setClearColor(0x2f5cab, 1);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.setSize(debugHostEl.clientWidth, debugHostEl.clientHeight, false);
+        renderer.domElement.style.visibility = 'hidden';
+        renderer.domElement.style.opacity = '0';
+        renderer.domElement.style.transition = 'opacity 120ms ease-out';
         debugHostEl.appendChild(renderer.domElement);
 
         const scene = new THREE.Scene();
@@ -331,6 +339,7 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
         let rafId = 0;
         let lastTick = performance.now();
         let previewSaved = false;
+        let panoramaCanvasVisible = false;
 
         const onResize = () => {
             const w = Math.max(1, debugHostEl.clientWidth);
@@ -399,7 +408,16 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
 
             renderer.render(scene, camera);
 
-            if (!previewSaved && !debugFlyModeRef.current && loadedTextureCount >= 6) {
+            const texturesReady = loadedTextureCount >= 6;
+            if (texturesReady && !panoramaCanvasVisible) {
+                panoramaCanvasVisible = true;
+                renderer.domElement.style.visibility = 'visible';
+                requestAnimationFrame(() => {
+                    renderer.domElement.style.opacity = '1';
+                });
+            }
+
+            if (!previewSaved && !debugFlyModeRef.current && texturesReady) {
                 previewSaved = true;
                 try {
                     const dataUrl = captureStartupPreview(renderer.domElement);
