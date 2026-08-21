@@ -34,6 +34,9 @@ expectIncludes(panoramaBackground, '__APP_DISPLAY_VERSION__', 'runtime startup p
 expectIncludes(panoramaBackground, "toDataURL('image/webp'", 'compressed startup preview capture');
 expectIncludes(panoramaBackground, 'startupPreviewDataUrl', 'cached panorama placeholder state');
 expectIncludes(panoramaBackground, "document.documentElement.classList.remove('has-startup-preview')", 'startup preview handoff');
+expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'hidden';", 'WebGL canvas hidden before textures');
+expectIncludes(panoramaBackground, 'const texturesReady = loadedTextureCount >= 6;', 'all panorama textures gate the handoff');
+expectIncludes(panoramaBackground, "renderer.domElement.style.visibility = 'visible';", 'WebGL canvas revealed after textures');
 
 const viteConfig = read('vite.config.ts');
 expectIncludes(viteConfig, "replace('__STARTUP_PREVIEW_VERSION__', JSON.stringify(appVersion))", 'startup preview version transform');
