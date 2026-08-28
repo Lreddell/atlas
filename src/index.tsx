@@ -4,9 +4,11 @@ import './styles.css';
 import './data/resonantInit';
 import './systems/sound/ResonantVaultAudio';
 import { initializePixelation } from './systems/graphics/pixelation';
+import { initializeRetroEffects } from './systems/graphics/retroEffects';
 import App from './App';
 
 initializePixelation();
+initializeRetroEffects();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
