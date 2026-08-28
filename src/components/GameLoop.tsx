@@ -55,10 +55,15 @@ const useRetroWorldRenderer = () => {
             generateMipmaps: false,
             depthBuffer: true,
             stencilBuffer: false,
+            // Keep the intermediate scene-referred image in enough precision to
+            // preserve highlights before R3F's ACES/output transform. Three skips
+            // tone mapping and display color-space conversion for render targets.
+            type: THREE.HalfFloatType,
         });
         target.texture.generateMipmaps = false;
         target.texture.minFilter = THREE.NearestFilter;
         target.texture.magFilter = THREE.NearestFilter;
+        target.texture.colorSpace = THREE.LinearSRGBColorSpace;
         renderTargetRef.current = target;
 
         const postScene = new THREE.Scene();
@@ -68,7 +73,10 @@ const useRetroWorldRenderer = () => {
             map: target.texture,
             depthTest: false,
             depthWrite: false,
-            toneMapped: false,
+            // This second pass is the final display pass. Leaving tone mapping on
+            // makes it receive the same renderer ACES + sRGB conversion as Atlas's
+            // ordinary direct-to-screen render, instead of showing raw linear HDR.
+            toneMapped: true,
         });
         const quad = new THREE.Mesh(geometry, material);
         quad.frustumCulled = false;
@@ -127,13 +135,14 @@ const useRetroWorldRenderer = () => {
             targetSizeRef.current = { width: targetWidth, height: targetHeight };
         }
 
-        // First pass: the actual world is rasterized at the retro resolution.
+        // First pass: rasterize the world at the retro resolution in linear/HDR
+        // space. Three deliberately does not apply the final display transform here.
         gl.setRenderTarget(target);
         gl.clear();
         gl.render(scene, camera);
 
-        // Second pass: expand those physical framebuffer pixels over the native
-        // canvas. Nearest filtering keeps every source pixel as a hard rectangle.
+        // Second pass: nearest-neighbor upscale and perform the renderer's normal
+        // final tone-mapping/output conversion exactly once.
         gl.setRenderTarget(null);
         gl.clear();
         gl.render(postScene, postCamera);
