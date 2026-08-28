@@ -31,6 +31,7 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
     const size = useThree((state) => state.size);
     const setDpr = useThree((state) => state.setDpr);
     const initialDpr = useThree((state) => state.viewport.initialDpr);
+    const nativeRendererDprRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (isDead) vaultProjectileSystem.clear();
@@ -42,22 +43,40 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
         const canvas = gl.domElement;
         const previousImageRendering = canvas.style.imageRendering;
 
+        if (nativeRendererDprRef.current === null) {
+            nativeRendererDprRef.current = gl.getPixelRatio();
+        }
+
+        const resizeRendererAtDpr = (dpr: number) => {
+            // Keep R3F's viewport state correct for anything that reads DPR, then
+            // explicitly resize the Three renderer. setDpr alone was not reliable
+            // enough here: WORLD ONLY could retain a full-resolution drawing buffer
+            // even while the R3F state reported the lower DPR.
+            setDpr(dpr);
+            gl.setPixelRatio(dpr);
+            gl.setSize(Math.max(1, size.width), Math.max(1, size.height), false);
+        };
+
         const applyRetroResolution = () => {
             const mode = getPixelationMode();
             if (mode === 'off') {
-                setDpr(initialDpr);
+                const nativeDpr = nativeRendererDprRef.current ?? initialDpr;
+                resizeRendererAtDpr(nativeDpr);
                 canvas.style.imageRendering = previousImageRendering;
+                canvas.removeAttribute('data-atlas-retro-resolution');
                 return;
             }
 
             const targetHeight = getPixelationResolution();
             const cssHeight = Math.max(1, size.height);
-            // R3F DPR directly controls the WebGL drawing-buffer dimensions. Keeping
-            // it at or below 1 means the scene is genuinely rendered at fewer pixels,
-            // then the full-size canvas is enlarged by the browser.
             const retroDpr = Math.max(0.1, Math.min(1, targetHeight / cssHeight));
-            setDpr(retroDpr);
+
+            resizeRendererAtDpr(retroDpr);
             canvas.style.imageRendering = 'pixelated';
+            canvas.setAttribute(
+                'data-atlas-retro-resolution',
+                `${Math.max(1, Math.round(size.width * retroDpr))}x${Math.max(1, Math.round(size.height * retroDpr))}`,
+            );
         };
 
         applyRetroResolution();
@@ -65,10 +84,14 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
 
         return () => {
             window.removeEventListener(PIXELATION_CHANGE_EVENT, applyRetroResolution);
-            setDpr(initialDpr);
+            const nativeDpr = nativeRendererDprRef.current ?? initialDpr;
+            setDpr(nativeDpr);
+            gl.setPixelRatio(nativeDpr);
+            gl.setSize(Math.max(1, size.width), Math.max(1, size.height), false);
             canvas.style.imageRendering = previousImageRendering;
+            canvas.removeAttribute('data-atlas-retro-resolution');
         };
-    }, [gl, initialDpr, setDpr, size.height]);
+    }, [gl, initialDpr, setDpr, size.height, size.width]);
 
     useFrame((_, delta) => {
         if (isPaused) return;
