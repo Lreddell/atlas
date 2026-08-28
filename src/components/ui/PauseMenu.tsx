@@ -8,6 +8,13 @@ import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
 import { UiNotice, type UiNoticeState } from './UiNotice';
+import {
+    getNextPixelationMode,
+    getPixelationMode,
+    PIXELATION_MODE_LABELS,
+    setPixelationMode,
+    type PixelationMode,
+} from '../../systems/graphics/pixelation';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 
@@ -154,6 +161,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     
     const [musicDelay, setMusicDelay] = useState(() => musicController.getDelayRange().min);
     const [nightSlowdown, setNightSlowdown] = useState(() => musicController.getNightSlowdownEnabled());
+    const [pixelationMode, setPixelationModeState] = useState<PixelationMode>(() => getPixelationMode());
 
     useEffect(() => {
         // Load initial volumes
@@ -198,6 +206,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const updateNightSlowdown = (val: boolean) => {
         setNightSlowdown(val);
         musicController.setNightSlowdownEnabled(val);
+    };
+
+    const updatePixelationMode = () => {
+        const nextMode = getNextPixelationMode(pixelationMode);
+        setPixelationModeState(nextMode);
+        setPixelationMode(nextMode);
     };
 
     const handleCloudUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,6 +292,14 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
                 <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
                 <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
+
+                <div className="col-span-2 flex justify-center">
+                    <MenuButton
+                        label={`Pixelation: ${PIXELATION_MODE_LABELS[pixelationMode]}`}
+                        onClick={updatePixelationMode}
+                        width="w-64"
+                    />
+                </div>
                 
                 {/* Custom Environment */}
                 <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
