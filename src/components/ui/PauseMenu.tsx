@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
@@ -15,6 +14,12 @@ import {
     setPixelationMode,
     type PixelationMode,
 } from '../../systems/graphics/pixelation';
+import {
+    getRetroEffectsSettings,
+    setRetroEffect,
+    type RetroEffectKey,
+    type RetroEffectsSettings,
+} from '../../systems/graphics/retroEffects';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
 
@@ -162,6 +167,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const [musicDelay, setMusicDelay] = useState(() => musicController.getDelayRange().min);
     const [nightSlowdown, setNightSlowdown] = useState(() => musicController.getNightSlowdownEnabled());
     const [pixelationMode, setPixelationModeState] = useState<PixelationMode>(() => getPixelationMode());
+    const [retroEffects, setRetroEffects] = useState<RetroEffectsSettings>(() => getRetroEffectsSettings());
 
     useEffect(() => {
         // Load initial volumes
@@ -212,6 +218,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         const nextMode = getNextPixelationMode(pixelationMode);
         setPixelationModeState(nextMode);
         setPixelationMode(nextMode);
+    };
+
+    const updateRetroEffect = (key: RetroEffectKey, enabled: boolean) => {
+        setRetroEffects((current) => ({ ...current, [key]: enabled }));
+        setRetroEffect(key, enabled);
     };
 
     const handleCloudUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,6 +311,14 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                         width="w-64"
                     />
                 </div>
+
+                <div className="col-span-2 mt-1 pt-2 border-t border-white/10 text-center text-xs text-gray-300 font-pixel">
+                    PS1 Effects
+                </div>
+                <MCToggle label="Vertex Jitter" value={retroEffects.vertexJitter} onChange={(val) => updateRetroEffect('vertexJitter', val)} width="w-64" />
+                <MCToggle label="Texture Warp" value={retroEffects.textureWarp} onChange={(val) => updateRetroEffect('textureWarp', val)} width="w-64" />
+                <MCToggle label="Color Dither" value={retroEffects.dithering} onChange={(val) => updateRetroEffect('dithering', val)} width="w-64" />
+                <MCToggle label="Affine Mapping" value={retroEffects.affineMapping} onChange={(val) => updateRetroEffect('affineMapping', val)} width="w-64" />
                 
                 {/* Custom Environment */}
                 <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
