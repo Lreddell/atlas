@@ -1,6 +1,6 @@
-
 import React, { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { worldManager } from '../systems/WorldManager';
 import { entityManager } from '../systems/entities/EntityManager';
 import { FIXED_DT, MAX_SUBSTEPS } from '../systems/player/playerConstants';
@@ -10,6 +10,8 @@ import {
     getPixelationMode,
     getPixelationResolution,
     PIXELATION_CHANGE_EVENT,
+    type PixelationMode,
+    type PixelationResolution,
 } from '../systems/graphics/pixelation';
 
 interface GameLoopProps {
@@ -23,75 +25,138 @@ interface GameLoopProps {
     isDead: boolean;
 }
 
+/**
+ * Owns Atlas's final 3D render. A positive useFrame priority disables R3F's
+ * automatic gl.render call, so WORLD/FULL pixelation can render the world into
+ * a genuinely low-resolution framebuffer and nearest-neighbor upscale it.
+ * DOM HUD/menu layers remain outside this pass; FULL mode rasterizes those in
+ * pixelation.ts after the WebGL world has already been pixelated here.
+ */
+const useRetroWorldRenderer = () => {
+    const gl = useThree((state) => state.gl);
+    const scene = useThree((state) => state.scene);
+    const camera = useThree((state) => state.camera);
+    const size = useThree((state) => state.size);
+
+    const modeRef = useRef<PixelationMode>(getPixelationMode());
+    const resolutionRef = useRef<PixelationResolution>(getPixelationResolution());
+    const targetSizeRef = useRef({ width: 0, height: 0 });
+
+    const renderTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+    const postSceneRef = useRef<THREE.Scene | null>(null);
+    const postCameraRef = useRef<THREE.OrthographicCamera | null>(null);
+    const postGeometryRef = useRef<THREE.PlaneGeometry | null>(null);
+    const postMaterialRef = useRef<THREE.MeshBasicMaterial | null>(null);
+
+    if (!renderTargetRef.current) {
+        const target = new THREE.WebGLRenderTarget(1, 1, {
+            minFilter: THREE.NearestFilter,
+            magFilter: THREE.NearestFilter,
+            generateMipmaps: false,
+            depthBuffer: true,
+            stencilBuffer: false,
+        });
+        target.texture.generateMipmaps = false;
+        target.texture.minFilter = THREE.NearestFilter;
+        target.texture.magFilter = THREE.NearestFilter;
+        renderTargetRef.current = target;
+
+        const postScene = new THREE.Scene();
+        const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const geometry = new THREE.PlaneGeometry(2, 2);
+        const material = new THREE.MeshBasicMaterial({
+            map: target.texture,
+            depthTest: false,
+            depthWrite: false,
+            toneMapped: false,
+        });
+        const quad = new THREE.Mesh(geometry, material);
+        quad.frustumCulled = false;
+        postScene.add(quad);
+
+        postSceneRef.current = postScene;
+        postCameraRef.current = postCamera;
+        postGeometryRef.current = geometry;
+        postMaterialRef.current = material;
+    }
+
+    useEffect(() => {
+        const sync = () => {
+            modeRef.current = getPixelationMode();
+            resolutionRef.current = getPixelationResolution();
+        };
+
+        sync();
+        window.addEventListener(PIXELATION_CHANGE_EVENT, sync);
+        return () => window.removeEventListener(PIXELATION_CHANGE_EVENT, sync);
+    }, []);
+
+    useEffect(() => () => {
+        renderTargetRef.current?.dispose();
+        postGeometryRef.current?.dispose();
+        postMaterialRef.current?.dispose();
+    }, []);
+
+    useFrame(() => {
+        const target = renderTargetRef.current;
+        const postScene = postSceneRef.current;
+        const postCamera = postCameraRef.current;
+        if (!target || !postScene || !postCamera) {
+            gl.setRenderTarget(null);
+            gl.render(scene, camera);
+            return;
+        }
+
+        const mode = modeRef.current;
+        if (mode === 'off') {
+            gl.setRenderTarget(null);
+            gl.render(scene, camera);
+            gl.domElement.removeAttribute('data-atlas-retro-resolution');
+            return;
+        }
+
+        const targetHeight = Math.max(1, resolutionRef.current);
+        const aspect = Math.max(0.01, size.width / Math.max(1, size.height));
+        const targetWidth = Math.max(1, Math.round(targetHeight * aspect));
+
+        if (
+            targetSizeRef.current.width !== targetWidth ||
+            targetSizeRef.current.height !== targetHeight
+        ) {
+            target.setSize(targetWidth, targetHeight);
+            targetSizeRef.current = { width: targetWidth, height: targetHeight };
+        }
+
+        // First pass: the actual world is rasterized at the retro resolution.
+        gl.setRenderTarget(target);
+        gl.clear();
+        gl.render(scene, camera);
+
+        // Second pass: expand those physical framebuffer pixels over the native
+        // canvas. Nearest filtering keeps every source pixel as a hard rectangle.
+        gl.setRenderTarget(null);
+        gl.clear();
+        gl.render(postScene, postCamera);
+
+        gl.domElement.setAttribute(
+            'data-atlas-retro-resolution',
+            `${targetWidth}x${targetHeight}`,
+        );
+    }, 100);
+};
+
 export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setHealth, setHunger, setSaturation, health, gameMode, isDead }) => {
     const accumulator = useRef(0);
     const lastHungerRef = useRef(Number.NaN);
     const lastSaturationRef = useRef(Number.NaN);
-    const gl = useThree((state) => state.gl);
-    const size = useThree((state) => state.size);
-    const setDpr = useThree((state) => state.setDpr);
-    const initialDpr = useThree((state) => state.viewport.initialDpr);
-    const nativeRendererDprRef = useRef<number | null>(null);
+
+    useRetroWorldRenderer();
 
     useEffect(() => {
         if (isDead) vaultProjectileSystem.clear();
     }, [isDead]);
 
     useEffect(() => () => vaultProjectileSystem.clear(), []);
-
-    useEffect(() => {
-        const canvas = gl.domElement;
-        const previousImageRendering = canvas.style.imageRendering;
-
-        if (nativeRendererDprRef.current === null) {
-            nativeRendererDprRef.current = gl.getPixelRatio();
-        }
-
-        const resizeRendererAtDpr = (dpr: number) => {
-            // Keep R3F's viewport state correct for anything that reads DPR, then
-            // explicitly resize the Three renderer. setDpr alone was not reliable
-            // enough here: WORLD ONLY could retain a full-resolution drawing buffer
-            // even while the R3F state reported the lower DPR.
-            setDpr(dpr);
-            gl.setPixelRatio(dpr);
-            gl.setSize(Math.max(1, size.width), Math.max(1, size.height), false);
-        };
-
-        const applyRetroResolution = () => {
-            const mode = getPixelationMode();
-            if (mode === 'off') {
-                const nativeDpr = nativeRendererDprRef.current ?? initialDpr;
-                resizeRendererAtDpr(nativeDpr);
-                canvas.style.imageRendering = previousImageRendering;
-                canvas.removeAttribute('data-atlas-retro-resolution');
-                return;
-            }
-
-            const targetHeight = getPixelationResolution();
-            const cssHeight = Math.max(1, size.height);
-            const retroDpr = Math.max(0.1, Math.min(1, targetHeight / cssHeight));
-
-            resizeRendererAtDpr(retroDpr);
-            canvas.style.imageRendering = 'pixelated';
-            canvas.setAttribute(
-                'data-atlas-retro-resolution',
-                `${Math.max(1, Math.round(size.width * retroDpr))}x${Math.max(1, Math.round(size.height * retroDpr))}`,
-            );
-        };
-
-        applyRetroResolution();
-        window.addEventListener(PIXELATION_CHANGE_EVENT, applyRetroResolution);
-
-        return () => {
-            window.removeEventListener(PIXELATION_CHANGE_EVENT, applyRetroResolution);
-            const nativeDpr = nativeRendererDprRef.current ?? initialDpr;
-            setDpr(nativeDpr);
-            gl.setPixelRatio(nativeDpr);
-            gl.setSize(Math.max(1, size.width), Math.max(1, size.height), false);
-            canvas.style.imageRendering = previousImageRendering;
-            canvas.removeAttribute('data-atlas-retro-resolution');
-        };
-    }, [gl, initialDpr, setDpr, size.height, size.width]);
 
     useFrame((_, delta) => {
         if (isPaused) return;
