@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client';
 import './styles.css';
 import './data/resonantInit';
 import './systems/sound/ResonantVaultAudio';
+import { initializePixelation } from './systems/graphics/pixelation';
 import App from './App';
+
+initializePixelation();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
