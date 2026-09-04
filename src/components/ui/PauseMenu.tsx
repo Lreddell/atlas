@@ -58,7 +58,7 @@ interface PauseMenuProps {
     onTutorialClose?: () => void;
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
+type MenuScreen = 'main' | 'video' | 'effects' | 'audio' | 'tutorial';
 
 // Menu Slider Component
 const MenuSlider: React.FC<{
@@ -192,6 +192,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             event.preventDefault();
             event.stopImmediatePropagation();
             if (screen === 'tutorial' && onTutorialClose) onTutorialClose();
+            else if (screen === 'effects') setScreen('video');
             else setScreen('main');
         };
         window.addEventListener('keydown', handleSubmenuEscape, true);
@@ -305,6 +306,27 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
 
                 <div className="col-span-2 flex justify-center">
+                    <MenuButton label="Effects..." onClick={() => setScreen('effects')} width="w-64" />
+                </div>
+                
+                {/* Custom Environment */}
+                <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
+                    <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={!cloudsEnabled} />
+                </div>
+            </div>
+
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+        </div>
+    );
+
+    // Video Effects
+    const renderEffects = () => (
+        <div className="flex flex-col gap-2 items-center w-[600px]">
+            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Effects</h1>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="col-span-2 flex justify-center">
                     <MenuButton
                         label={`Pixelation: ${PIXELATION_MODE_LABELS[pixelationMode]}`}
                         onClick={updatePixelationMode}
@@ -319,15 +341,9 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Texture Warp" value={retroEffects.textureWarp} onChange={(val) => updateRetroEffect('textureWarp', val)} width="w-64" />
                 <MCToggle label="Color Dither" value={retroEffects.dithering} onChange={(val) => updateRetroEffect('dithering', val)} width="w-64" />
                 <MCToggle label="Affine Mapping" value={retroEffects.affineMapping} onChange={(val) => updateRetroEffect('affineMapping', val)} width="w-64" />
-                
-                {/* Custom Environment */}
-                <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
-                    <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={!cloudsEnabled} />
-                </div>
             </div>
 
-            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('video')} width="w-64" />
         </div>
     );
 
@@ -446,6 +462,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <div className="relative z-10 flex flex-col items-center py-6 px-10 min-w-[400px]">
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
+                    {screen === 'effects' && renderEffects()}
                     {screen === 'audio' && renderAudio()}
                     {screen === 'tutorial' && renderTutorial()}
                 </div>
