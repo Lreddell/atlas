@@ -7,6 +7,40 @@ source of truth; mirror it into the in-game "What's New" popup
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
+## [Unreleased]
+
+### Magnetic Warden rework
+- The Magnetic Warden fight is rebuilt around one rule that every attack and every
+  counter derives from: same polarity repels, opposite attracts. Match its colour
+  and its bolts bounce off your boots; oppose it and you are drawn in and your
+  strikes land. Its ground rings launch a matching polarity and pin the opposite.
+- Bolts repelled off your boots charge a new Flux meter on the polarity HUD. When
+  it fills, the next polarity flip discharges a Flux Burst that clears nearby
+  bolts, snaps a tether, and staggers or damages the Warden.
+- The Warden now fights in three forms with distinct rules. Form I, the Warden,
+  duels on the platform with a five-bolt Volley, a close Lash, a Draw that drags
+  an opposed player in before a Repel burst, and telegraphed polarity swaps.
+- Form II, the Aegis, shatters into a hovering core tethered to one tower crystal
+  at a time. Break that crystal (the towers' magnet climb faces ignite with the
+  crystals) or burst the tether from below and it crashes down stunned for a long
+  punish window; a tether also burns out on its own. Plunges mark the floor, drop,
+  and sweep a polarity ring.
+- Form III, the Storm, lands behind an orbiting shard barrier and flips polarity on
+  a beat: a contracting countdown ring shows the coming colour, every beat fires
+  a ring, a quiet recoil window follows, and absorbable spiral bolts stream between
+  beats. Every fourth beat is a double beat.
+- Removed the parry bolt, the four-tower crystal gauntlet at the start, the 50-block
+  homing slam, and the unreactable polarity feint. Its body no longer hurts by
+  touch; every hit comes from a telegraphed attack.
+- The fight logic lives in a deterministic, unit-tested state machine
+  (`magneticWardenCore`) with every timing in one table, driven in-world by a new
+  entity brain (`MagneticWardenEncounter`). Ground telegraphs share their geometry
+  with the hit tests.
+- New Warden body with per-form presentation (a magnetite golem, the bare core with
+  wings, the Storm's shard ring), tether beams, form labels and phase markers at
+  two thirds and one third on the boss bar, and new sound slots documented in the
+  sound pack folder.
+
 ## [v1.2.0-alpha]: 2026-08-01
 
 ### Highlights

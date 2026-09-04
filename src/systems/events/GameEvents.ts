@@ -20,13 +20,32 @@ export interface GameEventMap {
     'boss:damaged': { bossId: string; entityId: number; hp: number; maxHp: number };
     'boss:defeated': { bossId: string; entityId: number; regionId?: string };
     'boss:cleared': Record<string, never>;
+    /** Shield layer for the boss bar: `crystals` is a fraction of `max` (a burning tether recedes). */
     'boss:shield': { bossId: string; entityId: number; crystals: number };
     'boss:vulnerable': { bossId: string; entityId: number };
     'boss:polarity': { bossId: string; entityId: number; polarity: number };
-    'boss:parry': { bossId: string; entityId: number };
-    'boss:deflected': { bossId: string; entityId: number };
     'boss:slam': { bossId: string; entityId: number; phase: 'rise' | 'impact'; polarity: number };
     'boss:phase': { bossId: string; entityId: number; phase: number };
+    // --- Magnetic Warden (three forms) ---
+    'boss:form': { bossId: string; entityId: number; form: 1 | 2 | 3; name: string };
+    'boss:action': {
+        bossId: string;
+        entityId: number;
+        action: string;
+        phase: 'anticipation' | 'active' | 'recovery';
+        durationSeconds: number;
+    };
+    'boss:tether': { bossId: string; entityId: number; crystal: number; x: number; y: number; z: number; seconds: number };
+    'boss:tether-snapped': { bossId: string; entityId: number; crystal: number; reason: 'broken' | 'burst' | 'burnout'; stunSeconds: number };
+    'boss:crystals': { bossId: string; entityId: number; mode: 'spawn' | 'consume' };
+    'boss:beat': { bossId: string; entityId: number; polarity: number; double: boolean; second: boolean };
+    'boss:beat-tick': { bossId: string; entityId: number; remaining: number; nextPolarity: number };
+    /** A same-polarity strike bounced off the boss (the player is shoved back). */
+    'boss:repelled': { bossId: string; entityId: number };
+    /** A boss bolt was repelled off the player's matching polarity and absorbed. */
+    'bolt:absorbed': { x: number; y: number; z: number; polarity: number };
+    'flux:changed': { value: number; max: number; full: boolean };
+    'flux:burst': { x: number; y: number; z: number; hitBoss: boolean };
     'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     'entity:died': { entityId: number; type: string; x: number; y: number; z: number; yaw: number };
     'combat:start': Record<string, never>;

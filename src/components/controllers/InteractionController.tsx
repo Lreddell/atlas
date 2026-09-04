@@ -44,7 +44,6 @@ const _camDir = new THREE.Vector3();
 const _boltOrigin = new THREE.Vector3();
 const _boltDirection = new THREE.Vector3();
 const MELEE_REACH = 3.2;
-const DEFLECT_REACH = 5.5;
 // Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
 // so holding right-click eats repeatedly with a clear gap between bites.
 const EAT_PAUSE_TICKS = 6;
@@ -663,8 +662,8 @@ export const InteractionController = ({
                 }
             }
         }
-        // A shield absorbs the blow: a metallic "clink", no hurt cry, so it is
-        // obvious the boss is invulnerable until its crystals are gone.
+        // The blow bounced (same polarity, a live tether, or a form change): a
+        // metallic "clink", no hurt cry, so it is obvious nothing landed.
         if (result === 'blocked' && targetKind === 'magnetic_warden') {
             soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
         } else if (result === 'damaged' && targetKind === 'boat') {
@@ -684,17 +683,6 @@ export const InteractionController = ({
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
-    // Hit a Magnetic Warden parry bolt back at it (a purple deflectable bolt
-    // within reach of the crosshair). Takes priority over attacking/mining.
-    const tryDeflectBolt = useCallback((): boolean => {
-        camera.getWorldPosition(_camPos);
-        camera.getWorldDirection(_camDir);
-        if (!entityManager.deflectProjectile(_camPos, _camDir, DEFLECT_REACH)) return false;
-        soundManager.play('entity.magnetic_warden.deflect', { volume: 0.9 });
-        interactionCooldown.current = 5;
-        return true;
-    }, [camera]);
-
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
             if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
@@ -702,10 +690,8 @@ export const InteractionController = ({
 
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
-                // Deflecting a parry bolt, then attacking an entity, both take
-                // priority over mining a block.
-                if (tryDeflectBolt()) { /* deflected */ }
-                else if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+                // Attacking an entity takes priority over mining a block.
+                if (!tryMeleeAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -732,7 +718,7 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack]);
 
     useFrame((_, delta) => {
         weaponCooldown.current = Math.max(0, weaponCooldown.current - Math.min(delta, 0.1));

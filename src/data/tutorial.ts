@@ -93,11 +93,14 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
             'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
             'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones, providing enough force to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
-            'Summon the Magnetic Warden at the central altar. Break its four shield crystals, strike its deflectable bolts back at it, and survive the slam and frenzy phases to cleanse the region.'
+            'Summon the Magnetic Warden at the central altar. It fights in three forms, and one rule runs the whole duel: same polarity repels, opposite attracts. Match its colour and its bolts bounce off your boots; oppose it and you are drawn in close enough to strike.',
+            'Its first form duels you on the platform. Its second, the Aegis, hovers out of reach tethered to one tower crystal at a time: climb and break that crystal, or burst the tether from below, and it crashes down stunned. Its last form, the Storm, flips polarity on a beat, each flip a ring you must be pinned against, with a quiet window after every ring.'
         ],
         bullets: [
             'Press R to flip your polarity; press N to switch the ability off entirely (upgraded boots).',
             'Same polarity repels, opposite attracts; use repulsion to launch and attraction to stick.',
+            'Bolts you match are repelled and absorbed as Flux. Ten fill your boots; the next flip (R) discharges a Flux Burst that clears bolts, snaps a tether, and staggers the Warden.',
+            'Its ground rings launch a matching polarity and pin the opposite one. Its melee bounces off a matching polarity: oppose it to land hits.',
             'Iron armor is ferromagnetic: without boots it drags you toward every magnet, with no control.',
             'Ruin caches hold magnetite building materials, crystals, and sometimes rarer metals.',
             'The Warden drops a boot upgrade, and defeating it permanently unlocks the region.',

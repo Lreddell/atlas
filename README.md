@@ -9,7 +9,7 @@ World Editor, or seek out sealed regions and their guardians.
 ## Highlights
 
 - Procedural surface and cave generation across more than twenty biomes
-- The sealed Magnetic Fields, polarity-based traversal, and the Magnetic Warden boss
+- The sealed Magnetic Fields, polarity-based traversal, and the three-form Magnetic Warden boss
 - Survival, creative, and spectator modes with crafting, combat, armor, tools, and boats
 - A live World Editor for terrain, caves, biomes, and Magnetic Fields generation
 - Streamed chunk generation and meshing through a unified worker pipeline
@@ -60,6 +60,9 @@ npm run electron:dev
 - Press `/` or `T` in-game to open the command/chat input.
 - Press `R` to flip polarity while wearing Polarity Boots. Upgraded boots use `N`
   to toggle their magnetic power.
+- In the Magnetic Warden fight, same polarity repels and opposite attracts: match
+  its colour to repel and absorb its bolts (charging Flux), oppose it to strike.
+  With Flux full, the next `R` flip discharges a Flux Burst.
 - Press `E` for inventory, `Q` to drop an item, and `F3` for the debug screen.
 - Focused text inputs keep normal typing behavior, including movement-key
   letters such as `W`, `A`, `S`, and `D`.

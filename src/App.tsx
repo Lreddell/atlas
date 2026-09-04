@@ -24,6 +24,7 @@ import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { BellTitanCinematic } from './components/BellTitanCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
+import { magneticWardenEncounter } from './systems/boss/MagneticWardenEncounter';
 import { bellTitanCinematic } from './systems/boss/bellTitanCinematic';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
@@ -33,7 +34,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -78,7 +79,7 @@ import {
 } from './types';
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
-import { resetInputState } from './systems/player/playerInput';
+import { inputState, resetInputState } from './systems/player/playerInput';
 import { loadGenConfig, normalizeGenConfigSnapshot, resetGenConfig, type WorldGenConfigSnapshot } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
@@ -304,9 +305,9 @@ const App: React.FC = () => {
   const daisRestoreRef = useRef<{ id: number; run: () => void } | null>(null);
   // True while handleStartGame is running (guards against double-click double-open).
   const startingWorldRef = useRef(false);
-  // True while the towers' magnet climb faces are present (placed for a fight, until
-  // stripped at 50% or on reset), so we never strip/place redundantly.
-  const climbMagnetsActiveRef = useRef(false);
+  // The player's current magnetic mode, readable from fixed-step entity ticks
+  // (the polarity rule needs to know whether the player controls a polarity).
+  const magneticModeRef = useRef<MagneticMode>('none');
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
   // Entity id of the boat the player is riding, or null. Boats are real world
@@ -612,6 +613,8 @@ const App: React.FC = () => {
           // Authored hazard recovery uses the same physics-safe teleport path as
           // commands and respawn, which also clears velocity and fall distance.
           (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
+          // The polarity rule: +1 / -1 with Polarity Boots, 0 (neutral) without.
+          () => (magneticModeRef.current === 'controlled' ? inputState.magneticPolarity : 0),
       );
   }, [damagePlayer]);
 
@@ -627,6 +630,7 @@ const App: React.FC = () => {
   const magneticMode: MagneticMode = controllable
       ? 'controlled'
       : (!magnetShielded && isWearingIronArmor(equipment) ? 'ferro' : 'none');
+  magneticModeRef.current = magneticMode;
   // Polarity boots soften falls while the ability is active; the upgraded pair
   // softens them further. 1 = no reduction.
   const fallDamageFactor = magneticMode === 'controlled'
@@ -1000,11 +1004,8 @@ const App: React.FC = () => {
       if (!a) return;
       summonArenaRef.current = null;
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      // Never leave the magnet climb faces on the walls after a fight.
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
+      // (The encounter itself strips the towers' magnet climb faces and any
+      // standing crystals when the boss leaves, defeated or not.)
       const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       if (daisDelayMs > 0) {
           // Tracked (id + the restore itself) so quitting the world inside the
@@ -1054,10 +1055,6 @@ const App: React.FC = () => {
       worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
       restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
   }, []);
 
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
@@ -1112,41 +1109,72 @@ const App: React.FC = () => {
       });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
-      // The boss launched a deflectable parry bolt, telegraph it with a cue.
-      const offParry = gameEvents.on('boss:parry', () => {
-          soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
-      });
-      // The Warden took a hit (a deflected bolt landing, etc.), a hurt grunt.
+      // The Warden took a hit: a hurt grunt (a punish-window hit lands harder).
       const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
       });
-      // Slam attack: a rise telegraph, then the shockwave impact.
+      // Every authored Warden action announces itself: windups get their own
+      // cues (editable slots under sounds/magnetic_warden/), so the telegraph
+      // is audible as well as visible.
+      const offAction = gameEvents.on('boss:action', ({ bossId, action }) => {
+          if (bossId !== 'magnetic_warden') return;
+          switch (action) {
+              case 'volley_windup': soundManager.play('entity.magnetic_warden.volley', { volume: 0.6 }); break;
+              case 'lash_windup': soundManager.play('entity.magnetic_warden.lash', { volume: 0.7 }); break;
+              case 'draw_windup': soundManager.play('entity.magnetic_warden.draw', { volume: 0.8 }); break;
+              case 'draw_recovery': soundManager.play('entity.magnetic_warden.repel', { volume: 0.9 }); break;
+              case 'swap_windup': soundManager.play('entity.magnetic_warden.swap_charge', { volume: 0.6 }); break;
+              case 'stagger': soundManager.play('entity.magnetic_warden.stagger', { volume: 0.8 }); break;
+              case 'shatter': soundManager.play('entity.magnetic_warden.shatter', { volume: 1.0 }); break;
+              case 'crash': soundManager.play('entity.magnetic_warden.crash', { volume: 1.0 }); break;
+              case 'stunned': soundManager.play('entity.magnetic_warden.stunned', { volume: 0.8 }); break;
+              case 'storm_rise': soundManager.play('entity.magnetic_warden.storm', { volume: 1.0 }); break;
+              default: break;
+          }
+      });
+      // Plunge: a rise telegraph, then the ring impact (also every Storm beat ring).
       const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
               { volume: phase === 'rise' ? 0.7 : 0.95 });
       });
-      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue. At frenzy
+      // The Storm metronome: two ticks count the beat in, then the beat itself.
+      const offBeatTick = gameEvents.on('boss:beat-tick', ({ remaining }) => {
+          soundManager.play('entity.magnetic_warden.beat_tick', { volume: 0.55, pitch: remaining <= 0.5 ? 1.25 : 1.0 });
+      });
+      const offBeat = gameEvents.on('boss:beat', ({ second }) => {
+          soundManager.play('entity.magnetic_warden.beat', { volume: second ? 0.8 : 0.9, pitch: second ? 1.15 : 1.0 });
+      });
+      // Tethers: the crystal ignites, and snaps (a crash follows via boss:action).
+      const offTether = gameEvents.on('boss:tether', () => soundManager.play('entity.magnetic_warden.tether', { volume: 0.7 }));
+      const offSnapped = gameEvents.on('boss:tether-snapped', () => soundManager.play('entity.magnetic_warden.snap', { volume: 0.9 }));
+      const offCrystals = gameEvents.on('boss:crystals', ({ mode }) => {
+          soundManager.play(mode === 'spawn' ? 'entity.magnetic_warden.crystal_spawn' : 'entity.magnetic_warden.crystal_break', { volume: 0.85 });
+      });
+      // The polarity rule, audibly: a matched bolt clinks off the boots (a
+      // matched strike clinks off the Warden via the melee 'blocked' result),
+      // and a full Flux announces itself before it discharges.
+      const offAbsorbed = gameEvents.on('bolt:absorbed', () => {
+          soundManager.play('entity.magnetic_warden.absorb', { volume: 0.45, pitch: 1.3 + Math.random() * 0.35 });
+      });
+      const offFluxFull = gameEvents.on('flux:changed', ({ full }) => {
+          if (full) soundManager.play('entity.magnetic_warden.flux_full', { volume: 0.8 });
+      });
+      const offBurst = gameEvents.on('flux:burst', ({ hitBoss }) => {
+          soundManager.play('entity.magnetic_warden.burst', { volume: hitBoss ? 1.0 : 0.8 });
+      });
+      // Form changes (Aegis at 2/3, Storm at 1/3): an enrage cue. At the Storm
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
           if (phase >= 3) musicController.setBossFrenzy(true);
-          // Entering the slam phase (≤50%): strip the towers' magnet climb faces so
-          // the player can't climb up to perch above the slam. The shield is already
-          // broken by now (the towers stay as cover, just unclimbable).
-          const a = summonArenaRef.current;
-          if (phase >= 2 && a && climbMagnetsActiveRef.current) {
-              climbMagnetsActiveRef.current = false;
-              stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-          }
       });
       // Reset the frenzy music whenever a fight begins or ends.
       const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
       const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
-      // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
-      // its tracking beam dissipates, BossCinematic handles the visual).
-      const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
-          entityManager.onShieldCrystalBroken(regionId);
+      // Breaking a tower crystal: the encounter snaps the tether it powers (it
+      // listens itself); here only the shatter cue.
+      const offCrystal = gameEvents.on('crystal:broken', () => {
           soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
       });
       // Upgraded-boots ability toggle (N) → recompute magneticMode.
@@ -1154,7 +1182,8 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
+          offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offSlam(); offPhase(); offCrystal(); offPower();
+          offBeatTick(); offBeat(); offTether(); offSnapped(); offCrystals(); offAbsorbed(); offFluxFull(); offBurst();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
@@ -3086,9 +3115,6 @@ const App: React.FC = () => {
                                 const centerX = x, centerZ = z, baseY = y - 4;
                                 const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
                                 summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
-                                // The climb-face magnets light up tower-by-tower as each crystal
-                                // spawns (in the cutscene); flag it so the reset strips them.
-                                climbMagnetsActiveRef.current = true;
 
                                 const cam = controlsRef.current?.getCamera();
                                 const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
@@ -3104,11 +3130,12 @@ const App: React.FC = () => {
                                         // baseY is the platform floor; spawn one above so the boss
                                         // settles on top of it (the dais is flattened by now). The
                                         // run-away grace already happened (the energy-ball charge),
-                                        // so it spawns aggro and the fight starts immediately.
-                                        entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
+                                        // so it spawns aggro and the fight starts immediately. The
+                                        // encounter takes the tower crystals it will tether to.
+                                        const boss = entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
                                             bossId, regionId: regionId ?? undefined,
-                                            shieldCrystalPositions: crystals,
                                         });
+                                        if (boss) magneticWardenEncounter.begin(boss.id, { centerX, centerZ, baseY, crystals });
                                     },
                                 });
                             }}

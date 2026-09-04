@@ -97,11 +97,11 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "music.lush_caves": { category: "music", sounds: ["music/lush_caves"], volume: 0.45 },
     "music.dripstone_caves": { category: "music", sounds: ["music/dripstone_caves"], volume: 0.45 },
 
-    // Magnetic Warden SFX
+    // Magnetic Warden SFX (see public/assets/rvx/sounds/magnetic_warden/README.txt).
+    // Cues without an authored file yet fall back on an existing Warden sound
+    // where one fits, and stay silent (fallback: false) where none does.
     "entity.magnetic_warden.polarity": { category: "blocks", sounds: ["magnetic_warden/polarity"], volume: 0.6 },
     "entity.magnetic_warden.shielded": { category: "blocks", sounds: ["magnetic_warden/shielded"], volume: 0.5 },
-    "entity.magnetic_warden.parry": { category: "blocks", sounds: ["magnetic_warden/parry"], volume: 0.7 },
-    "entity.magnetic_warden.deflect": { category: "blocks", sounds: ["magnetic_warden/deflect"], volume: 0.8 },
     "entity.magnetic_warden.slam_rise": { category: "blocks", sounds: ["magnetic_warden/slam_rise"], volume: 0.7 },
     "entity.magnetic_warden.slam": { category: "blocks", sounds: ["magnetic_warden/slam"], volume: 0.9 },
     "entity.magnetic_warden.enrage": { category: "blocks", sounds: ["magnetic_warden/enrage"], volume: 0.9 },
@@ -112,6 +112,27 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.magnetic_warden.charge": { category: "blocks", sounds: ["magnetic_warden/charge"], volume: 0.85 },
     "entity.magnetic_warden.summon": { category: "blocks", sounds: ["magnetic_warden/summon"], volume: 1.0 },
     "entity.magnetic_warden.defeat": { category: "music", sounds: ["magnetic_warden/defeat"], volume: 0.8 },
+    // Form I telegraphs.
+    "entity.magnetic_warden.volley": { category: "hostile", sounds: ["magnetic_warden/volley"], volume: 0.6, fallback: false },
+    "entity.magnetic_warden.lash": { category: "hostile", sounds: ["magnetic_warden/lash"], volume: 0.7, fallback: false },
+    "entity.magnetic_warden.draw": { category: "hostile", sounds: ["magnetic_warden/slam_rise"], volume: 0.8, pitch: 0.85 },
+    "entity.magnetic_warden.repel": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 0.9, pitch: 1.15 },
+    "entity.magnetic_warden.swap_charge": { category: "hostile", sounds: ["magnetic_warden/swap_charge"], volume: 0.6, fallback: false },
+    "entity.magnetic_warden.stagger": { category: "hostile", sounds: ["magnetic_warden/hurt"], volume: 0.8, pitch: 0.7 },
+    // Form changes and the Aegis tether.
+    "entity.magnetic_warden.shatter": { category: "hostile", sounds: ["magnetic_warden/crystal_spawn"], volume: 1.0, pitch: 0.8 },
+    "entity.magnetic_warden.tether": { category: "hostile", sounds: ["magnetic_warden/hum"], volume: 0.55 },
+    "entity.magnetic_warden.snap": { category: "hostile", sounds: ["magnetic_warden/deflect"], volume: 0.9 },
+    "entity.magnetic_warden.crash": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 1.0, pitch: 0.8 },
+    "entity.magnetic_warden.stunned": { category: "hostile", sounds: ["magnetic_warden/stunned"], volume: 0.8, fallback: false },
+    "entity.magnetic_warden.storm": { category: "hostile", sounds: ["magnetic_warden/hum"], volume: 0.9, pitch: 0.7 },
+    // The Storm metronome.
+    "entity.magnetic_warden.beat_tick": { category: "hostile", sounds: ["magnetic_warden/shielded"], volume: 0.55, pitch: 1.6 },
+    "entity.magnetic_warden.beat": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 0.9 },
+    // The polarity rule, audibly: repelled bolts, a repelled strike, Flux.
+    "entity.magnetic_warden.absorb": { category: "player", sounds: ["magnetic_warden/shielded"], volume: 0.45, pitch: [1.3, 1.65] },
+    "entity.magnetic_warden.flux_full": { category: "player", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8, pitch: 1.4 },
+    "entity.magnetic_warden.burst": { category: "player", sounds: ["magnetic_warden/deflect"], volume: 1.0 },
 
     // Resonant Vault authored audio
     "vault.discovery": { category: "ambient", sounds: ["resonant_vault/listening_stone"], volume: 0.55, fallback: false },

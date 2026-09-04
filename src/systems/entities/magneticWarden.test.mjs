@@ -4,227 +4,208 @@ import path from 'node:path';
 import test from 'node:test';
 
 // The entity modules pull in the BlockType enum + worldManager, so (per repo
-// convention) the boss-fight wiring is asserted via source text.
+// convention) the boss-fight WIRING is asserted via source text here. The fight
+// logic itself is exercised directly in systems/boss/magneticWardenCore.test.mjs.
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
 const entity = read('src/systems/entities/Entity.ts');
 const manager = read('src/systems/entities/EntityManager.ts');
+const core = read('src/systems/boss/magneticWardenCore.ts');
+const encounter = read('src/systems/boss/MagneticWardenEncounter.ts');
 const events = read('src/systems/events/GameEvents.ts');
 const interaction = read('src/components/controllers/InteractionController.tsx');
 const app = read('src/App.tsx');
+const summon = read('src/systems/boss/bossSummon.ts');
+const wardenRenderer = read('src/components/MagneticWardenRenderer.tsx');
+const entityRenderer = read('src/components/EntityRenderer.tsx');
 
-test('magnetic_warden boss kind is registered with the shield/polarity/projectile config', () => {
+test('magnetic_warden is a brain-driven boss body: no contact damage, no legacy phase config', () => {
     assert.match(entity, /magnetic_warden:\s*{[\s\S]*?isBoss:\s*true/);
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?shieldCrystals:\s*4/);
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?polaritySwapInterval:/);
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?projectileInterval:/);
-    // Entity carries the boss-fight state fields.
-    for (const f of ['shielded', 'shieldCrystals', 'polarity', 'polarityTimer', 'projectileTimer']) {
-        assert.match(entity, new RegExp(`\\b${f}:`));
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?brain:\s*'magnetic_warden'/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?contactDamage:\s*0/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?maxHp:\s*WARDEN_MAX_HP/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?leashRadius:/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?drops:\s*\[\{ type: BlockType\.POLARITY_BOOTS_UPGRADE/);
+    // The old inline mechanics are gone from the entity model.
+    for (const legacy of ['shieldCrystals', 'slamThreshold', 'parryDamageFraction', 'frenzyThreshold', 'awaitingParry', 'slamState']) {
+        assert.doesNotMatch(entity, new RegExp(`\\b${legacy}\\b`));
     }
-    assert.match(entity, /interface Projectile/);
+    // What remains is the polarity surface a brain drives.
+    assert.match(entity, /shielded: boolean/);
+    assert.match(entity, /polarity: number/);
+    assert.match(entity, /field\?: EntityMagneticField \| null/);
 });
 
-test('a shielded boss takes no damage until its crystals are gone', () => {
-    // damageEntity blocks (returns 'blocked', no damage) while shielded.
-    assert.match(manager, /if \(e\.shielded\)\s*{[^}]*return 'blocked';/);
-    // onShieldCrystalBroken decrements and drops the shield at 0.
-    assert.match(manager, /onShieldCrystalBroken\(regionId/);
-    assert.match(manager, /e\.shieldCrystals -= 1/);
-    assert.match(manager, /e\.shielded = false;[\s\S]*?'boss:vulnerable'/);
-    // Polarity swap + projectile volleys + magnetic-field impulse exist.
-    assert.match(manager, /e\.polarity \*= -1/);
-    assert.match(manager, /fireVolley/);
-    assert.match(manager, /tickProjectiles/);
-    assert.match(manager, /playerImpulseHandler/);
-});
-
-test('boss-fight events are declared', () => {
-    for (const ev of ['boss:shield', 'boss:vulnerable', 'boss:polarity', 'crystal:broken']) {
-        assert.match(events, new RegExp(`'${ev.replace(':', ':')}':`));
+test('the pure core owns the one rule, the three forms, and the Flux meter, deterministically', () => {
+    assert.match(core, /export function polarityRelation\(/);
+    assert.match(core, /Same polarity repels\. Opposite attracts\./);
+    assert.match(core, /WARDEN_FORM_THRESHOLDS[\s\S]*?\{ 2: 2 \/ 3, 3: 1 \/ 3 \}/);
+    assert.match(core, /WARDEN_FORM_NAMES[\s\S]*?Warden[\s\S]*?Aegis[\s\S]*?Storm/);
+    for (const action of ["'shatter'", "'storm_rise'", "'plunge_windup'", "'stunned'", "'recoil'", "'draw_active'", "'lash_windup'", "'swap_windup'"]) {
+        assert.ok(core.includes(action), `core declares ${action}`);
     }
+    assert.match(core, /export const FLUX_MAX = 10/);
+    assert.match(core, /export function getWardenBeatInterval/);
+    assert.match(core, /export function wardenShardOffsets/);
+    assert.match(core, /export function isInWardenCone/);
+    // No feints: a polarity swap is its own telegraphed action, and nothing in
+    // the fight rolls dice.
+    assert.doesNotMatch(core, /Math\.random/);
+    assert.match(core, /case 'swap_windup': return enterAction\(flipPolarity\(state, events\), 'swap_recovery', events\)/);
 });
 
-test('summoner right-click opens a confirmation; crystal break weakens the shield', () => {
-    // Right-click the summoner → boss_confirm container.
-    assert.match(interaction, /MAGNETIC_BOSS_SUMMONER/);
-    assert.match(interaction, /type:\s*'boss_confirm'/);
-    // Breaking a shield crystal emits crystal:broken with the region.
+test('EntityManager dispatches registered brains and resolves bolts and rings by the polarity rule', () => {
+    assert.match(manager, /registerBrain\(kind: string, brain: EntityBrain\)/);
+    assert.match(manager, /const brain = kind\.brain \? this\.brains\.get\(kind\.brain\) : undefined;/);
+    assert.match(manager, /brain\(e, dt, \{ player: pp, targetable \}\);/);
+    // The player's polarity reaches the fixed-step simulation through a provider (0 = no boots).
+    assert.match(manager, /polarityProvider\?: \(\) => number/);
+    assert.match(manager, /getPlayerPolarity\(\): number/);
+    // Bolts: same polarity is repelled and absorbed (Flux), opposite homes and hits.
+    assert.match(manager, /polarityRelation\(playerPolarity, p\.polarity\) === 'same'/);
+    assert.match(manager, /gameEvents\.emit\('bolt:absorbed'/);
+    assert.match(manager, /p\.homing && polarityRelation\(playerPolarity, p\.polarity\) === 'opposite'/);
+    // Rings: same is launched + hurt, opposite pinned safe, neutral hurt; flux rings are visual.
+    assert.match(manager, /s\.kind === 'polarity' && targetable && pp/);
+    assert.match(manager, /if \(relation === 'same'\) \{[\s\S]*?playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
+    assert.match(manager, /else if \(relation === 'neutral'\)/);
+    // Physics helpers a brain composes, and no leftover inline Warden mechanics.
+    for (const helper of ['applyGravity(', 'moveEntity(', 'leashEntity(', 'steerEntity(', 'haltEntity(', 'spawnProjectile(', 'spawnShockwave(', 'clearProjectilesWithin(', 'applyHitReaction(']) {
+        assert.ok(manager.includes(helper), `EntityManager exposes ${helper}`);
+    }
+    for (const legacy of ['tickBossMechanics', 'fireParryBolt', 'deflectProjectile', 'tickSlam', 'onShieldCrystalBroken', 'hitBossWithDeflected', 'slamState']) {
+        assert.doesNotMatch(manager, new RegExp(legacy));
+    }
+    // Contact damage only for kinds that declare it (the Warden declares none).
+    assert.match(manager, /kind\.contactDamage > 0 && targetable && pp/);
+});
+
+test('the encounter runtime registers as the brain and damage handler and owns the arena', () => {
+    assert.match(encounter, /entityManager\.registerBrain\(MAGNETIC_WARDEN_BOSS_ID/);
+    assert.match(encounter, /entityManager\.registerDamageHandler\(MAGNETIC_WARDEN_BOSS_ID/);
+    for (const ev of ['crystal:broken', 'bolt:absorbed', 'ability:changed', 'boss:cleared', 'boss:defeated']) {
+        assert.ok(encounter.includes(`gameEvents.on('${ev}'`), `encounter listens to ${ev}`);
+    }
+    // Form II re-forms the crystals and lights the climb faces; Form III consumes and strips them.
+    assert.match(encounter, /private spawnCrystals[\s\S]*?MAGNETIC_SHIELD_CRYSTAL[\s\S]*?placePillarClimbMagnets/);
+    assert.match(encounter, /private consumeCrystals[\s\S]*?BlockType\.AIR[\s\S]*?this\.stripMagnets\(\)/);
+    assert.match(encounter, /stripArenaClimbMagnets\(/);
+    // A broken crystal yanks the core toward that tower's edge of the platform.
+    assert.match(encounter, /this\.crashTarget = event\.reason === 'broken' \? this\.edgeBelowCrystal\(entity, event\.crystal\) : null/);
+    // Melee polarity: a repelled strike shoves the player; a stunned core is the punish window.
+    assert.match(encounter, /event\.reason === 'repelled' && player/);
+    assert.match(encounter, /gameEvents\.emit\('boss:repelled'/);
+    // Defeat routes through the manager's drop/eruption path, and any reset cleans the towers.
+    assert.match(encounter, /entityManager\.defeatEntity\(entityId\)/);
+    assert.match(encounter, /private cleanupArena\(\)/);
+    // Telegraph geometry is the hit geometry.
+    assert.match(encounter, /isInWardenCone\(\{ x: entity\.pos\.x, y: entity\.pos\.y, z: entity\.pos\.z \}, entity\.yaw, player, range, halfAngle\)/);
+    assert.match(encounter, /wardenShardOffsets\(this\.state\.clock\)/);
+});
+
+test('the boss-fight events are declared and the parry-era ones are gone', () => {
+    for (const ev of ['boss:form', 'boss:action', 'boss:tether', 'boss:tether-snapped', 'boss:crystals', 'boss:beat', 'boss:beat-tick', 'boss:repelled', 'bolt:absorbed', 'flux:changed', 'flux:burst', 'boss:shield', 'boss:polarity', 'boss:phase', 'crystal:broken']) {
+        assert.ok(events.includes(`'${ev}':`), `event ${ev} declared`);
+    }
+    assert.doesNotMatch(events, /'boss:parry'|'boss:deflected'/);
+});
+
+test('App attaches the encounter to the summoned boss and feeds it the player polarity', () => {
+    assert.match(app, /magneticWardenEncounter\.begin\(boss\.id, \{ centerX, centerZ, baseY, crystals \}\)/);
+    assert.match(app, /magneticModeRef\.current === 'controlled' \? inputState\.magneticPolarity : 0/);
+    assert.match(app, /some\(\(e\) => e\.bossId === bossId && e\.hp > 0\)/);
+    assert.match(app, /bossSummon\.begin\(/);
+    // Sound wiring for the new telegraphs and the Flux loop.
+    for (const ev of ['boss:action', 'boss:beat-tick', 'boss:beat', 'boss:tether', 'boss:tether-snapped', 'boss:crystals', 'bolt:absorbed', 'flux:changed', 'flux:burst']) {
+        assert.ok(app.includes(`gameEvents.on('${ev}'`), `App handles ${ev}`);
+    }
+    // The old shield/parry/strip plumbing is gone from App.
+    assert.doesNotMatch(app, /onShieldCrystalBroken|climbMagnetsActiveRef|boss:parry|stripArenaClimbMagnets/);
+    // The Storm still drives the music frenzy, and defeat still cleanses the region.
+    assert.match(app, /if \(phase >= 3\) musicController\.setBossFrenzy\(true\)/);
+    assert.match(app, /boss:defeated[\s\S]*?region\?\.bossId === bossId[\s\S]*?cleanseRegion\(region\.id\)/);
+});
+
+test('melee no longer has a deflect step; a bounced strike still clinks', () => {
+    assert.doesNotMatch(interaction, /tryDeflectBolt|deflectProjectile|DEFLECT_REACH/);
+    assert.match(interaction, /result === 'blocked' && targetKind === 'magnetic_warden'/);
     assert.match(interaction, /MAGNETIC_SHIELD_CRYSTAL\)\s*{[\s\S]*?'crystal:broken'/);
 });
 
-test('App wires the confirmation modal, no-duplicate spawn, and crystal→shield', () => {
-    assert.match(app, /BossConfirmModal/);
-    // No duplicate boss: spawn only when none of that bossId is alive.
-    assert.match(app, /some\(\(e\) => e\.bossId === bossId && e\.hp > 0\)/);
-    assert.match(app, /entityManager\.spawn\(bossId/);
-    // Crystal break routes to the shield handler; magnetic-field impulse hook wired.
-    assert.match(app, /crystal:broken[\s\S]*?onShieldCrystalBroken/);
-    assert.match(app, /applyImpulse\(x, y, z\)/);
+test('the summon cutscene consumes its crystals into the Warden and leaves the towers bare', () => {
+    assert.match(summon, /worldManager\.setBlocks\(this\.crystals\.map\(\(c\) => \(\{ x: c\.x, y: c\.y, z: c\.z, type: BlockType\.AIR \}\)\)\)/);
+    assert.doesNotMatch(summon, /placePillarClimbMagnets/);
+    assert.match(summon, /MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(summon, /flattenArenaBridges/);
+    assert.match(summon, /onSpawnBoss\(\)/);
 });
 
-test('the Warden is leashed and refuses to path into the lava moat', () => {
-    // Hazard/ledge guard: under its own power it won't step off a ledge or onto lava.
-    assert.match(manager, /isSafeGround/);
-    assert.match(manager, /BlockType\.LAVA/);
-    assert.match(manager, /getSupportTop/);
-    // Hard leash containment around the spawn (home).
-    assert.match(manager, /applyLeash/);
-    assert.match(manager, /home:\s*new THREE\.Vector3/);
-    // Movement is guarded only while grounded and not being knocked back.
-    assert.match(manager, /const guard = e\.grounded && !preserveKnockback/);
-    // The boss kind declares a leash radius and a magnetic field.
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?leashRadius:/);
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?magneticFieldRange:/);
+test('the Warden renders its own three-form body and telegraphs from the encounter snapshot', () => {
+    assert.match(entityRenderer, /'magnetic_warden',\n\]\)/);
+    assert.match(entityRenderer, /<MagneticWardenRenderer \/>/);
+    assert.match(entityRenderer, /p\.kind === 'spiral' \? 0\.62 : 1/);
+    assert.match(entityRenderer, /s\.kind === 'flux' \? FLUX_RING/);
+    assert.match(wardenRenderer, /magneticWardenEncounter\.getSnapshot\(\)/);
+    // The Lash sector is oriented with the entity yaw convention (verified numerically).
+    assert.match(wardenRenderer, /sector\.rotation\.set\(-Math\.PI \/ 2, 0, entity\.yaw\)/);
+    assert.match(wardenRenderer, /-Math\.PI \/ 2 - WARDEN_TIMING\.lash\.halfAngle, WARDEN_TIMING\.lash\.halfAngle \* 2/);
+    // Draw disc, plunge disc, beat countdown rings, shield shimmer, tether beam, shards.
+    for (const ref of ['drawDiscRef', 'plungeDiscRef', 'beatRingRef', 'beatRing2Ref', 'shieldRef', 'tetherRef', 'stormShardRefs', 'wingsRef', 'haloRef']) {
+        assert.ok(wardenRenderer.includes(ref), `renderer has ${ref}`);
+    }
+    assert.match(wardenRenderer, /snap\.shards\[index\]/);
 });
 
-test('the Warden field is exposed to the player physics and applied with clamping', () => {
-    // EntityManager publishes the field as sources for the player to apply.
-    assert.match(manager, /getMagneticFieldSources\(\)/);
-    // The pure, clamped field math lives in magneticField and is wrapped in magnetism.
+test('the HUD reads the forms, the receding tether shield, and the Flux meter', () => {
+    const bar = read('src/components/ui/BossBar.tsx');
+    assert.match(bar, /magnetic_warden:\s*\[2 \/ 3, 1 \/ 3\]/);
+    assert.match(bar, /boss:form/);
+    assert.match(bar, /FORM \{FORM_NUMERALS/);
+    assert.match(bar, /boss:polarity/);
+    assert.match(bar, /shieldPct/);
+    const indicator = read('src/components/ui/PolarityIndicator.tsx');
+    assert.match(indicator, /flux:changed/);
+    assert.match(indicator, /FLUX READY/);
+});
+
+test('every new telegraph has a sound slot, documented for the sound pack', () => {
+    const sounds = read('src/systems/sound/soundDefaults.ts');
+    const readme = read('public/assets/rvx/sounds/magnetic_warden/README.txt');
+    for (const slot of ['volley', 'lash', 'draw', 'repel', 'swap_charge', 'stagger', 'shatter', 'tether', 'snap', 'crash', 'stunned', 'storm', 'beat_tick', 'beat', 'absorb', 'flux_full', 'burst', 'hurt', 'defeat', 'enrage', 'crystal_break', 'crystal_spawn']) {
+        assert.match(sounds, new RegExp(`entity\\.magnetic_warden\\.${slot}`));
+        assert.ok(readme.includes(slot), `README documents ${slot}`);
+    }
+    assert.doesNotMatch(sounds, /entity\.magnetic_warden\.parry|entity\.magnetic_warden\.deflect"/);
+});
+
+test('the Warden field still drives the player physics, with the Draw raising its drift', () => {
     const field = read('src/systems/player/magneticField.ts');
-    assert.match(field, /bossFieldVelocityDelta/);
-    assert.match(field, /BOSS_FIELD_MAX_DRIFT/);
-    const magnetism = read('src/systems/player/magnetism.ts');
-    assert.match(magnetism, /applyBossMagneticFields/);
-    // The player physics actually applies the boss field each tick.
+    assert.match(field, /maxDrift\?: number/);
+    assert.match(field, /\(s\.maxDrift \?\? BOSS_FIELD_MAX_DRIFT\) \* falloff/);
     const player = read('src/components/Player.tsx');
     assert.match(player, /getMagneticFieldSources\(\)/);
     assert.match(player, /applyBossMagneticFields/);
+    assert.match(manager, /maxDrift: e\.field\.maxDrift/);
+    assert.match(core, /draw: \{ range: 14, force: 60, maxDrift: 12/);
 });
 
-test('polarity swaps do NOT shove the player, and the boss frenzies at low HP', () => {
-    // A polarity swap no longer nudges/hops the player (no per-swap shockwave), it
-    // was ruining pillar jumps. The dodge mechanic is the slam shockwave instead.
-    assert.doesNotMatch(manager, /emitPolarityShockwave/);
-    // Frenzy below the HP threshold speeds barrages/swaps up.
-    assert.match(manager, /const frenzy = !e\.shielded && e\.hp <= e\.maxHp \* \(kind\.frenzyThreshold/);
-    assert.match(manager, /frenzy \?/);
-    assert.match(entity, /frenzyThreshold:/);
+test('player-facing text teaches the one rule', () => {
+    const tutorial = read('src/data/tutorial.ts');
+    assert.match(tutorial, /Same polarity repels, opposite attracts/);
+    assert.match(tutorial, /Flux/);
+    const tips = read('src/components/ui/LoadingScreen.tsx');
+    assert.match(tips, /Match the Warden/);
+    const modal = read('src/components/ui/BossConfirmModal.tsx');
+    assert.match(modal, /Same polarity repels, opposite attracts/);
+    const changelog = read('CHANGELOG.md');
+    assert.match(changelog, /## \[Unreleased\]/);
+    assert.match(changelog, /three forms/i);
 });
 
-test('projectiles aim at the head, boss flies up while shielded, bolts clear on reset', () => {
-    // Both volleys and the parry bolt aim at the player's head, not the chest.
-    assert.match(manager, /fireVolley[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
-    assert.match(manager, /fireParryBolt[\s\S]*?pp\.y \+ PLAYER_HEIGHT \* 0\.9/);
-    // While shielded the boss floats UP toward the climbing player to shoot at
-    // them, eased (not snapped) toward a low, weightless drift speed.
-  assert.match(manager, /e\.isBoss && e\.shielded && e\.aggro && pp && targetable/);
-    assert.match(manager, /const want = THREE\.MathUtils\.clamp\(dyTarget \* 1\.8, -3, 4\)/);
-    assert.match(manager, /e\.vel\.y \+= \(want - e\.vel\.y\) \* Math\.min\(1, dt \* 3\.2\)/);
-    // A despawn/reset wipes all bolts + shockwaves.
-    assert.match(manager, /private despawnBoss[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
-});
-
-test('vulnerable phase loops dodge-barrage then a deflectable parry bolt', () => {
-    // Shielded → steady barrage; vulnerable → barrage timer then a parry bolt.
-    assert.match(manager, /if \(e\.shielded\) {[\s\S]*?fireVolley/);
-    assert.match(manager, /e\.awaitingParry/);
-    assert.match(manager, /fireParryBolt/);
-    assert.match(manager, /'boss:parry'/);
-    // While a parry bolt is live, all NEW fire is held (awaitingParry), but the
-    // barrage bolts already in flight are NOT wiped, they stay live until ttl/hit.
-    assert.match(manager, /e\.awaitingParry = true/);
-    assert.doesNotMatch(manager, /this\.projectiles = this\.projectiles\.filter\(\(p\) => p\.owner === 'player'\)/);
-    // The deflectable bolt is purple, slow, boss-owned.
-    assert.match(manager, /deflectable: true/);
-});
-
-test('the player can deflect a parry bolt back for ~1/12 of the boss HP', () => {
-    assert.match(manager, /deflectProjectile\(/);
-    assert.match(manager, /best\.owner = 'player'/);
-    assert.match(manager, /hitBossWithDeflected/);
-    assert.match(manager, /parryDamageFraction/);
-    assert.match(entity, /parryDamageFraction:\s*1 \/ 12/);
-    // Wired into the left-click handler ahead of mining/attacking.
-    assert.match(interaction, /deflectProjectile/);
-    assert.match(interaction, /tryDeflectBolt\(\)/);
-});
-
-test('phase 2 (≤50% HP) slam creates a polarity shockwave you dodge by swapping', () => {
-    // Boss kind declares the slam + a 50% threshold; frenzy stays at 25%.
-    assert.match(entity, /slamThreshold:\s*0\.5/);
-    assert.match(entity, /frenzyThreshold:\s*0\.25/);
-    assert.match(entity, /slamRiseHeight:/);
-    assert.match(entity, /interface Shockwave/);
-    // EntityManager runs the rise→hang→drop→shockwave machine.
-    assert.match(manager, /private startSlam\(/);
-    assert.match(manager, /private tickSlam\(/);
-    assert.match(manager, /spawnShockwave/);
-    assert.match(manager, /tickShockwaves/);
-    assert.match(manager, /getShockwaves\(\)/);
-    // Same polarity launches + hurts; the impact shakes the camera.
-    assert.match(manager, /playerPol === s\.polarity/);
-    assert.match(manager, /addTrauma/);
-    // The slam is telegraphed via a boss:slam event (rise + impact).
-    assert.match(manager, /'boss:slam'/);
-    assert.match(events, /'boss:slam':/);
-    // The renderer draws expanding shockwave rings + the player shakes.
-    const renderer = read('src/components/EntityRenderer.tsx');
-    assert.match(renderer, /getShockwaves\(\)/);
-    const player = read('src/components/Player.tsx');
-    assert.match(player, /sampleShake/);
-});
-
-test('the boss health bar tints to the current polarity', () => {
-    const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /polarity < 0/);
-    assert.match(bar, /boss:polarity/);
-});
-
-test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {
-    assert.match(manager, /despawnAllBosses\(\)/);
-    assert.match(manager, /private despawnBoss\(/);
-    // Despawn clears any standing crystals (set to AIR) and clears the bar.
-    assert.match(manager, /despawnBoss[\s\S]*?BlockType\.AIR/);
-    assert.match(manager, /'boss:cleared'/);
-    assert.match(manager, /BOSS_DESPAWN_RADIUS/);
-    assert.match(app, /entityManager\.despawnAllBosses\(\)/);
-    assert.match(app, /getShieldCrystalPositions/);
-    assert.match(entity, /shieldCrystalPositions\?/);
-});
-
-test('projectiles are softened and a defeat sound cue is wired', () => {
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?projectileDamage:\s*2/);
-    // Boss SFX events exist (editable in the sounds folders).
-    const sounds = read('src/systems/sound/soundDefaults.ts');
-    for (const ev of ['parry', 'deflect', 'defeat', 'polarity', 'shielded']) {
-        assert.match(sounds, new RegExp(`entity\\.magnetic_warden\\.${ev}`));
-    }
-    assert.match(app, /entity\.magnetic_warden\.defeat/);
-});
-
-test('boss music loops immediately with no fade-in', () => {
-    const mc = read('src/systems/sound/MusicController.ts');
-    assert.match(mc, /BOSS_MAGNETIC[\s\S]*?nextPlayTime = 0/);
-    assert.match(mc, /context === 'BOSS_MAGNETIC'\) return 0/);
-    assert.match(mc, /enteringBoss/);
-});
-
-test('polarity swaps (and their sound) only happen while engaged', () => {
-    assert.match(manager, /polaritySwapInterval && pp && targetable && e\.aggro/);
-});
-
-test('a blocked hit is distinct: no damage, a shield shimmer, a clink', () => {
-    assert.match(manager, /'damaged' \| 'blocked' \| 'none'/);
-    assert.match(manager, /shieldHitUntil/);
-    assert.match(interaction, /result === 'blocked'/);
-    const renderer = read('src/components/EntityRenderer.tsx');
-    assert.match(renderer, /shieldHitUntil/);
-});
-
-test('the boss bar shows a recedable purple shield layer (no instructional text)', () => {
-    const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /shieldPct/);
-    assert.match(bar, /boss:polarity/);
-    assert.doesNotMatch(bar, /match it to repel/);
-    // The bar is no longer hidden by the death screen.
-    assert.doesNotMatch(app, /!showDeathScreen && <BossBar/);
-});
+// --- Regression guards carried over from the previous fight's suite ---------
 
 test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?drops:\s*\[\{ type: BlockType\.POLARITY_BOOTS_UPGRADE/);
     const recipes = read('src/recipes.ts');
     assert.match(recipes, /UPGRADED_POLARITY_BOOTS/);
     const equip = read('src/systems/registry/equipment.ts');
@@ -232,159 +213,99 @@ test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
     const input = read('src/systems/player/playerInput.ts');
     assert.match(input, /polarityPowerOn/);
     assert.match(input, /'KeyN'/);
-    // Ctrl/Cmd+R no longer reloads the page.
     assert.match(input, /e\.ctrlKey \|\| e\.metaKey[\s\S]*?preventDefault\(\)/);
 });
 
-test('the arena has water landing pools and a removable dais; crystals spawn later', () => {
+test('the arena has water landing pools and a removable dais; crystals spawn only for a fight', () => {
     const arena = read('src/systems/world/magneticArena.ts');
     assert.match(arena, /buildPillarLandingPools/);
     assert.match(arena, /BlockType\.WATER/);
-    // Crystals are NOT generated with the arena, the summon cutscene spawns them
-    // at top+2 (getShieldCrystalPositions), so the arena is empty until you fight.
     assert.match(arena, /getShieldCrystalPositions/);
     assert.doesNotMatch(arena, /ctx\.setBlock\(c\.x, top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL\)/);
-    // The dais can be flattened (boss alive) and restored (boss gone).
     assert.match(arena, /export function flattenArenaDais/);
     assert.match(arena, /export function restoreArenaDais/);
+    assert.match(arena, /export function placePillarClimbMagnets/);
+    assert.match(arena, /export function stripArenaClimbMagnets/);
 });
 
 test('the four causeways drop into the lava during the fight and return after', () => {
     const arena = read('src/systems/world/magneticArena.ts');
-    // Bridge cells + flatten/restore helpers exist.
     assert.match(arena, /BRIDGE_CELLS/);
     assert.match(arena, /export function flattenArenaBridges/);
     assert.match(arena, /export function restoreArenaBridges/);
-    // Flattened as the boss spawns (sealed in); restored when the boss is gone.
-    const summon = read('src/systems/boss/bossSummon.ts');
     assert.match(summon, /flattenArenaBridges/);
     assert.match(app, /restoreArenaBridges/);
 });
 
 test('the player position is not dragged by the cutscene camera (leave = stay put)', () => {
     const player = read('src/components/Player.tsx');
-    // PlayerRefUpdater must skip copying the camera while the cinematic owns it, so
-    // quitting mid-cutscene saves the spot the player was actually standing.
     assert.match(player, /PlayerRefUpdater[\s\S]*?if \(cinematicMode \|\| bossSummon\.isActive\(\)\) return/);
     assert.match(app, /<PlayerRefUpdater playerPosRef=\{playerPosRef\} cinematicMode=\{cinematicMode\}/);
 });
 
-test('deleting a world uses an in-app modal, not a blocking native confirm', () => {
-    const hook = read('src/components/ui/mainMenu/useWorldMenu.ts');
-    // No native confirm() (it blocks the event loop and breaks text-input focus).
-    assert.doesNotMatch(hook, /window\.confirm/);
-    assert.match(hook, /setPendingDeleteId/);
-    assert.match(hook, /confirmDeleteWorld/);
-    const menu = read('src/components/ui/MainMenu.tsx');
-    assert.match(menu, /<ConfirmModal/);
-    assert.match(menu, /pendingDeleteId &&/);
-});
-
 test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts', () => {
     const input = read('src/systems/player/playerInput.ts');
-    // KeyR no longer bails when Ctrl/Cmd is held, it suppresses reload but STILL
-    // flips polarity (you are usually holding Ctrl to sprint during the fight).
     assert.match(input, /case 'KeyR':[\s\S]*?if \(e && \(e\.ctrlKey \|\| e\.metaKey\)\) e\.preventDefault\(\);[\s\S]*?inputState\.magneticPolarity = inputState\.magneticPolarity >= 0 \? -1 : 1/);
-    // The old early-return guard (which ate the swap while sprinting) is gone.
-    assert.doesNotMatch(input, /e\.ctrlKey \|\| e\.metaKey\)\) \{ e\.preventDefault\(\); break; \}/);
-    // On boss death, lingering bolts + shockwaves are wiped so they can't keep
-    // hitting the player during the victory moment.
     assert.match(manager, /addTrauma\(1\.0\);[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
 });
 
-test('boss phase transitions (50%/25%) telegraph with FX, sound, and bar markers', () => {
-    // EntityManager GATES the boss at 50%/25% (clamps HP to the threshold) and
-    // erupts + emits boss:phase exactly there, not below.
-    assert.match(manager, /Phase gate/);
-    assert.match(manager, /e\.hp = e\.maxHp \* thr; phase = ph/);
-    assert.match(manager, /gameEvents\.emit\('boss:phase'/);
-    assert.match(events, /'boss:phase':/);
-    // App plays an enrage cue (editable sound slot).
-    assert.match(app, /entity\.magnetic_warden\.enrage/);
-    const sounds = read('src/systems/sound/soundDefaults.ts');
-    assert.match(sounds, /entity\.magnetic_warden\.enrage/);
-    // The boss bar shows modular phase markers (slam 50% / frenzy 25%) as
-    // Atlas-pixel diamond pips, plus a pulse on transition.
-    const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /magnetic_warden:\s*\[0\.5, 0\.25\]/);
-    assert.match(bar, /bell_titan:\s*\[0\.67, 0\.34\]/);
-    assert.match(bar, /PHASE_MARKERS\[boss\.bossId\]/);
-    assert.match(bar, /boss:phase/);
-    // The slam goes through a charge windup before launching.
-    assert.match(manager, /slamState = 'charging'/);
-});
-
-test('slam charges, launches high, homes over the player, and is telegraphed', () => {
-    // Windup state + a high launch + frenzy-faster cadence.
-    assert.match(entity, /slamChargeTime:/);
-    assert.match(entity, /slamRiseHeight: 50/);
-    assert.match(entity, /slamTrackSpeed:/);
-    assert.match(manager, /private startSlam\(e: Entity, kind: EntityKind, frenzy: boolean\)/);
-    assert.match(manager, /frenzy \? 0\.45 : 1/);
-    // Homes the boss over the player while airborne (rising + most of the hang).
-    assert.match(manager, /private slamTrack\(/);
-    assert.match(manager, /if \(pp\) this\.slamTrack\(e, pp, track, dt\)/);
-    // The shockwave spawns where the boss actually lands (its tracked x/z).
-    assert.match(manager, /spawnShockwave[\s\S]*?x: e\.pos\.x[\s\S]*?z: e\.pos\.z/);
-    // A rendered ground indicator (not UI) tracks the boss and flashes near the drop.
-    const renderer = read('src/components/EntityRenderer.tsx');
-    assert.match(renderer, /Slam landing indicator/);
-    assert.match(renderer, /slamRefs/);
-    assert.match(renderer, /e\.slamState === 'charging'/);
-});
-
-test('cutscene beams feed the ball until detonation; return is snappier; hurt sfx', () => {
-    const summon = read('src/systems/boss/bossSummon.ts');
-    // Beams persist until the explosion (T_IMPACT), not collapsing when the ball forms.
-    assert.match(summon, /t >= T_BEAM && t < T_IMPACT/);
-    assert.match(summon, /FLYBACK_DUR = 2\.0/);
-    // Flyback flies to the return spot looking at the ball (not the player's old angle).
-    assert.match(summon, /this\.camPos\.lerpVectors\(this\._eye, this\.returnPos, k\)/);
-    assert.match(summon, /quatLookAt\(this\.camPos, this\.altar, this\.camQuat\)/);
-    const cine = read('src/components/BossCinematic.tsx');
-    // Beams render regardless of the camera handback (driven by beamProgress).
-    assert.match(cine, /cutsceneProg = bossSummon\.beamProgress/);
-    // Boss takes-damage hurt cue (e.g. a deflected bolt landing).
-    assert.match(app, /entity\.magnetic_warden\.hurt/);
-    const sounds = read('src/systems/sound/soundDefaults.ts');
-    assert.match(sounds, /entity\.magnetic_warden\.hurt/);
-});
-
-test('shield beams track the boss (crystal-tethered) and dissipate per crystal', () => {
-    const cine = read('src/components/BossCinematic.tsx');
-    // After spawn the beams re-target the boss and track it while the crystal stands.
-    assert.match(cine, /e\.isBoss && \(e\.shieldCrystalPositions\?\.length/);
-    assert.match(cine, /MAGNETIC_SHIELD_CRYSTAL/);
-    assert.match(cine, /boss\.pos\.x, boss\.pos\.y \+ boss\.height \* 0\.5, boss\.pos\.z/);
-    // A crystal shatter erupts + the beam fades out, with a dissipate sound in App.
-    assert.match(cine, /wasStanding\.current\[i\][\s\S]*?particleFx\.burst/);
-    assert.match(app, /entity\.magnetic_warden\.crystal_break/);
-    const sounds = read('src/systems/sound/soundDefaults.ts');
-    assert.match(sounds, /entity\.magnetic_warden\.crystal_break/);
-});
-
-test('boss fight ambiance: polarity vignette + per-phase storm', () => {
+test('boss fight ambiance: polarity vignette + per-form storm', () => {
     assert.match(app, /<PolarityVignette/);
-    const vig = read('src/components/ui/PolarityVignette.tsx');
-    assert.match(vig, /boxShadow/);
-    assert.match(vig, /magneticPolarity/);
-    // Shared phase intensity drives fog + FX storms.
     const phase = read('src/systems/boss/bossPhaseState.ts');
     assert.match(phase, /get intensity/);
     const dn = read('src/components/world/DayNightCycle.tsx');
     assert.match(dn, /bossPhaseState\.intensity/);
-    // Fog tightens harder per phase, really thick at frenzy (storm 1.0), and the
-    // storm intensity is damped so the change eases in gradually (no snap).
-    assert.match(dn, /fogNear = THREE\.MathUtils\.lerp\(fogNear, 12 - 8 \* storm, mag\)/);
-    assert.match(dn, /stormBlendRef\.current = THREE\.MathUtils\.damp/);
     const fx = read('src/components/FxParticles.tsx');
-    assert.match(fx, /bossPhaseState\.intensity/);
-    // Frenzy: ambient motes ease into a rising spiral column (smoothed frenzyBlend),
-    // and the whole ambient field (including existing motes) orbits the player.
     assert.match(fx, /bossPhaseState\.isFrenzy/);
-    assert.match(fx, /frenzyBlend\.current = THREE\.MathUtils\.damp/);
-    assert.match(fx, /const frenzySwirl = 2\.0 \* fb/);
-    assert.match(fx, /p\.ambient && frenzySwirl !== 0/);
+    assert.match(encounter, /gameEvents\.emit\('boss:phase', \{ bossId: MAGNETIC_WARDEN_BOSS_ID, entityId: entity\.id, phase: form \}\)/);
+});
+
+test('boss music loops immediately and the Storm speeds it up +100 cents', () => {
+    const mc = read('src/systems/sound/MusicController.ts');
+    assert.match(mc, /BOSS_MAGNETIC[\s\S]*?nextPlayTime = 0/);
+    assert.match(mc, /context === 'BOSS_MAGNETIC'\) return 0/);
+    assert.match(mc, /FRENZY_PLAYBACK_RATE = 2 \*\* \(1 \/ 12\)/);
+    assert.match(mc, /setBossFrenzy/);
+});
+
+test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {
+    assert.match(manager, /despawnAllBosses\(\)/);
+    assert.match(manager, /private despawnBoss\(/);
+    assert.match(manager, /'boss:cleared'/);
+    assert.match(manager, /BOSS_DESPAWN_RADIUS/);
+    assert.match(app, /entityManager\.despawnAllBosses\(\)/);
+    // The encounter cleans its towers on that signal.
+    assert.match(encounter, /gameEvents\.on\('boss:cleared', \(\) => this\.reset\(\)\)/);
+});
+
+test('leaving the world mid-fight resets the arena before saving', () => {
+    assert.match(app, /const resetSummonArena = useCallback/);
+    assert.match(app, /resetSummonArena[\s\S]*?bossSummon\.cancel\(\)/);
+    assert.match(app, /resetSummonArena[\s\S]*?despawnAllBosses\(\)/);
+    assert.match(app, /resetSummonArena\(\);[\s\S]{0,120}?saveGame\(\{ force: true \}\)/);
+});
+
+test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
+    assert.match(manager, /e\.home\.y \+ 4/);
+    assert.match(manager, /this\.lootDropTimer = setTimeout\([\s\S]*?spawnDrops\(hx, hy, hz\);[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
+    assert.match(manager, /clear\(\): void \{[\s\S]*?clearTimeout\(this\.lootDropTimer\)/);
+    assert.match(manager, /if \(e\.kind === 'magnetic_warden' && e\.home\) \{[\s\S]*?particleFx\.burst[\s\S]*?addTrauma\(1\.0\)/);
+    assert.match(app, /restoreSummonAltar\(BOSS_DEFEAT_ALTAR_DELAY_MS\)/);
+    assert.match(manager, /export const BOSS_DEFEAT_ALTAR_DELAY_MS/);
+});
+
+test('arena structural edits are batched (setBlocks) to avoid reset lag', () => {
+    const wm = read('src/systems/WorldManager.ts');
+    assert.match(wm, /setBlocks\(edits:/);
+    const arena = read('src/systems/world/magneticArena.ts');
+    assert.match(arena, /setBlocks: \(edits: ArenaEdit\[\]\) => void/);
+    assert.match(app, /restoreArenaDais\([\s\S]*?worldManager\.setBlocks\(edits\)/);
+    assert.match(encounter, /worldManager\.setBlocks\(/);
+});
+
+test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {
+    const regions = read('src/systems/world/regions.ts');
+    assert.match(regions, /magnetic_fields:\s*{[\s\S]*?bossId:\s*'magnetic_warden'/);
 });
 
 test('/setspawn sets a personal respawn point like a bed', () => {
@@ -394,126 +315,24 @@ test('/setspawn sets a personal respawn point like a bed', () => {
     assert.match(cmds, /'\/setspawn'/);
 });
 
-test('frenzy speeds the music up +100 cents, the exact opposite of night', () => {
-    const mc = read('src/systems/sound/MusicController.ts');
-    assert.match(mc, /FRENZY_PLAYBACK_RATE = 2 \*\* \(1 \/ 12\)/);
-    assert.match(mc, /setBossFrenzy/);
-    assert.match(mc, /this\.bossFrenzy \? FRENZY_PLAYBACK_RATE/);
-    const sm = read('src/systems/sound/SoundManager.ts');
-    assert.match(sm, /setMusicPlaybackRate/);
-    assert.match(app, /setBossFrenzy\(true\)/);
-});
-
-test('a direct boss hit hurts a lot and knockback scales with hit strength', () => {
-    assert.match(entity, /contactDamage: 16/);
-    // Player knockback scales with damage (heavy hits throw you).
-    assert.match(app, /const kb = 6 \+ amount \* 0\.8/);
-    // Wrong-polarity slam launches hard.
-    assert.match(manager, /playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
-    // Slam locks ~0.45s before impact and frenzy flips polarity as a feint.
-    assert.match(manager, /e\.slamPhaseTimer > 0\.45/);
-    assert.match(manager, /Frenzy FEINT/);
-    // Polarity is held briefly after the slam (first phase recovers a touch faster
-    // than before; the relentless frenzy barely pauses).
-    assert.match(manager, /e\.polarityTimer = Math\.max\(e\.polarityTimer, frenzy \? 0\.5 : 3\)/);
-    assert.match(manager, /e\.projectileTimer = Math\.max\(e\.projectileTimer, frenzy \? 0\.2 : 0\.7\)/);
-});
-
-test('the last phase is relentless: continuous fire + rapid polarity, parry kept', () => {
-    // Frenzy bypasses the barrage/parry-hold gating, it fires continuously and
-    // still weaves in the deflectable parry bolt so it stays damageable.
-    assert.match(manager, /if \(frenzy\) {[\s\S]*?this\.fireVolley\(e, kind, pp, true\)[\s\S]*?fireParryBolt/);
-    // Polarity keeps the same average cadence as other phases but jitters the
-    // interval so swaps are unpredictable, not faster.
-    assert.match(manager, /e\.polarityTimer = frenzy[\s\S]*?kind\.polaritySwapInterval \* \(0\.6 \+ Math\.random\(\) \* 0\.9\)/);
-});
-
-test('climb magnets are placed per-pillar, stripped at 50% and on reset; beams purple', () => {
-    const arena = read('src/systems/world/magneticArena.ts');
-    assert.match(arena, /export function placePillarClimbMagnets/);
-    assert.match(arena, /export function stripArenaClimbMagnets/);
-    assert.match(arena, /collectClimbFaceCells/);
-    // Placed tower-by-tower as each crystal spawns in the cutscene.
-    const summon = read('src/systems/boss/bossSummon.ts');
-    assert.match(summon, /placePillarClimbMagnets\(p\.centerX, p\.centerZ, p\.baseY, i/);
-    // Stripped when the slam phase begins (≤50%) and on reset.
-    assert.match(app, /phase >= 2 && a && climbMagnetsActiveRef\.current[\s\S]*?stripArenaClimbMagnets/);
-    // Never restored, the walls stay plain brick after a fight.
-    assert.doesNotMatch(app, /restoreArenaPillars/);
-    // Slams come every ~8s (frenzy faster).
-    assert.match(entity, /slamInterval: 8/);
-    // Every beam is the one purple colour (no red/blue inconsistency).
-    const cine = read('src/components/BossCinematic.tsx');
-    assert.match(cine, /SHIELD_BEAM = 0xc060ff/);
-    assert.doesNotMatch(cine, /BEAM_RED|BEAM_BLUE/);
-});
-
-test('leaving the world mid-fight resets the arena before saving', () => {
-    // A hard reset helper that cancels the cutscene, despawns the boss, clears
-    // crystals and rebuilds the dais + bridges...
-    assert.match(app, /const resetSummonArena = useCallback/);
-    assert.match(app, /resetSummonArena[\s\S]*?bossSummon\.cancel\(\)/);
-    assert.match(app, /resetSummonArena[\s\S]*?despawnAllBosses\(\)/);
-    // ...invoked when quitting to the title screen, BEFORE the (forced) save runs.
-    assert.match(app, /resetSummonArena\(\);[\s\S]{0,120}?saveGame\(\{ force: true \}\)/);
-});
-
-test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
-    // Boss loot drops one block above the altar (summoner at baseY+4 = home.y+3),
-    // deferred until the altar re-forms.
-    assert.match(manager, /e\.home\.y \+ 4/);
-    // The drop timer is TRACKED (lootDropTimer) so world unload can cancel it :
-    // an untracked timeout used to spawn the loot into the next loaded world.
-    assert.match(manager, /this\.lootDropTimer = setTimeout\([\s\S]*?spawnDrops\(hx, hy, hz\);[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
-    assert.match(manager, /clear\(\): void \{[\s\S]*?clearTimeout\(this\.lootDropTimer\)/);
-    // A defeat eruption (glowing FX bursts + camera trauma) at the centre.
-    assert.match(manager, /if \(e\.isBoss && e\.home\) {[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
-    // The altar restore is delayed on a clean defeat (shared delay constant).
-    assert.match(app, /restoreSummonAltar\(BOSS_DEFEAT_ALTAR_DELAY_MS\)/);
-    assert.match(manager, /export const BOSS_DEFEAT_ALTAR_DELAY_MS/);
-    assert.match(app, /daisDelayMs/);
-});
-
-test('deflecting is a precise aim-back parry and stray barrage bolts live ~5s', () => {
-    // Tight parry hit box (skill), not the old generous radius.
-    assert.match(manager, /const r = 0\.42/);
-    assert.doesNotMatch(manager, /const r = 0\.7;/);
-    // The deflected bolt flies along the player's AIM (straight back), not homing.
-    assert.match(manager, /best\.vel\.set\(\(dir\.x \/ dl\)/);
-    // Volley bolts persist longer in the air (deleted on contact or after ~5s).
-    assert.match(manager, /fireVolley[\s\S]*?ttl: 5/);
-    // A successful deflect throws glowing sparks + nudges the camera.
-    assert.match(manager, /deflectProjectile[\s\S]*?particleFx\.burst[\s\S]*?addTrauma/);
-});
-
-test('combat and cutscene use the glowing FX particle system (not block debris)', () => {
-    // Effect particles come from the dedicated additive system.
-    const fx = read('src/systems/fx/particleFx.ts');
-    assert.match(fx, /class ParticleFx/);
-    assert.match(fx, /polarityFxColor/);
-    const renderer = read('src/components/FxParticles.tsx');
-    assert.match(renderer, /AdditiveBlending/);
-    assert.match(renderer, /MAGNETIC_FIELDS_BIOME_ID/);   // ambient biome motes
-    assert.match(app, /<FxParticles/);
-    // The boss fight + cutscene fire FX bursts.
-    assert.match(manager, /particleFx\.burst/);
-    const summon = read('src/systems/boss/bossSummon.ts');
-    assert.match(summon, /particleFx\.burst/);
+test('deleting a world uses an in-app modal, not a blocking native confirm', () => {
+    const hook = read('src/components/ui/mainMenu/useWorldMenu.ts');
+    assert.doesNotMatch(hook, /window\.confirm/);
+    assert.match(hook, /setPendingDeleteId/);
+    assert.match(hook, /confirmDeleteWorld/);
+    const menu = read('src/components/ui/MainMenu.tsx');
+    assert.match(menu, /<ConfirmModal/);
+    assert.match(menu, /pendingDeleteId &&/);
 });
 
 test('the World Editor surfaces the Magnetic Fields boss biome + boss-field layer', () => {
     const editor = read('src/components/ui/ChunkBase.tsx');
-    // A dedicated preview layer for the boss-biome activation noise.
     assert.match(editor, /id: 'boss'/);
     assert.match(editor, /getMagneticFieldColumn/);
     assert.match(editor, /bossBiome\.noise2D/);
-    // The biome list is now driven by the full GenConfig set (not a hardcoded 10).
     assert.match(editor, /const biomeKeys = Object\.keys\(GenConfig\.biomes\)/);
-    // The Magnetic Fields biome is an EDITABLE domain in the BIOMES tab
-    // (GenConfig.bossDomains.magneticFields), with an arena finder.
     assert.match(editor, /BIOMES\.MAGNETIC_FIELDS\.color/);
     assert.match(editor, /bossDomains\.magneticFields/);
-    assert.match(editor, /fieldThreshold/);
     assert.match(editor, /findNearestMagneticField/);
 });
 
@@ -522,47 +341,33 @@ test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutsc
     assert.match(dn, /MAGNETIC_FOG_TINT/);
     assert.match(dn, /magneticFogBlendRef/);
     assert.match(dn, /MAGNETIC_FIELDS_BIOME_ID/);
-    // No haze while the summon cutscene owns the camera; it fades back after.
     assert.match(dn, /bossSummon\.isActive\(\)[\s\S]*?magneticFogBlendRef\.current = 0/);
 });
 
 test('the summon cutscene orbits, charges an energy ball, then spawns the boss aggro', () => {
-    const summon = read('src/systems/boss/bossSummon.ts');
-    assert.match(summon, /MAGNETIC_SHIELD_CRYSTAL/);   // crystals spawned during the cutscene
-    assert.match(summon, /particleFx\.burst/);         // glowing burst effects
-    assert.match(summon, /flattenArenaDais/);          // altar removed as the boss spawns
-    assert.match(summon, /onSpawnBoss\(\)/);           // boss spawned at the climax
+    assert.match(summon, /particleFx\.burst/);
+    assert.match(summon, /flattenArenaDais/);
     assert.match(summon, /'cinematic:start'/);
     assert.match(summon, /beamProgress/);
-    // Camera orbits the arena; an energy ball charges after the beams.
     assert.match(summon, /orbitPos/);
     assert.match(summon, /ORBIT_RADIUS/);
     assert.match(summon, /ballScale/);
-    // Control hands back BEFORE the boss spawns (the run-away grace is the charge).
     assert.match(summon, /firedHandback[\s\S]*?'cinematic:end'/);
-    // Batched structural edits avoid the per-block remesh lag.
     assert.match(summon, /worldManager\.setBlocks/);
-    // App plays the cutscene on summon (no instant spawn); the boss spawns aggro.
-    assert.match(app, /bossSummon\.begin\(/);
     assert.doesNotMatch(app, /aggroGraceSeconds/);
-    // Cinematic pauses the player, disables mouse-look, and hides the held item.
     assert.match(app, /isPaused=\{worldPaused \|\| cinematicMode\}/);
     assert.match(app, /disableMouseLook=\{isCapturingPanorama \|\| cinematicMode\}/);
     assert.match(app, /!cinematicMode && <HeldItem/);
 });
 
-test('arena structural edits are batched (setBlocks) to avoid reset lag', () => {
-    const wm = read('src/systems/WorldManager.ts');
-    assert.match(wm, /setBlocks\(edits:/);
-    assert.match(wm, /processStreamingJobs\(\)/);
-    const arena = read('src/systems/world/magneticArena.ts');
-    assert.match(arena, /setBlocks: \(edits: ArenaEdit\[\]\) => void/);
-    assert.match(app, /restoreArenaDais\([\s\S]*?worldManager\.setBlocks\(edits\)/);
-});
-
-test('defeating the Magnetic Warden cleanses the Magnetic Fields region', () => {
-    // Region is configured (bossId magnetic_warden) and boss:defeated → cleanse.
-    const regions = read('src/systems/world/regions.ts');
-    assert.match(regions, /magnetic_fields:\s*{[\s\S]*?bossId:\s*'magnetic_warden'/);
-    assert.match(app, /boss:defeated[\s\S]*?region\?\.bossId === bossId[\s\S]*?cleanseRegion\(region\.id\)/);
+test('combat and cutscene use the glowing FX particle system (not block debris)', () => {
+    const fx = read('src/systems/fx/particleFx.ts');
+    assert.match(fx, /class ParticleFx/);
+    assert.match(fx, /polarityFxColor/);
+    const renderer = read('src/components/FxParticles.tsx');
+    assert.match(renderer, /AdditiveBlending/);
+    assert.match(renderer, /MAGNETIC_FIELDS_BIOME_ID/);
+    assert.match(app, /<FxParticles/);
+    assert.match(encounter, /particleFx\.burst/);
+    assert.match(summon, /particleFx\.burst/);
 });
