@@ -61,9 +61,12 @@ export interface ShockwaveSpec {
     speed: number;
     damage: number;
     kind: Shockwave['kind'];
-    /** Starting radius (a flux ring blooms from the player's body). */
+    /** Starting radius (a slam ring blooms from the point of impact). */
     radius?: number;
 }
+
+/** Where a hit on the player came from (for the dodge feedback). */
+export type PlayerHitSource = 'bolt' | 'ring' | 'contact' | 'attack';
 
 /** Beyond this distance from its home a boss despawns (re-summon at the altar). */
 const BOSS_DESPAWN_RADIUS = 96;
@@ -161,6 +164,9 @@ class EntityManager {
     // The player's controlled polarity (+1 / -1), or 0 when they have no
     // Polarity Boots: the "neutral" case of the polarity rule.
     private playerPolarityProvider: (() => number) | null = null;
+    // True while the player's kit grants invulnerability (a roll's i-frames, a
+    // dash, a leap): every attack, bolt, ring and contact hit passes through.
+    private playerInvulnerableProvider: (() => boolean) | null = null;
 
     // Structural-change subscribers (the renderer rebuilds its mesh list on these).
     private structureListeners = new Set<() => void>();
@@ -171,12 +177,14 @@ class EntityManager {
         impulseHandler?: (x: number, y: number, z: number) => void,
         teleportHandler?: (x: number, y: number, z: number) => void,
         polarityProvider?: () => number,
+        invulnerableProvider?: () => boolean,
     ): void {
         this.playerPosProvider = posProvider;
         this.playerDamageHandler = damageHandler;
         this.playerImpulseHandler = impulseHandler ?? null;
         this.playerTeleportHandler = teleportHandler ?? null;
         this.playerPolarityProvider = polarityProvider ?? null;
+        this.playerInvulnerableProvider = invulnerableProvider ?? null;
     }
 
     teleportPlayer(x: number, y: number, z: number): boolean {
@@ -194,6 +202,25 @@ class EntityManager {
         this.playerDamageHandler?.(amount, knockX, knockZ);
     }
 
+    /** Whether the player's kit is currently granting invulnerability. */
+    isPlayerInvulnerable(): boolean {
+        return this.playerInvulnerableProvider?.() === true;
+    }
+
+    /**
+     * An attack reaching the player: lands unless an invulnerability window is
+     * open, in which case it is announced as dodged instead. Returns whether it
+     * landed, so a caller can withhold its knockback and impact effects too.
+     */
+    tryDamagePlayer(amount: number, knockX: number, knockZ: number, source: PlayerHitSource = 'attack'): boolean {
+        if (this.isPlayerInvulnerable()) {
+            gameEvents.emit('player:dodged', { source });
+            return false;
+        }
+        this.playerDamageHandler?.(amount, knockX, knockZ);
+        return true;
+    }
+
     /** The player's controlled polarity (+1 / -1), or 0 without Polarity Boots. */
     getPlayerPolarity(): number {
         const value = this.playerPolarityProvider?.() ?? 0;
@@ -202,6 +229,12 @@ class EntityManager {
 
     getPlayerPosition(): { x: number; y: number; z: number } | null {
         return this.playerPosProvider?.() ?? null;
+    }
+
+    /** The live boss, if a fight is on (the player's kit dashes into or leaps from it). */
+    findBoss(): Entity | undefined {
+        for (const e of this.entities.values()) if (e.isBoss && e.hp > 0) return e;
+        return undefined;
     }
 
     getProjectiles(): Projectile[] {
@@ -244,7 +277,7 @@ class EntityManager {
             maxRadius: spec.maxRadius,
             speed: spec.speed,
             damage: spec.damage,
-            hit: spec.kind === 'flux',
+            hit: spec.kind === 'slam',
             kind: spec.kind,
         };
         this.shockwaves.push(wave);
@@ -1146,8 +1179,9 @@ class EntityManager {
             // --- Contact damage to player ---
             if (e.attackCooldown > 0) e.attackCooldown -= dt;
             if (kind.contactDamage > 0 && targetable && pp && e.attackCooldown <= 0 && this.overlapsPlayer(e, pp)) {
-                this.playerDamageHandler?.(kind.contactDamage, pp.x - e.pos.x, pp.z - e.pos.z);
-                e.attackCooldown = kind.attackCooldown;
+                if (this.tryDamagePlayer(kind.contactDamage, pp.x - e.pos.x, pp.z - e.pos.z, 'contact')) {
+                    e.attackCooldown = kind.attackCooldown;
+                }
             }
         }
 
@@ -1159,9 +1193,9 @@ class EntityManager {
     }
 
     // Boss bolts. The polarity rule resolves every contact: a bolt the player
-    // MATCHES is repelled off their boots and absorbed (bolt:absorbed feeds the
-    // Flux meter, no damage); a bolt they OPPOSE is drawn in (it homes) and hits;
-    // no boots is neutral and just gets hit.
+    // MATCHES is repelled off their boots (it bounces away, spent, no damage);
+    // a bolt they OPPOSE is drawn in (it homes) and hits; no boots is neutral
+    // and just gets hit. A roll's i-frames let any bolt pass straight through.
     private tickProjectiles(
         dt: number,
         pp: { x: number; y: number; z: number } | null,
@@ -1172,7 +1206,7 @@ class EntityManager {
         const survivors: Projectile[] = [];
         for (const p of this.projectiles) {
             p.ttl -= dt;
-            if (pp && p.homing && polarityRelation(playerPolarity, p.polarity) === 'opposite') {
+            if (pp && p.homing && !p.bounced && polarityRelation(playerPolarity, p.polarity) === 'opposite') {
                 // Attraction: steer toward the player's chest at a capped rate,
                 // keeping the bolt's speed, so it curves in but never snaps.
                 const speed = p.vel.length();
@@ -1193,23 +1227,37 @@ class EntityManager {
             // Only solid blocks stop a bolt, water landing pools and foliage don't.
             if (isSolid(worldManager, Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) continue;
 
-            if (targetable && pp) {
+            if (targetable && pp && !p.bounced) {
                 // Hit the whole player AABB (centre ± body), not just a low point.
                 const cx = pp.x, cy = pp.y + PLAYER_HEIGHT * 0.5, cz = pp.z;
                 const dx = p.pos.x - cx, dy = p.pos.y - cy, dz = p.pos.z - cz;
                 if (Math.abs(dx) < 0.85 && Math.abs(dz) < 0.85 && Math.abs(dy) < 1.1) {
                     if (polarityRelation(playerPolarity, p.polarity) === 'same') {
-                        // Repelled: a spark fan off the boots, no damage, Flux gained.
+                        // Repelled: a spark fan off the boots and the bolt bounces
+                        // away, spent (it fades on its own, never re-hits).
+                        const away = Math.hypot(dx, dy, dz) || 1;
+                        const speed = p.vel.length() * 0.6;
+                        p.vel.set((dx / away) * speed, Math.abs(dy / away) * speed + 2, (dz / away) * speed);
+                        p.homing = 0;
+                        p.bounced = true;
+                        p.ttl = Math.min(p.ttl, 0.9);
                         particleFx.burst({
                             x: p.pos.x, y: p.pos.y, z: p.pos.z,
                             color: polarityFxColor(p.polarity), color2: [1, 1, 1],
                             count: 10, speed: 5, upBias: 1, spread: 0.6,
-                            dir: [-p.vel.x, 0.3, -p.vel.z], size: 0.2, life: 0.4, gravity: 3, drag: 1.4,
+                            dir: [dx / away, 0.3, dz / away], size: 0.2, life: 0.4, gravity: 3, drag: 1.4,
                         });
-                        gameEvents.emit('bolt:absorbed', { x: p.pos.x, y: p.pos.y, z: p.pos.z, polarity: p.polarity });
-                    } else {
-                        this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
+                        gameEvents.emit('bolt:repelled', { x: p.pos.x, y: p.pos.y, z: p.pos.z, polarity: p.polarity });
+                        survivors.push(p);
+                        continue;
                     }
+                    if (this.isPlayerInvulnerable()) {
+                        // A roll's i-frames: the bolt passes clean through.
+                        gameEvents.emit('player:dodged', { source: 'bolt' });
+                        survivors.push(p);
+                        continue;
+                    }
+                    this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
                     continue;
                 }
             }
@@ -1221,6 +1269,7 @@ class EntityManager {
     // Expand each ring; when a polarity ring's leading edge reaches the player,
     // the SAME polarity is launched off the charged ground and hurt, the
     // OPPOSITE is pinned safe, and no boots (neutral) is hurt without a launch.
+    // A ring swept during an invulnerability window is dodged outright.
     private tickShockwaves(
         dt: number,
         pp: { x: number; y: number; z: number } | null,
@@ -1240,11 +1289,16 @@ class EntityManager {
                     const relation = polarityRelation(playerPolarity, s.polarity);
                     const d = dist || 1;
                     const ox = (pp.x - s.x) / d, oz = (pp.z - s.z) / d;
+                    if (relation === 'opposite') continue; // pinned safe
+                    if (this.isPlayerInvulnerable()) {
+                        gameEvents.emit('player:dodged', { source: 'ring' });
+                        continue;
+                    }
                     if (relation === 'same') {
                         // Repulsion off the charged floor: launched HARD up and away.
                         this.playerImpulseHandler?.(ox * 13, 19, oz * 13);
                         this.playerDamageHandler?.(s.damage, ox, oz);
-                    } else if (relation === 'neutral') {
+                    } else {
                         this.playerDamageHandler?.(s.damage, ox, oz);
                     }
                 }

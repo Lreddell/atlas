@@ -4,23 +4,30 @@ import * as THREE from 'three';
 import { entityManager } from '../systems/entities/EntityManager';
 import { magneticWardenEncounter } from '../systems/boss/MagneticWardenEncounter';
 import { WARDEN_TIMING } from '../systems/boss/magneticWardenCore';
+import { ARENA_PILLAR_COUNT, ARENA_PILLAR_HALF } from '../systems/world/magneticArena';
 
 // The Magnetic Warden's body, its three forms, and every telegraph of its fight,
 // driven from the encounter snapshot each frame (no React re-renders):
 //
 //   Form I  WARDEN  a magnetite golem: torso, head with an emissive eye slit,
-//                   two arms that raise for a Volley and reach for a Draw, and a
-//                   halo of four shards that swings for a Lash and contracts for a
-//                   Draw. Polarity tints the plates and lights the core.
-//   Form II AEGIS   the bare core with two wing plates, hovering; the tether beam
-//                   runs from its tower crystal, wings droop when it lies stunned.
+//                   two arms that raise for a Volley and reach for a Draw, a
+//                   halo of four shards that swings for a Lash and contracts for
+//                   a Draw, and a lowered shoulder for the Charge.
+//   Form II AEGIS   the bare core with two wing plates, hovering; wings droop
+//                   when it lies reeling.
 //   Form III STORM  the core on the ground behind its orbiting shards (drawn at the
 //                   same positions the hit test uses) with a contracting countdown
 //                   ring that shows the colour of the coming beat.
 //
+// The shield is drawn where it comes from: a beam from every ignited, standing
+// tower crystal into the core, and a charged column over each lit tower in the
+// polarity its climb faces carry. A tower mid-flip flickers between the two
+// colours for the whole flux window, the climber's cue to flip and hold.
+//
 // Ground telegraphs share their geometry with the core's hit tests: the Lash
-// sector is the Lash cone, the Draw disc is the Repel radius, the plunge disc is
-// the impact radius, and the beat ring counts the metronome down.
+// sector is the Lash cone, the Draw disc is the Repel radius, the Charge lane is
+// the lunge lane, the plunge disc is the impact radius, and the beat ring counts
+// the metronome down.
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -74,12 +81,15 @@ export const MagneticWardenRenderer: React.FC = () => {
     const beatRing2Ref = useRef<THREE.Mesh>(null);
     const shieldRef = useRef<THREE.Mesh>(null);
     const auraRef = useRef<THREE.Mesh>(null);
-    const tetherRef = useRef<THREE.Mesh>(null);
+    const chargeLaneRef = useRef<THREE.Group>(null);
+    const chargeLaneMeshRef = useRef<THREE.Mesh>(null);
+    const chargeTipRef = useRef<THREE.Mesh>(null);
+    const beamRefs = useRef<Array<THREE.Mesh | null>>([]);
+    const towerRefs = useRef<Array<THREE.Mesh | null>>([]);
+    const crystalGlowRefs = useRef<Array<THREE.Mesh | null>>([]);
     const coreLightRef = useRef<THREE.PointLight>(null);
     const lastPolarity = useRef(0);
     const auraFlashUntil = useRef(0);
-    const tetherFadeUntil = useRef(0);
-    const tetherLast = useRef<{ x: number; y: number; z: number } | null>(null);
 
     const materials = useMemo(() => ({
         plate: new THREE.MeshLambertMaterial({ color: MAGNETITE }),
@@ -98,10 +108,14 @@ export const MagneticWardenRenderer: React.FC = () => {
         const entity = snap.entityId !== null ? entityManager.getEntity(snap.entityId) : undefined;
         const hideAll = () => {
             root.visible = false;
-            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, tetherRef, groundGlowRef]) {
+            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, groundGlowRef]) {
                 if (ref.current) ref.current.visible = false;
             }
+            if (chargeLaneRef.current) chargeLaneRef.current.visible = false;
             for (const shard of stormShardRefs.current) if (shard) shard.visible = false;
+            for (const beam of beamRefs.current) if (beam) beam.visible = false;
+            for (const tower of towerRefs.current) if (tower) tower.visible = false;
+            for (const glow of crystalGlowRefs.current) if (glow) glow.visible = false;
             if (coreLightRef.current) coreLightRef.current.intensity = 0;
         };
         if (!entity || entity.hp <= 0) { hideAll(); return; }
@@ -113,7 +127,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         const raw = Math.max(0, Math.min(1, snap.actionTime / Math.max(0.001, snap.actionDuration)));
         const hurt = now < entity.hurtUntil;
         const action = snap.action;
-        const stunned = snap.stunned;
+        const reeling = snap.punishable;
 
         // --- Colour: polarity tints the plates and lights the core. A swap
         //     telegraph flickers between the two colours faster and faster.
@@ -125,12 +139,12 @@ export const MagneticWardenRenderer: React.FC = () => {
         materials.plate.color.copy(_color);
         materials.core.emissive.copy(_polarity);
         const corePulse = 0.85 + 0.35 * Math.sin(t * (action === 'spiral' ? 9 : 4));
-        materials.core.emissiveIntensity = stunned ? 0.25 + 0.2 * (Math.sin(t * 23) > 0 ? 1 : 0) : corePulse * (snap.drawActive ? 1.6 : 1);
+        materials.core.emissiveIntensity = reeling ? 0.25 + 0.2 * (Math.sin(t * 23) > 0 ? 1 : 0) : corePulse * (snap.drawActive ? 1.6 : 1);
         materials.shard.emissive.copy(_polarity);
         materials.shard.emissiveIntensity = action === 'spiral' ? 0.9 : 0.35;
         if (coreLightRef.current) {
             coreLightRef.current.color.copy(_polarity);
-            coreLightRef.current.intensity = stunned ? 0.6 : 2.4 + corePulse * 0.8;
+            coreLightRef.current.intensity = reeling ? 0.6 : 2.4 + corePulse * 0.8;
         }
 
         // --- Root: the entity's feet, yawed to its facing.
@@ -150,6 +164,12 @@ export const MagneticWardenRenderer: React.FC = () => {
                 if (action === 'stagger') {
                     body.rotation.z = 0.35 * Math.sin(raw * Math.PI);
                     body.position.y = -0.25 * Math.sin(raw * Math.PI);
+                } else if (action === 'shield_break') {
+                    // Reeling: bent over, shuddering.
+                    body.rotation.x = 0.5 + 0.05 * Math.sin(t * 18);
+                    body.position.y = -0.35;
+                } else if (action === 'flinch') {
+                    body.rotation.z = 0.2 * Math.sin(raw * Math.PI * 2);
                 } else if (action === 'shatter') {
                     // The duel body comes apart as the core rises out of it.
                     body.scale.setScalar(Math.max(0.001, 1 - p));
@@ -162,6 +182,15 @@ export const MagneticWardenRenderer: React.FC = () => {
                     body.rotation.y = -0.45 + 1.2 * ease(Math.min(1, raw * 1.4));
                 } else if (action === 'lash_recovery') {
                     body.rotation.y = 0.75 * (1 - p);
+                } else if (action === 'charge_windup') {
+                    // Shoulder down, coiling back: the lunge is coming.
+                    body.rotation.x = 0.3 * p;
+                    body.position.z = -0.4 * p;
+                } else if (action === 'charge_active') {
+                    body.rotation.x = 0.45;
+                    body.position.z = 0.3;
+                } else if (action === 'charge_recovery') {
+                    body.rotation.x = 0.45 * (1 - p);
                 }
                 const left = leftArmRef.current, right = rightArmRef.current;
                 if (left && right) {
@@ -173,7 +202,10 @@ export const MagneticWardenRenderer: React.FC = () => {
                     else if (action === 'draw_windup') { l = -1.25 * p; r = -1.25 * p; }
                     else if (action === 'draw_active') { l = -1.25 + 0.08 * Math.sin(t * 12); r = -1.25 - 0.08 * Math.sin(t * 12); }
                     else if (action === 'draw_recovery') { l = -1.25 * (1 - p); r = -1.25 * (1 - p); }
-                    else if (action === 'stagger') { l = 0.6 * Math.sin(raw * Math.PI); r = 0.6 * Math.sin(raw * Math.PI); }
+                    else if (action === 'charge_windup') { l = 0.9 * p; r = 0.9 * p; }
+                    else if (action === 'charge_active') { l = 0.9; r = 0.9; }
+                    else if (action === 'stagger' || action === 'flinch') { l = 0.6 * Math.sin(raw * Math.PI); r = 0.6 * Math.sin(raw * Math.PI); }
+                    else if (action === 'shield_break') { l = 0.8; r = 0.8; }
                     left.rotation.x = l;
                     right.rotation.x = r;
                 }
@@ -181,7 +213,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         }
 
         // --- The halo of four shards (Form I): swings for the Lash, contracts
-        //     for the Draw, and flies apart in the shatter.
+        //     for the Draw, streams back in the Charge, and flies apart in the shatter.
         const halo = haloRef.current;
         if (halo) {
             const showHalo = snap.form === 1;
@@ -194,7 +226,10 @@ export const MagneticWardenRenderer: React.FC = () => {
                 else if (action === 'draw_windup') { radius = 1.5 - 0.65 * p; spin = t * (0.9 + 5 * p); }
                 else if (action === 'draw_active') { radius = 0.8; spin = t * 7; }
                 else if (action === 'draw_recovery') { radius = 0.8 + 0.7 * p; spin = t * (7 - 6 * p); }
+                else if (action === 'charge_windup') { radius = 1.2; spin = t * (0.9 + 6 * p); y = 2.35 + 0.3 * p; }
+                else if (action === 'charge_active') { radius = 1.0; spin = t * 9; y = 2.6; }
                 else if (action === 'shatter') { radius = 1.5 + 9 * p; y = 2.35 + 4 * p; alpha = 1 - p; }
+                else if (action === 'shield_break') { radius = 2.4; spin = t * 0.3; y = 1.6; }
                 halo.position.y = y;
                 halo.rotation.y = spin + offset;
                 halo.rotation.x = 0;
@@ -213,12 +248,12 @@ export const MagneticWardenRenderer: React.FC = () => {
         if (core) {
             let y = 1.6, scale = 0.55, spinRate = 0.8;
             if (snap.form === 1 && action === 'shatter') { y = 1.6 + 1.2 * p; scale = 0.55 + 0.55 * p; }
-            else if (snap.form === 2) { y = entity.height * 0.5; scale = 1.05; spinRate = stunned ? 0.15 : 1.1; }
+            else if (snap.form === 2) { y = entity.height * 0.5; scale = 1.05; spinRate = reeling ? 0.15 : 1.1; }
             else if (snap.form === 3) { y = entity.height * 0.5; scale = 1.35; spinRate = action === 'spiral' ? 3.2 : 1.2; }
             core.position.set(0, y, snap.form === 1 && action !== 'shatter' ? 0.55 : 0);
             core.rotation.set(t * spinRate * 0.7 + Math.PI / 4, t * spinRate, Math.PI / 4);
             core.scale.setScalar(scale);
-            if (stunned) core.position.x = (Math.random() - 0.5) * 0.08;
+            if (reeling) core.position.x = (Math.random() - 0.5) * 0.08;
             if (coreInnerRef.current) coreInnerRef.current.rotation.set(-t * spinRate * 1.6, t * spinRate * 0.4, 0);
         }
 
@@ -229,9 +264,10 @@ export const MagneticWardenRenderer: React.FC = () => {
             wings.visible = showWings;
             if (showWings) {
                 wings.position.y = entity.height * 0.5;
-                let spread = snap.tether ? 0.4 : 0.15;
+                let spread = snap.shielded ? 0.4 : 0.15;
+                if (snap.contestTower !== null) spread = 0.7;
                 if (action === 'plunge_windup' || action === 'plunge_drop') spread = -0.9;
-                else if (stunned || action === 'crash') spread = -0.6;
+                else if (reeling || action === 'crash') spread = -0.6;
                 else if (action === 'recover') spread = -0.6 + 1.0 * p;
                 spread += Math.sin(t * 2.2) * 0.05;
                 if (leftWingRef.current) leftWingRef.current.rotation.z = spread;
@@ -272,6 +308,30 @@ export const MagneticWardenRenderer: React.FC = () => {
                 const sm = sector.material as THREE.MeshBasicMaterial;
                 sm.color.setHex(polarityHex(snap.polarity));
                 sm.opacity = action === 'lash_active' ? 0.7 : 0.18 + 0.4 * raw + 0.05 * Math.sin(t * 14);
+            }
+        }
+        const lane = chargeLaneRef.current, laneMesh = chargeLaneMeshRef.current, tip = chargeTipRef.current;
+        if (lane && laneMesh && tip) {
+            lane.visible = !!snap.charge;
+            if (snap.charge) {
+                const c = snap.charge;
+                const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
+                // The lane runs from the Warden down its facing: the group's local
+                // +Y (after the plane's tilt) points along -Z, so face it backward.
+                lane.position.set(c.x + fx * c.length * 0.5, snap.floorY + 0.05, c.z + fz * c.length * 0.5);
+                lane.rotation.set(0, c.yaw + Math.PI, 0);
+                laneMesh.scale.set(c.halfWidth * 2, c.length, 1);
+                const lm = laneMesh.material as THREE.MeshBasicMaterial;
+                lm.color.setHex(polarityHex(snap.polarity));
+                const flash = 0.5 + 0.5 * Math.sin(t * (6 + 24 * c.progress));
+                lm.opacity = c.phase === 'lunge' ? 0.55 : 0.12 + 0.35 * c.progress * flash;
+                // A bright end cap creeps out to the lane's end as the windup fills.
+                const reach = c.phase === 'lunge' ? c.length : c.length * (0.2 + 0.8 * c.progress);
+                tip.position.set(0, 0.01, c.length * 0.5 - reach);
+                tip.scale.set(c.halfWidth * 2, 0.6, 1);
+                const tm = tip.material as THREE.MeshBasicMaterial;
+                tm.color.setHex(0xffffff);
+                tm.opacity = c.phase === 'lunge' ? 0.9 : 0.45 + 0.4 * flash;
             }
         }
         const drawDisc = drawDiscRef.current, drawRange = drawRangeRef.current;
@@ -334,10 +394,10 @@ export const MagneticWardenRenderer: React.FC = () => {
             }
         }
 
-        // --- Shield shimmer (a live tether or a form change) and the field aura.
+        // --- Shield shimmer (crystals standing, or a form change) and the field aura.
         const shield = shieldRef.current;
         if (shield) {
-            shield.visible = snap.shielded;
+            shield.visible = snap.shielded || action === 'shatter' || action === 'storm_rise';
             if (shield.visible) {
                 shield.position.set(entity.pos.x, entity.pos.y + entity.height * 0.5, entity.pos.z);
                 shield.rotation.y += 0.02;
@@ -363,29 +423,51 @@ export const MagneticWardenRenderer: React.FC = () => {
             }
         }
 
-        // --- The tether: crystal to core while it holds, whipping away when it snaps.
-        const tether = tetherRef.current;
-        if (tether) {
-            const cx = entity.pos.x, cy = entity.pos.y + entity.height * 0.5, cz = entity.pos.z;
-            if (snap.tether) {
-                const c = snap.tether;
-                tetherLast.current = { x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5 };
-                tetherFadeUntil.current = 0;
-                const life = c.remaining / Math.max(0.001, c.total);
-                drawBeam(tether, c.x + 0.5, c.y + 0.5, c.z + 0.5, cx, cy, cz, 0.55 + 0.85 * life, 0.4 + 0.3 * Math.sin(t * 9) * life + 0.2 * (1 - life) * (Math.sin(t * 30) > 0 ? 1 : 0));
-                (tether.material as THREE.MeshBasicMaterial).color.setHex(CHARGED);
-            } else if (tetherLast.current) {
-                if (tetherFadeUntil.current === 0) tetherFadeUntil.current = now + 320;
-                const left = tetherFadeUntil.current - now;
-                if (left > 0) {
-                    const c = tetherLast.current;
-                    drawBeam(tether, c.x, c.y, c.z, cx, cy, cz, 0.4, 0.7 * (left / 320));
-                } else {
-                    tether.visible = false;
-                    tetherLast.current = null;
+        // --- The towers: a beam from every ignited, standing crystal into the
+        //     core, a charged column in the tower's polarity over its climb
+        //     faces, and a flicker between both colours while it is in flux.
+        const cx = entity.pos.x, cy = entity.pos.y + entity.height * 0.5, cz = entity.pos.z;
+        for (let index = 0; index < ARENA_PILLAR_COUNT; index += 1) {
+            const beam = beamRefs.current[index];
+            const column = towerRefs.current[index];
+            const crystalGlow = crystalGlowRefs.current[index];
+            const tower = snap.towers.find((tw) => tw.index === index);
+            const live = !!tower && tower.ignited && tower.standing;
+            if (beam) {
+                beam.visible = live;
+                if (live && tower) {
+                    const c = tower.crystal;
+                    const flicker = tower.flux ? (Math.sin(t * 28) > 0 ? 1 : -1) : 1;
+                    (beam.material as THREE.MeshBasicMaterial).color.setHex(tower.flux ? polarityHex(tower.flux.polarity * flicker) : CHARGED);
+                    drawBeam(beam, c.x + 0.5, c.y + 0.5, c.z + 0.5, cx, cy, cz, tower.flux ? 0.7 : 0.5 + 0.12 * Math.sin(t * 7 + index), tower.flux ? 0.75 : 0.42 + 0.12 * Math.sin(t * 9 + index));
                 }
-            } else {
-                tether.visible = false;
+            }
+            if (column) {
+                column.visible = !!tower && tower.standing;
+                if (tower && column.visible) {
+                    const height = tower.top - snap.floorY + 2;
+                    column.position.set(tower.x, snap.floorY + height * 0.5 - 1, tower.z);
+                    column.scale.set(ARENA_PILLAR_HALF * 2 + 1.4, height, ARENA_PILLAR_HALF * 2 + 1.4);
+                    const cm = column.material as THREE.MeshBasicMaterial;
+                    if (tower.flux) {
+                        const k = Math.max(0, Math.min(1, (tower.flux.until - snap.fightClock) / Math.max(0.001, tower.flux.until - tower.flux.opensAt)));
+                        const flicker = Math.sin(t * (10 + 30 * (1 - k))) > 0 ? tower.flux.polarity : -tower.flux.polarity;
+                        cm.color.setHex(polarityHex(flicker));
+                        cm.opacity = 0.5 + 0.35 * Math.abs(Math.sin(t * 20));
+                    } else {
+                        cm.color.setHex(polarityHex(tower.polarity));
+                        cm.opacity = tower.contested ? 0.4 : 0.22 + 0.06 * Math.sin(t * 3 + index);
+                    }
+                }
+            }
+            if (crystalGlow) {
+                crystalGlow.visible = live;
+                if (live && tower) {
+                    crystalGlow.position.set(tower.crystal.x + 0.5, tower.crystal.y + 0.5, tower.crystal.z + 0.5);
+                    crystalGlow.rotation.set(t * 0.8, t * 1.1, 0);
+                    crystalGlow.scale.setScalar(1.1 + 0.12 * Math.sin(t * 5 + index));
+                    (crystalGlow.material as THREE.MeshBasicMaterial).color.setHex(tower.flux ? polarityHex(tower.flux.polarity) : CHARGED);
+                }
             }
         }
     });
@@ -446,6 +528,16 @@ export const MagneticWardenRenderer: React.FC = () => {
                 <ringGeometry args={[0, 1, 48, 1, -Math.PI / 2 - WARDEN_TIMING.lash.halfAngle, WARDEN_TIMING.lash.halfAngle * 2]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
+            <group ref={chargeLaneRef} visible={false}>
+                <mesh ref={chargeLaneMeshRef} rotation={[-Math.PI / 2, 0, 0]} renderOrder={3}>
+                    <planeGeometry args={[1, 1]} />
+                    <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
+                </mesh>
+                <mesh ref={chargeTipRef} rotation={[-Math.PI / 2, 0, 0]} renderOrder={4}>
+                    <planeGeometry args={[1, 1]} />
+                    <meshBasicMaterial color={0xffffff} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+                </mesh>
+            </group>
             <mesh ref={drawDiscRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <circleGeometry args={[1, 48]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
@@ -466,7 +558,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 <ringGeometry args={[0.9, 1, 64]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
-            {/* Shield shimmer, field aura, tether */}
+            {/* Shield shimmer, field aura */}
             <mesh ref={shieldRef} visible={false}>
                 <sphereGeometry args={[1, 16, 12]} />
                 <meshBasicMaterial color={SHIELD} wireframe transparent opacity={0.3} />
@@ -475,10 +567,23 @@ export const MagneticWardenRenderer: React.FC = () => {
                 <ringGeometry args={[0.82, 1, 40]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
-            <mesh ref={tetherRef} visible={false}>
-                <cylinderGeometry args={[0.32, 0.32, 1, 10, 1, true]} />
-                <meshBasicMaterial color={CHARGED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
+            {/* The towers: crystal beams, charged columns, crystal glows */}
+            {Array.from({ length: ARENA_PILLAR_COUNT }).map((_, index) => (
+                <React.Fragment key={`tower-${index}`}>
+                    <mesh ref={(m) => { beamRefs.current[index] = m; }} visible={false}>
+                        <cylinderGeometry args={[0.32, 0.32, 1, 10, 1, true]} />
+                        <meshBasicMaterial color={CHARGED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+                    </mesh>
+                    <mesh ref={(m) => { towerRefs.current[index] = m; }} visible={false}>
+                        <boxGeometry args={[1, 1, 1]} />
+                        <meshBasicMaterial color={POLARITY_RED} wireframe transparent opacity={0.25} depthWrite={false} />
+                    </mesh>
+                    <mesh ref={(m) => { crystalGlowRefs.current[index] = m; }} visible={false}>
+                        <octahedronGeometry args={[0.9, 0]} />
+                        <meshBasicMaterial color={CHARGED} wireframe transparent opacity={0.7} depthWrite={false} />
+                    </mesh>
+                </React.Fragment>
+            ))}
         </>
     );
 };

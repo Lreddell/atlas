@@ -14,32 +14,57 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   counter derives from: same polarity repels, opposite attracts. Match its colour
   and its bolts bounce off your boots; oppose it and you are drawn in and your
   strikes land. Its ground rings launch a matching polarity and pin the opposite.
-- Bolts repelled off your boots charge a new Flux meter on the polarity HUD. When
-  it fills, the next polarity flip discharges a Flux Burst that clears nearby
-  bolts, snaps a tether, and staggers or damages the Warden.
+- Every form is shielded by its tower crystals, and crystal power never fades: the
+  only way through a shield is to climb the towers and break every crystal of the
+  form (one for the Warden, two for the Aegis, the last for the Storm). Each lit
+  tower carries the Warden's polarity on its climb faces, so you oppose it to
+  cling and climb, and when the Warden swaps colour its towers swap with it. A
+  flux window opens on the towers before each flip: flip (R) inside it to hold
+  on, or the settled tower shocks you off toward the platform.
+- A new one-button kit on F, resolved by the same rule: a dodge roll with
+  invulnerability frames (bolts, rings, lunges and contact pass through), a
+  magnetic dash onto an opposite magnet face or into an opposed, exposed Warden
+  (which arms a Magnet Slam: the next strike lands at two and a half times damage
+  and staggers it), a repel leap away from a matched Warden, and a magnetic
+  launch off a wall. Launches now arc far enough to reach a tower's landing pool
+  from high on its face.
+- Third person (F5): an over-the-shoulder camera on a voxel-aware spring arm,
+  with a procedurally animated player body (walk, sprint, sneak, jump, roll,
+  dash, wall climb, arm swings, glowing Polarity Boots). Every aim ray still
+  starts from the eye toward the crosshair, so blocks, melee and the crossbow
+  behave identically in both views. The Warden fight switches to third person on
+  its own and hands the previous view back when it ends.
 - The Warden now fights in three forms with distinct rules. Form I, the Warden,
   duels on the platform with a five-bolt Volley, a close Lash, a Draw that drags
-  an opposed player in before a Repel burst, and telegraphed polarity swaps.
-- Form II, the Aegis, shatters into a hovering core tethered to one tower crystal
-  at a time. Break that crystal (the towers' magnet climb faces ignite with the
-  crystals) or burst the tether from below and it crashes down stunned for a long
-  punish window; a tether also burns out on its own. Plunges mark the floor, drop,
-  and sweep a polarity ring.
-- Form III, the Storm, lands behind an orbiting shard barrier and flips polarity on
-  a beat: a contracting countdown ring shows the coming colour, every beat fires
-  a ring, a quiet recoil window follows, and absorbable spiral bolts stream between
-  beats. Every fourth beat is a double beat.
-- Removed the parry bolt, the four-tower crystal gauntlet at the start, the 50-block
-  homing slam, and the unreactable polarity feint. Its body no longer hurts by
-  touch; every hit comes from a telegraphed attack.
+  an opposed player in before a Repel burst, a Charge down a marked lane, and
+  telegraphed polarity swaps; while shielded it holsters the Draw and only fires
+  honest, sidesteppable volleys at a climber.
+- Form II, the Aegis, shatters into a hovering core and lights two towers. It
+  contests whichever tower you climb, drifting out over that tower's landing pool
+  to fire down at you (and into dash range from the upper climb). Break both
+  crystals and it is yanked down into the pool below the felled tower, reeling
+  for a long punish window, then limps low. Plunges mark the floor, drop, and
+  sweep a polarity ring.
+- Form III, the Storm, holds the final tower and lands behind an orbiting shard
+  barrier, flipping polarity on a beat: a contracting countdown ring shows the
+  coming colour, the tower flips with every beat, every beat fires a ring, a
+  quiet recoil window follows, and spiral bolts stream between beats. Every
+  fourth beat is a double beat. Below twelve percent the beat quickens and the
+  shards themselves fly.
+- Removed the Flux meter and its burst, the burning tethers, the parry bolt, the
+  four-tower crystal gauntlet at the start, the 50-block homing slam, and the
+  unreactable polarity feint. Its body no longer hurts by touch; every hit comes
+  from a telegraphed attack.
 - The fight logic lives in a deterministic, unit-tested state machine
-  (`magneticWardenCore`) with every timing in one table, driven in-world by a new
-  entity brain (`MagneticWardenEncounter`). Ground telegraphs share their geometry
-  with the hit tests.
-- New Warden body with per-form presentation (a magnetite golem, the bare core with
-  wings, the Storm's shard ring), tether beams, form labels and phase markers at
-  two thirds and one third on the boss bar, and new sound slots documented in the
-  sound pack folder.
+  (`magneticWardenCore`) with every timing in one table, driven in-world by an
+  entity brain (`MagneticWardenEncounter`); the kit (`playerMotion`), the view
+  rig (`viewRig`) and the tower flux rule (`climbSurfaces`) are pure, tested
+  modules too. Ground telegraphs share their geometry with the hit tests.
+- New presentation: crystal-to-core shield beams, charged tower columns that
+  flicker for the whole flux window, the Charge lane, an off-screen boss compass,
+  a shield readout and phase markers on the boss bar, the F prompt / Magnet Slam
+  / tower flip warning on the polarity HUD, and new sound slots for the kit and
+  the towers documented in the sound pack folder.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

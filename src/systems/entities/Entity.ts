@@ -95,8 +95,8 @@ export interface EntityMagneticField {
 
 // An expanding ground ring. A 'polarity' ring carries the boss's colour: a
 // player holding the SAME polarity is launched off the charged ground (and
-// hurt), the OPPOSITE polarity is pinned safe, no boots just hurts. A 'flux'
-// ring is the player's own discharge, purely visual here.
+// hurt), the OPPOSITE polarity is pinned safe, no boots just hurts. A 'slam'
+// ring is the player's own Magnet Slam impact, purely visual here.
 export interface Shockwave {
     id: number;
     x: number;
@@ -110,11 +110,11 @@ export interface Shockwave {
     damage: number;
     /** Whether it has already resolved against the player. */
     hit: boolean;
-    kind: 'polarity' | 'flux';
+    kind: 'polarity' | 'slam';
 }
 
 // A boss bolt: a ballistic mover coloured by the polarity it was fired with.
-// Matching polarity repels it off the player's boots (absorbed into Flux);
+// Matching polarity repels it off the player's boots (it bounces away, spent);
 // opposite polarity draws it in (it homes) and it hits.
 export interface Projectile {
     id: number;
@@ -129,6 +129,8 @@ export interface Projectile {
     kind?: 'volley' | 'spiral';
     /** Steering rate (1/s) toward an opposite-polarity player. */
     homing?: number;
+    /** Already bounced off the player's matching polarity: harmless, fading. */
+    bounced?: boolean;
 }
 
 export interface DropSpec {
@@ -225,8 +227,8 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         floats: true,
         drops: [{ type: BlockType.BOAT, min: 1, max: 1 }],
     },
-    // The Magnetic Warden. Its whole fight (three forms, telegraphs, tethers,
-    // the polarity metronome) is authored by systems/boss/magneticWardenCore and
+    // The Magnetic Warden. Its whole fight (three forms, telegraphs, the tower
+    // crystal shields, the polarity metronome) is authored by systems/boss/magneticWardenCore and
     // driven by MagneticWardenEncounter; this entry only declares the body.
     magnetic_warden: {
         id: 'magnetic_warden',

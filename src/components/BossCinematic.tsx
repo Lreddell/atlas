@@ -8,7 +8,7 @@ import { bossSummon } from '../systems/boss/bossSummon';
 // from each crystal to the altar; once the beams collapse it draws the swelling
 // energy ball (which persists after the camera hands back to the player). Mounted
 // always; idle until bossSummon.running. (The fight itself, including the
-// Aegis form's tether beam, is drawn by MagneticWardenRenderer.)
+// tower crystals' shield beams, is drawn by MagneticWardenRenderer.)
 
 const SHIELD_BEAM = 0xc060ff;   // all summon beams are this purple (consistent)
 const _dir = new THREE.Vector3();

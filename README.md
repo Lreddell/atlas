@@ -60,9 +60,17 @@ npm run electron:dev
 - Press `/` or `T` in-game to open the command/chat input.
 - Press `R` to flip polarity while wearing Polarity Boots. Upgraded boots use `N`
   to toggle their magnetic power.
+- Press `F` to dodge roll. With Polarity Boots the same button, by the same rule,
+  becomes a magnetic dash onto an opposite magnet face or into an opposed Warden
+  (arming a Magnet Slam), a repel leap away from a matched Warden, or a launch
+  off a wall you are clinging to.
+- Press `F5` to switch between first and third person. The Magnetic Warden fight
+  switches to third person on its own and hands your view back afterwards.
 - In the Magnetic Warden fight, same polarity repels and opposite attracts: match
-  its colour to repel and absorb its bolts (charging Flux), oppose it to strike.
-  With Flux full, the next `R` flip discharges a Flux Burst.
+  its colour to bounce its bolts, oppose it to strike. Every form is shielded by
+  its tower crystals until you climb the towers and break them; the lit towers
+  carry the Warden's polarity and flip with it, so flip inside the flux window to
+  hold on.
 - Press `E` for inventory, `Q` to drop an item, and `F3` for the debug screen.
 - Focused text inputs keep normal typing behavior, including movement-key
   letters such as `W`, `A`, `S`, and `D`.

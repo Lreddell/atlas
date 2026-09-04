@@ -20,6 +20,9 @@ import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
+import { BossCompass } from './components/ui/BossCompass';
+import { motionStatus } from './systems/player/playerMotion';
+import { viewRig, type ViewMode } from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { BellTitanCinematic } from './components/BellTitanCinematic';
@@ -308,6 +311,11 @@ const App: React.FC = () => {
   // The player's current magnetic mode, readable from fixed-step entity ticks
   // (the polarity rule needs to know whether the player controls a polarity).
   const magneticModeRef = useRef<MagneticMode>('none');
+  // First / third person (F5). The Warden fight switches to third person on its
+  // own and hands the previous view back when it ends; the held item hides
+  // behind the camera in third person (the body model carries the pose instead).
+  const [viewMode, setViewMode] = useState<ViewMode>(viewRig.mode);
+  const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
   // Entity id of the boat the player is riding, or null. Boats are real world
@@ -579,6 +587,7 @@ const App: React.FC = () => {
   // drowning), which armor does not reduce.
   const applyRawDamage = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
+      gameEvents.emit('player:damaged', { amount: d });
       setHealth(h => {
           const newHealth = Math.max(0, h - d);
           if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
@@ -615,6 +624,9 @@ const App: React.FC = () => {
           (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
           // The polarity rule: +1 / -1 with Polarity Boots, 0 (neutral) without.
           () => (magneticModeRef.current === 'controlled' ? inputState.magneticPolarity : 0),
+          // The kit's invulnerability windows (a roll's i-frames, a dash, a leap):
+          // every attack, bolt, ring and contact hit passes through.
+          () => motionStatus.invulnerable,
       );
   }, [damagePlayer]);
 
@@ -1127,10 +1139,14 @@ const App: React.FC = () => {
               case 'stagger': soundManager.play('entity.magnetic_warden.stagger', { volume: 0.8 }); break;
               case 'shatter': soundManager.play('entity.magnetic_warden.shatter', { volume: 1.0 }); break;
               case 'crash': soundManager.play('entity.magnetic_warden.crash', { volume: 1.0 }); break;
-              case 'stunned': soundManager.play('entity.magnetic_warden.stunned', { volume: 0.8 }); break;
               case 'storm_rise': soundManager.play('entity.magnetic_warden.storm', { volume: 1.0 }); break;
               default: break;
           }
+      });
+      // The Charge: a coil, then the lunge itself.
+      const offCharge = gameEvents.on('boss:charge', ({ phase }) => {
+          if (phase === 'windup') soundManager.play('entity.magnetic_warden.charge_windup', { volume: 0.75 });
+          else if (phase === 'lunge') soundManager.play('entity.magnetic_warden.charge_lunge', { volume: 0.9 });
       });
       // Plunge: a rise telegraph, then the ring impact (also every Storm beat ring).
       const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
@@ -1144,24 +1160,51 @@ const App: React.FC = () => {
       const offBeat = gameEvents.on('boss:beat', ({ second }) => {
           soundManager.play('entity.magnetic_warden.beat', { volume: second ? 0.8 : 0.9, pitch: second ? 1.15 : 1.0 });
       });
-      // Tethers: the crystal ignites, and snaps (a crash follows via boss:action).
-      const offTether = gameEvents.on('boss:tether', () => soundManager.play('entity.magnetic_warden.tether', { volume: 0.7 }));
-      const offSnapped = gameEvents.on('boss:tether-snapped', () => soundManager.play('entity.magnetic_warden.snap', { volume: 0.9 }));
+      // The tower crystals: a form ignites its own; each lost crystal is a flinch
+      // until the last one drops the shield; the towers announce every flip.
       const offCrystals = gameEvents.on('boss:crystals', ({ mode }) => {
-          soundManager.play(mode === 'spawn' ? 'entity.magnetic_warden.crystal_spawn' : 'entity.magnetic_warden.crystal_break', { volume: 0.85 });
+          if (mode === 'ignite') soundManager.play('entity.magnetic_warden.crystal_ignite', { volume: 0.85 });
+      });
+      const offLost = gameEvents.on('boss:crystal-lost', ({ remaining }) => {
+          if (remaining > 0) soundManager.play('entity.magnetic_warden.flinch', { volume: 0.7 });
+      });
+      const offShieldBroken = gameEvents.on('boss:shield-broken', () => soundManager.play('entity.magnetic_warden.shield_break', { volume: 1.0 }));
+      const offTowers = gameEvents.on('boss:towers', ({ phase }) => {
+          soundManager.play(phase === 'flux' ? 'entity.magnetic_warden.tower_flux' : 'entity.magnetic_warden.tower_flip', { volume: phase === 'flux' ? 0.6 : 0.7 });
       });
       // The polarity rule, audibly: a matched bolt clinks off the boots (a
-      // matched strike clinks off the Warden via the melee 'blocked' result),
-      // and a full Flux announces itself before it discharges.
-      const offAbsorbed = gameEvents.on('bolt:absorbed', () => {
-          soundManager.play('entity.magnetic_warden.absorb', { volume: 0.45, pitch: 1.3 + Math.random() * 0.35 });
+      // matched strike clinks off the Warden via the melee 'blocked' result).
+      const offRepelled = gameEvents.on('bolt:repelled', () => {
+          soundManager.play('entity.magnetic_warden.repelled', { volume: 0.45, pitch: 1.3 + Math.random() * 0.35 });
       });
-      const offFluxFull = gameEvents.on('flux:changed', ({ full }) => {
-          if (full) soundManager.play('entity.magnetic_warden.flux_full', { volume: 0.8 });
+      // The player's kit.
+      const offDodge = gameEvents.on('player:dodge', ({ kind }) => {
+          const slot = kind === 'roll' ? 'entity.player.roll' : kind === 'dash' ? 'entity.player.dash' : kind === 'leap' ? 'entity.player.leap' : 'entity.player.launch';
+          soundManager.play(slot);
       });
-      const offBurst = gameEvents.on('flux:burst', ({ hitBoss }) => {
-          soundManager.play('entity.magnetic_warden.burst', { volume: hitBoss ? 1.0 : 0.8 });
+      const offDodged = gameEvents.on('player:dodged', () => soundManager.play('entity.player.dodged'));
+      const offSurge = gameEvents.on('player:surge', ({ armed }) => { if (armed) soundManager.play('entity.player.surge'); });
+      const offPlayerSlam = gameEvents.on('player:slam', ({ landed }) => {
+          soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
       });
+      const offShocked = gameEvents.on('player:shocked', () => soundManager.play('entity.player.shocked'));
+      // The view (F5), and the fight's own third-person framing.
+      const offView = gameEvents.on('view:changed', ({ mode }) => setViewMode(mode));
+      const offSpawnView = gameEvents.on('boss:spawned', ({ bossId }) => {
+          if (bossId !== 'magnetic_warden' || viewRig.mode === 'third') return;
+          preFightViewRef.current = viewRig.mode;
+          viewRig.mode = 'third';
+          gameEvents.emit('view:changed', { mode: 'third' });
+      });
+      const restoreView = () => {
+          const previous = preFightViewRef.current;
+          preFightViewRef.current = null;
+          if (previous === null || viewRig.mode === previous) return;
+          viewRig.mode = previous;
+          gameEvents.emit('view:changed', { mode: previous });
+      };
+      const offDefeatView = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') restoreView(); });
+      const offClearView = gameEvents.on('boss:cleared', restoreView);
       // Form changes (Aegis at 2/3, Storm at 1/3): an enrage cue. At the Storm
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
@@ -1172,8 +1215,8 @@ const App: React.FC = () => {
       const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
       const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
-      // Breaking a tower crystal: the encounter snaps the tether it powers (it
-      // listens itself); here only the shatter cue.
+      // Breaking a tower crystal: the encounter drops the shield layer it powers
+      // (it listens itself); here only the shatter cue.
       const offCrystal = gameEvents.on('crystal:broken', () => {
           soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
       });
@@ -1182,8 +1225,10 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offSlam(); offPhase(); offCrystal(); offPower();
-          offBeatTick(); offBeat(); offTether(); offSnapped(); offCrystals(); offAbsorbed(); offFluxFull(); offBurst();
+          offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offCharge(); offSlam(); offPhase(); offCrystal(); offPower();
+          offBeatTick(); offBeat(); offCrystals(); offLost(); offShieldBroken(); offTowers(); offRepelled();
+          offDodge(); offDodged(); offSurge(); offPlayerSlam(); offShocked();
+          offView(); offSpawnView(); offDefeatView(); offClearView();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
@@ -3081,6 +3126,7 @@ const App: React.FC = () => {
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
                     <BossBar />
                     <CinematicOverlay />
+                    {!showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
                     {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
@@ -3131,7 +3177,7 @@ const App: React.FC = () => {
                                         // settles on top of it (the dais is flattened by now). The
                                         // run-away grace already happened (the energy-ball charge),
                                         // so it spawns aggro and the fight starts immediately. The
-                                        // encounter takes the tower crystals it will tether to.
+                                        // encounter takes the tower crystals that shield its forms.
                                         const boss = entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
                                             bossId, regionId: regionId ?? undefined,
                                         });
@@ -3228,7 +3274,7 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && viewMode !== 'third' && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>

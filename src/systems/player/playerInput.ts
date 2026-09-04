@@ -17,6 +17,10 @@ export interface PlayerInputState {
     polarityPowerOn: boolean;
     /** True while a bite is actively charging (drives the held-item eat animation). */
     eating: boolean;
+    /** One-shot: F was pressed (dodge roll / magnetic dash / repel leap / launch off a wall). */
+    dodgeTrigger: boolean;
+    /** One-shot: F5 was pressed (first / third person). */
+    viewToggleTrigger: boolean;
 }
 
 // Internal state for double-tap detection
@@ -38,6 +42,8 @@ export const inputState: PlayerInputState = {
     magneticPolarity: 1,
     polarityPowerOn: true,
     eating: false,
+    dodgeTrigger: false,
+    viewToggleTrigger: false,
 };
 
 // Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
@@ -51,7 +57,8 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
+// F5 is intercepted so the browser never reloads mid-fight (it toggles the view).
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyF', 'F5']);
 
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
     // Intercept game keys to prevent browser/OS shortcuts
@@ -126,6 +133,16 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             inputState.polarityPowerOn = !inputState.polarityPowerOn;
             gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
             break;
+        case 'KeyF':
+            // The kit button: resolved by the player physics into a roll, a
+            // magnetic dash, a repel leap, or a launch off the wall.
+            if (e && e.repeat) break;
+            inputState.dodgeTrigger = true;
+            break;
+        case 'F5':
+            if (e && e.repeat) break;
+            inputState.viewToggleTrigger = true;
+            break;
     }
 };
 
@@ -168,16 +185,22 @@ export const getMovementIntent = () => {
     // Sprint is active if (CTRL Held OR double-tap is active OR Latch is active) AND moving forward AND NOT sneaking
     const isSprinting = (inputState.sprint || inputState.sprintLatch || doubleTapSprintActive) && inputState.forward && !inputState.sneak;
     
-    // Copy the trigger and reset it immediately
+    // Copy the triggers and reset them immediately
     const flyToggle = inputState.flyToggleTrigger;
     inputState.flyToggleTrigger = false;
+    const dodge = inputState.dodgeTrigger;
+    inputState.dodgeTrigger = false;
+    const viewToggle = inputState.viewToggleTrigger;
+    inputState.viewToggleTrigger = false;
 
     return {
         ...inputState,
         sprint: isSprinting,
         flyToggle,
-        cancelDoubleTap: () => { 
-            doubleTapSprintActive = false; 
+        dodge,
+        viewToggle,
+        cancelDoubleTap: () => {
+            doubleTapSprintActive = false;
             inputState.sprintLatch = false;
         }
     };
@@ -196,6 +219,8 @@ export const resetInputState = () => {
     inputState.magneticPolarity = 1;
     inputState.polarityPowerOn = true;
     inputState.eating = false;
+    inputState.dodgeTrigger = false;
+    inputState.viewToggleTrigger = false;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;

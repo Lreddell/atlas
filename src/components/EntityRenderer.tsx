@@ -5,10 +5,12 @@ import { entityManager } from '../systems/entities/EntityManager';
 import { ENTITY_KINDS } from '../systems/entities/Entity';
 import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
 import { MagneticWardenRenderer } from './MagneticWardenRenderer';
+import { PlayerModel } from './PlayerModel';
+import { BossCompassTracker } from './BossCompassTracker';
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
-const FLUX_RING = 0xe6d8ff;   // the player's own Flux Burst ring
+const SLAM_RING = 0xf3ecff;   // the player's own Magnet Slam impact ring
 const PROJECTILE_POOL = 64;
 const SHOCKWAVE_POOL = 6;
 const CUSTOM_RENDERED_ENTITY_KINDS = new Set([
@@ -108,13 +110,14 @@ export const EntityRenderer: React.FC = () => {
                 m.position.set(p.pos.x, p.pos.y, p.pos.z);
                 m.rotation.set(now * 0.004, now * 0.006, 0);
                 (m.material as THREE.MeshBasicMaterial).color.setHex(p.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
-                m.scale.setScalar(p.kind === 'spiral' ? 0.62 : 1);
+                // A bolt bounced off the player's boots is spent: it shrinks away.
+                m.scale.setScalar((p.kind === 'spiral' ? 0.62 : 1) * (p.bounced ? 0.5 : 1));
             } else {
                 m.visible = false;
             }
         }
         // Expanding ground rings: polarity rings from the boss, the player's
-        // own pale Flux Burst ring.
+        // own pale Magnet Slam ring.
         const shockwaves = entityManager.getShockwaves();
         for (let i = 0; i < SHOCKWAVE_POOL; i++) {
             const m = ringRefs.current[i];
@@ -126,8 +129,8 @@ export const EntityRenderer: React.FC = () => {
                 // A unit ring (inner 0.86, outer 1.0) scaled to the current radius.
                 m.scale.set(s.radius, s.radius, s.radius);
                 const mat = m.material as THREE.MeshBasicMaterial;
-                mat.color.setHex(s.kind === 'flux' ? FLUX_RING : (s.polarity > 0 ? POLARITY_RED : POLARITY_BLUE));
-                mat.opacity = (s.kind === 'flux' ? 0.85 : 0.75) * (1 - s.radius / s.maxRadius);
+                mat.color.setHex(s.kind === 'slam' ? SLAM_RING : (s.polarity > 0 ? POLARITY_RED : POLARITY_BLUE));
+                mat.opacity = (s.kind === 'slam' ? 0.85 : 0.75) * (1 - s.radius / s.maxRadius);
             } else {
                 m.visible = false;
             }
@@ -138,6 +141,8 @@ export const EntityRenderer: React.FC = () => {
         <>
             <ResonantVaultEnemyRenderer />
             <MagneticWardenRenderer />
+            <PlayerModel />
+            <BossCompassTracker />
             {ids.map((id) => {
                 const e = entityManager.getEntity(id);
                 if (!e) return null;

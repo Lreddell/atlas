@@ -8,23 +8,37 @@ import { BlockType, type GameMode } from '../types';
 import {
     onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge
 } from '../systems/player/playerInput';
-import { simulateStep } from '../systems/player/playerMovement';
+import { simulateStep, type SimulationResult } from '../systems/player/playerMovement';
 import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
 import { entityManager } from '../systems/entities/EntityManager';
 import { bossSummon } from '../systems/boss/bossSummon';
-import { sampleShake } from '../systems/player/cameraShake';
-import { checkCollision, isSolid as isSolidCell } from '../systems/player/playerCollision';
+import { sampleShake, addTrauma } from '../systems/player/cameraShake';
+import { checkCollision, getSupportTop, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
     createAdhesionState, findAdhesionCandidate, computeLocalBasis, projectInput, detachImpulse,
     evaluateSoftDetach, type AdhesionState, type Vec3,
     ADHESION_ATTACH_STRENGTH, ADHESION_CLIMB_SPEED, ADHESION_STICK_SPEED,
-    ADHESION_JUMP_OFF_SPEED, ADHESION_POLARITY_LAUNCH_SPEED, ADHESION_TANGENT_PRESERVE,
+    ADHESION_JUMP_OFF_SPEED, ADHESION_POLARITY_LAUNCH_SPEED, ADHESION_LAUNCH_UP, ADHESION_TANGENT_PRESERVE,
     ADHESION_REATTACH_COOLDOWN_MS,
 } from '../systems/player/magneticAdhesion';
+import {
+    climbSurfaces, CLIMB_SHOCK_DAMAGE, CLIMB_SHOCK_LAUNCH_SPEED, CLIMB_SHOCK_LAUNCH_UP,
+} from '../systems/player/climbSurfaces';
+import {
+    advanceMotion, armSurge, consumeSurge, createMotionState, endMotion, motionRequests,
+    previewDodge, resolveDodge, rollVelocity, writeMotionStatus,
+    DASH_RANGE, DASH_SPEED, LEAP_SPEED, LEAP_UP,
+    type DodgeContext, type MotionState, type MotionVec3,
+} from '../systems/player/playerMotion';
+import { aimRay, placeThirdPersonCamera, playerPose, viewRig } from '../systems/player/viewRig';
+import { voxelRaycast } from '../systems/world/voxelRaycast';
+import { gameEvents } from '../systems/events/GameEvents';
+import { particleFx, polarityFxColor } from '../systems/fx/particleFx';
 import {
     EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
     FIXED_DT, MAX_SUBSTEPS, MAX_BREATH,
     PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, PLAYER_WIDTH,
+    GRAVITY, TERMINAL_VELOCITY, GROUND_EPS, CONTACT_EPS,
 } from '../systems/player/playerConstants';
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
@@ -47,12 +61,21 @@ const _wallUp = new Vector3();
 const _wallMat = new Matrix4();
 const _wallTarget = new Quaternion();
 const _tmpEuler = new Euler(0, 0, 0, 'YXZ');
+const _viewDir = new Vector3();
+const _camRight = new Vector3();
+const _camUp = new Vector3();
 
 const _shakeOffset = { x: 0, y: 0, z: 0 };
 
 /** Duration (seconds) of the camera roll onto / off the wall. */
 const ROLL_TIME = 0.22;
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+
+/** A voxel sweep for the spring arm and the aim: distance to the first solid, or null. */
+const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
+    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist);
+    return hit ? hit.distance : null;
+};
 
 /** World-space view direction for the attached camera given its look yaw/pitch. */
 function wallViewDir(a: AdhesionState, out: Vector3): Vector3 {
@@ -112,7 +135,7 @@ interface PlayerProps {
 }
 
 export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<Vector3>; cinematicMode?: boolean }> = ({ playerPosRef, cinematicMode = false }) => {
-  useFrame(({ camera }) => {
+  useFrame(() => {
     // During the summon cutscene the camera belongs to the cinematic (it flies far
     // out around the arena), so don't track it, that would teleport the player's
     // saved position to wherever the camera ended up. Leave playerPosRef frozen at
@@ -121,28 +144,28 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
     // is restored) and the React cinematicMode prop (covers the cutscene start), so
     // there is no frame in which a stale cutscene camera leaks into the saved pos.
     if (cinematicMode || bossSummon.isActive()) return;
-    playerPosRef.current.copy(camera.position);
+    // The EYE, not the camera: in third person the camera hangs behind the body.
     const eyeHeight = inputState.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
-    playerPosRef.current.y -= eyeHeight;
+    playerPosRef.current.set(viewRig.eye.x, viewRig.eye.y - eyeHeight, viewRig.eye.z);
   });
   return null;
 };
 
-export const Player = forwardRef<PlayerHandle, PlayerProps>(({ 
+export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     position, onChunkChange, onTakeDamage, isLocked, isPaused, gameMode, fallDamageFactor = 1,
     setBreath, baseFov, setHeadBlock, setIsOnFire, foodStateRef,
     isDead, forcedFov = null, magneticMode = 'none', ridingBoatId = null, onExitBoat
 }, ref) => {
   const boating = ridingBoatId !== null;
   const { camera } = useThree();
-  
+
   const pos = useRef(position.clone());
   const vel = useRef(new Vector3());
   const grounded = useRef(false);
   const fallDistance = useRef(0);
   const damageTilt = useRef(0);
   const isFlying = useRef(false);
-  const spawnImmunityTicks = useRef(60); 
+  const spawnImmunityTicks = useRef(60);
   const prevPos = useRef(position.clone());
   const renderPos = useRef(position.clone());
   const currentEyeHeight = useRef(EYE_HEIGHT_STANDING);
@@ -159,15 +182,20 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const rollT = useRef(1);
   const rollFrom = useRef(new Quaternion());
 
+  // The F kit: roll / magnetic dash / repel leap, with its invulnerability
+  // windows and the armed Magnet Slam. Pure state, advanced in the fixed loop.
+  const motion = useRef<MotionState>(createMotionState());
+  const simTime = useRef(0);
+
   const timeAccumulator = useRef(0);
   const lastSimTime = useRef<number | null>(null);
   const lastChunk = useRef<{cx: number, cz: number} | null>(null);
   const breathRef = useRef(MAX_BREATH);
-  const drowningCooldown = useRef(0); 
-  
-  const invulnerabilityTimer = useRef(0); 
+  const drowningCooldown = useRef(0);
+
+  const invulnerabilityTimer = useRef(0);
   const lastDamageTaken = useRef(0);
-  const fireTicks = useRef(0); 
+  const fireTicks = useRef(0);
 
   // Sound Accumulator for footsteps
   const stepAccumulator = useRef(0);
@@ -175,12 +203,14 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   useImperativeHandle(ref, () => ({
       teleport: (newPos: Vector3) => {
           pos.current.copy(newPos);
-          vel.current.set(0, 0, 0); 
+          vel.current.set(0, 0, 0);
           prevPos.current.copy(newPos);
           renderPos.current.copy(newPos);
           camera.position.copy(newPos).add(new Vector3(0, currentEyeHeight.current, 0));
+          viewRig.eye.x = camera.position.x; viewRig.eye.y = camera.position.y; viewRig.eye.z = camera.position.z;
           grounded.current = false;
           fallDistance.current = 0;
+          motion.current = endMotion(motion.current);
           const cx = Math.floor(newPos.x / CHUNK_SIZE);
           const cz = Math.floor(newPos.z / CHUNK_SIZE);
           if (onChunkChange) onChunkChange(cx, cz);
@@ -194,10 +224,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
   // Sync physics state with prop updates (e.g. after world generation determines safe spawn)
   useEffect(() => {
-    camera.rotation.order = 'YXZ'; 
+    camera.rotation.order = 'YXZ';
     camera.up.set(0, 1, 0);
     camera.rotation.set(0, 0, 0);
-    
+
     // Reset physics state to match the new start position
     pos.current.copy(position);
     prevPos.current.copy(position);
@@ -205,8 +235,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     vel.current.set(0, 0, 0);
     grounded.current = false;
     fallDistance.current = 0;
-    
+    motion.current = createMotionState();
+
     camera.position.copy(pos.current).add(new Vector3(0, EYE_HEIGHT_STANDING, 0));
+    viewRig.eye.x = camera.position.x; viewRig.eye.y = camera.position.y; viewRig.eye.z = camera.position.z;
   }, [position, camera]); // Dependency on position ensures we teleport when the parent finishes loading
 
   useEffect(() => {
@@ -225,7 +257,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
   const applyDamage = (amount: number) => {
       if (gameMode !== 'survival' || isDead) return;
-      if (spawnImmunityTicks.current > 0) return; 
+      if (spawnImmunityTicks.current > 0) return;
 
       let damageToDeal = 0;
       if (invulnerabilityTimer.current > 0) {
@@ -236,8 +268,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       } else {
           damageToDeal = amount;
           lastDamageTaken.current = amount;
-          invulnerabilityTimer.current = 10; 
-          damageTilt.current = 0.35; 
+          invulnerabilityTimer.current = 10;
+          damageTilt.current = 0.35;
           addExhaustion(foodStateRef.current, EXHAUSTION_COSTS.DAMAGE);
       }
       if (damageToDeal > 0 && onTakeDamage) onTakeDamage(damageToDeal);
@@ -248,6 +280,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       getMagnetPolarity(worldManager.getBlock(x, y, z, false));
   const solidAt = (x: number, y: number, z: number): boolean =>
       isSolidCell(worldManager, x, y, z);
+  // The attraction rule with the arena towers' flux windows applied: a tower
+  // mid-flip holds a climber of either polarity (see climbSurfaces).
+  const attractiveAt = (playerPolarity: number, blockPolarity: number, x: number, y: number, z: number): boolean =>
+      climbSurfaces.isAttractive(playerPolarity, blockPolarity, x, y, z, climbSurfaces.clock);
 
   // Latch onto a magnet face: seat the local basis from the current gaze, reset
   // look, and drop the inward velocity so only tangent momentum carries in.
@@ -282,12 +318,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   };
 
   // Leave the wall: launch out along the normal (keeping some tangent momentum),
-  // start the reattach cooldown, and begin easing the camera back to world-up.
-  const detachWall = (reason: string, launchSpeed: number) => {
+  // optionally with an upward kick (the magnetic launch arcs), start the
+  // reattach cooldown, and begin easing the camera back to world-up.
+  const detachWall = (reason: string, launchSpeed: number, upKick = 0) => {
       const a = adhesion.current;
       if (!a.active) return;
       const imp = detachImpulse(a.localUp, { x: vel.current.x, y: vel.current.y, z: vel.current.z }, launchSpeed, ADHESION_TANGENT_PRESERVE);
       vel.current.set(imp.x, imp.y, imp.z);
+      // A launch off a wall face arcs; off a floor or ceiling the normal already carries the height.
+      if (upKick > 0) vel.current.y += upKick * (1 - Math.abs(a.localUp.y));
       a.active = false;
       a.detachReason = reason;
       a.detachCooldownUntil = Date.now() + ADHESION_REATTACH_COOLDOWN_MS;
@@ -341,7 +380,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
       // Re-sense the surface for hysteresis / corner tracking.
       const center: Vec3 = { x: pos.current.x, y: pos.current.y + height * 0.5, z: pos.current.z };
-      const cand = findAdhesionCandidate(magnetPolarityAt, solidAt, center, inputState.magneticPolarity);
+      const cand = findAdhesionCandidate(magnetPolarityAt, solidAt, center, inputState.magneticPolarity, undefined, attractiveAt);
       const now = Date.now();
       let strength = 0;
       if (cand) {
@@ -355,8 +394,199 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
               a.blockX = cand.blockX; a.blockY = cand.blockY; a.blockZ = cand.blockZ;
           }
       }
+      // A tower that settled against the climber's polarity throws them clear
+      // toward the platform (never into the pit) and stings.
+      const shock = climbSurfaces.shockAt(a.blockX, a.blockY, a.blockZ, inputState.magneticPolarity, climbSurfaces.clock, a.normal, { x: pos.current.x, y: pos.current.y, z: pos.current.z });
+      if (shock) {
+          detachWall('shocked', 0);
+          vel.current.set(shock.x * CLIMB_SHOCK_LAUNCH_SPEED, CLIMB_SHOCK_LAUNCH_UP, shock.z * CLIMB_SHOCK_LAUNCH_SPEED);
+          applyDamage(CLIMB_SHOCK_DAMAGE);
+          addTrauma(0.5);
+          particleFx.burst({ x: pos.current.x, y: pos.current.y + height * 0.5, z: pos.current.z, color: polarityFxColor(inputState.magneticPolarity), color2: [1, 1, 1], count: 30, speed: 8, upBias: 2, spread: 1, size: 0.24, life: 0.6, gravity: 4, drag: 1.1 });
+          gameEvents.emit('player:shocked', { x: pos.current.x, y: pos.current.y, z: pos.current.z });
+          return;
+      }
       const reason = evaluateSoftDetach(a, now, strength, !!cand);
       if (reason) detachWall(reason, ADHESION_JUMP_OFF_SPEED * 0.35);
+  };
+
+  // --- The F kit -------------------------------------------------------------
+
+  /** Horizontal look direction (unit) from the live view, world-up frame. */
+  const lookForward = (out: MotionVec3): MotionVec3 => {
+      const dx = viewRig.dir.x, dz = viewRig.dir.z;
+      const h = Math.hypot(dx, dz);
+      if (h < 1e-4) {
+          const yaw = camera.rotation.y;
+          out.x = -Math.sin(yaw); out.y = 0; out.z = -Math.cos(yaw);
+      } else {
+          out.x = dx / h; out.y = 0; out.z = dz / h;
+      }
+      return out;
+  };
+
+  const _forward: MotionVec3 = { x: 0, y: 0, z: -1 };
+  const _moveDir: MotionVec3 = { x: 0, y: 0, z: 0 };
+
+  /** Everything the kit needs to resolve F: the aim, the boss, the body. */
+  const buildKitContext = (intent: ReturnType<typeof getMovementIntent>, height: number): DodgeContext => {
+      const forward = lookForward(_forward);
+      const f = (intent.forward ? 1 : 0) - (intent.backward ? 1 : 0);
+      const r = (intent.right ? 1 : 0) - (intent.left ? 1 : 0);
+      let moveDir: MotionVec3 | null = null;
+      if (f !== 0 || r !== 0) {
+          // right = forward × up for a world-up camera.
+          _moveDir.x = forward.x * f + (-forward.z) * r;
+          _moveDir.y = 0;
+          _moveDir.z = forward.z * f + forward.x * r;
+          const l = Math.hypot(_moveDir.x, _moveDir.z) || 1;
+          _moveDir.x /= l; _moveDir.z /= l;
+          moveDir = _moveDir;
+      }
+      // The aimed block, from the eye toward the crosshair (identical in both views).
+      const ray = aimRay(viewRig.camera, viewRig.eye, viewRig.dir, sweepVoxels, 64);
+      const hit = voxelRaycast(ray.origin.x, ray.origin.y, ray.origin.z, ray.dir.x, ray.dir.y, ray.dir.z, DASH_RANGE);
+      let aimedMagnet: DodgeContext['aimedMagnet'] = null;
+      if (hit) {
+          const polarity = getMagnetPolarity(worldManager.getBlock(hit.bx, hit.by, hit.bz, false));
+          if (polarity !== 0) {
+              aimedMagnet = {
+                  point: { x: ray.origin.x + ray.dir.x * hit.distance, y: ray.origin.y + ray.dir.y * hit.distance, z: ray.origin.z + ray.dir.z * hit.distance },
+                  normal: { x: hit.nx, y: hit.ny, z: hit.nz },
+                  polarity,
+                  distance: hit.distance,
+              };
+          }
+      }
+      const bossEntity = entityManager.findBoss();
+      const boss: DodgeContext['boss'] = bossEntity
+          ? { x: bossEntity.pos.x, y: bossEntity.pos.y + bossEntity.height * 0.5, z: bossEntity.pos.z, polarity: bossEntity.polarity, radius: bossEntity.width * 0.5, vulnerable: !bossEntity.shielded }
+          : null;
+      return {
+          attached: adhesion.current.active,
+          grounded: grounded.current,
+          flying: isFlying.current || boating,
+          moveDir,
+          forward,
+          playerPolarity: magneticMode === 'controlled' ? inputState.magneticPolarity : 0,
+          position: { x: pos.current.x, y: pos.current.y, z: pos.current.z },
+          bodyHeight: height,
+          bodyWidth: PLAYER_WIDTH,
+          boss,
+          aimedMagnet,
+      };
+  };
+
+  /** F was pressed: resolve it by the polarity rule and apply the physics. */
+  const pressKit = (intent: ReturnType<typeof getMovementIntent>, height: number) => {
+      const ctx = buildKitContext(intent, height);
+      const { state, result } = resolveDodge(motion.current, ctx);
+      motion.current = state;
+      const at = { x: pos.current.x, y: pos.current.y, z: pos.current.z };
+      switch (result.kind) {
+          case 'jump-off':
+              // The magnetic launch: thrown clear along the face (same repels).
+              detachWall('launch', ADHESION_POLARITY_LAUNCH_SPEED, ADHESION_LAUNCH_UP);
+              gameEvents.emit('player:dodge', { kind: 'jump-off', ...at });
+              break;
+          case 'roll':
+              gameEvents.emit('player:dodge', { kind: 'roll', ...at });
+              break;
+          case 'dash':
+              // Arriving pressed against a magnet face must latch at once.
+              adhesion.current.detachCooldownUntil = 0;
+              particleFx.burst({ x: at.x, y: at.y + height * 0.5, z: at.z, color: polarityFxColor(ctx.playerPolarity), color2: [1, 1, 1], count: 18, speed: 4, upBias: 0.5, spread: 0.6, dir: [-result.dir.x, -result.dir.y, -result.dir.z], size: 0.22, life: 0.45, gravity: 1, drag: 1.5 });
+              gameEvents.emit('player:dodge', { kind: 'dash', ...at });
+              break;
+          case 'leap':
+              vel.current.set(result.dir.x * LEAP_SPEED, LEAP_UP, result.dir.z * LEAP_SPEED);
+              grounded.current = false;
+              particleFx.burst({ x: at.x, y: at.y + 0.3, z: at.z, color: polarityFxColor(ctx.playerPolarity), color2: [1, 1, 1], count: 22, speed: 6, upBias: 1, spread: 0.8, size: 0.24, life: 0.5, gravity: 4, drag: 1.2 });
+              gameEvents.emit('player:dodge', { kind: 'leap', ...at });
+              break;
+          default:
+              break;
+      }
+  };
+
+  /** A dash ended (arrived or blocked): settle, and arm the slam if it reached the boss. */
+  const finishDash = () => {
+      const m = motion.current;
+      if (m.action !== 'dash') return;
+      const ontoBoss = m.onto === 'boss';
+      motion.current = ontoBoss ? armSurge(endMotion(m)) : endMotion(m);
+      if (ontoBoss) {
+          addTrauma(0.2);
+          particleFx.burst({ x: pos.current.x, y: pos.current.y + 1, z: pos.current.z, color: [1, 1, 1], color2: polarityFxColor(inputState.magneticPolarity), count: 24, speed: 5, upBias: 1.5, spread: 1, size: 0.22, life: 0.5, gravity: 3, drag: 1.2 });
+          gameEvents.emit('player:surge', { armed: true });
+      }
+  };
+
+  /**
+   * The kit owns the body during a roll (a fast, easing run with gravity) and a
+   * dash (a straight magnetic pull with no gravity), integrated per axis
+   * against the voxels like the ordinary mover.
+   */
+  const stepKitMotion = (height: number): SimulationResult => {
+      const m = motion.current;
+      const newPos = pos.current.clone();
+      const newVel = vel.current.clone();
+      let blocked = false;
+      const moveAxis = (axis: 'x' | 'y' | 'z', d: number) => {
+          if (d === 0) return;
+          newPos[axis] += d;
+          if (checkCollision(worldManager, newPos, PLAYER_WIDTH, height)) {
+              newPos[axis] -= d;
+              newVel[axis] = 0;
+              blocked = true;
+          }
+      };
+      if (m.action === 'roll') {
+          const wasGrounded = checkCollision(worldManager, { x: newPos.x, y: newPos.y - GROUND_EPS, z: newPos.z }, PLAYER_WIDTH, height);
+          const rv = rollVelocity(m);
+          newVel.x = rv.x;
+          newVel.z = rv.z;
+          if (!wasGrounded) newVel.y = Math.max(newVel.y - GRAVITY * FIXED_DT, -TERMINAL_VELOCITY);
+          else if (newVel.y < 0) newVel.y = 0;
+          moveAxis('x', newVel.x * FIXED_DT);
+          moveAxis('z', newVel.z * FIXED_DT);
+          const dy = newVel.y * FIXED_DT;
+          newPos.y += dy;
+          let isGrounded = false;
+          if (checkCollision(worldManager, newPos, PLAYER_WIDTH, height)) {
+              newPos.y -= dy;
+              if (newVel.y < 0) {
+                  isGrounded = true;
+                  const top = getSupportTop(worldManager, newPos, PLAYER_WIDTH);
+                  if (top !== null) newPos.y = top + CONTACT_EPS;
+              }
+              newVel.y = 0;
+          }
+          if (newVel.y <= 0 && checkCollision(worldManager, { x: newPos.x, y: newPos.y - GROUND_EPS, z: newPos.z }, PLAYER_WIDTH, height)) {
+              isGrounded = true;
+              newVel.y = 0;
+          }
+          return { position: newPos, velocity: newVel, grounded: isGrounded };
+      }
+      // Dash: straight at the target, ending on arrival or against a block.
+      const target = m.target ?? { x: newPos.x, y: newPos.y, z: newPos.z };
+      const dx = target.x - newPos.x, dy = target.y - newPos.y, dz = target.z - newPos.z;
+      const distance = Math.hypot(dx, dy, dz);
+      const step = DASH_SPEED * FIXED_DT;
+      let arrived = false;
+      if (distance <= step + 1e-6) {
+          moveAxis('x', dx); moveAxis('z', dz); moveAxis('y', dy);
+          arrived = true;
+      } else {
+          const k = step / distance;
+          moveAxis('x', dx * k); moveAxis('z', dz * k); moveAxis('y', dy * k);
+      }
+      newVel.set(m.dir.x, m.dir.y, m.dir.z).multiplyScalar(DASH_SPEED);
+      if (arrived || blocked) {
+          finishDash();
+          newVel.multiplyScalar(0.15);
+      }
+      return { position: newPos, velocity: newVel, grounded: false };
   };
 
     useFrame((_, delta) => {
@@ -373,9 +603,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         } else {
             const hSpeed = Math.sqrt(vel.current.x * vel.current.x + vel.current.z * vel.current.z);
             const effectiveSprint = !isPaused && isLocked && intent.sprint && !intent.sneak && hSpeed > 3.0;
-            const targetFov = baseFov + (effectiveSprint ? 20 : 0);
+            const dashing = motion.current.action === 'dash';
+            const targetFov = baseFov + (effectiveSprint ? 20 : 0) + (dashing ? 12 : 0);
             // Use delta here for visual smoothing regardless of pause (if paused, FOV just freezes)
-            const fovSmoothing = 1 - Math.exp(-10 * delta); 
+            const fovSmoothing = 1 - Math.exp(-10 * delta);
             pc.fov = MathUtils.lerp(pc.fov, targetFov, fovSmoothing);
         }
         pc.updateProjectionMatrix();
@@ -397,33 +628,56 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     timeAccumulator.current += dt;
 
     if (!isLocked) {
-        intent.forward = false; intent.backward = false; 
-        intent.left = false; intent.right = false; 
+        intent.forward = false; intent.backward = false;
+        intent.left = false; intent.right = false;
         intent.jump = false;
         intent.flyToggle = false;
+        intent.dodge = false;
+        intent.viewToggle = false;
     }
 
     if (intent.flyToggle && gameMode === 'creative') {
         isFlying.current = !isFlying.current;
         if (isFlying.current) {
-            vel.current.y = 0; 
+            vel.current.y = 0;
             grounded.current = false;
         }
     }
     if (gameMode === 'spectator') isFlying.current = true;
     if (gameMode === 'survival' && isFlying.current) isFlying.current = false;
 
+    // F5: first / third person. The rig applies it at the end of the frame.
+    if (intent.viewToggle) {
+        viewRig.mode = viewRig.mode === 'third' ? 'first' : 'third';
+        gameEvents.emit('view:changed', { mode: viewRig.mode });
+    }
+
+    // The melee controller spent an armed Magnet Slam.
+    if (motionRequests.consumeSurge) {
+        motionRequests.consumeSurge = false;
+        const spent = consumeSurge(motion.current);
+        motion.current = spent.state;
+        if (spent.slam) gameEvents.emit('player:surge', { armed: false });
+    }
+
     // Boss magnetic field emitters (the Magnetic Warden's attract/repel aura),
     // fetched once per frame and applied each physics substep.
     const bossFields = entityManager.getMagneticFieldSources();
 
+    // F is a one-shot: honour it on the first substep of this frame.
+    let dodgePending = intent.dodge && !isDead && gameMode !== 'spectator';
+
     let steps = 0;
     while (timeAccumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
         prevPos.current.copy(pos.current);
+        simTime.current += FIXED_DT;
 
         if (spawnImmunityTicks.current > 0) spawnImmunityTicks.current--;
         if (invulnerabilityTimer.current > 0) invulnerabilityTimer.current--;
         if (invulnerabilityTimer.current <= 0) lastDamageTaken.current = 0;
+
+        motion.current = advanceMotion(motion.current, FIXED_DT);
+        const height = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
 
         // --- Magnetic wall adhesion: hard-detach triggers + path selection ---
         const a = adhesion.current;
@@ -434,13 +688,25 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         if (a.active && (magneticMode !== 'controlled' || isFlying.current || isDead)) {
             detachWall('mode-change', 0);
         }
-        if (a.active && polarityFlipped) detachWall('polarity-flip', ADHESION_POLARITY_LAUNCH_SPEED);
+        if (a.active && polarityFlipped) {
+            if (climbSurfaces.inFlux(a.blockX, a.blockY, a.blockZ, climbSurfaces.clock)) {
+                // The tower is mid-flip: the flip is the climber answering it, so
+                // the grip holds (a re-grip spark, no launch).
+                particleFx.burst({ x: pos.current.x, y: pos.current.y + height * 0.5, z: pos.current.z, color: polarityFxColor(inputState.magneticPolarity), color2: [1, 1, 1], count: 12, speed: 3, upBias: 0.5, spread: 1, size: 0.2, life: 0.4, gravity: 2, drag: 1.5 });
+            } else {
+                detachWall('polarity-flip', ADHESION_POLARITY_LAUNCH_SPEED, ADHESION_LAUNCH_UP);
+            }
+        }
         if (a.active && jumpEdge) detachWall('jump', ADHESION_JUMP_OFF_SPEED);
+
+        if (dodgePending) {
+            dodgePending = false;
+            pressKit(intent, height);
+        }
 
         if (a.active) {
             // Attached: walk/climb along the wall, no gravity, no fall/footstep.
-            const aHeight = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
-            stepAdhesionMovement(intent, aHeight);
+            stepAdhesionMovement(intent, height);
             if (!Number.isFinite(pos.current.x) || !Number.isFinite(pos.current.y) || !Number.isFinite(pos.current.z)) {
                 pos.current.copy(prevPos.current);
                 vel.current.set(0, 0, 0);
@@ -451,6 +717,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         } else {
 
         const startingJump = intent.jump && grounded.current && !isFlying.current;
+        const kitOwnsBody = motion.current.action === 'roll' || motion.current.action === 'dash';
 
         // Boat dismount: a sneak press while riding hops out. The boat entity
         // stays parked where the ride ended.
@@ -458,17 +725,19 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             onExitBoat();
         }
 
-        const simRes = simulateStep(
-            worldManager,
-            pos.current,
-            vel.current,
-            intent,
-            camera.rotation.y,
-            FIXED_DT,
-            isFlying.current,
-            gameMode === 'spectator',
-            boating && !isFlying.current
-        );
+        const simRes = kitOwnsBody
+            ? stepKitMotion(height)
+            : simulateStep(
+                worldManager,
+                pos.current,
+                vel.current,
+                intent,
+                camera.rotation.y,
+                FIXED_DT,
+                isFlying.current,
+                gameMode === 'spectator',
+                boating && !isFlying.current
+            );
 
         // --- Guard against Physics NaN ---
         if (!Number.isFinite(simRes.position.x) || !Number.isFinite(simRes.position.y) || !Number.isFinite(simRes.position.z)) {
@@ -483,15 +752,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             const by = Math.floor(pos.current.y);
             const bz = Math.floor(pos.current.z);
             const inFluid = worldManager.getBlock(bx, by, bz, false) === BlockType.WATER;
-            
+
             if (inFluid) {
-                if (intent.sprint || dist > 0) { 
+                if (intent.sprint || dist > 0) {
                     addExhaustion(foodStateRef.current, dist * EXHAUSTION_COSTS.SWIM);
                 }
-            } else if (intent.sprint && !isFlying.current) {
+            } else if ((intent.sprint || kitOwnsBody) && !isFlying.current) {
                 addExhaustion(foodStateRef.current, dist * EXHAUSTION_COSTS.SPRINT);
             }
-            
+
             if (startingJump) {
                 if (intent.sprint) {
                     addExhaustion(foodStateRef.current, EXHAUSTION_COSTS.JUMP_SPRINT);
@@ -524,8 +793,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                     // base fall damage, applied once per landing.
                     const multiplier = getFallDamageMultiplierForLandingBlock(landedBlock);
                     // Polarity boots cushion the impact (fallDamageFactor < 1 while
-                    // the ability is active; upgraded boots cushion more).
-                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor));
+                    // the ability is active; upgraded boots cushion more). A landing
+                    // rolled through (F on touchdown) is cushioned further still.
+                    const rolled = motion.current.action === 'roll' ? 0.5 : 1;
+                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor * rolled));
                 }
                 fallDistance.current = 0;
             }
@@ -538,21 +809,22 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             const dx = simRes.position.x - pos.current.x;
             const dz = simRes.position.z - pos.current.z;
             const dist = Math.sqrt(dx*dx + dz*dz);
-            
+
             if (dist > 0.001) {
                 stepAccumulator.current += dist;
                 let threshold = 0.45; // Walk
                 if (intent.sprint) threshold = 0.33;
                 if (intent.sneak) threshold = 0.7; // Slower footsteps
+                if (kitOwnsBody) threshold = 0.9; // A roll scuffs, it doesn't step
 
                 if (stepAccumulator.current >= threshold) {
                     stepAccumulator.current -= threshold;
-                    
+
                     const bx = Math.floor(simRes.position.x);
                     const by = Math.floor(simRes.position.y - 0.2);
                     const bz = Math.floor(simRes.position.z);
                     const blockBelow = worldManager.getBlock(bx, by, bz, false);
-                    
+
                     if (blockBelow !== BlockType.AIR) {
                         const group = getBlockSoundGroup(blockBelow);
                         soundManager.playAt(`block.${group}.step`, simRes.position, { volume: intent.sneak ? 0.5 : 1.0 });
@@ -560,11 +832,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 }
             }
         }
-        
+
         // SWIM SOUNDS
         const headBlock = worldManager.getBlock(Math.floor(simRes.position.x), Math.floor(simRes.position.y + 1.5), Math.floor(simRes.position.z), false);
         const inWater = feetBlock === BlockType.WATER || headBlock === BlockType.WATER;
-        
+
         if (inWater && !isFlying.current) {
              const vLen = simRes.velocity.length();
              if (vLen > 0.1) {
@@ -580,10 +852,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         vel.current.copy(simRes.velocity);
         grounded.current = simRes.grounded;
 
+        const dashing = motion.current.action === 'dash';
+
         // Magnetism (Phase 4): nudge velocity from nearby magnet blocks. Applied
         // after integration (like the sprint-jump boost) so this tick's friction
-        // doesn't immediately cancel it; collision is resolved next substep.
-        if (magneticMode !== 'none' && !isFlying.current && !boating) {
+        // doesn't immediately cancel it; collision is resolved next substep. A
+        // dash owns the body outright.
+        if (magneticMode !== 'none' && !isFlying.current && !boating && !dashing) {
             // Gentle pull while grounded (so you can stand and walk to a block's
             // edge), full strength airborne (so traversal/attaching still works).
             applyMagneticForce(
@@ -593,7 +868,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 magneticMode,
                 inputState.magneticPolarity,
                 FIXED_DT,
-                intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
+                height,
                 grounded.current ? 0.25 : 1,
             );
         }
@@ -601,24 +876,23 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         // Boss magnetic field (the Magnetic Warden): a strong, clamped attract/
         // repel force the player counters by flipping polarity. Skipped while
         // flying so creative flight is unaffected.
-        if (bossFields.length > 0 && !isFlying.current) {
+        if (bossFields.length > 0 && !isFlying.current && !dashing) {
             applyBossMagneticFields(
                 pos.current,
                 vel.current,
                 inputState.magneticPolarity,
                 FIXED_DT,
                 bossFields,
-                intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT,
+                height,
             );
         }
 
         // Latch onto a magnet wall when pressed against an attractive face. The
         // pull-through-air above brings the player in; only here (real contact)
         // does adhesion begin, so the camera never rolls mid-flight.
-        if (magneticMode === 'controlled' && !isFlying.current && !isDead && !boating && Date.now() >= a.detachCooldownUntil) {
-            const aHeight = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
-            const center: Vec3 = { x: pos.current.x, y: pos.current.y + aHeight * 0.5, z: pos.current.z };
-            const cand = findAdhesionCandidate(magnetPolarityAt, solidAt, center, inputState.magneticPolarity);
+        if (magneticMode === 'controlled' && !isFlying.current && !isDead && !boating && !dashing && Date.now() >= a.detachCooldownUntil) {
+            const center: Vec3 = { x: pos.current.x, y: pos.current.y + height * 0.5, z: pos.current.z };
+            const cand = findAdhesionCandidate(magnetPolarityAt, solidAt, center, inputState.magneticPolarity, undefined, attractiveAt);
             if (cand && cand.strength >= ADHESION_ATTACH_STRENGTH) beginAttach(cand);
         }
         } // end normal-movement path
@@ -633,18 +907,18 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         const blockBelow = worldManager.getBlock(bx, Math.floor(pos.current.y - 0.2), bz, false);
 
         if (feetBlock === BlockType.LAVA || headBlock === BlockType.LAVA) {
-            fireTicks.current = 300; 
+            fireTicks.current = 300;
             if (gameMode === 'survival' && invulnerabilityTimer.current <= 0) applyDamage(4);
         } else if (feetBlock === BlockType.WATER || headBlock === BlockType.WATER) {
             fireTicks.current = 0;
         }
 
         if (blockBelow === BlockType.MAGMA && !intent.sneak && grounded.current) {
-            applyDamage(1); 
+            applyDamage(1);
         }
 
         if (blockBelow === BlockType.CACTUS && grounded.current) {
-            applyDamage(1); 
+            applyDamage(1);
         }
 
         if (fireTicks.current > 0) {
@@ -652,16 +926,16 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             if (fireTicks.current % 20 === 0 && gameMode === 'survival') applyDamage(1);
         }
 
-        const damageThreshold = 0.92; 
+        const damageThreshold = 0.92;
         let cactusHit = false;
-        
+
         for (let x = bx - 1; x <= bx + 1; x++) {
             for (let z = bz - 1; z <= bz + 1; z++) {
                 const dx = Math.abs(pos.current.x - (x + 0.5));
                 const dz = Math.abs(pos.current.z - (z + 0.5));
-                
+
                 if (dx < damageThreshold && dz < damageThreshold) {
-                    if (worldManager.getBlock(x, by, z, false) === BlockType.CACTUS || 
+                    if (worldManager.getBlock(x, by, z, false) === BlockType.CACTUS ||
                         worldManager.getBlock(x, by + 1, z, false) === BlockType.CACTUS) {
                         applyDamage(1);
                         cactusHit = true;
@@ -766,30 +1040,85 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         camera.rotation.z = damageTilt.current;
     }
 
+    // The eye: where the player looks from, in both views.
+    let eyeX: number, eyeY: number, eyeZ: number;
     if (aCam.active) {
         // Stand the eye off the wall by the normal eye height (like walking
         // around normally) instead of sitting at the surface: push the body
         // centre out along the surface normal so the camera is ~one block out.
         const half = (intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT) * 0.5;
         const standoff = currentEyeHeight.current - aCam.contactDistance;
-        camera.position.set(
-            renderPos.current.x + aCam.normal.x * standoff,
-            renderPos.current.y + half + aCam.normal.y * standoff,
-            renderPos.current.z + aCam.normal.z * standoff,
-        );
+        eyeX = renderPos.current.x + aCam.normal.x * standoff;
+        eyeY = renderPos.current.y + half + aCam.normal.y * standoff;
+        eyeZ = renderPos.current.z + aCam.normal.z * standoff;
     } else {
-        camera.position.set(
-            renderPos.current.x,
-            renderPos.current.y + currentEyeHeight.current,
-            renderPos.current.z
-        );
+        eyeX = renderPos.current.x;
+        eyeY = renderPos.current.y + currentEyeHeight.current;
+        eyeZ = renderPos.current.z;
     }
+    viewRig.eye.x = eyeX; viewRig.eye.y = eyeY; viewRig.eye.z = eyeZ;
+    camera.getWorldDirection(_viewDir);
+    viewRig.dir.x = _viewDir.x; viewRig.dir.y = _viewDir.y; viewRig.dir.z = _viewDir.z;
+
+    // Third person: the camera hangs on a voxel-aware spring arm behind and over
+    // the shoulder of the eye; first person puts it at the eye.
+    if (viewRig.mode === 'third' && !bossSummon.isActive()) {
+        _camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+        _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        const placement = placeThirdPersonCamera(
+            viewRig.eye,
+            viewRig.dir,
+            { x: _camRight.x, y: _camRight.y, z: _camRight.z },
+            { x: _camUp.x, y: _camUp.y, z: _camUp.z },
+            sweepVoxels,
+        );
+        camera.position.set(placement.camera.x, placement.camera.y, placement.camera.z);
+        viewRig.third = true;
+        viewRig.armLength = placement.armLength;
+        viewRig.showModel = placement.showModel && !isDead;
+    } else {
+        camera.position.set(eyeX, eyeY, eyeZ);
+        viewRig.third = false;
+        viewRig.armLength = 0;
+        viewRig.showModel = false;
+    }
+    viewRig.camera.x = camera.position.x; viewRig.camera.y = camera.position.y; viewRig.camera.z = camera.position.z;
 
     // Global camera shake (boss slams etc.) on top of the resolved eye position.
     sampleShake(_shakeOffset, delta);
     camera.position.x += _shakeOffset.x;
     camera.position.y += _shakeOffset.y;
     camera.position.z += _shakeOffset.z;
+
+    // The body, for the third-person model.
+    playerPose.x = renderPos.current.x; playerPose.y = renderPos.current.y; playerPose.z = renderPos.current.z;
+    if (aCam.active) {
+        const look = wallViewDir(aCam, _wallView);
+        playerPose.yaw = Math.atan2(-look.x, -look.z);
+        playerPose.pitch = Math.asin(Math.max(-1, Math.min(1, look.y)));
+        playerPose.up.x = aCam.localUp.x; playerPose.up.y = aCam.localUp.y; playerPose.up.z = aCam.localUp.z;
+        const basis = computeLocalBasis(aCam.normal, { x: look.x, y: look.y, z: look.z });
+        playerPose.wallForward.x = basis.forward.x; playerPose.wallForward.y = basis.forward.y; playerPose.wallForward.z = basis.forward.z;
+        playerPose.wallRight.x = basis.right.x; playerPose.wallRight.y = basis.right.y; playerPose.wallRight.z = basis.right.z;
+    } else {
+        playerPose.yaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+        playerPose.pitch = Math.asin(Math.max(-1, Math.min(1, _viewDir.y)));
+        playerPose.up.x = 0; playerPose.up.y = 1; playerPose.up.z = 0;
+    }
+    playerPose.vx = vel.current.x; playerPose.vy = vel.current.y; playerPose.vz = vel.current.z;
+    playerPose.grounded = grounded.current;
+    playerPose.sneak = intent.sneak;
+    playerPose.sprint = intent.sprint;
+    playerPose.attached = aCam.active;
+    playerPose.polarity = magneticMode === 'controlled' ? inputState.magneticPolarity : 0;
+    playerPose.time = simTime.current;
+
+    // Which tower (if any) the climber clings to, for the HUD's flip warning,
+    // and the kit's live status (the damage gate, the F prompt, the HUD).
+    climbSurfaces.attachedZone = aCam.active ? (climbSurfaces.zoneAt(aCam.blockX, aCam.blockY, aCam.blockZ)?.id ?? null) : null;
+    const kitHeight = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
+    const prompt = isDead || gameMode === 'spectator' ? 'none' : previewDodge(motion.current, buildKitContext(intent, kitHeight));
+    writeMotionStatus(motion.current, prompt);
   });
 
   return null;

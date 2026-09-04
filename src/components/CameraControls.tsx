@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { lookBridge } from '../systems/player/playerInput';
+import { viewRig } from '../systems/player/viewRig';
 
 export interface CameraControlsHandle {
     lock: () => void;
@@ -47,7 +48,11 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
         getCamera: () => {
             const dir = new THREE.Vector3();
             camera.getWorldDirection(dir);
-            return { pos: camera.position.clone(), dir };
+            // The player's EYE: in third person the camera itself hangs behind the body.
+            const pos = viewRig.third
+                ? new THREE.Vector3(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z)
+                : camera.position.clone();
+            return { pos, dir };
         },
         getRotation: () => ({ x: camera.rotation.x, y: camera.rotation.y }),
         getFov: () => {

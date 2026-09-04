@@ -13,6 +13,15 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     // Player
     "entity.player.hurt": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0 },
     "entity.player.death": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0, pitch: 0.6 },
+    // The F kit (see public/assets/rvx/sounds/magnetic_warden/README.txt for the slot list).
+    "entity.player.roll": { category: "player", sounds: ["step/sand1", "step/sand2"], volume: 0.55, pitch: [0.8, 0.95] },
+    "entity.player.dash": { category: "player", sounds: ["magnetic_warden/deflect"], volume: 0.6, pitch: 1.5 },
+    "entity.player.leap": { category: "player", sounds: ["magnetic_warden/shielded"], volume: 0.6, pitch: 0.9 },
+    "entity.player.launch": { category: "player", sounds: ["magnetic_warden/shielded"], volume: 0.7, pitch: 0.75 },
+    "entity.player.dodged": { category: "player", sounds: ["random/pop"], volume: 0.45, pitch: [1.6, 1.9] },
+    "entity.player.surge": { category: "player", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.7, pitch: 1.5 },
+    "entity.player.slam": { category: "player", sounds: ["magnetic_warden/slam"], volume: 1.0, pitch: 1.2 },
+    "entity.player.shocked": { category: "player", sounds: ["magnetic_warden/deflect"], volume: 0.9, pitch: 0.7 },
     "entity.item.pickup": { category: "player", sounds: ["random/pop"], volume: 0.5, pitch: [1.5, 1.8] },
     "ability.polarity.positive": { category: "player", sounds: ["polarity/positive"], volume: 0.7 },
     "ability.polarity.negative": { category: "player", sounds: ["polarity/negative"], volume: 0.7 },
@@ -119,20 +128,23 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     "entity.magnetic_warden.repel": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 0.9, pitch: 1.15 },
     "entity.magnetic_warden.swap_charge": { category: "hostile", sounds: ["magnetic_warden/swap_charge"], volume: 0.6, fallback: false },
     "entity.magnetic_warden.stagger": { category: "hostile", sounds: ["magnetic_warden/hurt"], volume: 0.8, pitch: 0.7 },
-    // Form changes and the Aegis tether.
+    "entity.magnetic_warden.charge_windup": { category: "hostile", sounds: ["magnetic_warden/slam_rise"], volume: 0.75, pitch: 1.2 },
+    "entity.magnetic_warden.charge_lunge": { category: "hostile", sounds: ["magnetic_warden/deflect"], volume: 0.9, pitch: 0.8 },
+    // The tower crystals and their shield.
+    "entity.magnetic_warden.crystal_ignite": { category: "hostile", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.85 },
+    "entity.magnetic_warden.flinch": { category: "hostile", sounds: ["magnetic_warden/hurt"], volume: 0.7, pitch: 1.2 },
+    "entity.magnetic_warden.shield_break": { category: "hostile", sounds: ["magnetic_warden/deflect"], volume: 1.0, pitch: 0.6 },
+    "entity.magnetic_warden.tower_flux": { category: "hostile", sounds: ["magnetic_warden/hum"], volume: 0.6, pitch: 1.3 },
+    "entity.magnetic_warden.tower_flip": { category: "hostile", sounds: ["magnetic_warden/polarity"], volume: 0.7 },
+    // Form changes.
     "entity.magnetic_warden.shatter": { category: "hostile", sounds: ["magnetic_warden/crystal_spawn"], volume: 1.0, pitch: 0.8 },
-    "entity.magnetic_warden.tether": { category: "hostile", sounds: ["magnetic_warden/hum"], volume: 0.55 },
-    "entity.magnetic_warden.snap": { category: "hostile", sounds: ["magnetic_warden/deflect"], volume: 0.9 },
     "entity.magnetic_warden.crash": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 1.0, pitch: 0.8 },
-    "entity.magnetic_warden.stunned": { category: "hostile", sounds: ["magnetic_warden/stunned"], volume: 0.8, fallback: false },
     "entity.magnetic_warden.storm": { category: "hostile", sounds: ["magnetic_warden/hum"], volume: 0.9, pitch: 0.7 },
     // The Storm metronome.
     "entity.magnetic_warden.beat_tick": { category: "hostile", sounds: ["magnetic_warden/shielded"], volume: 0.55, pitch: 1.6 },
     "entity.magnetic_warden.beat": { category: "hostile", sounds: ["magnetic_warden/slam"], volume: 0.9 },
-    // The polarity rule, audibly: repelled bolts, a repelled strike, Flux.
-    "entity.magnetic_warden.absorb": { category: "player", sounds: ["magnetic_warden/shielded"], volume: 0.45, pitch: [1.3, 1.65] },
-    "entity.magnetic_warden.flux_full": { category: "player", sounds: ["magnetic_warden/crystal_spawn"], volume: 0.8, pitch: 1.4 },
-    "entity.magnetic_warden.burst": { category: "player", sounds: ["magnetic_warden/deflect"], volume: 1.0 },
+    // The polarity rule, audibly: a bolt repelled off the boots.
+    "entity.magnetic_warden.repelled": { category: "player", sounds: ["magnetic_warden/shielded"], volume: 0.45, pitch: [1.3, 1.65] },
 
     // Resonant Vault authored audio
     "vault.discovery": { category: "ambient", sounds: ["resonant_vault/listening_stone"], volume: 0.55, fallback: false },
