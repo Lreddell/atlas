@@ -21,6 +21,7 @@ import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { BossCompass } from './components/ui/BossCompass';
+import { CombatFeedback } from './components/ui/CombatFeedback';
 import { motionStatus } from './systems/player/playerMotion';
 import { viewRig, type ViewMode } from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
@@ -29,6 +30,8 @@ import { BellTitanCinematic } from './components/BellTitanCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
 import { magneticWardenEncounter } from './systems/boss/MagneticWardenEncounter';
 import { bellTitanCinematic } from './systems/boss/bellTitanCinematic';
+import { wardenDefeat } from './systems/boss/wardenDefeat';
+import { WardenDefeatCinematic } from './components/WardenDefeatCinematic';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
@@ -107,6 +110,22 @@ const WEB_PANORAMA_PREFIX = 'web:';
 const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
 const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
 const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
+/**
+ * Resolve an item by its display name for the chat commands. Spaces and
+ * underscores are both accepted, so "polarity boots" (what the HUD calls it)
+ * and "polarity_boots" (what autocomplete offers) both find the same item.
+ */
+const normalizeItemName = (label: string) => label.toLowerCase().replace(/[\s_]+/g, '');
+const findBlockByName = (label: string): BlockType | null => {
+    const norm = normalizeItemName(label);
+    if (!norm) return null;
+    for (const key in BLOCKS) {
+        const t = Number(key) as BlockType;
+        const def = BLOCKS[t];
+        if (def?.name && normalizeItemName(def.name) === norm) return t;
+    }
+    return null;
+};
 const commandItems = Array.from(new Set(
     Object.values(BLOCKS)
         .filter(Boolean)
@@ -1055,6 +1074,7 @@ const App: React.FC = () => {
       }
       bossSummon.cancel();
       bellTitanCinematic.cancel();
+      wardenDefeat.cancel();
       setCinematicMode(false);
       // Despawns a live boss (clears its crystals + fires boss:cleared → restores
       // the arena and nulls the ref). If there was no live boss (e.g. quit during
@@ -1107,6 +1127,12 @@ const App: React.FC = () => {
               const feet = new THREE.Vector3(returnPosition.x, returnPosition.y, returnPosition.z);
               playerRef.current?.teleport(feet);
               playerPosRef.current.copy(feet);
+              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
+              return;
+          }
+          if (source === 'magnetic_warden') {
+              // The defeat cutscene never moved the player (physics was paused);
+              // only the camera was borrowed, so just give the look back.
               controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               return;
           }
@@ -2014,25 +2040,21 @@ const App: React.FC = () => {
           if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
       } else if (parts[0] === '/giveitem' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
-          if (found === null) { logMsg(`Unknown item: ${parts[1]}`, 'error'); }
-          else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
+          // Item names are several words ("Polarity Boots", "Magnetite Bricks"),
+          // so everything after the command is the name, minus a trailing count.
+          const tail = parts.slice(1);
+          const count = tail.length > 1 && /^\d+$/.test(tail[tail.length - 1])
+              ? Math.max(1, parseInt(tail.pop() as string, 10))
+              : 1;
+          const label = tail.join(' ');
+          const found = findBlockByName(label);
+          if (found === null) { logMsg(`Unknown item: ${label}`, 'error'); }
+          else { addToInventory(found, count); logMsg(`Gave ${count}x ${BLOCKS[found].name}`, 'success'); }
       } else if (parts[0] === '/equip' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
+          const label = parts.slice(1).join(' ');
+          const found = findBlockByName(label);
           const slot = found !== null ? slotForItem(found) : undefined;
-          if (found === null) logMsg(`Unknown item: ${parts[1]}`, 'error');
+          if (found === null) logMsg(`Unknown item: ${label}`, 'error');
           else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
           else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
       } else if (parts[0] === '/unequip' && parts[1]) {
@@ -2131,6 +2153,18 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
+    // F5: first / third person. Handled here rather than in the movement input
+    // so it works whether or not the pointer is locked (and so the browser
+    // never reloads the page instead of switching the view).
+    if (e.code === 'F5') {
+        e.preventDefault();
+        if (appState === 'game' && !isEditableTarget && !isCapturingPanorama) {
+            const next: ViewMode = viewRig.mode === 'third' ? 'first' : 'third';
+            viewRig.mode = next;
+            gameEvents.emit('view:changed', { mode: next });
+        }
+        return;
+    }
     if (e.code === 'F4') {
         if (showAtlasViewer) {
             e.preventDefault();
@@ -2249,7 +2283,7 @@ const App: React.FC = () => {
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -3127,6 +3161,7 @@ const App: React.FC = () => {
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
+                    {!showDeathScreen && !cinematicMode && !openContainer && gameMode !== 'spectator' && <CombatFeedback />}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
                     {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
@@ -3235,6 +3270,7 @@ const App: React.FC = () => {
                     <EntityRenderer />
                     <BossCinematic />
                     <BellTitanCinematic />
+                    <WardenDefeatCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                     <FxParticles isPaused={worldPaused} />

@@ -189,13 +189,26 @@ test('melee aims from the eye, loads a Magnet Slam, and a bounced strike still c
     assert.match(interaction, /function eyePosition\(camera: THREE\.Camera\)/);
 });
 
-test('the player owns the F kit, the flux grace, the magnetic launch and the third-person rig', () => {
-    // F and F5 are one-shot triggers, intercepted so F5 never reloads the page.
-    assert.match(input, /'KeyF', 'F5'\]/);
-    assert.match(input, /case 'KeyF':[\s\S]*?inputState\.dodgeTrigger = true/);
-    assert.match(input, /case 'F5':[\s\S]*?inputState\.viewToggleTrigger = true/);
-    // The kit resolves once per frame inside the fixed loop and owns the body during a roll or dash.
-    assert.match(player, /pressKit\(intent, height\)/);
+test('the player owns the dodge kit, the flux grace, the magnetic launch and the third-person rig', () => {
+    // C is the kit key, and its press is a BUFFERED timestamp rather than a
+    // one-frame flag: at 60 fps only every third frame runs a 20 Hz substep, so
+    // a flag would drop two presses out of three ("I have to spam it").
+    assert.match(input, /'KeyC'\]/);
+    assert.match(input, /case 'KeyC':[\s\S]*?inputState\.dodgePressedAt = now/);
+    // The press is queued as a timestamp and only expires AFTER the physics has
+    // had a chance at it, so a slow frame cannot swallow one.
+    assert.match(input, /const dodge = inputState\.dodgePressedAt > 0;/);
+    assert.match(input, /export const consumeDodgePress/);
+    assert.match(input, /export const dodgePressAge/);
+    assert.match(player, /if \(dodgePending && dodgePressAge\(\) > DODGE_BUFFER_MS\) consumeDodgePress\(\)/);
+    assert.doesNotMatch(input, /dodgeTrigger|viewToggleTrigger/);
+    // F5 lives in App's global handler so it works with or without pointer lock
+    // (and so the browser never reloads the page instead of switching views).
+    assert.match(app, /e\.code === 'F5'[\s\S]*?viewRig\.mode = next/);
+    assert.doesNotMatch(input, /'F5'/);
+    // The kit resolves inside the fixed loop and owns the body during a roll or dash.
+    assert.match(player, /if \(dodgePending && pressKit\(intent, height\)\)/);
+    assert.match(player, /consumeDodgePress\(\)/);
     assert.match(player, /const kitOwnsBody = motion\.current\.action === 'roll' \|\| motion\.current\.action === 'dash';/);
     assert.match(player, /\? stepKitMotion\(height\)/);
     assert.match(player, /motion\.current = ontoBoss \? armSurge\(endMotion\(m\)\) : endMotion\(m\);/);
@@ -214,6 +227,9 @@ test('the player owns the F kit, the flux grace, the magnetic launch and the thi
     assert.match(player, /placeThirdPersonCamera\(/);
     assert.match(player, /playerPosRef\.current\.set\(viewRig\.eye\.x, viewRig\.eye\.y - eyeHeight, viewRig\.eye\.z\)/);
     assert.match(player, /writeMotionStatus\(motion\.current, prompt\)/);
+    // A roll absorbs the landing outright, and drives harder in the air.
+    assert.match(player, /rollAbsorbsLanding\(motion\.current\)/);
+    assert.match(player, /rollVelocity\(m, !wasGrounded\)/);
     // The other camera consumers read the eye too.
     assert.match(read('src/components/CameraControls.tsx'), /viewRig\.third/);
     assert.match(read('src/components/ResonantVaultController.tsx'), /viewRig\.third \? viewRig\.eye : camera\.position/);
@@ -253,7 +269,7 @@ test('the Warden renders its three-form body, the tower shield, and every telegr
     }
 });
 
-test('the HUD reads the forms, the crystal shield, the F prompt, the slam and the tower flip warning', () => {
+test('the HUD reads the forms, the crystal shield, the slam and the tower flip warning', () => {
     const bar = read('src/components/ui/BossBar.tsx');
     assert.match(bar, /magnetic_warden:\s*\[2 \/ 3, 1 \/ 3\]/);
     assert.match(bar, /boss:form/);
@@ -262,14 +278,44 @@ test('the HUD reads the forms, the crystal shield, the F prompt, the slam and th
     assert.match(bar, /boss:crystal-lost/);
     assert.match(bar, /SHIELDED/);
     assert.match(bar, /EXPOSED/);
+    // The polarity block sits bottom-right, clear of the hotbar's item name and
+    // the hearts (both bottom-centre) and the armor readout (bottom-left).
     const indicator = read('src/components/ui/PolarityIndicator.tsx');
-    assert.match(indicator, /motionStatus\.prompt/);
-    assert.match(indicator, /MAGNET SLAM READY/);
-    assert.match(indicator, /TOWER FLIPPING · flip \(R\) to hold/);
-    assert.match(indicator, /climbSurfaces\.attachedZone/);
+    assert.match(indicator, /bottom-4 right-4/);
+    assert.match(indicator, /SLAM READY/);
     assert.doesNotMatch(indicator, /flux:changed|FLUX READY/);
+    // The dodge has NO on-screen prompt: it is always available, and its
+    // cooldown is a ring on the crosshair instead of another box of text.
+    assert.doesNotMatch(indicator, /motionStatus\.prompt|F · |PROMPTS/);
+    const feedback = read('src/components/ui/CombatFeedback.tsx');
+    assert.match(feedback, /strokeDashoffset/);
+    assert.match(feedback, /motionStatus\.cooldown/);
+    assert.match(feedback, /motionStatus\.refusedAt/);
+    assert.match(feedback, /TOWER FLIPPING · press R to hold on/);
+    assert.match(feedback, /climbSurfaces\.attachedZone/);
+    assert.match(feedback, /DODGED/);
+    assert.match(app, /<CombatFeedback \/>/);
     const compass = read('src/components/ui/BossCompass.tsx');
     assert.match(compass, /bossCompassState/);
+});
+
+test('the Warden dies on camera: a defeat cinematic that hands the view back', () => {
+    const defeat = read('src/systems/boss/wardenDefeat.ts');
+    assert.match(defeat, /gameEvents\.emit\('cinematic:start', \{ source: 'magnetic_warden' \}\)/);
+    assert.match(defeat, /source: 'magnetic_warden',[\s\S]*?returnPitch/);
+    assert.match(defeat, /skip\(\)/);
+    assert.match(defeat, /cancel\(\)/);
+    // The encounter starts it while it still knows where the Warden fell.
+    assert.match(encounter, /case 'defeated':[\s\S]*?wardenDefeat\.begin\(\{/);
+    // App gives the look back without teleporting (the defeat never moved the player).
+    assert.match(app, /source === 'magnetic_warden'\) \{[\s\S]*?setRotation\(returnPitch \?\? 0, returnYaw \?\? 0\)/);
+    assert.match(app, /<WardenDefeatCinematic \/>/);
+    assert.match(app, /wardenDefeat\.cancel\(\)/);
+    const overlay = read('src/components/ui/CinematicOverlay.tsx');
+    assert.match(overlay, /wardenDefeat\.flash/);
+    const renderer = read('src/components/WardenDefeatCinematic.tsx');
+    assert.match(renderer, /wardenDefeat\.isActive\(\)/);
+    assert.match(renderer, /camera\.quaternion\.copy\(wardenDefeat\.camQuat\)/);
 });
 
 test('every telegraph and every kit move has a sound slot, documented for the sound pack', () => {
@@ -311,23 +357,26 @@ test('player-facing text teaches the one rule, the crystal shields, the towers a
     assert.match(tutorial, /flux window/);
     assert.match(tutorial, /Magnet Slam/);
     assert.match(tutorial, /F5: Toggle first \/ third person/);
+    assert.match(tutorial, /C: Dodge roll/);
     assert.doesNotMatch(tutorial, /Flux Burst|tethered/);
     const tips = read('src/components/ui/LoadingScreen.tsx');
     assert.match(tips, /Match the Warden/);
     assert.match(tips, /flux window/);
+    assert.match(tips, /Roll \(C\) as you land/);
     assert.doesNotMatch(tips, /charge Flux|deflectable bolts/);
     const modal = read('src/components/ui/BossConfirmModal.tsx');
     assert.match(modal, /Same polarity repels, opposite attracts/);
     assert.match(modal, /tower crystals/);
     const readme = read('README.md');
-    assert.match(readme, /Press `F` to dodge roll/);
+    assert.match(readme, /Press `C` to dodge roll/);
     assert.match(readme, /Press `F5`/);
     assert.doesNotMatch(readme, /Flux/);
     const changelog = read('CHANGELOG.md');
     assert.match(changelog, /## \[Unreleased\]/);
     assert.match(changelog, /three forms/i);
     assert.match(changelog, /Magnet Slam/);
-    assert.match(changelog, /Third person \(F5\)/);
+    assert.match(changelog, /Third person \(F5/);
+    assert.match(changelog, /defeat cinematic/);
 });
 
 // --- Regression guards carried over from the previous fight's suite ---------

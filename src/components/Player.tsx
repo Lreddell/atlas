@@ -6,7 +6,8 @@ import { CHUNK_SIZE } from '../constants';
 import { worldManager } from '../systems/WorldManager';
 import { BlockType, type GameMode } from '../types';
 import {
-    onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge
+    onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge, consumeDodgePress, dodgePressAge,
+    DODGE_BUFFER_MS,
 } from '../systems/player/playerInput';
 import { simulateStep, type SimulationResult } from '../systems/player/playerMovement';
 import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
@@ -25,8 +26,8 @@ import {
     climbSurfaces, CLIMB_SHOCK_DAMAGE, CLIMB_SHOCK_LAUNCH_SPEED, CLIMB_SHOCK_LAUNCH_UP,
 } from '../systems/player/climbSurfaces';
 import {
-    advanceMotion, armSurge, consumeSurge, createMotionState, endMotion, motionRequests,
-    previewDodge, resolveDodge, rollVelocity, writeMotionStatus,
+    advanceMotion, armSurge, consumeSurge, createMotionState, endMotion, markDodgeRefused, motionRequests,
+    previewDodge, resolveDodge, rollAbsorbsLanding, rollVelocity, writeMotionStatus,
     DASH_RANGE, DASH_SPEED, LEAP_SPEED, LEAP_UP,
     type DodgeContext, type MotionState, type MotionVec3,
 } from '../systems/player/playerMotion';
@@ -477,10 +478,19 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       };
   };
 
-  /** F was pressed: resolve it by the polarity rule and apply the physics. */
-  const pressKit = (intent: ReturnType<typeof getMovementIntent>, height: number) => {
+  /**
+   * The dodge key was pressed: resolve it by the polarity rule and apply the
+   * physics. Returns false when the kit could not answer (mid-action or on
+   * cooldown) so the press stays queued for the next substep instead of being
+   * thrown away, and the crosshair says why.
+   */
+  const pressKit = (intent: ReturnType<typeof getMovementIntent>, height: number): boolean => {
       const ctx = buildKitContext(intent, height);
       const { state, result } = resolveDodge(motion.current, ctx);
+      if (result.kind === 'none') {
+          if (result.reason === 'cooldown' || result.reason === 'busy') markDodgeRefused();
+          return result.reason === 'flying';
+      }
       motion.current = state;
       const at = { x: pos.current.x, y: pos.current.y, z: pos.current.z };
       switch (result.kind) {
@@ -507,6 +517,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
           default:
               break;
       }
+      return true;
   };
 
   /** A dash ended (arrived or blocked): settle, and arm the slam if it reached the boss. */
@@ -543,7 +554,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       };
       if (m.action === 'roll') {
           const wasGrounded = checkCollision(worldManager, { x: newPos.x, y: newPos.y - GROUND_EPS, z: newPos.z }, PLAYER_WIDTH, height);
-          const rv = rollVelocity(m);
+          // Airborne the roll drives harder and keeps the fall going: this is
+          // the move that saves you when the Warden launches you off the edge.
+          const rv = rollVelocity(m, !wasGrounded);
           newVel.x = rv.x;
           newVel.z = rv.z;
           if (!wasGrounded) newVel.y = Math.max(newVel.y - GRAVITY * FIXED_DT, -TERMINAL_VELOCITY);
@@ -633,7 +646,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         intent.jump = false;
         intent.flyToggle = false;
         intent.dodge = false;
-        intent.viewToggle = false;
     }
 
     if (intent.flyToggle && gameMode === 'creative') {
@@ -646,11 +658,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     if (gameMode === 'spectator') isFlying.current = true;
     if (gameMode === 'survival' && isFlying.current) isFlying.current = false;
 
-    // F5: first / third person. The rig applies it at the end of the frame.
-    if (intent.viewToggle) {
-        viewRig.mode = viewRig.mode === 'third' ? 'first' : 'third';
-        gameEvents.emit('view:changed', { mode: viewRig.mode });
-    }
+    // (F5 toggles the view through App's global key handler, so it works whether
+    // or not the pointer is locked; the rig below just applies viewRig.mode.)
 
     // The melee controller spent an armed Magnet Slam.
     if (motionRequests.consumeSurge) {
@@ -664,8 +673,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     // fetched once per frame and applied each physics substep.
     const bossFields = entityManager.getMagneticFieldSources();
 
-    // F is a one-shot: honour it on the first substep of this frame.
+    // The dodge press stays queued in the input state until a physics substep
+    // consumes it (at 60 fps only every third frame runs a 20 Hz substep, so a
+    // per-frame flag would silently drop two presses out of three).
     let dodgePending = intent.dodge && !isDead && gameMode !== 'spectator';
+    if (intent.dodge && !dodgePending) consumeDodgePress();
 
     let steps = 0;
     while (timeAccumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
@@ -699,9 +711,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         }
         if (a.active && jumpEdge) detachWall('jump', ADHESION_JUMP_OFF_SPEED);
 
-        if (dodgePending) {
+        if (dodgePending && pressKit(intent, height)) {
             dodgePending = false;
-            pressKit(intent, height);
+            consumeDodgePress();
         }
 
         if (a.active) {
@@ -788,15 +800,25 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 soundManager.playAt(`block.${group}.land`, simRes.position);
 
                 const SAFE_FALL = 3.0;
-                if (fallDistance.current > SAFE_FALL) {
+                // A landing rolled through costs nothing: the fall is spent on
+                // the roll. Pressing the dodge just before touchdown starts the
+                // roll in the air, so the timing window is the roll itself.
+                if (rollAbsorbsLanding(motion.current)) {
+                    if (fallDistance.current > SAFE_FALL) {
+                        soundManager.playAt('entity.player.roll', simRes.position, { volume: 0.8 });
+                        particleFx.burst({
+                            x: simRes.position.x, y: simRes.position.y + 0.2, z: simRes.position.z,
+                            color: [0.85, 0.85, 0.9], color2: [1, 1, 1], count: 16, speed: 5, upBias: 1,
+                            spread: 1, size: 0.18, life: 0.4, gravity: 6, drag: 1.6,
+                        });
+                    }
+                } else if (fallDistance.current > SAFE_FALL) {
                     // Magnetic Spikes (and any future hazard surface) amplify the
                     // base fall damage, applied once per landing.
                     const multiplier = getFallDamageMultiplierForLandingBlock(landedBlock);
                     // Polarity boots cushion the impact (fallDamageFactor < 1 while
-                    // the ability is active; upgraded boots cushion more). A landing
-                    // rolled through (F on touchdown) is cushioned further still.
-                    const rolled = motion.current.action === 'roll' ? 0.5 : 1;
-                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor * rolled));
+                    // the ability is active; upgraded boots cushion more).
+                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor));
                 }
                 fallDistance.current = 0;
             }
@@ -972,6 +994,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         timeAccumulator.current -= FIXED_DT;
         steps++;
     }
+
+    // The press was offered to this frame's substeps and none could take it
+    // (mid-action, on cooldown). Keep it queued briefly so it lands the moment
+    // the kit frees up, then drop it so it cannot fire long after the fact.
+    if (dodgePending && dodgePressAge() > DODGE_BUFFER_MS) consumeDodgePress();
 
     const alpha = Math.max(0, Math.min(1, timeAccumulator.current / FIXED_DT));
     renderPos.current.lerpVectors(prevPos.current, pos.current, alpha);

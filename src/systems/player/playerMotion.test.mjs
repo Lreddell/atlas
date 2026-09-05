@@ -9,6 +9,7 @@ import {
     DASH_SPEED,
     LEAP_IFRAMES,
     LEAP_RANGE,
+    ROLL_CHAIN_WINDOW,
     ROLL_COOLDOWN,
     ROLL_DURATION,
     ROLL_IFRAME_END,
@@ -22,8 +23,11 @@ import {
     dashSurfaceTarget,
     endMotion,
     isInvulnerable,
+    markDodgeRefused,
     previewDodge,
     resolveDodge,
+    rollAbsorbsLanding,
+    rollDistance,
     rollSpeedAt,
     rollTuck,
     rollVelocity,
@@ -67,15 +71,16 @@ test('F with nothing magnetic around is a roll along the held direction, or a ba
     assert.equal(back.state.duration, BACKSTEP_DURATION);
 });
 
-test('a roll covers about four and a half blocks and its i-frames open a few frames in', () => {
+test('a roll covers about five blocks and its i-frames open a few frames in', () => {
     let state = resolveDodge(createMotionState(), ctx()).state;
     let travelled = 0;
+    let airTravelled = 0;
     let invulnerableSeconds = 0;
     let firstInvulnerable = null;
     let lastInvulnerable = null;
     while (state.action === 'roll') {
-        const v = rollVelocity(state);
-        travelled += v.x * STEP;
+        travelled += rollVelocity(state).x * STEP;
+        airTravelled += rollVelocity(state, true).x * STEP;
         if (isInvulnerable(state)) {
             invulnerableSeconds += STEP;
             if (firstInvulnerable === null) firstInvulnerable = state.time;
@@ -83,18 +88,36 @@ test('a roll covers about four and a half blocks and its i-frames open a few fra
         }
         state = advanceMotion(state, STEP);
     }
-    assert.ok(travelled > 4 && travelled < 5, `travelled ${travelled}`);
+    assert.ok(travelled > 5 && travelled < 6, `travelled ${travelled}`);
+    assert.ok(Math.abs(rollDistance() - 5.2) < 1e-9);
+    assert.ok(rollDistance(true) < rollDistance(), 'a backstep is shorter than a roll');
+    // Airborne the roll drives harder: the save-yourself move after a launch.
+    assert.ok(airTravelled > travelled * 1.1, `air roll ${airTravelled} vs ground ${travelled}`);
     assert.ok(firstInvulnerable >= ROLL_IFRAME_START && firstInvulnerable < 0.1);
     assert.ok(lastInvulnerable <= ROLL_IFRAME_END);
     assert.ok(invulnerableSeconds >= 0.35 && invulnerableSeconds <= 0.45, `${invulnerableSeconds}s of i-frames`);
     assert.equal(rollSpeedAt(0, ROLL_DURATION, 11), 11);
     assert.equal(rollSpeedAt(ROLL_DURATION, ROLL_DURATION, 11), 0);
     assert.ok(rollTuck({ ...state, action: 'roll', time: 0.3, duration: 0.6 }) > 0.99);
-    // Busy and cooldown gates.
+    // Cooldown gate, and the busy gate outside the chain window.
     const rolling = resolveDodge(createMotionState(), ctx()).state;
     assert.deepEqual(resolveDodge(rolling, ctx()).result, { kind: 'none', reason: 'busy' });
     const cooling = { ...createMotionState(), cooldowns: { roll: 0.2, dash: 0, leap: 0 } };
     assert.deepEqual(resolveDodge(cooling, ctx()).result, { kind: 'none', reason: 'cooldown' });
+});
+
+test('a landing mid-roll is absorbed, and a roll re-pressed at its end chains into the next', () => {
+    const rolling = resolveDodge(createMotionState(), ctx()).state;
+    assert.equal(rollAbsorbsLanding(rolling), true);
+    assert.equal(rollAbsorbsLanding(createMotionState()), false);
+    assert.equal(rollAbsorbsLanding({ ...rolling, action: 'dash' }), false);
+    // The last few frames accept the next press, so chained rolls never drop one.
+    const ending = { ...rolling, time: ROLL_DURATION - ROLL_CHAIN_WINDOW + 0.01, cooldowns: { roll: 0, dash: 0, leap: 0 } };
+    const chained = resolveDodge(ending, ctx());
+    assert.equal(chained.result.kind, 'roll');
+    assert.equal(chained.state.time, 0);
+    // Earlier in the roll it is still refused.
+    assert.deepEqual(resolveDodge({ ...ending, time: 0.2 }, ctx()).result, { kind: 'none', reason: 'busy' });
 });
 
 test('aiming at an opposite magnet face turns F into a magnetic dash that lands pressed against it', () => {
@@ -159,15 +182,41 @@ test('without Polarity Boots only the roll exists, attached means jump off, flyi
     assert.equal(previewDodge(createMotionState(), ctx()), 'roll');
 });
 
-test('the shared status mirrors the state for the damage gate and HUD', () => {
+test('the shared status mirrors the state for the damage gate and the crosshair ring', () => {
+    const blank = () => ({ action: 'none', invulnerable: false, surge: false, surgeFraction: 0, progress: 0, cooldown: 0, ready: true, refusedAt: 0, prompt: 'roll' });
     const rolling = advanceMotion(resolveDodge(createMotionState(), ctx()).state, 0.1);
-    const status = writeMotionStatus(rolling, 'roll', { action: 'none', invulnerable: false, surge: false, surgeFraction: 0, progress: 0, cooldown: 0, prompt: 'roll' });
+    const status = writeMotionStatus(rolling, 'roll', blank());
     assert.equal(status.action, 'roll');
     assert.equal(status.invulnerable, true);
+    assert.equal(status.ready, false);
     assert.ok(status.progress > 0.15 && status.progress < 0.2);
     assert.ok(Math.abs(status.cooldown - (ROLL_COOLDOWN - 0.1) / ROLL_COOLDOWN) < 1e-9);
-    const armed = writeMotionStatus(armSurge(createMotionState()), 'dash', { ...status });
+    // The ring must still be sweeping AFTER the roll ends, or it would only ever
+    // be drawn while rolling (when a press is refused anyway) and say nothing.
+    const justEnded = advanceMotion(rolling, ROLL_DURATION);
+    assert.equal(justEnded.action, 'none');
+    const after = writeMotionStatus(justEnded, 'roll', blank());
+    assert.ok(after.cooldown > 0.1, `ring still visible after the roll (${after.cooldown})`);
+    assert.equal(after.ready, false);
+    const recovered = writeMotionStatus(advanceMotion(justEnded, ROLL_COOLDOWN), 'roll', blank());
+    assert.equal(recovered.cooldown, 0);
+    assert.equal(recovered.ready, true);
+    // The ring shows the cooldown of the move the kit would actually use, so a
+    // recharging dash never reads as "you cannot roll".
+    const dashCooling = { ...createMotionState(), cooldowns: { roll: 0, dash: 1.0, leap: 0 } };
+    assert.equal(writeMotionStatus(dashCooling, 'roll', blank()).cooldown, 0);
+    assert.ok(writeMotionStatus(dashCooling, 'dash', blank()).cooldown > 0.5);
+    // Idle and off cooldown is the "ready" state the HUD draws nothing for.
+    const idle = writeMotionStatus(createMotionState(), 'roll', blank());
+    assert.equal(idle.ready, true);
+    assert.equal(idle.cooldown, 0);
+    const armed = writeMotionStatus(armSurge(createMotionState()), 'dash', blank());
     assert.equal(armed.surge, true);
     assert.equal(armed.surgeFraction, 1);
     assert.equal(armed.prompt, 'dash');
+    // A refused press is stamped for the crosshair flash.
+    const refused = blank();
+    assert.equal(refused.refusedAt, 0);
+    markDodgeRefused(refused);
+    assert.ok(Date.now() - refused.refusedAt < 1000);
 });

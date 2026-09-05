@@ -21,19 +21,32 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   cling and climb, and when the Warden swaps colour its towers swap with it. A
   flux window opens on the towers before each flip: flip (R) inside it to hold
   on, or the settled tower shocks you off toward the platform.
-- A new one-button kit on F, resolved by the same rule: a dodge roll with
+- A new one-button kit on `C`, resolved by the same rule: a dodge roll with
   invulnerability frames (bolts, rings, lunges and contact pass through), a
   magnetic dash onto an opposite magnet face or into an opposed, exposed Warden
   (which arms a Magnet Slam: the next strike lands at two and a half times damage
   and staggers it), a repel leap away from a matched Warden, and a magnetic
   launch off a wall. Launches now arc far enough to reach a tower's landing pool
   from high on its face.
-- Third person (F5): an over-the-shoulder camera on a voxel-aware spring arm,
-  with a procedurally animated player body (walk, sprint, sneak, jump, roll,
-  dash, wall climb, arm swings, glowing Polarity Boots). Every aim ray still
-  starts from the eye toward the crosshair, so blocks, melee and the crossbow
-  behave identically in both views. The Warden fight switches to third person on
-  its own and hands the previous view back when it ends.
+- The roll needs no gear, works in mid-air (steering with the movement keys, the
+  way back to the platform after a launch), chains straight into another roll if
+  re-pressed at the end of one, and cancels fall damage outright on a landing
+  rolled through. Presses are buffered across physics substeps, so a roll never
+  silently vanishes because the press landed between ticks. Its cooldown shows
+  as a ring on the crosshair, which flashes red when a press cannot be answered.
+- Third person (F5, anywhere in a world): an over-the-shoulder camera on a
+  voxel-aware spring arm, with a fully rebuilt player body: jointed arms and
+  legs with real elbows and knees, a chest that twists against the hips, damped
+  blending so poses never snap, and clips for idle, walk, sprint, sneak, rise,
+  fall, landing squash, the dodge roll (a true somersault about the axis across
+  the roll), the magnetic dash, the repel leap, the wall climb and the attack
+  swing. Every aim ray still starts from the eye toward the crosshair, so
+  blocks, melee and the crossbow behave identically in both views. The Warden
+  fight switches to third person on its own and hands the previous view back
+  when it ends.
+- A defeat cinematic for the Warden: the camera cuts in low as it buckles, orbits
+  out while its core cracks apart, and rises over the arena through the white
+  blow-out as the towers go dark. Space skips it.
 - The Warden now fights in three forms with distinct rules. Form I, the Warden,
   duels on the platform with a five-bolt Volley, a close Lash, a Draw that drags
   an opposed player in before a Repel burst, a Charge down a marked lane, and
@@ -62,9 +75,11 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   modules too. Ground telegraphs share their geometry with the hit tests.
 - New presentation: crystal-to-core shield beams, charged tower columns that
   flicker for the whole flux window, the Charge lane, an off-screen boss compass,
-  a shield readout and phase markers on the boss bar, the F prompt / Magnet Slam
-  / tower flip warning on the polarity HUD, and new sound slots for the kit and
-  the towers documented in the sound pack folder.
+  a shield readout and phase markers on the boss bar, and new sound slots for the
+  kit and the towers documented in the sound pack folder. Combat feedback (the
+  dodge cooldown ring, the tower flip warning, dodged and shocked flashes) sits
+  around the crosshair, and the polarity indicator moved to the bottom-right
+  corner so nothing overlaps the hotbar's item name or the hearts.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

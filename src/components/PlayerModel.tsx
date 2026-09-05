@@ -6,13 +6,25 @@ import { motionStatus } from '../systems/player/playerMotion';
 import { gameEvents } from '../systems/events/GameEvents';
 import { WALK_SPEED } from '../systems/player/playerConstants';
 
-// The player's own body, drawn only in third person: a blocky explorer built
-// from boxes, animated procedurally from the physics pose every frame (no
-// React re-renders): a walk / sprint cycle from the horizontal speed, a crouch,
-// a jump tuck, the dodge roll (a full somersault along the roll), the magnetic
-// dash (arms forward, body flat along the pull), the wall climb (the body's up
-// is the wall normal, limbs spread on the face), an arm swing for mining and
-// attacking, a hurt flash, and Polarity Boots that glow in the chosen colour.
+// The player's own body, drawn only in third person: a blocky explorer with
+// jointed limbs, animated procedurally from the physics pose every frame (no
+// React re-renders).
+//
+// Orientation: the figure is modelled facing -Z, three.js's forward, so the
+// basis the frame builds (right, up, -forward) drops straight onto it. Getting
+// this backwards is why an earlier pass ran the character in reverse.
+//
+// Animation: every clip writes into one target pose (a flat set of joint
+// angles), and the rig damps the live pose toward it each frame. Nothing snaps
+// between states; a sprint that becomes a roll that becomes a wall climb reads
+// as one continuous body. The only un-damped channel is the roll tumble, which
+// is an absolute spin rather than a target to ease toward.
+//
+// Clips: idle breathing, walk, sprint (longer stride, forward lean, pumping
+// arms), sneak, rise/fall, landing squash, dodge roll (a real somersault about
+// the axis across the roll), magnetic dash (arms forward, body flat along the
+// pull), repel leap, wall climb (chest to the wall, limbs reaching across the
+// face), attack swing, and a hurt flinch.
 
 const SKIN = 0xe0ac8c;
 const HAIR = 0x4a2f1f;
@@ -29,20 +41,79 @@ const _right = new THREE.Vector3();
 const _back = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _mat = new THREE.Matrix4();
+const _axis = new THREE.Vector3();
+const _rollDir = new THREE.Vector3();
 
-const SWING_SECONDS = 0.28;
+const SWING_SECONDS = 0.3;
+/** Height (blocks) of the body's centre of mass: the tumble pivots here. */
+const PIVOT_Y = 0.95;
+
+/** Every joint angle the rig blends. Radians unless noted. */
+interface Pose {
+    /** Whole-body offsets. */
+    bodyY: number;
+    bodyLean: number;      // pitch: + leans forward
+    bodyRoll: number;      // bank into a turn
+    bodyTwist: number;     // yaw of the chest against the hips
+    squash: number;        // 1 = neutral, < 1 = compressed on landing
+    headPitch: number;
+    headYaw: number;
+    // Upper limb (shoulder / hip) and lower limb (elbow / knee) angles.
+    armLUpper: number; armLLower: number; armLOut: number;
+    armRUpper: number; armRLower: number; armROut: number;
+    legLUpper: number; legLLower: number; legLOut: number;
+    legRUpper: number; legRLower: number; legROut: number;
+}
+
+const newPose = (): Pose => ({
+    bodyY: 0, bodyLean: 0, bodyRoll: 0, bodyTwist: 0, squash: 1,
+    headPitch: 0, headYaw: 0,
+    armLUpper: 0, armLLower: 0, armLOut: 0.06,
+    armRUpper: 0, armRLower: 0, armROut: -0.06,
+    legLUpper: 0, legLLower: 0, legLOut: 0,
+    legRUpper: 0, legRLower: 0, legROut: 0,
+});
+
+const POSE_KEYS = Object.keys(newPose()) as (keyof Pose)[];
+
+/** Reset a pose in place (no per-frame allocation in the render loop). */
+function resetPose(p: Pose): void {
+    p.bodyY = 0; p.bodyLean = 0; p.bodyRoll = 0; p.bodyTwist = 0; p.squash = 1;
+    p.headPitch = 0; p.headYaw = 0;
+    p.armLUpper = 0; p.armLLower = 0; p.armLOut = 0.06;
+    p.armRUpper = 0; p.armRLower = 0; p.armROut = -0.06;
+    p.legLUpper = 0; p.legLLower = 0; p.legLOut = 0;
+    p.legRUpper = 0; p.legRLower = 0; p.legROut = 0;
+}
 
 export const PlayerModel: React.FC = () => {
     const rootRef = useRef<THREE.Group>(null);
+    const pivotRef = useRef<THREE.Group>(null);
     const bodyRef = useRef<THREE.Group>(null);
+    const torsoRef = useRef<THREE.Group>(null);
     const headRef = useRef<THREE.Group>(null);
-    const leftArmRef = useRef<THREE.Group>(null);
-    const rightArmRef = useRef<THREE.Group>(null);
-    const leftLegRef = useRef<THREE.Group>(null);
-    const rightLegRef = useRef<THREE.Group>(null);
+    const armLRef = useRef<THREE.Group>(null);
+    const armLLowerRef = useRef<THREE.Group>(null);
+    const armRRef = useRef<THREE.Group>(null);
+    const armRLowerRef = useRef<THREE.Group>(null);
+    const legLRef = useRef<THREE.Group>(null);
+    const legLLowerRef = useRef<THREE.Group>(null);
+    const legRRef = useRef<THREE.Group>(null);
+    const legRLowerRef = useRef<THREE.Group>(null);
+
+    const live = useRef<Pose>(newPose());
+    const target = useRef<Pose>(newPose());
+    /** Roll direction, latched when the roll starts (its velocity decays to nothing). */
+    const rollAxis = useRef({ along: 0, across: 0 });
+    const wasRolling = useRef(false);
     const walkPhase = useRef(0);
+    const climbPhase = useRef(0);
     const swingStart = useRef(-1);
     const hurtUntil = useRef(0);
+    const landUntil = useRef(0);
+    const landStrength = useRef(0);
+    const wasGrounded = useRef(true);
+    const fallSpeed = useRef(0);
     const clockRef = useRef(0);
 
     const materials = useMemo(() => ({
@@ -51,19 +122,22 @@ export const PlayerModel: React.FC = () => {
         jacket: new THREE.MeshLambertMaterial({ color: JACKET }),
         jacketDark: new THREE.MeshLambertMaterial({ color: JACKET_DARK }),
         trousers: new THREE.MeshLambertMaterial({ color: TROUSERS }),
-        boot: new THREE.MeshLambertMaterial({ color: BOOT, emissive: new THREE.Color(POLARITY_RED), emissiveIntensity: 0 }),
+        boot: new THREE.MeshLambertMaterial({ color: BOOT }),
+        // Only a thin band on the boot carries the polarity glow, so the feet
+        // read as charged trim rather than two solid blocks of colour.
+        bootGlow: new THREE.MeshBasicMaterial({ color: POLARITY_RED, transparent: true, opacity: 0 }),
         eye: new THREE.MeshBasicMaterial({ color: 0x1a1a1a }),
     }), []);
     useEffect(() => () => { for (const m of Object.values(materials)) m.dispose(); }, [materials]);
 
     useEffect(() => {
         // A mining / attack swing follows the same left-click the held item does;
-        // authored weapon uses have their own event. The body flashes on damage.
+        // authored weapon uses have their own event. The body flinches on damage.
         const onMouseDown = (e: MouseEvent) => {
             if (e.button === 0 && document.pointerLockElement) swingStart.current = clockRef.current;
         };
         const onWeapon = () => { swingStart.current = clockRef.current; };
-        const offDamaged = gameEvents.on('player:damaged', () => { hurtUntil.current = Date.now() + 180; });
+        const offDamaged = gameEvents.on('player:damaged', () => { hurtUntil.current = Date.now() + 260; });
         window.addEventListener('mousedown', onMouseDown);
         window.addEventListener('atlas:weapon-used', onWeapon as EventListener);
         return () => {
@@ -75,157 +149,303 @@ export const PlayerModel: React.FC = () => {
 
     useFrame(({ clock }, delta) => {
         const root = rootRef.current;
-        if (!root) return;
+        const pivot = pivotRef.current;
+        const body = bodyRef.current;
+        const torso = torsoRef.current;
+        const head = headRef.current;
+        if (!root || !pivot || !body || !torso || !head) return;
         clockRef.current = clock.elapsedTime;
         root.visible = viewRig.showModel;
         if (!root.visible) return;
 
+        const dt = Math.min(0.1, delta);
         const t = clock.elapsedTime;
         const pose = playerPose;
         const speed = Math.hypot(pose.vx, pose.vz);
-        const hurt = Date.now() < hurtUntil.current;
+        const now = Date.now();
+        const hurt = now < hurtUntil.current;
 
-        // --- Orientation: yaw to the look, and the body's up is the wall normal while attached.
-        _forward.set(-Math.sin(pose.yaw), 0, -Math.cos(pose.yaw));
+        // --- Orientation. The body's up is the wall normal while latched, so a
+        //     climber stands on the tower face instead of hanging off it.
         if (pose.attached) {
             _up.set(pose.up.x, pose.up.y, pose.up.z);
             _forward.set(pose.wallForward.x, pose.wallForward.y, pose.wallForward.z);
         } else {
             _up.set(0, 1, 0);
+            _forward.set(-Math.sin(pose.yaw), 0, -Math.cos(pose.yaw));
         }
         _right.crossVectors(_forward, _up).normalize();
         _forward.crossVectors(_up, _right).normalize();
         _back.copy(_forward).negate();
+        // The figure is modelled facing -Z, so local +Z is its back.
         _mat.makeBasis(_right, _up, _back);
         _quat.setFromRotationMatrix(_mat);
         root.quaternion.copy(_quat);
         root.position.set(pose.x, pose.y, pose.z);
 
-        // --- Colour: the boots glow in the chosen polarity, the whole body flashes when hurt.
+        // --- Colour: the boots glow in the chosen polarity; a hit whitens the body.
         const polarityHex = pose.polarity < 0 ? POLARITY_BLUE : POLARITY_RED;
-        materials.boot.emissive.setHex(polarityHex);
-        materials.boot.emissiveIntensity = pose.polarity === 0 ? 0 : 0.55 + 0.25 * Math.sin(t * 6);
+        materials.bootGlow.color.setHex(polarityHex);
+        materials.bootGlow.opacity = pose.polarity === 0 ? 0 : 0.7 + 0.3 * Math.sin(t * 6);
+        const flash = hurt ? 0.75 : 0;
         for (const m of [materials.skin, materials.jacket, materials.jacketDark, materials.trousers, materials.hair]) {
-            m.emissive.setHex(hurt ? 0xffffff : 0x000000);
-            m.emissiveIntensity = hurt ? 0.8 : 0;
+            m.emissive.setHex(0xffffff);
+            m.emissiveIntensity = flash;
         }
 
-        const body = bodyRef.current, head = headRef.current;
-        const la = leftArmRef.current, ra = rightArmRef.current, ll = leftLegRef.current, rl = rightLegRef.current;
-        if (!body || !head || !la || !ra || !ll || !rl) return;
+        // --- Landing squash: remember the impact speed as the feet touch down.
+        if (!pose.grounded) fallSpeed.current = Math.max(fallSpeed.current, -pose.vy);
+        if (pose.grounded && !wasGrounded.current) {
+            const impact = Math.min(1, fallSpeed.current / 18);
+            if (impact > 0.12) { landUntil.current = now + 260; landStrength.current = impact; }
+            fallSpeed.current = 0;
+        }
+        wasGrounded.current = pose.grounded;
 
-        // Defaults every frame (each pose overrides what it needs).
-        body.position.set(0, 0, 0);
-        body.rotation.set(0, 0, 0);
-        body.scale.set(1, 1, 1);
-        head.rotation.set(-pose.pitch * 0.6, 0, 0);
-        la.rotation.set(0, 0, 0.05); ra.rotation.set(0, 0, -0.05);
-        ll.rotation.set(0, 0, 0); rl.rotation.set(0, 0, 0);
-
+        const p = target.current;
+        resetPose(p);
         const action = motionStatus.action;
         const progress = motionStatus.progress;
+        // Most joints ease; a few clips want to arrive almost immediately.
+        let blendRate = 14;
 
         if (action === 'roll') {
-            // A somersault along the roll: tuck low and turn a full circle.
+            // A tuck: knees and elbows in, chin down. The tumble itself is applied
+            // to the pivot below as an absolute spin.
             const tuck = Math.sin(Math.min(1, progress) * Math.PI);
-            body.position.y = 0.55 - 0.25 * tuck;
-            body.scale.set(1, 1 - 0.25 * tuck, 1);
-            body.rotation.x = progress * Math.PI * 2;
-            la.rotation.x = -2.2 * tuck; ra.rotation.x = -2.2 * tuck;
-            ll.rotation.x = 1.6 * tuck; rl.rotation.x = 1.6 * tuck;
-            head.rotation.x = 0.6 * tuck;
+            p.bodyY = -0.18 * tuck;
+            p.squash = 1 - 0.18 * tuck;
+            p.headPitch = 0.7 * tuck;
+            p.armLUpper = -2.3 * tuck; p.armRUpper = -2.3 * tuck;
+            p.armLLower = 1.9 * tuck; p.armRLower = 1.9 * tuck;
+            p.armLOut = 0.35 * tuck; p.armROut = -0.35 * tuck;
+            p.legLUpper = 1.7 * tuck; p.legRUpper = 1.7 * tuck;
+            p.legLLower = -2.0 * tuck; p.legRLower = -2.0 * tuck;
+            blendRate = 26;
         } else if (action === 'dash') {
-            // Pulled through the air: arms out, body leaning into the dash.
-            const lean = 0.5 + 0.3 * Math.sin(t * 40) * 0.1;
-            body.rotation.x = lean;
-            la.rotation.x = -2.9; ra.rotation.x = -2.9;
-            ll.rotation.x = 0.4; rl.rotation.x = -0.3;
-            head.rotation.x = -0.6;
+            // Pulled by the field: arms speared forward, legs trailed, body flat.
+            p.bodyLean = 1.05;
+            p.bodyY = 0.12;
+            p.headPitch = -0.75;
+            p.armLUpper = -2.85; p.armRUpper = -2.85;
+            p.armLLower = -0.15; p.armRLower = -0.15;
+            p.armLOut = 0.16; p.armROut = -0.16;
+            p.legLUpper = -0.35; p.legRUpper = -0.2;
+            p.legLLower = 0.5; p.legRLower = 0.8;
+            blendRate = 22;
+        } else if (action === 'leap') {
+            // Kicked away from a matching pole: arms up, knees drawn in.
+            p.bodyLean = -0.3;
+            p.armLUpper = -2.5; p.armRUpper = -2.5;
+            p.armLOut = 0.7; p.armROut = -0.7;
+            p.legLUpper = -1.0; p.legRUpper = -0.5;
+            p.legLLower = 1.2; p.legRLower = 0.7;
+            blendRate = 20;
         } else if (pose.attached) {
-            // On the wall: limbs spread, hands and feet working across the face.
-            walkPhase.current += speed * delta * 2.4;
-            const cycle = Math.sin(walkPhase.current) * Math.min(1, speed / 3);
-            body.position.y = 0.05;
-            la.rotation.set(-2.4 + cycle * 0.5, 0, 0.9);
-            ra.rotation.set(-2.4 - cycle * 0.5, 0, -0.9);
-            ll.rotation.set(-0.6 - cycle * 0.5, 0, 0.35);
-            rl.rotation.set(-0.6 + cycle * 0.5, 0, -0.35);
-            head.rotation.x = -0.35;
+            // Wall climb: chest to the face, opposite hand and foot reaching.
+            climbPhase.current += speed * dt * 2.6;
+            const reach = Math.sin(climbPhase.current) * Math.min(1, speed / 2.5);
+            p.bodyY = 0.02;
+            p.bodyLean = -0.12;
+            p.headPitch = -0.28;
+            p.armLUpper = -2.5 + reach * 0.55; p.armRUpper = -2.5 - reach * 0.55;
+            p.armLLower = -0.45; p.armRLower = -0.45;
+            p.armLOut = 0.55; p.armROut = -0.55;
+            p.legLUpper = -0.55 - reach * 0.45; p.legRUpper = -0.55 + reach * 0.45;
+            p.legLLower = 0.85; p.legRLower = 0.85;
+            p.legLOut = 0.28; p.legROut = -0.28;
         } else if (!pose.grounded) {
-            if (action === 'leap' || pose.vy > 2) {
-                // Rising: arms up, one leg tucked.
-                la.rotation.x = -2.6; ra.rotation.x = -2.6;
-                ll.rotation.x = -0.9; rl.rotation.x = 0.4;
+            const rising = pose.vy > 1.5;
+            if (rising) {
+                p.bodyLean = -0.12;
+                p.armLUpper = -2.2; p.armRUpper = -2.2;
+                p.armLLower = -0.5; p.armRLower = -0.5;
+                p.armLOut = 0.3; p.armROut = -0.3;
+                p.legLUpper = -0.85; p.legRUpper = -0.25;
+                p.legLLower = 1.1; p.legRLower = 0.35;
             } else {
-                // Falling: arms out for balance, legs trailing.
-                la.rotation.set(-1.2, 0, 1.1); ra.rotation.set(-1.2, 0, -1.1);
-                ll.rotation.x = 0.3; rl.rotation.x = -0.4;
+                // Falling: arms out for balance, legs reaching for the ground.
+                const drop = Math.min(1, -pose.vy / 16);
+                p.bodyLean = 0.1 + 0.12 * drop;
+                p.armLUpper = -1.1 - 0.5 * drop; p.armRUpper = -1.1 - 0.5 * drop;
+                p.armLOut = 0.9 + 0.3 * drop; p.armROut = -0.9 - 0.3 * drop;
+                p.armLLower = -0.35; p.armRLower = -0.35;
+                p.legLUpper = 0.35 * drop; p.legRUpper = -0.3 * drop;
+                p.legLLower = -0.35; p.legRLower = -0.2;
             }
-            body.rotation.x = Math.max(-0.2, Math.min(0.2, -pose.vy * 0.02));
         } else {
-            // Walk / sprint cycle from the horizontal speed.
-            const stride = Math.min(1.35, speed / WALK_SPEED);
-            walkPhase.current += speed * delta * 2.2;
-            const swing = Math.sin(walkPhase.current) * stride;
-            const amplitude = pose.sprint ? 1.1 : 0.75;
-            ll.rotation.x = swing * amplitude;
-            rl.rotation.x = -swing * amplitude;
-            la.rotation.x = -swing * amplitude * 0.8;
-            ra.rotation.x = swing * amplitude * 0.8;
-            body.position.y = Math.abs(Math.sin(walkPhase.current)) * 0.04 * stride;
-            if (pose.sprint) body.rotation.x = 0.18;
+            // Grounded locomotion. One phase drives legs, arms and the body bob.
+            const stride = Math.min(1.4, speed / WALK_SPEED);
+            walkPhase.current += speed * dt * (pose.sprint ? 2.6 : 2.2);
+            const swing = Math.sin(walkPhase.current);
+            const lift = Math.cos(walkPhase.current);
+            const amp = (pose.sprint ? 1.15 : 0.8) * stride;
+            p.legLUpper = swing * amp;
+            p.legRUpper = -swing * amp;
+            // Knees only bend on the back half of the stride (a real gait).
+            p.legLLower = -Math.max(0, -swing) * amp * 1.5;
+            p.legRLower = -Math.max(0, swing) * amp * 1.5;
+            p.armLUpper = -swing * amp * 0.85;
+            p.armRUpper = swing * amp * 0.85;
+            p.armLLower = -Math.max(0, -swing) * amp * 0.7 - 0.15 * stride;
+            p.armRLower = -Math.max(0, swing) * amp * 0.7 - 0.15 * stride;
+            p.bodyY = Math.abs(lift) * 0.045 * stride;
+            p.bodyTwist = -swing * 0.16 * stride;
+            p.bodyLean = pose.sprint ? 0.26 : 0.06 * stride;
+
             if (pose.sneak) {
-                body.position.y -= 0.3;
-                body.rotation.x = 0.35;
-                body.scale.y = 0.88;
+                p.bodyY -= 0.28;
+                p.bodyLean = 0.42;
+                p.squash = 0.9;
+                p.headPitch = -0.2;
+                p.legLLower -= 0.5; p.legRLower -= 0.5;
+                p.legLOut = 0.16; p.legROut = -0.16;
+                p.armLOut = 0.2; p.armROut = -0.2;
             }
-            if (speed < 0.2) {
-                // Idle: a slow breath.
-                const breathe = Math.sin(t * 1.6) * 0.02;
-                body.position.y = breathe;
-                la.rotation.z = 0.08 + breathe; ra.rotation.z = -0.08 - breathe;
+
+            if (speed < 0.25 && !pose.sneak) {
+                // Idle: breathing, a slow weight shift, arms hanging.
+                const breathe = Math.sin(t * 1.5);
+                p.bodyY = breathe * 0.018;
+                p.bodyRoll = Math.sin(t * 0.6) * 0.03;
+                p.armLUpper = breathe * 0.05; p.armRUpper = -breathe * 0.05;
+                p.armLLower = -0.12; p.armRLower = -0.12;
+                p.armLOut = 0.08; p.armROut = -0.08;
             }
         }
 
-        // Arm swing (mining / attacking) on top of anything else.
+        // Landing squash rides on top of whatever clip is playing.
+        if (now < landUntil.current && action !== 'roll') {
+            const k = (landUntil.current - now) / 260;
+            const dip = Math.sin(k * Math.PI) * landStrength.current;
+            p.bodyY -= dip * 0.34;
+            p.squash -= dip * 0.16;
+            p.legLLower -= dip * 1.1; p.legRLower -= dip * 1.1;
+            p.legLUpper += dip * 0.5; p.legRUpper += dip * 0.5;
+            p.legLOut += dip * 0.2; p.legROut -= dip * 0.2;
+            p.armLUpper -= dip * 0.6; p.armRUpper -= dip * 0.6;
+        }
+
+        // The head tracks the look pitch in every clip that has not claimed it.
+        p.headPitch += -pose.pitch * 0.55;
+
+        // A hit knocks the chest back for a beat.
+        if (hurt) {
+            const k = (hurtUntil.current - now) / 260;
+            p.bodyLean -= 0.3 * k;
+            p.bodyRoll += 0.12 * k;
+            p.armLOut += 0.3 * k; p.armROut -= 0.3 * k;
+        }
+
+        // Attack swing: the right arm overrides its clip for the swing's length.
         if (swingStart.current >= 0) {
             const k = (t - swingStart.current) / SWING_SECONDS;
-            if (k >= 1) swingStart.current = -1;
-            else ra.rotation.x = -1.4 * Math.sin(k * Math.PI) - 0.4;
+            if (k >= 1) {
+                swingStart.current = -1;
+            } else {
+                const arc = Math.sin(k * Math.PI);
+                p.armRUpper = -0.4 - 1.9 * arc;
+                p.armRLower = -0.7 * arc;
+                p.armROut = -0.1 - 0.25 * arc;
+                p.bodyTwist += 0.22 * arc;
+                blendRate = Math.max(blendRate, 30);
+            }
         }
+
+        // --- Blend the live pose toward the target and write it to the rig.
+        const k = 1 - Math.exp(-blendRate * dt);
+        const l = live.current;
+        for (const key of POSE_KEYS) l[key] += (p[key] - l[key]) * k;
+
+        pivot.position.set(0, PIVOT_Y, 0);
+        body.position.set(0, -PIVOT_Y + l.bodyY, 0);
+        body.scale.set(1, Math.max(0.35, l.squash), 1);
+
+        if (action === 'roll') {
+            // A real somersault about the axis lying across the roll direction,
+            // pivoting on the body's centre so it tumbles rather than pinwheeling
+            // around the feet. The direction is latched at the start because the
+            // roll's own velocity eases to nothing by the end.
+            if (!wasRolling.current) {
+                _rollDir.set(pose.vx, 0, pose.vz);
+                if (_rollDir.lengthSq() < 1e-6) _rollDir.copy(_forward);
+                _rollDir.normalize();
+                rollAxis.current.along = _rollDir.dot(_forward);
+                rollAxis.current.across = _rollDir.dot(_right);
+            }
+            // Local frame: +X is right, +Y is up, -Z is forward. The tumble axis
+            // is up × direction, so a forward roll pitches head-over-heels and a
+            // sideways roll banks over that shoulder.
+            _axis.set(-rollAxis.current.along, 0, -rollAxis.current.across);
+            if (_axis.lengthSq() < 1e-6) _axis.set(-1, 0, 0);
+            _axis.normalize();
+            pivot.quaternion.setFromAxisAngle(_axis, Math.min(1, progress) * Math.PI * 2);
+        } else {
+            pivot.rotation.set(l.bodyLean, 0, l.bodyRoll);
+        }
+        wasRolling.current = action === 'roll';
+
+        torso.rotation.set(0, l.bodyTwist, 0);
+        head.rotation.set(l.headPitch, l.headYaw, 0);
+        if (armLRef.current) armLRef.current.rotation.set(l.armLUpper, 0, l.armLOut);
+        if (armRRef.current) armRRef.current.rotation.set(l.armRUpper, 0, l.armROut);
+        if (armLLowerRef.current) armLLowerRef.current.rotation.x = l.armLLower;
+        if (armRLowerRef.current) armRLowerRef.current.rotation.x = l.armRLower;
+        if (legLRef.current) legLRef.current.rotation.set(l.legLUpper, 0, l.legLOut);
+        if (legRRef.current) legRRef.current.rotation.set(l.legRUpper, 0, l.legROut);
+        if (legLLowerRef.current) legLLowerRef.current.rotation.x = l.legLLower;
+        if (legRLowerRef.current) legRLowerRef.current.rotation.x = l.legRLower;
     });
 
+    // Geometry faces -Z (three.js forward): eyes and jacket front at negative z.
     return (
         <group ref={rootRef} visible={false}>
-            <group ref={bodyRef}>
-                {/* Torso */}
-                <mesh position={[0, 1.1, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.5, 0.74, 0.26]} /></mesh>
-                <mesh position={[0, 0.78, 0]} material={materials.jacketDark} castShadow><boxGeometry args={[0.52, 0.1, 0.28]} /></mesh>
-                {/* Head */}
-                <group ref={headRef} position={[0, 1.5, 0]}>
-                    <mesh position={[0, 0.25, 0]} material={materials.skin} castShadow><boxGeometry args={[0.5, 0.5, 0.5]} /></mesh>
-                    <mesh position={[0, 0.44, -0.02]} material={materials.hair}><boxGeometry args={[0.52, 0.14, 0.52]} /></mesh>
-                    <mesh position={[0, 0.3, -0.26]} material={materials.hair}><boxGeometry args={[0.52, 0.22, 0.04]} /></mesh>
-                    <mesh position={[-0.11, 0.27, 0.26]} material={materials.eye}><boxGeometry args={[0.07, 0.07, 0.02]} /></mesh>
-                    <mesh position={[0.11, 0.27, 0.26]} material={materials.eye}><boxGeometry args={[0.07, 0.07, 0.02]} /></mesh>
-                </group>
-                {/* Arms (pivot at the shoulder) */}
-                <group ref={leftArmRef} position={[-0.37, 1.42, 0]}>
-                    <mesh position={[0, -0.34, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.22, 0.7, 0.22]} /></mesh>
-                    <mesh position={[0, -0.72, 0]} material={materials.skin}><boxGeometry args={[0.2, 0.12, 0.2]} /></mesh>
-                </group>
-                <group ref={rightArmRef} position={[0.37, 1.42, 0]}>
-                    <mesh position={[0, -0.34, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.22, 0.7, 0.22]} /></mesh>
-                    <mesh position={[0, -0.72, 0]} material={materials.skin}><boxGeometry args={[0.2, 0.12, 0.2]} /></mesh>
-                </group>
-                {/* Legs (pivot at the hip) with Polarity Boots */}
-                <group ref={leftLegRef} position={[-0.13, 0.74, 0]}>
-                    <mesh position={[0, -0.3, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.56, 0.22]} /></mesh>
-                    <mesh position={[0, -0.64, 0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.2, 0.28]} /></mesh>
-                </group>
-                <group ref={rightLegRef} position={[0.13, 0.74, 0]}>
-                    <mesh position={[0, -0.3, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.56, 0.22]} /></mesh>
-                    <mesh position={[0, -0.64, 0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.2, 0.28]} /></mesh>
+            <group ref={pivotRef}>
+                <group ref={bodyRef}>
+                    {/* Hips + legs (each: thigh pivoting at the hip, shin at the knee) */}
+                    <mesh position={[0, 0.76, 0]} material={materials.jacketDark} castShadow><boxGeometry args={[0.5, 0.16, 0.26]} /></mesh>
+                    <group ref={legLRef} position={[-0.13, 0.74, 0]}>
+                        <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.34, 0.22]} /></mesh>
+                        <group ref={legLLowerRef} position={[0, -0.34, 0]}>
+                            <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.2, 0.34, 0.2]} /></mesh>
+                            <mesh position={[0, -0.4, -0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.18, 0.28]} /></mesh>
+                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.26, 0.05, 0.3]} /></mesh>
+                        </group>
+                    </group>
+                    <group ref={legRRef} position={[0.13, 0.74, 0]}>
+                        <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.34, 0.22]} /></mesh>
+                        <group ref={legRLowerRef} position={[0, -0.34, 0]}>
+                            <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.2, 0.34, 0.2]} /></mesh>
+                            <mesh position={[0, -0.4, -0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.18, 0.28]} /></mesh>
+                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.26, 0.05, 0.3]} /></mesh>
+                        </group>
+                    </group>
+                    {/* Chest (twists against the hips), head and arms */}
+                    <group ref={torsoRef} position={[0, 0.76, 0]}>
+                        <mesh position={[0, 0.37, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.5, 0.74, 0.26]} /></mesh>
+                        <mesh position={[0, 0.6, -0.14]} material={materials.jacketDark} castShadow><boxGeometry args={[0.44, 0.28, 0.02]} /></mesh>
+                        <group ref={headRef} position={[0, 0.74, 0]}>
+                            <mesh position={[0, 0.25, 0]} material={materials.skin} castShadow><boxGeometry args={[0.5, 0.5, 0.5]} /></mesh>
+                            <mesh position={[0, 0.44, 0.02]} material={materials.hair}><boxGeometry args={[0.52, 0.14, 0.52]} /></mesh>
+                            <mesh position={[0, 0.3, 0.26]} material={materials.hair}><boxGeometry args={[0.52, 0.22, 0.04]} /></mesh>
+                            <mesh position={[-0.11, 0.27, -0.26]} material={materials.eye}><boxGeometry args={[0.07, 0.07, 0.02]} /></mesh>
+                            <mesh position={[0.11, 0.27, -0.26]} material={materials.eye}><boxGeometry args={[0.07, 0.07, 0.02]} /></mesh>
+                        </group>
+                        <group ref={armLRef} position={[-0.36, 0.66, 0]}>
+                            <mesh position={[0, -0.18, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.2, 0.36, 0.2]} /></mesh>
+                            <group ref={armLLowerRef} position={[0, -0.36, 0]}>
+                                <mesh position={[0, -0.17, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.19, 0.34, 0.19]} /></mesh>
+                                <mesh position={[0, -0.38, 0]} material={materials.skin}><boxGeometry args={[0.18, 0.12, 0.18]} /></mesh>
+                            </group>
+                        </group>
+                        <group ref={armRRef} position={[0.36, 0.66, 0]}>
+                            <mesh position={[0, -0.18, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.2, 0.36, 0.2]} /></mesh>
+                            <group ref={armRLowerRef} position={[0, -0.36, 0]}>
+                                <mesh position={[0, -0.17, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.19, 0.34, 0.19]} /></mesh>
+                                <mesh position={[0, -0.38, 0]} material={materials.skin}><boxGeometry args={[0.18, 0.12, 0.18]} /></mesh>
+                            </group>
+                        </group>
+                    </group>
                 </group>
             </group>
         </group>

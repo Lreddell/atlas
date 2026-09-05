@@ -37,9 +37,13 @@ test('a wall behind the player pulls the camera in, and inside the body the mode
     const { forward, right, up } = lookBasis(0, 0);
     const eye = { x: 0, y: 10, z: 0 };
     const wallAt = (distance) => (ox, oy, oz, dx, dy, dz) => (dz > 0.5 ? distance : null);
-    const pulled = placeThirdPersonCamera(eye, forward, right, up, wallAt(2));
-    near(pulled.armLength, 2 - THIRD_PERSON_RIG.margin);
+    const pulled = placeThirdPersonCamera(eye, forward, right, up, wallAt(3));
+    near(pulled.armLength, 3 - THIRD_PERSON_RIG.margin);
     assert.equal(pulled.showModel, true);
+    // Pulled in tight the body would fill the frame, so it hides.
+    const close = placeThirdPersonCamera(eye, forward, right, up, wallAt(1.5));
+    assert.ok(close.armLength < THIRD_PERSON_RIG.hideModelBelow);
+    assert.equal(close.showModel, false);
     const cramped = placeThirdPersonCamera(eye, forward, right, up, wallAt(0.5));
     near(cramped.armLength, THIRD_PERSON_RIG.minDistance);
     assert.equal(cramped.showModel, false);

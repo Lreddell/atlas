@@ -33,12 +33,16 @@ export interface ThirdPersonRig {
 }
 
 export const THIRD_PERSON_RIG: ThirdPersonRig = {
-    distance: 4.6,
-    shoulder: 0.55,
-    height: 0.4,
+    distance: 5.0,
+    shoulder: 0.6,
+    // Lifted enough that the body sits below the crosshair instead of across it,
+    // so the character never covers what you are aiming at.
+    height: 0.85,
     margin: 0.35,
     minDistance: 0.6,
-    hideModelBelow: 0.9,
+    // Once a wall has pulled the arm in this close the body would fill the
+    // frame and block the view, so it hides and the shot reads as first person.
+    hideModelBelow: 1.7,
 };
 
 export interface RigPlacement {

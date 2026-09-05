@@ -20,6 +20,8 @@ import { gameEvents } from '../events/GameEvents';
 import { addTrauma } from '../player/cameraShake';
 import { PLAYER_HEIGHT, PLAYER_WIDTH } from '../player/playerConstants';
 import { climbSurfaces } from '../player/climbSurfaces';
+import { viewRig } from '../player/viewRig';
+import { wardenDefeat } from './wardenDefeat';
 import { particleFx, polarityFxColor, FX_CHARGED } from '../fx/particleFx';
 import { entityManager, type BrainContext } from '../entities/EntityManager';
 import type { Entity } from '../entities/Entity';
@@ -689,12 +691,27 @@ class MagneticWardenEncounter {
                     break;
                 case 'shards':
                     break;
-                case 'defeated':
+                case 'defeated': {
                     entity.hp = 0;
+                    // Start the defeat cinematic from where it fell, before the
+                    // entity (and its renderer) are gone.
+                    const centre = this.centre(entity);
+                    const dir = viewRig.dir;
+                    wardenDefeat.begin({
+                        x: entity.pos.x, y: entity.pos.y, z: entity.pos.z,
+                        height: entity.height,
+                        polarity: this.state.polarity,
+                        centerX: this.arena ? this.arena.centerX : centre.x - 0.5,
+                        centerZ: this.arena ? this.arena.centerZ : centre.z - 0.5,
+                        floorY: this.floorY(entity),
+                        returnPitch: Math.asin(Math.max(-1, Math.min(1, dir.y))),
+                        returnYaw: Math.atan2(-dir.x, -dir.z),
+                    });
                     this.consumeAll(entity);
                     this.entityId = null;
                     entityManager.defeatEntity(entityId);
                     break;
+                }
                 default:
                     break;
             }

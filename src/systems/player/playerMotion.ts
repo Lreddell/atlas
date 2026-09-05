@@ -93,12 +93,22 @@ export type DodgeResolution =
 export const ROLL_DURATION = 0.6;
 export const ROLL_IFRAME_START = 0.03;
 export const ROLL_IFRAME_END = 0.42;
-/** Peak roll speed (blocks/s); the curve eases out so a roll covers ~4.4 blocks. */
-export const ROLL_PEAK_SPEED = 11;
+/** Peak roll speed (blocks/s); the curve eases out so a roll covers ~5.2 blocks. */
+export const ROLL_PEAK_SPEED = 13;
 /** A backstep (no direction held) is shorter and quicker. */
 export const BACKSTEP_DURATION = 0.42;
-export const BACKSTEP_PEAK_SPEED = 9;
-export const ROLL_COOLDOWN = 0.75;
+export const BACKSTEP_PEAK_SPEED = 10.5;
+/**
+ * Long enough that there is a real recovery AFTER the roll ends (the roll runs
+ * 0.6s), so the crosshair ring has something to say and back-to-back rolls have
+ * a rhythm instead of being free.
+ */
+export const ROLL_COOLDOWN = 0.85;
+/**
+ * An air roll is the save-yourself move when the Warden launches you off the
+ * platform, so it drives harder than a ground roll and does not decay as fast.
+ */
+export const AIR_ROLL_SPEED_SCALE = 1.15;
 
 /** Magnetic dash: reach (blocks), travel speed, and the longest it may last. */
 export const DASH_RANGE = 14;
@@ -122,6 +132,10 @@ export const LEAP_COOLDOWN = 1.0;
 export const SURGE_DURATION = 2.5;
 /** Seconds after a slam before another boss dash can arm one. */
 export const SLAM_LOCKOUT = 1.5;
+/** A roll re-pressed within this long of its end chains straight into the next one. */
+export const ROLL_CHAIN_WINDOW = 0.12;
+/** A roll landed within this long of touchdown absorbs the whole fall. */
+export const ROLL_LANDING_WINDOW = 0.35;
 
 export function createMotionState(): MotionState {
     return {
@@ -152,6 +166,13 @@ export function rollSpeedAt(t: number, duration: number, peak: number): number {
     if (duration <= 0 || t < 0 || t >= duration) return 0;
     const u = t / duration;
     return peak * (1 - u * u);
+}
+
+/** Total ground distance a roll of this kind covers (the integral of the curve). */
+export function rollDistance(backstep = false): number {
+    const duration = backstep ? BACKSTEP_DURATION : ROLL_DURATION;
+    const peak = backstep ? BACKSTEP_PEAK_SPEED : ROLL_PEAK_SPEED;
+    return peak * duration * (2 / 3);
 }
 
 /** Where a dash onto a magnet face puts the feet: body pressed against the face. */
@@ -186,7 +207,12 @@ export function dashBossTarget(boss: DodgeBoss, from: MotionVec3, bodyWidth: num
 export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: MotionState; result: DodgeResolution } {
     if (ctx.attached) return { state, result: { kind: 'jump-off' } };
     if (ctx.flying) return { state, result: { kind: 'none', reason: 'flying' } };
-    if (state.action !== 'none') return { state, result: { kind: 'none', reason: 'busy' } };
+    // A roll can be re-pressed in its last few frames: the follow-up starts as
+    // this one ends, so chained rolls read as one continuous evade instead of
+    // a press that silently vanished.
+    if (state.action !== 'none' && !(state.action === 'roll' && state.time >= state.duration - ROLL_CHAIN_WINDOW)) {
+        return { state, result: { kind: 'none', reason: 'busy' } };
+    }
 
     const cd = state.cooldowns;
     const boots = ctx.playerPolarity !== 0;
@@ -307,12 +333,26 @@ export function consumeSurge(state: MotionState): { state: MotionState; slam: bo
     return { state: { ...state, surgeRemaining: 0, slamLockout: SLAM_LOCKOUT }, slam: true };
 }
 
-/** Horizontal velocity a roll asks for this tick (blocks/s). */
-export function rollVelocity(state: MotionState): MotionVec3 {
+/**
+ * Horizontal velocity a roll asks for this tick (blocks/s). An airborne roll
+ * drives harder: it is the move that saves you after a launch off the platform.
+ */
+export function rollVelocity(state: MotionState, airborne = false): MotionVec3 {
     if (state.action !== 'roll') return { x: 0, y: 0, z: 0 };
     const backstep = state.duration < ROLL_DURATION - 1e-6;
-    const speed = rollSpeedAt(state.time, state.duration, backstep ? BACKSTEP_PEAK_SPEED : ROLL_PEAK_SPEED);
+    const peak = (backstep ? BACKSTEP_PEAK_SPEED : ROLL_PEAK_SPEED) * (airborne ? AIR_ROLL_SPEED_SCALE : 1);
+    const speed = rollSpeedAt(state.time, state.duration, peak);
     return { x: state.dir.x * speed, y: 0, z: state.dir.z * speed };
+}
+
+/**
+ * Whether a landing right now is absorbed by a roll. Pressing the dodge just
+ * before touchdown starts the roll in the air (rolls are not grounded-only), so
+ * by the moment of impact the player is already rolling and the fall is spent
+ * on the roll instead of on their health.
+ */
+export function rollAbsorbsLanding(state: MotionState): boolean {
+    return state.action === 'roll';
 }
 
 /** Whether the roll is in its tucked (fastest) half, for the animation. */
@@ -339,9 +379,13 @@ export interface MotionStatus {
     surgeFraction: number;
     /** 0..1 progress through the current action. */
     progress: number;
-    /** Largest remaining cooldown fraction across the kit (for a cooldown ring). */
+    /** Remaining cooldown of the move the kit would use now, 0..1 (the crosshair ring). */
     cooldown: number;
-    /** What F would do right now (set by Player.tsx from previewDodge). */
+    /** True while the kit is ready to answer a press. */
+    ready: boolean;
+    /** ms timestamp of the last press the kit had to refuse (the crosshair flash). */
+    refusedAt: number;
+    /** What the dodge key would do right now. */
     prompt: DodgeResolution['kind'];
 }
 
@@ -352,6 +396,8 @@ export const motionStatus: MotionStatus = {
     surgeFraction: 0,
     progress: 0,
     cooldown: 0,
+    ready: true,
+    refusedAt: 0,
     prompt: 'roll',
 };
 
@@ -369,11 +415,25 @@ export function writeMotionStatus(state: MotionState, prompt: DodgeResolution['k
     target.surge = state.surgeRemaining > 0;
     target.surgeFraction = SURGE_DURATION > 0 ? state.surgeRemaining / SURGE_DURATION : 0;
     target.progress = state.duration > 0 ? Math.min(1, state.time / state.duration) : 0;
-    target.cooldown = Math.max(
-        state.cooldowns.roll / ROLL_COOLDOWN,
-        state.cooldowns.dash / DASH_COOLDOWN,
-        state.cooldowns.leap / LEAP_COOLDOWN,
-    );
+    // The ring answers one question: how long until the kit will answer again?
+    // That is the longer of the running action and the cooldown of the move it
+    // would use next, over the same span, so it sweeps closed exactly once and
+    // empties the moment a press would land. It tracks the move the kit would
+    // actually pick, so a recharging dash never reads as "you cannot roll".
+    const [remaining, span] = prompt === 'dash'
+        ? [state.cooldowns.dash, DASH_COOLDOWN]
+        : prompt === 'leap'
+            ? [state.cooldowns.leap, LEAP_COOLDOWN]
+            : [state.cooldowns.roll, ROLL_COOLDOWN];
+    const actionRemaining = state.action === 'none' ? 0 : Math.max(0, state.duration - state.time);
+    const total = Math.max(span, state.duration);
+    target.cooldown = total > 0 ? Math.max(0, Math.min(1, Math.max(remaining, actionRemaining) / total)) : 0;
+    target.ready = state.action === 'none' && remaining <= 0;
     target.prompt = prompt;
     return target;
+}
+
+/** A press the kit could not answer (on cooldown or mid-action): flash the crosshair. */
+export function markDodgeRefused(target: MotionStatus = motionStatus): void {
+    target.refusedAt = Date.now();
 }

@@ -17,10 +17,14 @@ export interface PlayerInputState {
     polarityPowerOn: boolean;
     /** True while a bite is actively charging (drives the held-item eat animation). */
     eating: boolean;
-    /** One-shot: F was pressed (dodge roll / magnetic dash / repel leap / launch off a wall). */
-    dodgeTrigger: boolean;
-    /** One-shot: F5 was pressed (first / third person). */
-    viewToggleTrigger: boolean;
+    /**
+     * Timestamp (ms) of the last dodge press (C), or 0. Kept as a timestamp
+     * rather than a boolean so a press that lands between physics substeps is
+     * still honoured a few frames later (the input buffer every action game
+     * needs: at 60 fps only every third frame runs a 20 Hz substep, so a
+     * one-frame flag loses two presses out of three).
+     */
+    dodgePressedAt: number;
 }
 
 // Internal state for double-tap detection
@@ -42,9 +46,15 @@ export const inputState: PlayerInputState = {
     magneticPolarity: 1,
     polarityPowerOn: true,
     eating: false,
-    dodgeTrigger: false,
-    viewToggleTrigger: false,
+    dodgePressedAt: 0,
 };
+
+/**
+ * How long a dodge press stays queued once the physics has had a chance to
+ * answer it. The window is checked AFTER a frame's substeps run, never before,
+ * so a slow frame can never expire a press it was never offered.
+ */
+export const DODGE_BUFFER_MS = 260;
 
 // Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
 // camera (Player). While `active`, the pointer-lock handler stops driving the
@@ -57,8 +67,7 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-// F5 is intercepted so the browser never reloads mid-fight (it toggles the view).
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyF', 'F5']);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC']);
 
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
     // Intercept game keys to prevent browser/OS shortcuts
@@ -133,15 +142,14 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             inputState.polarityPowerOn = !inputState.polarityPowerOn;
             gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
             break;
-        case 'KeyF':
+        case 'KeyC':
             // The kit button: resolved by the player physics into a roll, a
-            // magnetic dash, a repel leap, or a launch off the wall.
+            // magnetic dash, a repel leap, or a launch off the wall. C sits
+            // under the left hand without leaving WASD, and is the only such
+            // key Atlas had free (Q drops, E opens, R flips, Shift/Ctrl/Space
+            // are sneak/sprint/jump).
             if (e && e.repeat) break;
-            inputState.dodgeTrigger = true;
-            break;
-        case 'F5':
-            if (e && e.repeat) break;
-            inputState.viewToggleTrigger = true;
+            inputState.dodgePressedAt = now;
             break;
     }
 };
@@ -185,26 +193,33 @@ export const getMovementIntent = () => {
     // Sprint is active if (CTRL Held OR double-tap is active OR Latch is active) AND moving forward AND NOT sneaking
     const isSprinting = (inputState.sprint || inputState.sprintLatch || doubleTapSprintActive) && inputState.forward && !inputState.sneak;
     
-    // Copy the triggers and reset them immediately
+    // Copy the triggers and reset them immediately. The dodge is NOT cleared
+    // here: it stays queued (for DODGE_BUFFER_MS) until a physics substep
+    // actually consumes it, so a press never falls between substeps.
     const flyToggle = inputState.flyToggleTrigger;
     inputState.flyToggleTrigger = false;
-    const dodge = inputState.dodgeTrigger;
-    inputState.dodgeTrigger = false;
-    const viewToggle = inputState.viewToggleTrigger;
-    inputState.viewToggleTrigger = false;
+    const dodge = inputState.dodgePressedAt > 0;
 
     return {
         ...inputState,
         sprint: isSprinting,
         flyToggle,
         dodge,
-        viewToggle,
         cancelDoubleTap: () => {
             doubleTapSprintActive = false;
             inputState.sprintLatch = false;
         }
     };
 };
+
+/** The physics consumed the queued dodge (or it expired): clear the buffer. */
+export const consumeDodgePress = (): void => {
+    inputState.dodgePressedAt = 0;
+};
+
+/** How long the queued dodge press has been waiting (ms); 0 when none is queued. */
+export const dodgePressAge = (): number =>
+    (inputState.dodgePressedAt > 0 ? Date.now() - inputState.dodgePressedAt : 0);
 
 export const resetInputState = () => {
     inputState.forward = false;
@@ -219,8 +234,7 @@ export const resetInputState = () => {
     inputState.magneticPolarity = 1;
     inputState.polarityPowerOn = true;
     inputState.eating = false;
-    inputState.dodgeTrigger = false;
-    inputState.viewToggleTrigger = false;
+    inputState.dodgePressedAt = 0;
     doubleTapSprintActive = false;
     lastForwardPressTime = 0;
     lastJumpPressTime = 0;
