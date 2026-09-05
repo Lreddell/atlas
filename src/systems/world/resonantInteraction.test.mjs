@@ -32,7 +32,7 @@ test('sealed vault edit policy allows only crystals and safe torches', () => {
 });
 
 test('the tuning fork uses Atlas normal right-click targeting', () => {
-  assert.match(interaction, /heldForUse\?\.type === BlockType\.ECHO_TUNING_FORK/);
+  assert.match(interaction, /heldForUse\?\.type === (?:BlockType|ItemType)\.ECHO_TUNING_FORK/);
   assert.match(interaction, /resonantVaultRuntime\.useTuningFork/);
   assert.match(interaction, /targetType[\s\S]{0,500}worldManager\.getMetadata/);
   assert.doesNotMatch(interaction, /RESONATOR|PULSE_BRACER/);
@@ -40,10 +40,10 @@ test('the tuning fork uses Atlas normal right-click targeting', () => {
 });
 
 test('the only artifact activates marked machinery and claims the visible core', () => {
-  assert.match(runtime, /target\.type !== BlockType\.RESONANCE_PYLON/);
-  assert.match(runtime, /target\.type !== BlockType\.RESONANCE_PLATE/);
-  assert.match(runtime, /target\.type !== BlockType\.LISTENING_STONE/);
-  assert.match(runtime, /target\.type !== BlockType\.SENTINEL_CORE/);
+  assert.match(runtime, /target\.type !== (?:BlockType|ItemType)\.RESONANCE_PYLON/);
+  assert.match(runtime, /target\.type !== (?:BlockType|ItemType)\.RESONANCE_PLATE/);
+  assert.match(runtime, /target\.type !== (?:BlockType|ItemType)\.LISTENING_STONE/);
+  assert.match(runtime, /target\.type !== (?:BlockType|ItemType)\.SENTINEL_CORE/);
   assert.match(runtime, /activatePylon\(target\)/);
   assert.match(runtime, /activatePuzzleControl\(target\)/);
   assert.match(runtime, /tryClaimCore\(target\)/);
@@ -58,7 +58,7 @@ test('unfinished vaults cannot be mined through while preparation crystals remai
   assert.match(runtime, /torchDeniedCell/);
   assert.match(runtime, /gatePlaneCell/);
   assert.match(runtime, /movingHazardCell/);
-  assert.match(editRules, /BlockType\.TORCH/);
+  assert.match(editRules, /(?:BlockType|ItemType)\.TORCH/);
   assert.match(runtime, /escapeCompleted/);
   assert.match(runtime, /isVaultStructurePosition/);
   assert.match(geometry, /getVaultShaftCenter/);

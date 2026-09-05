@@ -1,4 +1,4 @@
-import { BlockType } from '../types';
+import { BlockType, ItemType } from '../types';
 import { BLOCKS } from './blocks';
 
 /**
@@ -45,11 +45,11 @@ export function isCrossRenderedBlock(type: BlockType): boolean {
  * True when a stack of this type presents as a flat sprite (held in hand,
  * dropped on the ground, in break particles) rather than a miniature cube.
  */
-export function isSpriteRenderedType(type: BlockType): boolean {
+export function isSpriteRenderedType(type: BlockType | ItemType): boolean {
     const def = BLOCKS[type];
     if (!def) return false;
     return !!def.isItem
-        || CROSS_RENDERED_BLOCKS.has(type)
-        || type === BlockType.BED_ITEM
-        || type === BlockType.WHEAT_SEEDS;
+        || CROSS_RENDERED_BLOCKS.has(type as BlockType)
+        || type === ItemType.BED_ITEM
+        || type === ItemType.WHEAT_SEEDS;
 }

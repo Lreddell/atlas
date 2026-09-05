@@ -58,7 +58,7 @@ test('vault runtime gives memory patterns sustained typed steps while Crossing k
   assert.match(events, /'vault:echo-preview'/);
   assert.match(events, /'vault:echo-step'/);
   assert.match(events, /'vault:echo-resolved'/);
-  assert.match(runtime, /target\.type === BlockType\.RESONANCE_PLATE/);
+  assert.match(runtime, /target\.type === (?:BlockType|ItemType)\.RESONANCE_PLATE/);
   assert.match(runtime, /buildMemoryDemonstration/);
   assert.match(runtime, /tickMemoryDemonstration/);
   assert.match(runtime, /gameEvents\.emit\('vault:echo-step'/);

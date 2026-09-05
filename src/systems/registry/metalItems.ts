@@ -1,22 +1,22 @@
-import { BlockType } from '../../types';
+import { ItemType } from '../../types';
 
-const MAGNETIC_METAL_ITEMS = new Set<BlockType>([
-    BlockType.RAW_IRON,
-    BlockType.IRON_INGOT,
-    BlockType.IRON_BLOCK,
-    BlockType.IRON_PICKAXE,
-    BlockType.IRON_AXE,
-    BlockType.IRON_SHOVEL,
-    BlockType.IRON_SWORD,
-    BlockType.IRON_HOE,
-    BlockType.IRON_HELMET,
-    BlockType.IRON_CHESTPLATE,
-    BlockType.IRON_LEGGINGS,
-    BlockType.IRON_BOOTS,
+const MAGNETIC_METAL_ITEMS = new Set<ItemType>([
+    ItemType.RAW_IRON,
+    ItemType.IRON_INGOT,
+    ItemType.IRON_BLOCK,
+    ItemType.IRON_PICKAXE,
+    ItemType.IRON_AXE,
+    ItemType.IRON_SHOVEL,
+    ItemType.IRON_SWORD,
+    ItemType.IRON_HOE,
+    ItemType.IRON_HELMET,
+    ItemType.IRON_CHESTPLATE,
+    ItemType.IRON_LEGGINGS,
+    ItemType.IRON_BOOTS,
 
-    BlockType.POSITIVE_MAGNET,
-    BlockType.NEGATIVE_MAGNET,
+    ItemType.POSITIVE_MAGNET,
+    ItemType.NEGATIVE_MAGNET,
 ]);
 
-export const isMagneticMetalItem = (type: BlockType): boolean =>
+export const isMagneticMetalItem = (type: ItemType): boolean =>
     MAGNETIC_METAL_ITEMS.has(type);

@@ -2,7 +2,7 @@
 // it aggregates defense and exposes the magnetic-susceptibility flags the
 // magnetism system reads (iron armor = ferromagnetic; polarity boots = control).
 
-import { BlockType, type EquipmentSlot, type ItemStack } from '../../types';
+import { ItemType, type EquipmentSlot, type ItemStack } from '../../types';
 import { getItemStats, getMaxDurability } from './itemStats';
 
 export type Equipment = Record<EquipmentSlot, ItemStack | null>;
@@ -13,12 +13,12 @@ export const createEmptyEquipment = (): Equipment => ({
     helmet: null, chestplate: null, leggings: null, boots: null, accessory: null,
 });
 
-const IRON_ARMOR = new Set<BlockType>([
-    BlockType.IRON_HELMET, BlockType.IRON_CHESTPLATE, BlockType.IRON_LEGGINGS, BlockType.IRON_BOOTS,
+const IRON_ARMOR = new Set<ItemType>([
+    ItemType.IRON_HELMET, ItemType.IRON_CHESTPLATE, ItemType.IRON_LEGGINGS, ItemType.IRON_BOOTS,
 ]);
 
 /** The slot an item can be equipped into, or undefined if it is not equippable. */
-export function slotForItem(type: BlockType): EquipmentSlot | undefined {
+export function slotForItem(type: ItemType): EquipmentSlot | undefined {
     return getItemStats({ type, count: 1 })?.slot;
 }
 
@@ -48,13 +48,13 @@ export function isWearingIronArmor(eq: Equipment): boolean {
 
 /** Polarity boots (or the upgraded pair) equipped → the player controls polarity. */
 export function hasPolarityBoots(eq: Equipment): boolean {
-    return eq.boots?.type === BlockType.POLARITY_BOOTS
-        || eq.boots?.type === BlockType.UPGRADED_POLARITY_BOOTS;
+    return eq.boots?.type === ItemType.POLARITY_BOOTS
+        || eq.boots?.type === ItemType.UPGRADED_POLARITY_BOOTS;
 }
 
 /** Upgraded polarity boots: same control plus an on/off toggle (the N key). */
 export function hasUpgradedPolarityBoots(eq: Equipment): boolean {
-    return eq.boots?.type === BlockType.UPGRADED_POLARITY_BOOTS;
+    return eq.boots?.type === ItemType.UPGRADED_POLARITY_BOOTS;
 }
 
 /**

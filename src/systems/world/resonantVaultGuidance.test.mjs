@@ -72,17 +72,17 @@ test('current-facing copy removes prose tutorials and prototype items', () => {
 
 test('active content teaches conventional equipment and one machinery artifact', () => {
   const purposeBlock = guide.match(/RESONANT_ITEM_PURPOSES:[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1] ?? '';
-  assert.equal((purposeBlock.match(/\[BlockType\./g) ?? []).length, 29);
+  assert.equal((purposeBlock.match(/\[(?:BlockType|ItemType)\./g) ?? []).length, 29);
   for (const id of ['VAULTSTEEL_SPEAR','VAULT_CROSSBOW','VAULT_BOLT','BELLBREAKER_MAUL','ECHO_TUNING_FORK','TITAN_HAMMER']) {
-    assert.match(guide, new RegExp(`\\[BlockType\\.${id}\\]:\\s*'[^']+'`), `missing summary for ${id}`);
+    assert.match(guide, new RegExp(`\\[(?:BlockType|ItemType)\\.${id}\\]:\\s*'[^']+'`), `missing summary for ${id}`);
   }
   assert.doesNotMatch(purposeBlock, /RESONATOR|PULSE_BRACER|CUSTODIAN_SIGIL|RESONANT_LENS/);
 });
 
 test('repeat clears and enemy drops do not introduce prototype gadgets', () => {
-  assert.match(recipes, /BlockType\.FRACTURED_CORE,\s*BlockType\.FRACTURED_CORE[\s\S]{0,120}BlockType\.ECHO_DUST/);
-  assert.match(recipes, /BlockType\.ECHO_BRICKS,\s*BlockType\.ECHO_BRICKS,\s*BlockType\.ECHO_BRICKS[\s\S]{0,300}BlockType\.ECHO_CORE[\s\S]{0,220}BlockType\.LISTENING_STONE/);
+  assert.match(recipes, /(?:BlockType|ItemType)\.FRACTURED_CORE,\s*(?:BlockType|ItemType)\.FRACTURED_CORE[\s\S]{0,120}(?:BlockType|ItemType)\.ECHO_DUST/);
+  assert.match(recipes, /(?:BlockType|ItemType)\.ECHO_BRICKS,\s*(?:BlockType|ItemType)\.ECHO_BRICKS,\s*(?:BlockType|ItemType)\.ECHO_BRICKS[\s\S]{0,300}(?:BlockType|ItemType)\.ECHO_CORE[\s\S]{0,220}(?:BlockType|ItemType)\.LISTENING_STONE/);
   assert.match(runtime, /worldFirstClear/);
-  assert.doesNotMatch(runtime, /spawnDrop\(BlockType\.RESONANT_LENS/);
+  assert.doesNotMatch(runtime, /spawnDrop\((?:BlockType|ItemType)\.RESONANT_LENS/);
   assert.match(runtime, /locateFromListeningStone/);
 });

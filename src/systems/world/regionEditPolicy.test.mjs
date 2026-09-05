@@ -29,9 +29,9 @@ test('sealed Magnetic Fields allow mining progression crystals AND shield crysta
     const blocks = read('src/systems/world/magneticFieldsBlocks.ts');
     // Both resource crystals (Polarity Boots materials) and the boss's shield
     // crystals must be breakable while the region is still sealed.
-    assert.match(blocks, /BlockType\.POSITIVE_MAGNETITE_CRYSTAL/);
-    assert.match(blocks, /BlockType\.NEGATIVE_MAGNETITE_CRYSTAL/);
-    assert.match(blocks, /BlockType\.MAGNETIC_SHIELD_CRYSTAL/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.POSITIVE_MAGNETITE_CRYSTAL/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.NEGATIVE_MAGNETITE_CRYSTAL/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.MAGNETIC_SHIELD_CRYSTAL/);
 
     // canEditBlock consults the allowlist BEFORE returning the sealed denial,
     // so allowed breaks return true and never reach the denied event.

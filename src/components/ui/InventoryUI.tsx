@@ -1,3 +1,4 @@
+import { getItemDefinitions, type ItemDefinition } from '../../systems/registry/itemDefinitions';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
@@ -7,9 +8,8 @@ import {
     type OpenContainer,
     type OpenContainerState,
     ItemStack,
-    BlockType,
+    ItemType,
     CreativeTab,
-    BlockDef,
 } from '../../types';
 import { Slot } from './Slot';
 import { worldManager } from '../../systems/WorldManager';
@@ -49,13 +49,13 @@ const SLOT_COLLECTIONS = new Set<SlotCollection>([
 
 const isSlotCollection = (value: string): value is SlotCollection => SLOT_COLLECTIONS.has(value as SlotCollection);
 
-const CREATIVE_TABS: { id: CreativeTab, name: string, icon: BlockType }[] = [
-    { id: 'building', name: 'Building', icon: BlockType.BRICK },
-    { id: 'natural', name: 'Natural', icon: BlockType.GRASS },
-    { id: 'functional', name: 'Functional', icon: BlockType.CRAFTING_TABLE },
-    { id: 'tools', name: 'Tools', icon: BlockType.IRON_PICKAXE },
-    { id: 'food', name: 'Food', icon: BlockType.APPLE },
-    { id: 'ingredients', name: 'Ingredients', icon: BlockType.IRON_INGOT },
+const CREATIVE_TABS: { id: CreativeTab, name: string, icon: ItemType }[] = [
+    { id: 'building', name: 'Building', icon: ItemType.BRICK },
+    { id: 'natural', name: 'Natural', icon: ItemType.GRASS },
+    { id: 'functional', name: 'Functional', icon: ItemType.CRAFTING_TABLE },
+    { id: 'tools', name: 'Tools', icon: ItemType.IRON_PICKAXE },
+    { id: 'food', name: 'Food', icon: ItemType.APPLE },
+    { id: 'ingredients', name: 'Ingredients', icon: ItemType.IRON_INGOT },
 ];
 
 const ARMOR_EQUIPMENT_SLOTS = EQUIPMENT_SLOTS.filter((slot) => slot !== 'accessory');
@@ -74,66 +74,66 @@ const CraftingArrow: React.FC = () => (
     </svg>
 );
 
-const ITEM_SORT_ORDER: BlockType[] = [
+const ITEM_SORT_ORDER: ItemType[] = [
     // --- BUILDING ---
-    BlockType.STONE, BlockType.COBBLESTONE, BlockType.BRICK, 
-    BlockType.SANDSTONE, BlockType.RED_SANDSTONE, BlockType.BASALT, BlockType.OBSIDIAN,
-    BlockType.OAK_PLANKS, BlockType.SPRUCE_PLANKS, BlockType.BIRCH_PLANKS, BlockType.CHERRY_PLANKS,
-    BlockType.JUNGLE_PLANKS, BlockType.DARK_OAK_PLANKS, BlockType.ACACIA_PLANKS,
-    BlockType.GLASS, BlockType.WOOL, BlockType.IRON_BLOCK,
-    BlockType.ANDESITE, BlockType.DIORITE, BlockType.GRANITE, BlockType.MOSSY_COBBLESTONE,
+    ItemType.STONE, ItemType.COBBLESTONE, ItemType.BRICK,
+    ItemType.SANDSTONE, ItemType.RED_SANDSTONE, ItemType.BASALT, ItemType.OBSIDIAN,
+    ItemType.OAK_PLANKS, ItemType.SPRUCE_PLANKS, ItemType.BIRCH_PLANKS, ItemType.CHERRY_PLANKS,
+    ItemType.JUNGLE_PLANKS, ItemType.DARK_OAK_PLANKS, ItemType.ACACIA_PLANKS,
+    ItemType.GLASS, ItemType.WOOL, ItemType.IRON_BLOCK,
+    ItemType.ANDESITE, ItemType.DIORITE, ItemType.GRANITE, ItemType.MOSSY_COBBLESTONE,
     // Slabs
-    BlockType.STONE_SLAB, BlockType.COBBLESTONE_SLAB, BlockType.BRICK_SLAB, BlockType.SANDSTONE_SLAB, BlockType.RED_SANDSTONE_SLAB,
-    BlockType.OAK_SLAB, BlockType.SPRUCE_SLAB, BlockType.BIRCH_SLAB, BlockType.CHERRY_SLAB,
-    BlockType.JUNGLE_SLAB, BlockType.DARK_OAK_SLAB, BlockType.ACACIA_SLAB,
+    ItemType.STONE_SLAB, ItemType.COBBLESTONE_SLAB, ItemType.BRICK_SLAB, ItemType.SANDSTONE_SLAB, ItemType.RED_SANDSTONE_SLAB,
+    ItemType.OAK_SLAB, ItemType.SPRUCE_SLAB, ItemType.BIRCH_SLAB, ItemType.CHERRY_SLAB,
+    ItemType.JUNGLE_SLAB, ItemType.DARK_OAK_SLAB, ItemType.ACACIA_SLAB,
     // Stairs
-    BlockType.STONE_STAIRS, BlockType.COBBLESTONE_STAIRS, BlockType.BRICK_STAIRS, BlockType.SANDSTONE_STAIRS, BlockType.RED_SANDSTONE_STAIRS,
-    BlockType.OAK_STAIRS, BlockType.SPRUCE_STAIRS, BlockType.BIRCH_STAIRS, BlockType.CHERRY_STAIRS,
-    BlockType.JUNGLE_STAIRS, BlockType.DARK_OAK_STAIRS, BlockType.ACACIA_STAIRS,
-    BlockType.TERRACOTTA, BlockType.TERRACOTTA_WHITE, BlockType.TERRACOTTA_LIGHT_GRAY, BlockType.TERRACOTTA_BROWN, BlockType.TERRACOTTA_RED, BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_YELLOW, BlockType.TERRACOTTA_MAGENTA,
+    ItemType.STONE_STAIRS, ItemType.COBBLESTONE_STAIRS, ItemType.BRICK_STAIRS, ItemType.SANDSTONE_STAIRS, ItemType.RED_SANDSTONE_STAIRS,
+    ItemType.OAK_STAIRS, ItemType.SPRUCE_STAIRS, ItemType.BIRCH_STAIRS, ItemType.CHERRY_STAIRS,
+    ItemType.JUNGLE_STAIRS, ItemType.DARK_OAK_STAIRS, ItemType.ACACIA_STAIRS,
+    ItemType.TERRACOTTA, ItemType.TERRACOTTA_WHITE, ItemType.TERRACOTTA_LIGHT_GRAY, ItemType.TERRACOTTA_BROWN, ItemType.TERRACOTTA_RED, ItemType.TERRACOTTA_ORANGE, ItemType.TERRACOTTA_YELLOW, ItemType.TERRACOTTA_MAGENTA,
 
     // --- NATURAL ---
-    BlockType.GRASS, BlockType.DIRT, BlockType.COARSE_DIRT, BlockType.MUD, BlockType.SAND, BlockType.RED_SAND, BlockType.SNOWY_GRASS, BlockType.SNOW_BLOCK, BlockType.ICE, BlockType.PACKED_ICE,
-    BlockType.MOSSY_GRASS, BlockType.LUSH_GRASS, BlockType.DARK_GRASS, BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS, BlockType.PODZOL,
-    BlockType.LOG, BlockType.SPRUCE_LOG, BlockType.BIRCH_LOG, BlockType.CHERRY_LOG,
-    BlockType.JUNGLE_LOG, BlockType.DARK_OAK_LOG, BlockType.ACACIA_LOG,
-    BlockType.LEAVES, BlockType.SPRUCE_LEAVES, BlockType.BIRCH_LEAVES, BlockType.CHERRY_LEAVES,
-    BlockType.JUNGLE_LEAVES, BlockType.DARK_OAK_LEAVES, BlockType.ACACIA_LEAVES,
-    BlockType.CACTUS, BlockType.DEAD_BUSH, BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER, BlockType.WHEAT_SEEDS,
-    BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
-    BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
-    BlockType.WATER, BlockType.LAVA, BlockType.MAGMA,
-    BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.COPPER_ORE, BlockType.GOLD_ORE, BlockType.LAPIS_ORE, BlockType.DIAMOND_ORE, BlockType.EMERALD_ORE,
-    BlockType.DEEPSLATE, BlockType.COBBLED_DEEPSLATE,
-    BlockType.DEEPSLATE_COAL_ORE, BlockType.DEEPSLATE_IRON_ORE, BlockType.DEEPSLATE_COPPER_ORE, BlockType.DEEPSLATE_GOLD_ORE, BlockType.DEEPSLATE_LAPIS_ORE, BlockType.DEEPSLATE_DIAMOND_ORE, BlockType.DEEPSLATE_EMERALD_ORE,
+    ItemType.GRASS, ItemType.DIRT, ItemType.COARSE_DIRT, ItemType.MUD, ItemType.SAND, ItemType.RED_SAND, ItemType.SNOWY_GRASS, ItemType.SNOW_BLOCK, ItemType.ICE, ItemType.PACKED_ICE,
+    ItemType.MOSSY_GRASS, ItemType.LUSH_GRASS, ItemType.DARK_GRASS, ItemType.MEADOW_GRASS, ItemType.SAVANNA_GRASS, ItemType.JUNGLE_GRASS, ItemType.PODZOL,
+    ItemType.LOG, ItemType.SPRUCE_LOG, ItemType.BIRCH_LOG, ItemType.CHERRY_LOG,
+    ItemType.JUNGLE_LOG, ItemType.DARK_OAK_LOG, ItemType.ACACIA_LOG,
+    ItemType.LEAVES, ItemType.SPRUCE_LEAVES, ItemType.BIRCH_LEAVES, ItemType.CHERRY_LEAVES,
+    ItemType.JUNGLE_LEAVES, ItemType.DARK_OAK_LEAVES, ItemType.ACACIA_LEAVES,
+    ItemType.CACTUS, ItemType.DEAD_BUSH, ItemType.GRASS_PLANT, ItemType.ROSE, ItemType.DANDELION, ItemType.PINK_FLOWER, ItemType.WHEAT_SEEDS,
+    ItemType.SAPLING, ItemType.SPRUCE_SAPLING, ItemType.BIRCH_SAPLING, ItemType.CHERRY_SAPLING,
+    ItemType.JUNGLE_SAPLING, ItemType.DARK_OAK_SAPLING, ItemType.ACACIA_SAPLING,
+    ItemType.WATER, ItemType.LAVA, ItemType.MAGMA,
+    ItemType.COAL_ORE, ItemType.IRON_ORE, ItemType.COPPER_ORE, ItemType.GOLD_ORE, ItemType.LAPIS_ORE, ItemType.DIAMOND_ORE, ItemType.EMERALD_ORE,
+    ItemType.DEEPSLATE, ItemType.COBBLED_DEEPSLATE,
+    ItemType.DEEPSLATE_COAL_ORE, ItemType.DEEPSLATE_IRON_ORE, ItemType.DEEPSLATE_COPPER_ORE, ItemType.DEEPSLATE_GOLD_ORE, ItemType.DEEPSLATE_LAPIS_ORE, ItemType.DEEPSLATE_DIAMOND_ORE, ItemType.DEEPSLATE_EMERALD_ORE,
 
     // --- TOOLS (Tiered) ---
     // Wood
-    BlockType.WOOD_SWORD, BlockType.WOOD_PICKAXE, BlockType.WOOD_AXE, BlockType.WOOD_SHOVEL, BlockType.WOOD_HOE,
+    ItemType.WOOD_SWORD, ItemType.WOOD_PICKAXE, ItemType.WOOD_AXE, ItemType.WOOD_SHOVEL, ItemType.WOOD_HOE,
     // Stone
-    BlockType.STONE_SWORD, BlockType.STONE_PICKAXE, BlockType.STONE_AXE, BlockType.STONE_SHOVEL, BlockType.STONE_HOE,
+    ItemType.STONE_SWORD, ItemType.STONE_PICKAXE, ItemType.STONE_AXE, ItemType.STONE_SHOVEL, ItemType.STONE_HOE,
     // Iron
-    BlockType.IRON_SWORD, BlockType.IRON_PICKAXE, BlockType.IRON_AXE, BlockType.IRON_SHOVEL, BlockType.IRON_HOE,
+    ItemType.IRON_SWORD, ItemType.IRON_PICKAXE, ItemType.IRON_AXE, ItemType.IRON_SHOVEL, ItemType.IRON_HOE,
     // Gold
-    BlockType.GOLD_SWORD, BlockType.GOLD_PICKAXE, BlockType.GOLD_AXE, BlockType.GOLD_SHOVEL, BlockType.GOLD_HOE,
+    ItemType.GOLD_SWORD, ItemType.GOLD_PICKAXE, ItemType.GOLD_AXE, ItemType.GOLD_SHOVEL, ItemType.GOLD_HOE,
     // Diamond
-    BlockType.DIAMOND_SWORD, BlockType.DIAMOND_PICKAXE, BlockType.DIAMOND_AXE, BlockType.DIAMOND_SHOVEL, BlockType.DIAMOND_HOE,
+    ItemType.DIAMOND_SWORD, ItemType.DIAMOND_PICKAXE, ItemType.DIAMOND_AXE, ItemType.DIAMOND_SHOVEL, ItemType.DIAMOND_HOE,
     // Copper (Custom)
-    BlockType.COPPER_SWORD, BlockType.COPPER_PICKAXE, BlockType.COPPER_AXE, BlockType.COPPER_SHOVEL, BlockType.COPPER_HOE,
+    ItemType.COPPER_SWORD, ItemType.COPPER_PICKAXE, ItemType.COPPER_AXE, ItemType.COPPER_SHOVEL, ItemType.COPPER_HOE,
     // Equipment and magnetic tools
-    BlockType.IRON_HELMET, BlockType.IRON_CHESTPLATE, BlockType.IRON_LEGGINGS, BlockType.IRON_BOOTS,
-    BlockType.POLARITY_BOOTS, BlockType.POSITIVE_MAGNET, BlockType.NEGATIVE_MAGNET,
+    ItemType.IRON_HELMET, ItemType.IRON_CHESTPLATE, ItemType.IRON_LEGGINGS, ItemType.IRON_BOOTS,
+    ItemType.POLARITY_BOOTS, ItemType.POSITIVE_MAGNET, ItemType.NEGATIVE_MAGNET,
 
     // --- INGREDIENTS ---
-    BlockType.COAL, BlockType.CHARCOAL, 
-    BlockType.RAW_IRON, BlockType.IRON_INGOT, 
-    BlockType.RAW_COPPER, BlockType.COPPER_INGOT, 
-    BlockType.RAW_GOLD, BlockType.GOLD_INGOT,
-    BlockType.DIAMOND, BlockType.EMERALD, BlockType.LAPIS_LAZULI,
-    BlockType.STICK,
+    ItemType.COAL, ItemType.CHARCOAL,
+    ItemType.RAW_IRON, ItemType.IRON_INGOT,
+    ItemType.RAW_COPPER, ItemType.COPPER_INGOT,
+    ItemType.RAW_GOLD, ItemType.GOLD_INGOT,
+    ItemType.DIAMOND, ItemType.EMERALD, ItemType.LAPIS_LAZULI,
+    ItemType.STICK,
 
     // --- FUNCTIONAL ---
-    BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.CHEST, BlockType.TORCH, BlockType.BED_ITEM
+    ItemType.CRAFTING_TABLE, ItemType.FURNACE, ItemType.CHEST, ItemType.TORCH, ItemType.BED_ITEM
 ];
 
 export const InventoryUI: React.FC<InventoryUIProps> = ({ 
@@ -165,7 +165,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const creativeItems = useMemo(() => {
         const manualOrderMap = new Map(ITEM_SORT_ORDER.map((type, i) => [type, i]));
 
-        const sortFn = (a: BlockDef, b: BlockDef) => {
+        const sortFn = (a: ItemDefinition, b: ItemDefinition) => {
             const idxA = manualOrderMap.get(a.id);
             const idxB = manualOrderMap.get(b.id);
             
@@ -180,12 +180,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             return a.id - b.id;
         };
 
-        return Object.values(BLOCKS)
-            .filter(b => b.id !== BlockType.AIR
-                && b.id !== BlockType.FURNACE_ACTIVE
-                && b.id !== BlockType.BED_HEAD
-                && b.id !== BlockType.BED_FOOT
-                && b.id !== BlockType.DEBUG_CROSS
+        return getItemDefinitions()
+            .filter(b => b.id !== ItemType.AIR
+                && b.id !== ItemType.FURNACE_ACTIVE
+                && b.id !== ItemType.BED_HEAD
+                && b.id !== ItemType.BED_FOOT
+                && b.id !== ItemType.DEBUG_CROSS
                 && b.category === activeTab)
             .sort(sortFn) 
             .map(b => ({ type: b.id, count: 1 }));

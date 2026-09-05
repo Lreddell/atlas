@@ -1,5 +1,6 @@
 
-import { BlockType, ItemStack } from '../types';
+import { BlockType, ItemType, ItemStack } from '../types';
+import { itemForBlock } from './registry/contentIds';
 import { BLOCKS } from '../data/blocks';
 import * as WorldTypes from './world/worldTypes';
 import * as WorldStore from './world/worldStore';
@@ -1484,12 +1485,12 @@ export class WorldManager {
               negativeCrystal: BlockType.NEGATIVE_MAGNETITE_CRYSTAL,
               shard: BlockType.MAGNETITE_SHARD,
               chargedMagnetite: BlockType.CHARGED_MAGNETITE,
-              ironIngot: BlockType.IRON_INGOT,
-              goldIngot: BlockType.GOLD_INGOT,
-              diamond: BlockType.DIAMOND,
+              ironIngot: ItemType.IRON_INGOT,
+              goldIngot: ItemType.GOLD_INGOT,
+              diamond: ItemType.DIAMOND,
           });
           for (const entry of loot) {
-              chest.items[entry.slot] = { type: entry.itemId as BlockType, count: entry.count };
+              chest.items[entry.slot] = { type: entry.itemId as ItemType, count: entry.count };
           }
           this.setMetadataAt(x, y, z, meta & ~0x40);
       }
@@ -1535,7 +1536,7 @@ export class WorldManager {
   
   subscribeToMessages(cb: MessageCallback) { this.messageListeners.add(cb); cb(`System: ${this.workerStatusMessage}`, this.workersEnabled ? 'success' : 'info'); return () => { this.messageListeners.delete(cb); }; }
   log(msg: string, type: 'info'|'error'|'success' = 'info', clickAction?: string) { this.messageListeners.forEach(cb => cb(msg, type, clickAction)); }
-  spawnDrop(stackOrType: ItemStack | BlockType, x: number, y: number, z: number) {
+  spawnDrop(stackOrType: ItemStack | ItemType, x: number, y: number, z: number) {
       const stack = typeof stackOrType === 'number' ? { type: stackOrType, count: 1 } : stackOrType;
       this.dropListeners.forEach(cb => cb(stack, x, y, z));
   }
@@ -1757,7 +1758,7 @@ export class WorldManager {
     if (t === BlockType.AIR || !needsSupport(t)) return;
     const below = this.getBlock(x, y - 1, z, false);
     if (hasSupportBelow(t, below)) return;
-    this.spawnDrop(t, x, y, z);
+    this.spawnDrop(itemForBlock(t), x, y, z);
     this.setBlock(x, y, z, BlockType.AIR);
   }
   setWorkersEnabled(val: boolean) {

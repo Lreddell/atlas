@@ -1,3 +1,4 @@
+import { blockForItem, itemForBlock } from '../../systems/registry/contentIds';
 
 import { useRef, useEffect, useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
@@ -14,7 +15,7 @@ import {
     type BreakingVisual,
     type GameMode,
     type OpenContainerState,
-    BlockType,
+    BlockType, ItemType,
     ItemStack,
 } from '../../types';
 import { eatFood, EXHAUSTION_COSTS, type FoodState } from '../../systems/player/playerFood';
@@ -117,7 +118,7 @@ interface InteractionControllerProps {
     inventory: (ItemStack | null)[];
     consumeItem: (slot: number) => void;
     damageHeldItem: (slot: number, amount: number) => void;
-    spawnDrop: (stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => void;
+    spawnDrop: (stackOrType: ItemStack | ItemType, x: number, y: number, z: number) => void;
     setBreakingVisual: Dispatch<SetStateAction<BreakingVisual | null>>;
     setOpenContainer: (value: OpenContainerState) => void;
     openContainer: OpenContainerState;
@@ -220,7 +221,7 @@ export const InteractionController = ({
 
             const targetType = worldManager.tryGetBlock(bx, by, bz);
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                const pickedType = (targetType === BlockType.BED_HEAD || targetType === BlockType.BED_FOOT) ? BlockType.BED_ITEM : targetType;
+                const pickedType = (targetType === BlockType.BED_HEAD || targetType === BlockType.BED_FOOT) ? ItemType.BED_ITEM : itemForBlock(targetType);
                 
                 const newItem = { type: pickedType, count: 1 };
                 
@@ -250,7 +251,7 @@ export const InteractionController = ({
         }
     }, [camera, gameMode, setInventory, isDead]);
 
-    const consumeInventoryType = useCallback((type: BlockType): boolean => {
+    const consumeInventoryType = useCallback((type: ItemType): boolean => {
         if (gameMode === 'creative') return true;
         const index = inventoryRef.current.findIndex((item) => item?.type === type && item.count > 0);
         if (index < 0) return false;
@@ -295,7 +296,7 @@ export const InteractionController = ({
         const reach = gameMode === 'creative' ? 5.2 : 4.5;
         const hit = castFromCamera(camera, reach);
         const heldForUse = inventoryRef.current[selectedSlotRef.current];
-        if (!isContinuous && heldForUse?.type === BlockType.ECHO_TUNING_FORK) {
+        if (!isContinuous && heldForUse?.type === ItemType.ECHO_TUNING_FORK) {
             camera.getWorldPosition(_camPos);
             camera.getWorldDirection(_camDir);
             const targetType = hit ? worldManager.tryGetBlock(hit.bx, hit.by, hit.bz) : null;
@@ -373,8 +374,8 @@ export const InteractionController = ({
                 // Boats are a traversal item, not terrain editing, placement is
                 // exempt from the sealed-region edit gate (unlike block placement),
                 // so a boat can be launched on sealed water same as anywhere else.
-                const held = inventoryRef.current[selectedSlotRef.current] as { type: BlockType } | null;
-                if (!isContinuous && targetType === BlockType.WATER && held?.type === BlockType.BOAT && onPlaceBoat) {
+                const held = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
+                if (!isContinuous && targetType === BlockType.WATER && held?.type === ItemType.BOAT && onPlaceBoat) {
                     if (onPlaceBoat(bx, by, bz) && gameMode === 'survival') {
                         consumeItem(selectedSlotRef.current);
                     }
@@ -382,10 +383,11 @@ export const InteractionController = ({
                 return;
             }
 
-            const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
-            const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
+            const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
+            const heldItemDef = heldItem ? BLOCKS[heldItem.type] : null;
+            const heldBlock = heldItem ? (heldItem.type === ItemType.BED_ITEM ? BlockType.BED_FOOT : blockForItem(heldItem.type)) : null;
             
-            if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM || isSaplingType(heldItem.type))) {
+            if (heldItem && heldItemDef && heldBlock !== null) {
                 
                 const now = Date.now();
                 if (isContinuous && now - lastPlacementTime.current < 200) return;
@@ -394,7 +396,7 @@ export const InteractionController = ({
                 // (single) slab fuses them into a double slab in place.
                 // The double slab stays the same block type with the SLAB_DOUBLE meta bit,
                 // so it drops two slabs and keeps its identity (vs. becoming the parent).
-                if (heldItemDef.shape === 'slab' && targetType === heldItem.type) {
+                if (heldItemDef.shape === 'slab' && targetType === heldBlock) {
                     const tMeta = worldManager.getMetadata(bx, by, bz);
                     if ((tMeta & SLAB_DOUBLE) === 0) {
                         const targetIsTop = (tMeta & 1) === 1;
@@ -418,25 +420,25 @@ export const InteractionController = ({
                             );
                             doubleSlabAABB.expandByScalar(-0.001);
                             if (playerAABB.intersectsBox(doubleSlabAABB)) return;
-                            if (!canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: heldItem.type })) return;
+                            if (!canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: heldBlock })) return;
 
-                            worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
+                            worldManager.setBlock(bx, by, bz, heldBlock, SLAB_DOUBLE);
                             consumeItem(selectedSlotRef.current);
                             lastPlacementTime.current = now;
                             emitPlacementAnimation();
-                            const group = getBlockSoundGroup(heldItem.type);
+                            const group = getBlockSoundGroup(heldBlock ?? BlockType.AIR);
                             soundManager.playAt(`block.${group}.place`, { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 });
                             return;
                         }
                     }
                 }
 
-                if (heldItem.type === BlockType.TORCH) {
+                if (heldItem.type === ItemType.TORCH) {
                     if (hit.ny < 0.9) return;
                 }
 
                 // Sapling placement: must be air target on top of valid soil
-                if (isSaplingType(heldItem.type)) {
+                if (isSaplingType(heldBlock ?? BlockType.AIR)) {
                     if (hit.ny < 0.9) return; // can only place on top face
                 }
 
@@ -454,19 +456,19 @@ export const InteractionController = ({
                 // Only air, fluids, and replaceable plants may be overwritten. Flowers,
                 // torches and saplings are not replaceable, so placement is cancelled.
                 const placementTarget = worldManager.getBlock(px, py, pz, false);
-                const placedBlock = heldItem.type === BlockType.BED_ITEM ? BlockType.BED_FOOT : heldItem.type;
+                const placedBlock = heldBlock;
                 if (!canPlayerEdit(px, py, pz, { kind: 'place', currentBlock: placementTarget, placedBlock })) return;
                 if (!isPlacementReplaceable(placementTarget)) return;
                 const replacingPlant = placementTarget === BlockType.GRASS_PLANT || placementTarget === BlockType.DEAD_BUSH;
 
                 // Support requirements: torches need a solid block beneath, plants need soil.
-                if (needsSupport(heldItem.type)) {
+                if (needsSupport(heldBlock)) {
                     const below = worldManager.getBlock(px, py - 1, pz, false);
-                    if (!hasSupportBelow(heldItem.type, below)) return;
+                    if (!hasSupportBelow(heldBlock, below)) return;
                 }
 
                 // Sapling soil check: block below must be valid soil, target must be air
-                if (isSaplingType(heldItem.type)) {
+                if (isSaplingType(heldBlock ?? BlockType.AIR)) {
                     const targetBlock = worldManager.tryGetBlock(px, py, pz);
                     const soilBlock = worldManager.tryGetBlock(px, py - 1, pz);
                     if (targetBlock !== BlockType.AIR || soilBlock === null || !isValidSoil(soilBlock)) return;
@@ -491,18 +493,18 @@ export const InteractionController = ({
                 );
                 blockAABB.expandByScalar(-0.001);
 
-                if (heldItem.type === BlockType.BED_ITEM) {
+                if (heldItem.type === ItemType.BED_ITEM) {
                     blockAABB.max.y -= 0.5;
                 }
 
-                if (heldItem.type === BlockType.TORCH || heldItem.type === BlockType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
+                if (heldItem.type === ItemType.TORCH || heldItem.type === ItemType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
                     
                     let rotation = 0;
-                    if (isLogBlock(heldItem.type)) {
+                    if (isLogBlock(heldBlock)) {
                         if (Math.abs(hit.ny) > 0.5) rotation = 0;
                         else if (Math.abs(hit.nx) > 0.5) rotation = 1;
                         else if (Math.abs(hit.nz) > 0.5) rotation = 2;
-                    } else if (heldItem.type === BlockType.FURNACE || heldItem.type === BlockType.CHEST) {
+                    } else if (heldItem.type === ItemType.FURNACE || heldItem.type === ItemType.CHEST) {
                         const dir = new THREE.Vector3();
                         camera.getWorldDirection(dir);
                         if (Math.abs(dir.x) > Math.abs(dir.z)) {
@@ -527,7 +529,7 @@ export const InteractionController = ({
                         if (hit.ny === -1) upside = true;
                         else if (hit.ny !== 1) upside = (hitY - py) > 0.5;
                         rotation = facing | (upside ? 4 : 0);
-                    } else if (heldItem.type === BlockType.BED_ITEM) {
+                    } else if (heldItem.type === ItemType.BED_ITEM) {
                         const dir = new THREE.Vector3();
                         camera.getWorldDirection(dir);
                         let hx = px, hz = pz;
@@ -560,7 +562,7 @@ export const InteractionController = ({
                             headAABB.expandByScalar(-0.001);
                             
                             if (!playerAABB.intersectsBox(headAABB) && !playerAABB.intersectsBox(blockAABB)) {
-                                if (replacingPlant) worldManager.spawnDrop(placementTarget, px, py, pz);
+                                if (replacingPlant) worldManager.spawnDrop(itemForBlock(placementTarget), px, py, pz);
                                 worldManager.setBlock(px, py, pz, BlockType.BED_FOOT, rotation);
                                 worldManager.setBlock(hx, py, hz, BlockType.BED_HEAD, rotation);
                                 consumeItem(selectedSlotRef.current);
@@ -568,30 +570,30 @@ export const InteractionController = ({
                                 emitPlacementAnimation();
                                 
                                 // Play Sound
-                                const group = getBlockSoundGroup(heldItem.type);
+                                const group = getBlockSoundGroup(heldBlock ?? BlockType.AIR);
                                 soundManager.playAt(`block.${group}.place`, {x: px+0.5, y: py+0.5, z: pz+0.5});
                             }
                         }
                         return;
                     }
 
-                    if (replacingPlant) worldManager.spawnDrop(placementTarget, px, py, pz);
-                    worldManager.setBlock(px, py, pz, heldItem.type, rotation);
+                    if (replacingPlant) worldManager.spawnDrop(itemForBlock(placementTarget), px, py, pz);
+                    worldManager.setBlock(px, py, pz, heldBlock, rotation);
                     consumeItem(selectedSlotRef.current);
                     lastPlacementTime.current = now;
                     emitPlacementAnimation();
 
                     // Play Sound
-                    const group = getBlockSoundGroup(heldItem.type);
+                    const group = getBlockSoundGroup(heldBlock ?? BlockType.AIR);
                     soundManager.playAt(`block.${group}.place`, {x: px+0.5, y: py+0.5, z: pz+0.5});
                 }
             }
         }
 
-        if (!isContinuous && heldForUse?.type === BlockType.VAULT_CROSSBOW) {
+        if (!isContinuous && heldForUse?.type === ItemType.VAULT_CROSSBOW) {
             const profile = getVaultWeaponProfile(heldForUse.type);
             if (!profile || weaponCooldown.current > 0) return;
-            if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
+            if (!consumeInventoryType(ItemType.VAULT_BOLT)) return;
             camera.getWorldPosition(_camPos);
             camera.getWorldDirection(_camDir);
             const projectileId = vaultProjectileSystem.fire(
@@ -836,14 +838,14 @@ export const InteractionController = ({
                         lastBreakTime.current = now;
                     }
                 } else {
-                    const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+                    const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
                     const targetDef = BLOCKS[targetType];
                     let speedMultiplier = 1;
                     let heldTier = 0;
                     let isBestTool = false;
 
                     if (heldItem) {
-                        const itemDef = BLOCKS[heldItem.type as BlockType];
+                        const itemDef = BLOCKS[heldItem.type];
                         heldTier = itemDef.toolTier || 0;
                         if (targetDef.preferredTool && itemDef.toolType === targetDef.preferredTool) {
                             speedMultiplier = itemDef.toolSpeed || 1;
@@ -861,13 +863,13 @@ export const InteractionController = ({
 
                 let noDrop = false;
                 if (gameMode === 'survival') {
-                    const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+                    const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
                     const targetDef = BLOCKS[targetType];
                     let heldTier = 0;
                     let isBestTool = false;
 
                     if (heldItem) {
-                        const itemDef = BLOCKS[heldItem.type as BlockType];
+                        const itemDef = BLOCKS[heldItem.type];
                         heldTier = itemDef.toolTier || 0;
                         if (targetDef.preferredTool && itemDef.toolType === targetDef.preferredTool) {
                             isBestTool = true;
@@ -944,12 +946,12 @@ export const InteractionController = ({
                     }
                     const droppedItems = worldManager.setBlock(bx, by, bz, BlockType.AIR);
                     if (gameMode === 'survival') {
-                        const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+                        const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
                         const targetDef = BLOCKS[targetType];
                         let heldTier = 0;
                         let isBestTool = false;
                         if (heldItem) {
-                            const itemDef = BLOCKS[heldItem.type as BlockType];
+                            const itemDef = BLOCKS[heldItem.type];
                             heldTier = itemDef.toolTier || 0;
                             if (targetDef.preferredTool && itemDef.toolType === targetDef.preferredTool) {
                                 isBestTool = true;
@@ -969,9 +971,9 @@ export const InteractionController = ({
                             if (targetDef.drops) {
                                 targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
                             } else {
-                                spawnDrop(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType, bx, by, bz);
+                                spawnDrop(itemForBlock(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType), bx, by, bz);
                             }
-                            if (isDoubleSlab) spawnDrop(targetType, bx, by, bz); // second half
+                            if (isDoubleSlab) spawnDrop(itemForBlock(targetType), bx, by, bz); // second half
                         }
                     }
                     breakingRef.current = null; 
@@ -988,8 +990,8 @@ export const InteractionController = ({
         }
 
         if (isRightMouseDown.current) {
-            const heldItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
-            const heldItemDef = heldItem ? BLOCKS[heldItem.type as BlockType] : null;
+            const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
+            const heldItemDef = heldItem ? BLOCKS[heldItem.type] : null;
             
             if (heldItem && heldItemDef && heldItemDef.category === 'food') {
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
@@ -1001,7 +1003,7 @@ export const InteractionController = ({
                     // hand lowers, then the next bite charges, repeating while held.
                     inputState.eating = eatingTimer.current >= 0;
                     if (eatingTimer.current >= 32) {
-                        const def = BLOCKS[heldItem.type as BlockType];
+                        const def = BLOCKS[heldItem.type];
                         if (def.nutrition) {
                             eatFood(foodStateRef.current, def.nutrition, def.saturationModifier || 0.6);
                             consumeItem(selectedSlotRef.current);
@@ -1020,7 +1022,7 @@ export const InteractionController = ({
                 }
             } else {
                 inputState.eating = false;
-                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
+                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === ItemType.BED_ITEM)) {
                     performInteraction(true);
                 }
             }

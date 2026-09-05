@@ -9,7 +9,7 @@ import {
     type InventoryCollection,
     type OpenContainerState,
     ItemStack,
-    BlockType,
+    ItemType,
 } from '../types';
 import { BLOCKS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
@@ -155,7 +155,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
     // --- ADD TO INVENTORY (Synchronous) ---
     // Moved here to share the shadow state with other inventory actions
-    const addToInventory = useCallback((stackOrType: ItemStack | BlockType, count: number = 1): ItemStack | null => {
+    const addToInventory = useCallback((stackOrType: ItemStack | ItemType, count: number = 1): ItemStack | null => {
         const item = typeof stackOrType === 'number'
             ? { type: stackOrType, count }
             : cloneItemStack(stackOrType);

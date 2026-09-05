@@ -1,3 +1,5 @@
+import { getItemDefinitions } from './systems/registry/itemDefinitions';
+import { ItemType } from './types';
 
 import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -104,12 +106,12 @@ const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
 const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
 const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
 const commandItems = Array.from(new Set(
-    Object.values(BLOCKS)
+    getItemDefinitions()
         .filter(Boolean)
         .map(block => toCommandArgument(block.name)),
 )).sort();
 const commandEquippableItems = Array.from(new Set(
-    Object.values(BLOCKS)
+    getItemDefinitions()
         .filter(block => block && slotForItem(block.id))
         .map(block => toCommandArgument(block.name)),
 )).sort();
@@ -1941,9 +1943,9 @@ const App: React.FC = () => {
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
       } else if (parts[0] === '/giveitem' && parts[1]) {
           const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
+          let found: ItemType | null = null;
           for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
+              const t = Number(key) as ItemType;
               const def = BLOCKS[t];
               if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
           }
@@ -1951,9 +1953,9 @@ const App: React.FC = () => {
           else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
       } else if (parts[0] === '/equip' && parts[1]) {
           const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
+          let found: ItemType | null = null;
           for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
+              const t = Number(key) as ItemType;
               const def = BLOCKS[t];
               if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
           }
@@ -2875,7 +2877,7 @@ const App: React.FC = () => {
       enterUIMode();
   }), [enterUIMode, setOpenContainer]);
 
-  const handleSpawnDrop = useCallback((stackOrType: ItemStack | BlockType, x: number, y: number, z: number) => {
+  const handleSpawnDrop = useCallback((stackOrType: ItemStack | ItemType, x: number, y: number, z: number) => {
       worldManager.spawnDrop(stackOrType, x, y, z);
   }, []);
 

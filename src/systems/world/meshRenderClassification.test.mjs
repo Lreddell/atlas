@@ -10,11 +10,11 @@ const mod = await loadTs(`
     export { generateGeometryData } from './src/systems/world/geometry';
     export { CHUNK_SIZE, MIN_Y, MAX_Y } from './src/constants';
     export { index3D } from './src/systems/world/worldCoords';
-    export { BlockType } from './src/types';
+    export { BlockType, ItemType } from './src/types';
     export { CROSS_RENDERED_BLOCKS, isSpriteRenderedType } from './src/data/spriteBlocks';
 `);
 const {
-    generateGeometryData, CHUNK_SIZE, MIN_Y, MAX_Y, index3D, BlockType,
+    generateGeometryData, CHUNK_SIZE, MIN_Y, MAX_Y, index3D, BlockType, ItemType,
     CROSS_RENDERED_BLOCKS, isSpriteRenderedType,
 } = mod;
 const H = MAX_Y - MIN_Y + 1;
@@ -57,7 +57,7 @@ test('sprite classification covers items and every cross block', () => {
     assert.ok(isSpriteRenderedType(BlockType.ECHO_CRYSTAL));
     assert.ok(isSpriteRenderedType(BlockType.ECHO_SPIKES));
     assert.ok(isSpriteRenderedType(BlockType.AMETHYST_CLUSTER));
-    assert.ok(isSpriteRenderedType(BlockType.ECHO_SHARD)); // isItem
+    assert.ok(isSpriteRenderedType(ItemType.ECHO_SHARD)); // isItem
     assert.ok(!isSpriteRenderedType(BlockType.STONE));
     assert.ok(!isSpriteRenderedType(BlockType.ECHO_BRICKS));
 });

@@ -38,9 +38,9 @@ test('runtime opens only the chosen current ascent and resolves at the surface',
 
 test('Vault rewards are conventional equipment and the Titan Hammer remains boss-exclusive', () => {
   for (const item of ['VAULTSTEEL_SPEAR', 'VAULT_CROSSBOW', 'BELLBREAKER_MAUL', 'ECHO_TUNING_FORK', 'TITAN_HAMMER']) {
-    assert.match(guide, new RegExp(`BlockType\\.${item}`));
+    assert.match(guide, new RegExp(`(?:BlockType|ItemType)\\.${item}`));
   }
-  assert.doesNotMatch(loot, /BlockType\.TITAN_HAMMER/);
-  assert.match(entities, /bell_titan:[\s\S]{0,800}drops: \[\{ type: BlockType\.TITAN_HAMMER, min: 1, max: 1, chance: 1 \}\]/);
+  assert.doesNotMatch(loot, /(?:BlockType|ItemType)\.TITAN_HAMMER/);
+  assert.match(entities, /bell_titan:[\s\S]{0,800}drops: \[\{ type: (?:BlockType|ItemType)\.TITAN_HAMMER, min: 1, max: 1, chance: 1 \}\]/);
   assert.doesNotMatch(`${runtime}\n${loot}`, /RESONATOR|PULSE_BRACER|CUSTODIAN_SIGIL|RESONANT_LENS/);
 });

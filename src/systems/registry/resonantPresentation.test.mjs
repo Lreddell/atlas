@@ -46,15 +46,15 @@ test('the final painted canvas is republished to every atlas consumer', () => {
 
 test('slot rendering classifies cutout blocks from metadata rather than an exception list', () => {
   assert.match(slot, /blockDef\.transparent\s*&&\s*blockDef\.noCollision/);
-  assert.doesNotMatch(slot, /item\.type !== BlockType\.ECHO_CRYSTAL/);
-  assert.doesNotMatch(slot, /item\.type !== BlockType\.ECHO_SPIKES/);
+  assert.doesNotMatch(slot, /item\.type !== (?:BlockType|ItemType)\.ECHO_CRYSTAL/);
+  assert.doesNotMatch(slot, /item\.type !== (?:BlockType|ItemType)\.ECHO_SPIKES/);
   assert.match(slot, /ATLAS_UPDATED_EVENT/);
   assert.match(slot, /setAtlasVersion/);
   assert.match(slot, /blockDef\.textureSlot \?\? 0/);
 });
 
 test('all Resonant blocks and items have player-facing purpose text', () => {
-  for (const name of CONTENT_NAMES) assert.match(guide, new RegExp(`BlockType\\.${name}`));
+  for (const name of CONTENT_NAMES) assert.match(guide, new RegExp(`(?:BlockType|ItemType)\\.${name}`));
   assert.match(tooltips, /tone:\s*'purpose'/);
   assert.match(inventory, /line\.tone === 'purpose'/);
   assert.match(inventory, /text-\[#c8dedb\]/);

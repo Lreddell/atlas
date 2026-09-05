@@ -29,7 +29,7 @@ const {
   getVaultCacheLoot,
   seedVaultCache,
 } = await import(`data:text/javascript;base64,${Buffer.from(lootBundle.outputFiles[0].text).toString('base64')}`);
-const BlockType = Object.freeze({
+const ItemType = Object.freeze({
   TORCH: 20,
   APPLE: 112,
   VAULTSTEEL_SPEAR: 182,
@@ -46,19 +46,19 @@ test('critical caches guarantee equipment before its first mandatory use', () =>
   const ranged = getVaultCacheLoot('resonant:4:-2:test', 'ranged', true);
   const heavy = getVaultCacheLoot('resonant:4:-2:test', 'heavy', true);
   const core = getVaultCacheLoot('resonant:4:-2:test', 'core', true);
-  assert.equal(tuning.some(({ itemId }) => itemId === BlockType.ECHO_TUNING_FORK), true);
-  assert.equal(armory.some(({ itemId }) => itemId === BlockType.VAULTSTEEL_SPEAR), true);
-  assert.equal(ranged.some(({ itemId }) => itemId === BlockType.VAULT_CROSSBOW), true);
-  assert.ok(ranged.find(({ itemId }) => itemId === BlockType.VAULT_BOLT)?.count >= 16);
-  assert.equal(heavy.some(({ itemId }) => itemId === BlockType.BELLBREAKER_MAUL), true);
-  assert.equal(core.some(({ itemId }) => itemId === BlockType.TITAN_HAMMER), false);
+  assert.equal(tuning.some(({ itemId }) => itemId === ItemType.ECHO_TUNING_FORK), true);
+  assert.equal(armory.some(({ itemId }) => itemId === ItemType.VAULTSTEEL_SPEAR), true);
+  assert.equal(ranged.some(({ itemId }) => itemId === ItemType.VAULT_CROSSBOW), true);
+  assert.ok(ranged.find(({ itemId }) => itemId === ItemType.VAULT_BOLT)?.count >= 16);
+  assert.equal(heavy.some(({ itemId }) => itemId === ItemType.BELLBREAKER_MAUL), true);
+  assert.equal(core.some(({ itemId }) => itemId === ItemType.TITAN_HAMMER), false);
 });
 
 test('optional supplies are deterministic and repeat core loot does not duplicate the Titan Hammer', () => {
   const first = getVaultCacheLoot('resonant:9:8:test', 'annex_1', false);
   assert.deepEqual(first, getVaultCacheLoot('resonant:9:8:test', 'annex_1', false));
   assert.ok(first.length >= 2);
-  assert.equal(getVaultCacheLoot('resonant:9:8:test', 'core', false).some(({ itemId }) => itemId === BlockType.TITAN_HAMMER), false);
+  assert.equal(getVaultCacheLoot('resonant:9:8:test', 'core', false).some(({ itemId }) => itemId === ItemType.TITAN_HAMMER), false);
 });
 
 test('weighted cache tables vary between vaults instead of repeating one supply recipe', () => {
@@ -87,14 +87,14 @@ test('vault cache metadata preserves facing and owns only bits two through five 
 
 test('seeding is idempotent and never overwrites an occupied chest slot', () => {
   const chest = { items: Array(27).fill(null) };
-  chest.items[13] = { type: BlockType.APPLE, count: 1 };
+  chest.items[13] = { type: ItemType.APPLE, count: 1 };
   const entries = [
-    { slot: 13, itemId: BlockType.ECHO_TUNING_FORK, count: 1 },
-    { slot: 14, itemId: BlockType.TORCH, count: 8 },
+    { slot: 13, itemId: ItemType.ECHO_TUNING_FORK, count: 1 },
+    { slot: 14, itemId: ItemType.TORCH, count: 8 },
   ];
   assert.equal(seedVaultCache(chest, entries), 1);
-  assert.deepEqual(chest.items[13], { type: BlockType.APPLE, count: 1 });
-  assert.deepEqual(chest.items[14], { type: BlockType.TORCH, count: 8 });
+  assert.deepEqual(chest.items[13], { type: ItemType.APPLE, count: 1 });
+  assert.deepEqual(chest.items[14], { type: ItemType.TORCH, count: 8 });
   assert.equal(seedVaultCache(chest, entries), 0);
 });
 

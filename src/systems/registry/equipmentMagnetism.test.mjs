@@ -8,8 +8,8 @@ const ironArmorSet = source.match(/const IRON_ARMOR[\s\S]*?\]\);/)?.[0] ?? '';
 
 test('passive worn-player magnetism is activated only by iron armor', () => {
     for (const piece of ['IRON_HELMET', 'IRON_CHESTPLATE', 'IRON_LEGGINGS', 'IRON_BOOTS']) {
-        assert.match(ironArmorSet, new RegExp(`BlockType\\.${piece}\\b`));
+        assert.match(ironArmorSet, new RegExp(`(?:BlockType|ItemType)\\.${piece}\\b`));
     }
 
-    assert.doesNotMatch(ironArmorSet, /BlockType\.(?:COPPER|GOLD)_/);
+    assert.doesNotMatch(ironArmorSet, /(?:BlockType|ItemType)\.(?:COPPER|GOLD)_/);
 });

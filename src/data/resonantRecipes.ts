@@ -1,6 +1,8 @@
+import { itemForBlock } from '../systems/registry/contentIds';
 import { RECIPES, type Recipe } from '../recipes';
-import { BlockType } from '../types';
-import { RESONANT_SHAPE_FAMILIES } from '../systems/registry/blockFamilies';
+import { ItemType } from '../types';
+import { RESONANT_SHAPE_FAMILIES as BLOCK_RESONANT_SHAPE_FAMILIES } from '../systems/registry/blockFamilies';
+const RESONANT_SHAPE_FAMILIES = BLOCK_RESONANT_SHAPE_FAMILIES.map(f => ({ ...f, material: itemForBlock(f.material), slab: itemForBlock(f.slab), stairs: itemForBlock(f.stairs) }));
 
 const resonantShapeRecipes: Recipe[] = RESONANT_SHAPE_FAMILIES.flatMap(({ material, slab, stairs }) => [
     {
@@ -21,47 +23,47 @@ const resonantShapeRecipes: Recipe[] = RESONANT_SHAPE_FAMILIES.flatMap(({ materi
 ]);
 
 export const RESONANT_RECIPES: Recipe[] = [
-    { gridSize: 2, pattern: [BlockType.ECHO_SHARD, BlockType.ECHO_SHARD, null, null], output: { type: BlockType.ECHO_DUST, count: 4 } },
-    { gridSize: 2, pattern: [BlockType.ECHO_STONE, BlockType.ECHO_STONE, BlockType.ECHO_STONE, BlockType.ECHO_STONE], output: { type: BlockType.ECHO_BRICKS, count: 4 } },
-    { gridSize: 2, pattern: [BlockType.ECHO_BRICKS, BlockType.ECHO_DUST, null, null], output: { type: BlockType.CHISELED_ECHO_STONE, count: 1 } },
-    { gridSize: 2, pattern: [BlockType.ECHO_STONE, BlockType.ECHO_DUST, BlockType.ECHO_STONE, BlockType.ECHO_DUST], output: { type: BlockType.ECHO_MOSAIC, count: 4 } },
-    { gridSize: 2, pattern: [BlockType.FRACTURED_CORE, BlockType.FRACTURED_CORE, null, null], output: { type: BlockType.ECHO_DUST, count: 2 } },
+    { gridSize: 2, pattern: [ItemType.ECHO_SHARD, ItemType.ECHO_SHARD, null, null], output: { type: ItemType.ECHO_DUST, count: 4 } },
+    { gridSize: 2, pattern: [ItemType.ECHO_STONE, ItemType.ECHO_STONE, ItemType.ECHO_STONE, ItemType.ECHO_STONE], output: { type: ItemType.ECHO_BRICKS, count: 4 } },
+    { gridSize: 2, pattern: [ItemType.ECHO_BRICKS, ItemType.ECHO_DUST, null, null], output: { type: ItemType.CHISELED_ECHO_STONE, count: 1 } },
+    { gridSize: 2, pattern: [ItemType.ECHO_STONE, ItemType.ECHO_DUST, ItemType.ECHO_STONE, ItemType.ECHO_DUST], output: { type: ItemType.ECHO_MOSAIC, count: 4 } },
+    { gridSize: 2, pattern: [ItemType.FRACTURED_CORE, ItemType.FRACTURED_CORE, null, null], output: { type: ItemType.ECHO_DUST, count: 2 } },
     { gridSize: 3, pattern: [
-        BlockType.ECHO_STONE, BlockType.ECHO_SHARD, BlockType.ECHO_STONE,
-        BlockType.COPPER_INGOT, BlockType.ECHO_DUST, BlockType.COPPER_INGOT,
-        BlockType.ECHO_STONE, BlockType.ECHO_STONE, BlockType.ECHO_STONE,
-    ], output: { type: BlockType.RESONANCE_PYLON, count: 1 } },
+        ItemType.ECHO_STONE, ItemType.ECHO_SHARD, ItemType.ECHO_STONE,
+        ItemType.COPPER_INGOT, ItemType.ECHO_DUST, ItemType.COPPER_INGOT,
+        ItemType.ECHO_STONE, ItemType.ECHO_STONE, ItemType.ECHO_STONE,
+    ], output: { type: ItemType.RESONANCE_PYLON, count: 1 } },
     { gridSize: 3, pattern: [
-        BlockType.GLASS, BlockType.ECHO_DUST, BlockType.GLASS,
-        BlockType.COPPER_INGOT, BlockType.ECHO_SHARD, BlockType.COPPER_INGOT,
-        BlockType.GLASS, BlockType.ECHO_DUST, BlockType.GLASS,
-    ], output: { type: BlockType.RESONANT_LAMP, count: 2 } },
+        ItemType.GLASS, ItemType.ECHO_DUST, ItemType.GLASS,
+        ItemType.COPPER_INGOT, ItemType.ECHO_SHARD, ItemType.COPPER_INGOT,
+        ItemType.GLASS, ItemType.ECHO_DUST, ItemType.GLASS,
+    ], output: { type: ItemType.RESONANT_LAMP, count: 2 } },
     { gridSize: 3, pattern: [
-        BlockType.ECHO_BRICKS, BlockType.ECHO_DUST, BlockType.ECHO_BRICKS,
-        BlockType.COPPER_INGOT, BlockType.ECHO_SHARD, BlockType.COPPER_INGOT,
-        BlockType.ECHO_BRICKS, BlockType.ECHO_DUST, BlockType.ECHO_BRICKS,
-    ], output: { type: BlockType.PULSE_CONDUIT, count: 4 } },
+        ItemType.ECHO_BRICKS, ItemType.ECHO_DUST, ItemType.ECHO_BRICKS,
+        ItemType.COPPER_INGOT, ItemType.ECHO_SHARD, ItemType.COPPER_INGOT,
+        ItemType.ECHO_BRICKS, ItemType.ECHO_DUST, ItemType.ECHO_BRICKS,
+    ], output: { type: ItemType.PULSE_CONDUIT, count: 4 } },
     { gridSize: 3, pattern: [
-        BlockType.ECHO_MOSAIC, BlockType.ECHO_DUST, BlockType.ECHO_MOSAIC,
-        BlockType.AMETHYST_BLOCK, BlockType.ECHO_SHARD, BlockType.AMETHYST_BLOCK,
-        BlockType.ECHO_MOSAIC, BlockType.ECHO_DUST, BlockType.ECHO_MOSAIC,
-    ], output: { type: BlockType.PHASE_BLOCK, count: 4 } },
+        ItemType.ECHO_MOSAIC, ItemType.ECHO_DUST, ItemType.ECHO_MOSAIC,
+        ItemType.AMETHYST_BLOCK, ItemType.ECHO_SHARD, ItemType.AMETHYST_BLOCK,
+        ItemType.ECHO_MOSAIC, ItemType.ECHO_DUST, ItemType.ECHO_MOSAIC,
+    ], output: { type: ItemType.PHASE_BLOCK, count: 4 } },
     { gridSize: 3, pattern: [
-        BlockType.IRON_INGOT, BlockType.ECHO_DUST, BlockType.IRON_INGOT,
-        BlockType.ECHO_BRICKS, BlockType.ECHO_SHARD, BlockType.ECHO_BRICKS,
-        BlockType.IRON_INGOT, BlockType.ECHO_DUST, BlockType.IRON_INGOT,
-    ], output: { type: BlockType.RESONANCE_PLATE, count: 2 } },
+        ItemType.IRON_INGOT, ItemType.ECHO_DUST, ItemType.IRON_INGOT,
+        ItemType.ECHO_BRICKS, ItemType.ECHO_SHARD, ItemType.ECHO_BRICKS,
+        ItemType.IRON_INGOT, ItemType.ECHO_DUST, ItemType.IRON_INGOT,
+    ], output: { type: ItemType.RESONANCE_PLATE, count: 2 } },
     { gridSize: 3, pattern: [
-        BlockType.ECHO_BRICKS, BlockType.ECHO_BRICKS, BlockType.ECHO_BRICKS,
-        BlockType.ECHO_BRICKS, BlockType.ECHO_CORE, BlockType.ECHO_BRICKS,
-        BlockType.ECHO_BRICKS, BlockType.ECHO_BRICKS, BlockType.ECHO_BRICKS,
-    ], output: { type: BlockType.LISTENING_STONE, count: 1 } },
+        ItemType.ECHO_BRICKS, ItemType.ECHO_BRICKS, ItemType.ECHO_BRICKS,
+        ItemType.ECHO_BRICKS, ItemType.ECHO_CORE, ItemType.ECHO_BRICKS,
+        ItemType.ECHO_BRICKS, ItemType.ECHO_BRICKS, ItemType.ECHO_BRICKS,
+    ], output: { type: ItemType.LISTENING_STONE, count: 1 } },
     ...resonantShapeRecipes,
 ];
 
 let registered = false;
 export function registerResonantRecipes(): void {
-    if (registered || RECIPES.some((recipe) => recipe.output.type === BlockType.ECHO_STONE_SLAB)) return;
+    if (registered || RECIPES.some((recipe) => recipe.output.type === ItemType.ECHO_STONE_SLAB)) return;
     RECIPES.push(...RESONANT_RECIPES);
     registered = true;
 }

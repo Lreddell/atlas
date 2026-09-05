@@ -1,4 +1,4 @@
-import type { BlockType, ItemStack } from '../../types';
+import type { ItemType, ItemStack } from '../../types';
 import { slotForItem } from '../registry/equipment';
 import { getMaxDurability } from '../registry/itemStats';
 import {
@@ -7,7 +7,7 @@ import {
     getStackLimitForCapabilities,
 } from './itemStackRules';
 
-export const getItemStackLimit = (type: BlockType): number =>
+export const getItemStackLimit = (type: ItemType): number =>
     getStackLimitForCapabilities(
         getMaxDurability(type) !== undefined,
         slotForItem(type) !== undefined,

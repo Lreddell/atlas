@@ -3,7 +3,7 @@
 // data layer the build-archetype system grows into, add a weapon/armor's stats
 // here, or override per-instance via ItemStack.instance.stats.
 
-import { BlockType, type ItemStats, type ItemStack } from '../../types';
+import { ItemType, type ItemStats, type ItemStack } from '../../types';
 
 const FIST_ATTACK = 1;
 
@@ -19,95 +19,95 @@ const tool = (attack: number, tier: Tier): ItemStats => ({ attack, maxDurability
 // Reference attack values (copper = between stone and iron).
 // Sword: 4/5/6/7 (gold 4) · Axe: 7/9/9/9 (gold 7) · Pickaxe: 2/3/4/5 (gold 2)
 // Shovel: 2.5/3.5/4.5/5.5 (gold 2.5) · Hoe: 1 across all tiers.
-export const ITEM_STATS: Partial<Record<BlockType, ItemStats>> = {
+export const ITEM_STATS: Partial<Record<ItemType, ItemStats>> = {
     // Swords
-    [BlockType.WOOD_SWORD]: tool(4, 'wood'),
-    [BlockType.STONE_SWORD]: tool(5, 'stone'),
-    [BlockType.COPPER_SWORD]: tool(5, 'copper'),
-    [BlockType.IRON_SWORD]: tool(6, 'iron'),
-    [BlockType.GOLD_SWORD]: tool(4, 'gold'),
-    [BlockType.DIAMOND_SWORD]: tool(7, 'diamond'),
+    [ItemType.WOOD_SWORD]: tool(4, 'wood'),
+    [ItemType.STONE_SWORD]: tool(5, 'stone'),
+    [ItemType.COPPER_SWORD]: tool(5, 'copper'),
+    [ItemType.IRON_SWORD]: tool(6, 'iron'),
+    [ItemType.GOLD_SWORD]: tool(4, 'gold'),
+    [ItemType.DIAMOND_SWORD]: tool(7, 'diamond'),
     // Axes
-    [BlockType.WOOD_AXE]: tool(7, 'wood'),
-    [BlockType.STONE_AXE]: tool(9, 'stone'),
-    [BlockType.COPPER_AXE]: tool(9, 'copper'),
-    [BlockType.IRON_AXE]: tool(9, 'iron'),
-    [BlockType.GOLD_AXE]: tool(7, 'gold'),
-    [BlockType.DIAMOND_AXE]: tool(9, 'diamond'),
+    [ItemType.WOOD_AXE]: tool(7, 'wood'),
+    [ItemType.STONE_AXE]: tool(9, 'stone'),
+    [ItemType.COPPER_AXE]: tool(9, 'copper'),
+    [ItemType.IRON_AXE]: tool(9, 'iron'),
+    [ItemType.GOLD_AXE]: tool(7, 'gold'),
+    [ItemType.DIAMOND_AXE]: tool(9, 'diamond'),
     // Pickaxes
-    [BlockType.WOOD_PICKAXE]: tool(2, 'wood'),
-    [BlockType.STONE_PICKAXE]: tool(3, 'stone'),
-    [BlockType.COPPER_PICKAXE]: tool(3, 'copper'),
-    [BlockType.IRON_PICKAXE]: tool(4, 'iron'),
-    [BlockType.GOLD_PICKAXE]: tool(2, 'gold'),
-    [BlockType.DIAMOND_PICKAXE]: tool(5, 'diamond'),
+    [ItemType.WOOD_PICKAXE]: tool(2, 'wood'),
+    [ItemType.STONE_PICKAXE]: tool(3, 'stone'),
+    [ItemType.COPPER_PICKAXE]: tool(3, 'copper'),
+    [ItemType.IRON_PICKAXE]: tool(4, 'iron'),
+    [ItemType.GOLD_PICKAXE]: tool(2, 'gold'),
+    [ItemType.DIAMOND_PICKAXE]: tool(5, 'diamond'),
     // Shovels
-    [BlockType.WOOD_SHOVEL]: tool(2.5, 'wood'),
-    [BlockType.STONE_SHOVEL]: tool(3.5, 'stone'),
-    [BlockType.COPPER_SHOVEL]: tool(3.5, 'copper'),
-    [BlockType.IRON_SHOVEL]: tool(4.5, 'iron'),
-    [BlockType.GOLD_SHOVEL]: tool(2.5, 'gold'),
-    [BlockType.DIAMOND_SHOVEL]: tool(5.5, 'diamond'),
+    [ItemType.WOOD_SHOVEL]: tool(2.5, 'wood'),
+    [ItemType.STONE_SHOVEL]: tool(3.5, 'stone'),
+    [ItemType.COPPER_SHOVEL]: tool(3.5, 'copper'),
+    [ItemType.IRON_SHOVEL]: tool(4.5, 'iron'),
+    [ItemType.GOLD_SHOVEL]: tool(2.5, 'gold'),
+    [ItemType.DIAMOND_SHOVEL]: tool(5.5, 'diamond'),
     // Hoes (attack 1 at every tier; still have tier durability)
-    [BlockType.WOOD_HOE]: tool(1, 'wood'),
-    [BlockType.STONE_HOE]: tool(1, 'stone'),
-    [BlockType.COPPER_HOE]: tool(1, 'copper'),
-    [BlockType.IRON_HOE]: tool(1, 'iron'),
-    [BlockType.GOLD_HOE]: tool(1, 'gold'),
-    [BlockType.DIAMOND_HOE]: tool(1, 'diamond'),
+    [ItemType.WOOD_HOE]: tool(1, 'wood'),
+    [ItemType.STONE_HOE]: tool(1, 'stone'),
+    [ItemType.COPPER_HOE]: tool(1, 'copper'),
+    [ItemType.IRON_HOE]: tool(1, 'iron'),
+    [ItemType.GOLD_HOE]: tool(1, 'gold'),
+    [ItemType.DIAMOND_HOE]: tool(1, 'diamond'),
 
     // Armor, reference defense points + per-piece durability (factor × 11/16/15/13
     // for helmet/chestplate/leggings/boots). Copper is non-standard: between gold
     // and iron. Polarity boots are unbreakable (key traversal item).
     // Iron (factor 15)
-    [BlockType.IRON_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 165 },
-    [BlockType.IRON_CHESTPLATE]: { defense: 6, slot: 'chestplate', maxDurability: 240 },
-    [BlockType.IRON_LEGGINGS]:   { defense: 5, slot: 'leggings',   maxDurability: 225 },
-    [BlockType.IRON_BOOTS]:      { defense: 2, slot: 'boots',      maxDurability: 195 },
+    [ItemType.IRON_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 165 },
+    [ItemType.IRON_CHESTPLATE]: { defense: 6, slot: 'chestplate', maxDurability: 240 },
+    [ItemType.IRON_LEGGINGS]:   { defense: 5, slot: 'leggings',   maxDurability: 225 },
+    [ItemType.IRON_BOOTS]:      { defense: 2, slot: 'boots',      maxDurability: 195 },
     // Gold (factor 7)
-    [BlockType.GOLD_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 77 },
-    [BlockType.GOLD_CHESTPLATE]: { defense: 5, slot: 'chestplate', maxDurability: 112 },
-    [BlockType.GOLD_LEGGINGS]:   { defense: 3, slot: 'leggings',   maxDurability: 105 },
-    [BlockType.GOLD_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 91 },
+    [ItemType.GOLD_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 77 },
+    [ItemType.GOLD_CHESTPLATE]: { defense: 5, slot: 'chestplate', maxDurability: 112 },
+    [ItemType.GOLD_LEGGINGS]:   { defense: 3, slot: 'leggings',   maxDurability: 105 },
+    [ItemType.GOLD_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 91 },
     // Diamond (factor 33)
-    [BlockType.DIAMOND_HELMET]:     { defense: 3, slot: 'helmet',     maxDurability: 363 },
-    [BlockType.DIAMOND_CHESTPLATE]: { defense: 8, slot: 'chestplate', maxDurability: 528 },
-    [BlockType.DIAMOND_LEGGINGS]:   { defense: 6, slot: 'leggings',   maxDurability: 495 },
-    [BlockType.DIAMOND_BOOTS]:      { defense: 3, slot: 'boots',      maxDurability: 429 },
+    [ItemType.DIAMOND_HELMET]:     { defense: 3, slot: 'helmet',     maxDurability: 363 },
+    [ItemType.DIAMOND_CHESTPLATE]: { defense: 8, slot: 'chestplate', maxDurability: 528 },
+    [ItemType.DIAMOND_LEGGINGS]:   { defense: 6, slot: 'leggings',   maxDurability: 495 },
+    [ItemType.DIAMOND_BOOTS]:      { defense: 3, slot: 'boots',      maxDurability: 429 },
     // Copper (factor 11; defense between gold and iron)
-    [BlockType.COPPER_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 121 },
-    [BlockType.COPPER_CHESTPLATE]: { defense: 4, slot: 'chestplate', maxDurability: 176 },
-    [BlockType.COPPER_LEGGINGS]:   { defense: 4, slot: 'leggings',   maxDurability: 165 },
-    [BlockType.COPPER_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 143 },
+    [ItemType.COPPER_HELMET]:     { defense: 2, slot: 'helmet',     maxDurability: 121 },
+    [ItemType.COPPER_CHESTPLATE]: { defense: 4, slot: 'chestplate', maxDurability: 176 },
+    [ItemType.COPPER_LEGGINGS]:   { defense: 4, slot: 'leggings',   maxDurability: 165 },
+    [ItemType.COPPER_BOOTS]:      { defense: 1, slot: 'boots',      maxDurability: 143 },
     // Polarity boots, controllable polarity; unbreakable.
-    [BlockType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
+    [ItemType.POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
     // Upgraded polarity boots, adds an on/off toggle (N); unbreakable.
-    [BlockType.UPGRADED_POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
+    [ItemType.UPGRADED_POLARITY_BOOTS]: { defense: 1, slot: 'boots' },
 
     // Resonant Vault conventional weapons. Task-specific reach, recovery, and
     // stagger live in vaultWeapons.ts; this shared registry owns base damage and durability.
-    [BlockType.VAULTSTEEL_SPEAR]: { attack: 6, maxDurability: 420 },
-    [BlockType.VAULT_CROSSBOW]: { attack: 7, maxDurability: 360 },
-    [BlockType.BELLBREAKER_MAUL]: { attack: 9, maxDurability: 480 },
-    [BlockType.TITAN_HAMMER]: { attack: 11, maxDurability: 720 },
+    [ItemType.VAULTSTEEL_SPEAR]: { attack: 6, maxDurability: 420 },
+    [ItemType.VAULT_CROSSBOW]: { attack: 7, maxDurability: 360 },
+    [ItemType.BELLBREAKER_MAUL]: { attack: 9, maxDurability: 480 },
+    [ItemType.TITAN_HAMMER]: { attack: 11, maxDurability: 720 },
 };
 
-const VAULT_WEAPONS = new Set<BlockType>([
-    BlockType.VAULTSTEEL_SPEAR,
-    BlockType.VAULT_CROSSBOW,
-    BlockType.BELLBREAKER_MAUL,
-    BlockType.TITAN_HAMMER,
+const VAULT_WEAPONS = new Set<ItemType>([
+    ItemType.VAULTSTEEL_SPEAR,
+    ItemType.VAULT_CROSSBOW,
+    ItemType.BELLBREAKER_MAUL,
+    ItemType.TITAN_HAMMER,
 ]);
 
-export const isVaultWeapon = (type: BlockType): boolean => VAULT_WEAPONS.has(type);
-export const isVaultRangedWeapon = (type: BlockType): boolean => type === BlockType.VAULT_CROSSBOW;
+export const isVaultWeapon = (type: ItemType): boolean => VAULT_WEAPONS.has(type);
+export const isVaultRangedWeapon = (type: ItemType): boolean => type === ItemType.VAULT_CROSSBOW;
 
 /** True for swords (durability-cost rules differ from other tools). */
-const SWORDS = new Set<BlockType>([
-    BlockType.WOOD_SWORD, BlockType.STONE_SWORD, BlockType.COPPER_SWORD,
-    BlockType.IRON_SWORD, BlockType.GOLD_SWORD, BlockType.DIAMOND_SWORD,
+const SWORDS = new Set<ItemType>([
+    ItemType.WOOD_SWORD, ItemType.STONE_SWORD, ItemType.COPPER_SWORD,
+    ItemType.IRON_SWORD, ItemType.GOLD_SWORD, ItemType.DIAMOND_SWORD,
 ]);
-export const isSword = (type: BlockType): boolean => SWORDS.has(type);
+export const isSword = (type: ItemType): boolean => SWORDS.has(type);
 
 /** Effective stats for a stack: per-instance overrides win over the registry. */
 export function getItemStats(stack: ItemStack | null | undefined): ItemStats | undefined {
@@ -124,6 +124,6 @@ export function getAttackDamage(stack: ItemStack | null | undefined): number {
 }
 
 /** Max durability for an item type, or undefined if it is unbreakable. */
-export function getMaxDurability(type: BlockType): number | undefined {
+export function getMaxDurability(type: ItemType): number | undefined {
     return ITEM_STATS[type]?.maxDurability;
 }

@@ -1,6 +1,8 @@
+import { blockForItem } from '../../systems/registry/contentIds';
+import { BlockType } from '../../types';
 
 import React from 'react';
-import { ItemStack, BlockType } from '../../types';
+import { ItemStack, ItemType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import {
   ATLAS_PADDING,
@@ -135,7 +137,7 @@ export const Slot: React.FC<SlotProps> = ({
     bare = false, animateChanges = false, cooldownFraction = 0,
 }) => {
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
+  const previousItemRef = React.useRef<{ type: ItemType; count: number } | null | undefined>(undefined);
   const [, setAtlasVersion] = React.useState(0);
 
   React.useEffect(() => {
@@ -231,7 +233,7 @@ export const Slot: React.FC<SlotProps> = ({
           // full bottom slab + step, whose slab-top would show through under the step).
           const boxes: number[][] = blockDef.shape === 'stairs'
               ? [[0, 0, 0, 1, 1, 0.5], [0, 0, 0.5, 1, 0.5, 1]]
-              : getShapeBoxes(item.type, 0);
+              : getShapeBoxes(blockForItem(item.type) ?? BlockType.UNKNOWN, 0);
 
           const faceEls: React.ReactNode[] = [];
           boxes.forEach((b, bi) => {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockType } from '../../types';
+import { ItemType } from '../../types';
 import type { NavigationPath, NavigationProfile, NavigationVector } from './navigation/navigationTypes';
 import type { NavigationTicket } from './navigation/NavigationPlanner';
 
@@ -133,7 +133,7 @@ export interface Projectile {
 }
 
 export interface DropSpec {
-    type: BlockType;
+    type: ItemType;
     min: number;
     max: number;
     chance?: number; // 0..1, default 1
@@ -259,7 +259,7 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         color: 0x8d6e63,
         passive: true,
         floats: true,
-        drops: [{ type: BlockType.BOAT, min: 1, max: 1 }],
+        drops: [{ type: ItemType.BOAT, min: 1, max: 1 }],
     },
     magnetic_warden: {
         id: 'magnetic_warden',
@@ -308,6 +308,6 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         slamMaxRadius: 26,
         slamRingSpeed: 15,
         frenzyThreshold: 0.25,
-        drops: [{ type: BlockType.POLARITY_BOOTS_UPGRADE, min: 1, max: 1 }],
+        drops: [{ type: ItemType.POLARITY_BOOTS_UPGRADE, min: 1, max: 1 }],
     },
 };

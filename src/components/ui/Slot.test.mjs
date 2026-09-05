@@ -22,7 +22,7 @@ test('creative tabs render a bare icon and left-align fifteen-slot rows', () => 
     assert.match(inventory, /flex flex-wrap gap-1 content-start/);
     assert.doesNotMatch(inventory, /flex flex-wrap justify-center/);
     assert.doesNotMatch(inventory, /scrollbar-gutter/);
-    assert.match(inventory, /b\.id !== BlockType\.DEBUG_CROSS/);
+    assert.match(inventory, /b\.id !== (?:BlockType|ItemType)\.DEBUG_CROSS/);
     assert.doesNotMatch(inventory, /backdrop-blur/);
 });
 

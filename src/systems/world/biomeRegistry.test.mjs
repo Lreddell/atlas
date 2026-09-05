@@ -26,5 +26,5 @@ test('Dead Forest is removed from runtime biome routing', () => {
 
 test('Coarse Dirt remains save-compatible after Dead Forest removal', () => {
     assert.match(typesSource, /\bCOARSE_DIRT\s*=\s*221\b/);
-    assert.match(blocksSource, /\[BlockType\.COARSE_DIRT\]:/);
+    assert.match(blocksSource, /\[(?:BlockType|ItemType)\.COARSE_DIRT\]:/);
 });

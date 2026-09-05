@@ -42,7 +42,7 @@ test('simulateStep has a boat path: surface glide, buoyancy, no hull jumping', (
 
 test('the boat is a real passive world entity with drops', () => {
     // Registered kind: passive (no AI/aggro/combat music), floats, drops its item.
-    assert.match(entity, /boat:\s*\{[\s\S]*?id:\s*'boat'[\s\S]*?passive:\s*true[\s\S]*?floats:\s*true[\s\S]*?drops:\s*\[\{\s*type:\s*BlockType\.BOAT/);
+    assert.match(entity, /boat:\s*\{[\s\S]*?id:\s*'boat'[\s\S]*?passive:\s*true[\s\S]*?floats:\s*true[\s\S]*?drops:\s*\[\{\s*type:\s*(?:BlockType|ItemType)\.BOAT/);
     // The manager routes passive kinds to their own tick (no boss/AI logic)...
     assert.match(manager, /if \(kind\.passive\) \{\s*\n\s*this\.tickPassive\(e, kind, dt\);\s*\n\s*continue;/);
     // ...where an unridden floating hull gets buoyancy and a ridden one is
@@ -58,7 +58,7 @@ test('the boat is a real passive world entity with drops', () => {
 test('placement consumes the item in survival only; boarding is a right-click', () => {
     // Using a held Boat item on water places an entity; success + survival →
     // consume one from the stack (creative keeps it).
-    assert.match(interaction, /held\?\.type === BlockType\.BOAT && onPlaceBoat/);
+    assert.match(interaction, /held\?\.type === (?:BlockType|ItemType)\.BOAT && onPlaceBoat/);
     assert.match(interaction, /if \(onPlaceBoat\(bx, by, bz\) && gameMode === 'survival'\) \{\s*\n\s*consumeItem\(selectedSlotRef\.current\);/);
     // Right-clicking a (visible, unridden) boat entity boards it.
     assert.match(interaction, /entity\?\.kind === 'boat' && !entity\.ridden/);
@@ -70,7 +70,7 @@ test('boat placement is a traversal exception to the sealed-region edit policy',
     // Boats are traversal, not terrain editing: placing one on water is exempt
     // from canPlayerEdit, unlike block placement, so a boat can be launched
     // on sealed water (e.g. inside an unsolved Magnetic Fields region).
-    const placeIdx = interaction.indexOf("held?.type === BlockType.BOAT && onPlaceBoat");
+    const placeIdx = interaction.indexOf("held?.type === ItemType.BOAT && onPlaceBoat");
     const block = interaction.slice(placeIdx, placeIdx + 400);
     assert.ok(placeIdx !== -1, 'boat placement branch must exist');
     assert.doesNotMatch(block, /canPlayerEdit/, 'boat placement must not be gated by the sealed-region edit check');

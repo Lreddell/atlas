@@ -43,11 +43,11 @@ test('hoes are explicitly excluded from mining stats, with the reason documented
     // no mining line; they still show Attack + Durability via ITEM_STATS.
     assert.match(tooltips, /Hoes are deliberately absent/);
     const blocks = read('src/data/blocks.ts');
-    assert.doesNotMatch(blocks, /BlockType\.WOOD_HOE\]:[^\n]*toolType/);
-    assert.doesNotMatch(blocks, /BlockType\.IRON_HOE\]:[^\n]*toolType/);
+    assert.doesNotMatch(blocks, /(?:BlockType|ItemType)\.WOOD_HOE\]:[^\n]*toolType/);
+    assert.doesNotMatch(blocks, /(?:BlockType|ItemType)\.IRON_HOE\]:[^\n]*toolType/);
     // Hoes DO have combat stats, so the tooltip still has content for them.
     const stats = read('src/systems/registry/itemStats.ts');
-    assert.match(stats, /\[BlockType\.IRON_HOE\]:\s*tool\(/);
+    assert.match(stats, /\[(?:BlockType|ItemType)\.IRON_HOE\]:\s*tool\(/);
 });
 
 test('tooltips omit tier labels and purple informational descriptions', () => {

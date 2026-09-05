@@ -1,4 +1,4 @@
-import { BlockType } from '../../types';
+import { ItemType } from '../../types';
 import { ENTITY_KINDS, type EntityKind } from './Entity';
 import { registerVaultEnemies } from './resonantVaultEnemies';
 
@@ -21,7 +21,7 @@ export const RESONANT_ENTITY_KINDS: Record<string, EntityKind> = {
         isBoss: true,
         leashRadius: 17,
         // The signature weapon belongs to the Titan, never an earlier cache.
-        drops: [{ type: BlockType.TITAN_HAMMER, min: 1, max: 1, chance: 1 }],
+        drops: [{ type: ItemType.TITAN_HAMMER, min: 1, max: 1, chance: 1 }],
     },
 };
 
@@ -30,9 +30,9 @@ export function registerResonantEntities(): void {
     if (registered) return;
     Object.assign(ENTITY_KINDS, RESONANT_ENTITY_KINDS);
     registerVaultEnemies(ENTITY_KINDS, {
-        fracturedCore: BlockType.FRACTURED_CORE,
-        echoShard: BlockType.ECHO_SHARD,
-        vaultBolt: BlockType.VAULT_BOLT,
+        fracturedCore: ItemType.FRACTURED_CORE,
+        echoShard: ItemType.ECHO_SHARD,
+        vaultBolt: ItemType.VAULT_BOLT,
     });
     registered = true;
 }

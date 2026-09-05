@@ -1,4 +1,4 @@
-import { BlockType } from '../../types.ts';
+import { ItemType } from '../../types.ts';
 import { ProgressionStore } from '../progression/ProgressionStore.ts';
 import {
     advanceBellTitan,
@@ -75,9 +75,9 @@ function getGuaranteedWeapons(vaultId: string): Array<'spear' | 'crossbow' | 'ma
     const caches: VaultCacheId[] = ['armory', 'ranged', 'heavy'];
     const items = caches.flatMap((cacheId) => getVaultCacheLoot(vaultId, cacheId, false));
     const weapons: Array<'spear' | 'crossbow' | 'maul'> = [];
-    if (items.some(({ itemId }) => itemId === BlockType.VAULTSTEEL_SPEAR)) weapons.push('spear');
-    if (items.some(({ itemId }) => itemId === BlockType.VAULT_CROSSBOW)) weapons.push('crossbow');
-    if (items.some(({ itemId }) => itemId === BlockType.BELLBREAKER_MAUL)) weapons.push('maul');
+    if (items.some(({ itemId }) => itemId === ItemType.VAULTSTEEL_SPEAR)) weapons.push('spear');
+    if (items.some(({ itemId }) => itemId === ItemType.VAULT_CROSSBOW)) weapons.push('crossbow');
+    if (items.some(({ itemId }) => itemId === ItemType.BELLBREAKER_MAUL)) weapons.push('maul');
     return weapons;
 }
 
@@ -87,7 +87,7 @@ function countUnusualArtifacts(vaultId: string): number {
     ];
     return caches
         .flatMap((cacheId) => getVaultCacheLoot(vaultId, cacheId, true))
-        .reduce((count, entry) => count + (entry.itemId === BlockType.ECHO_TUNING_FORK ? entry.count : 0), 0);
+        .reduce((count, entry) => count + (entry.itemId === ItemType.ECHO_TUNING_FORK ? entry.count : 0), 0);
 }
 
 function defeatBellTitan(): BellTitanState {

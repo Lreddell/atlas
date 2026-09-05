@@ -60,6 +60,6 @@ test('dropped magnet polarity repels matching poles and attracts opposite poles'
 test('drop physics passes negative polarity only for negative magnet items', () => {
     assert.match(
         dropManagerSource,
-        /drop\.type === BlockType\.NEGATIVE_MAGNET \? -1 : 1/,
+        /drop\.type === (?:BlockType|ItemType)\.NEGATIVE_MAGNET \? -1 : 1/,
     );
 });

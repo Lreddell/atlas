@@ -53,7 +53,12 @@ values are 4, 77, 90, 172, 174, 175, 176, 188, and 189. Light and placement
 metadata are independent byte arrays. Container contents currently exist only
 in memory, so the new save contract must add their persistence.
 
-Browser/Electron gameplay and frame pacing remain pending.
+Browser baseline: Standard survival world `High Reach Baseline`, seed `1729`,
+loaded and rendered without console errors. Screenshot:
+`output/playwright/high-reach/baseline-standard.png`. Three-second stationary
+requestAnimationFrame sample at 1280x720 on the AMD RX 6650 XT / ANGLE D3D11:
+180 samples, p50 16.7 ms, p95/p99 16.8 ms. This is a short stationary sample,
+not representative chapter gameplay. Electron gameplay remains pending.
 No 60 FPS, playtime, migration, or completion claim is made from these checks.
 
 ## Dependency and risk map
@@ -78,6 +83,15 @@ that say Atlas has no automated tests or only IndexedDB persistence.
 
 - [ ] 0. Reproducible audit, runtime and storage baseline, risk map.
 - [ ] 1. Stable registries and item/block split; existing content unchanged.
+
+Registry implementation: `BlockId` and `ItemId` now use distinct enum domains;
+inventory, recipes, equipment, loot, and use profiles consume `ItemId`. Placement
+and block drops cross explicit registry adapters. Legacy numeric handles remain
+runtime conveniences. A frozen 256-entry namespaced map includes every retired
+slot. Saplings have explicit identities in both domains, preserving their placed
+form despite the historical sprite flag. Compile-time tests reject accidental
+item/block assignment, and runtime tests cover all legacy entries and collisions.
+Save-wire migration is the next gate; the new key map is not yet the live codec.
 - [ ] 2. Palette chunks, versioned saves/exports, frozen migration and golden fixtures.
 - [ ] 3. Separate dimension domains; transactional transfer, return, recovery, lifecycle.
 - [ ] 4. Complete shared combat foundation and all 13 Combat Lab facilities.

@@ -12,7 +12,7 @@ const bundle = await build({
   platform: 'node',
   stdin: {
     contents: `
-      import { BlockType } from './src/types.ts';
+      import { BlockType, ItemType } from './src/types.ts';
       import { BLOCKS } from './src/data/blocks.ts';
       import { RESONANT_RECIPES } from './src/data/resonantRecipes.ts';
       import { getItemCatalogEntry, isInventoryOnlyItemId } from './src/systems/registry/itemCatalog.ts';
@@ -20,7 +20,7 @@ const bundle = await build({
       import { getItemStats, isVaultRangedWeapon, isVaultWeapon } from './src/systems/registry/itemStats.ts';
       import { RESONANT_SHAPE_FAMILIES } from './src/systems/registry/blockFamilies.ts';
       import { getResonantTilePixels } from './src/systems/textures/resonantTexturePixels.ts';
-      export { BlockType, BLOCKS, RESONANT_RECIPES, getItemCatalogEntry, isInventoryOnlyItemId, isWorldBlockId, getItemStats, isVaultRangedWeapon, isVaultWeapon, RESONANT_SHAPE_FAMILIES, getResonantTilePixels };
+      export { BlockType, ItemType, BLOCKS, RESONANT_RECIPES, getItemCatalogEntry, isInventoryOnlyItemId, isWorldBlockId, getItemStats, isVaultRangedWeapon, isVaultWeapon, RESONANT_SHAPE_FAMILIES, getResonantTilePixels };
     `,
     resolveDir: root,
     sourcefile: 'resonant-definitive-content-entry.ts',
@@ -29,7 +29,7 @@ const bundle = await build({
 });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`;
 const {
-  BlockType,
+  BlockType, ItemType,
   BLOCKS,
   RESONANT_RECIPES,
   getItemCatalogEntry,
@@ -56,7 +56,7 @@ const expected = {
 };
 
 test('definitive vault IDs, classification, shapes, and weapon stats are exact', () => {
-  for (const [name, id] of Object.entries(expected)) assert.equal(BlockType[name], id);
+  for (const [name, id] of Object.entries(expected)) assert.equal((id < 182 ? BlockType : ItemType)[name], id);
   for (const id of [178, 179, 180, 181]) {
     assert.equal(isWorldBlockId(id), true);
     assert.equal(isInventoryOnlyItemId(id), false);
@@ -69,10 +69,10 @@ test('definitive vault IDs, classification, shapes, and weapon stats are exact',
   assert.equal(BLOCKS[BlockType.ECHO_STONE_SLAB].shape, 'slab');
   assert.equal(BLOCKS[BlockType.ECHO_STONE_STAIRS].shape, 'stairs');
   assert.equal(BLOCKS[BlockType.ECHO_BRICK_SLAB].textureParent, BlockType.ECHO_BRICKS);
-  assert.equal(isVaultWeapon(BlockType.VAULTSTEEL_SPEAR), true);
-  assert.equal(isVaultWeapon(BlockType.VAULT_CROSSBOW), true);
-  assert.equal(isVaultRangedWeapon(BlockType.VAULT_CROSSBOW), true);
-  assert.ok(getItemStats({ type: BlockType.BELLBREAKER_MAUL, count: 1 })?.attack);
+  assert.equal(isVaultWeapon(ItemType.VAULTSTEEL_SPEAR), true);
+  assert.equal(isVaultWeapon(ItemType.VAULT_CROSSBOW), true);
+  assert.equal(isVaultRangedWeapon(ItemType.VAULT_CROSSBOW), true);
+  assert.ok(getItemStats({ type: ItemType.BELLBREAKER_MAUL, count: 1 })?.attack);
   for (const retired of [172, 174, 175, 176]) assert.equal(BLOCKS[retired], undefined);
   assert.equal(BLOCKS[188], undefined);
   assert.equal(BLOCKS[189], undefined);

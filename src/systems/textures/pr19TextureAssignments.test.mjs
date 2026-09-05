@@ -31,7 +31,7 @@ const BLOCK_TEXTURED_ITEMS = new Set([
     'UPGRADED_POLARITY_BOOTS',
 ]);
 
-const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];
+const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[(?:BlockType|ItemType)\.([A-Z0-9_]+)\]:/gm)];
 const itemEntries = blockEntryStarts.flatMap((match, index) => {
     const body = blocksSource.slice(
         match.index,
@@ -119,7 +119,7 @@ test('material armor uses dedicated slots instead of ingredient fallbacks', () =
     for (const [type, slot] of Object.entries(dedicatedArmorSlots)) {
         assert.match(
             blocksSource,
-            new RegExp(`BlockType\\.${type}\\][^\\n]*textureSlot:\\s*${slot}\\b`),
+            new RegExp(`(?:BlockType|ItemType)\\.${type}\\][^\\n]*textureSlot:\\s*${slot}\\b`),
         );
     }
 });
@@ -283,7 +283,7 @@ test('PR 19 items use unique dedicated atlas slots and PNG assets', () => {
     for (const [blockName, [slot, relativePath]] of Object.entries(assignments)) {
         assert.match(
             blocksSource,
-            new RegExp(`BlockType\\.${blockName}\\][^\\n]*textureSlot:\\s*${slot}\\b`),
+            new RegExp(`(?:BlockType|ItemType)\\.${blockName}\\][^\\n]*textureSlot:\\s*${slot}\\b`),
         );
         assert.match(
             mappingSource,

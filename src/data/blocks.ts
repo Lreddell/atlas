@@ -1,32 +1,33 @@
 
 
-import { BlockType, BlockDef } from '../types';
+import { BlockType, ItemType, BlockDef } from '../types';
 
-export const BLOCKS: Record<BlockType, BlockDef> = {
+export const BLOCKS: Record<number, BlockDef> = {
+  [BlockType.UNKNOWN]: { id: BlockType.UNKNOWN, color: '#dd53c9', name: 'Unknown content (preserved)', hardness: 2, textureSlot: 39 },
   [BlockType.AIR]: { id: BlockType.AIR, color: '', name: 'Air', transparent: true, hardness: 0 },
   [BlockType.BEDROCK]: { id: BlockType.BEDROCK, color: '#212121', name: 'Bedrock', textureSlot: 6, hardness: Infinity, category: 'natural' },
   [BlockType.DIRT]: { id: BlockType.DIRT, color: '#5d4037', name: 'Dirt', textureSlot: 0, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
   [BlockType.GRASS]: { 
       id: BlockType.GRASS, color: '#388e3c', name: 'Grass', textureSlot: 1, hardness: 0.6, preferredTool: 'shovel',
-      drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
-  [BlockType.SAND]: { id: BlockType.SAND, color: '#fbc02d', name: 'Sand', textureSlot: 5, hardness: 0.5, preferredTool: 'shovel', smeltsInto: BlockType.GLASS, category: 'natural' },
+  [BlockType.SAND]: { id: BlockType.SAND, color: '#fbc02d', name: 'Sand', textureSlot: 5, hardness: 0.5, preferredTool: 'shovel', smeltsInto: ItemType.GLASS, category: 'natural' },
   [BlockType.STONE]: { 
       id: BlockType.STONE, color: '#757575', name: 'Stone', textureSlot: 2, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1,
-      drops: [{ type: BlockType.COBBLESTONE, chance: 1, min: 1, max: 1 }],
-      smeltsInto: BlockType.STONE, category: 'building'
+      drops: [{ type: ItemType.COBBLESTONE, chance: 1, min: 1, max: 1 }],
+      smeltsInto: ItemType.STONE, category: 'building'
   },
-  [BlockType.COBBLESTONE]: { id: BlockType.COBBLESTONE, color: '#616161', name: 'Cobblestone', textureSlot: 10, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.COBBLESTONE]: { id: BlockType.COBBLESTONE, color: '#616161', name: 'Cobblestone', textureSlot: 10, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.STONE, category: 'building' },
   [BlockType.BRICK]: { id: BlockType.BRICK, color: '#b71c1c', name: 'Brick', textureSlot: 9, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
-  [BlockType.LOG]: { id: BlockType.LOG, color: '#3e2723', name: 'Oak Log', textureSlot: 7, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.LOG]: { id: BlockType.LOG, color: '#3e2723', name: 'Oak Log', textureSlot: 7, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.OAK_PLANKS]: { id: BlockType.OAK_PLANKS, color: '#8d6e63', name: 'Oak Planks', textureSlot: 8, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
   [BlockType.GLASS]: { id: BlockType.GLASS, color: '#81d4fa', name: 'Glass', transparent: true, textureSlot: 11, hardness: 0.3, minHarvestTier: 100, category: 'building' },
   [BlockType.LEAVES]: { 
       id: BlockType.LEAVES, color: '#2e7d32', name: 'Leaves', transparent: true, textureSlot: 4, hardness: 0.2,
       drops: [
-          { type: BlockType.SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.APPLE, chance: 0.02, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.APPLE, chance: 0.02, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
   [BlockType.WATER]: { id: BlockType.WATER, color: '#0288d1', name: 'Water', transparent: true, textureSlot: 14, hardness: 100, category: 'natural' },
@@ -42,50 +43,50 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.CACTUS]: { id: BlockType.CACTUS, color: '#4caf50', name: 'Cactus', textureSlot: 21, hardness: 0.4, category: 'natural', noCollision: false }, // Opaque solid block
   [BlockType.DEAD_BUSH]: { 
       id: BlockType.DEAD_BUSH, color: '#6d4c41', name: 'Dead Bush', textureSlot: 22, hardness: 0, transparent: true, noCollision: true, 
-      drops: [{ type: BlockType.STICK, chance: 0.5, min: 0, max: 2 }], category: 'natural' 
+      drops: [{ type: ItemType.STICK, chance: 0.5, min: 0, max: 2 }], category: 'natural'
   },
-  [BlockType.SPRUCE_LOG]: { id: BlockType.SPRUCE_LOG, color: '#3e2723', name: 'Spruce Log', textureSlot: 23, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.SPRUCE_LOG]: { id: BlockType.SPRUCE_LOG, color: '#3e2723', name: 'Spruce Log', textureSlot: 23, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.SPRUCE_LEAVES]: { 
       id: BlockType.SPRUCE_LEAVES, color: '#1b5e20', name: 'Spruce Leaves', transparent: true, textureSlot: 24, hardness: 0.2, 
       drops: [
-          { type: BlockType.SPRUCE_SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.SPRUCE_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural' 
   },
   [BlockType.SNOWY_GRASS]: { 
       id: BlockType.SNOWY_GRASS, color: '#ffffff', name: 'Snowy Grass', textureSlot: 25, hardness: 0.6, preferredTool: 'shovel',
-      drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.SPRUCE_PLANKS]: { id: BlockType.SPRUCE_PLANKS, color: '#5d4037', name: 'Spruce Planks', textureSlot: 27, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
 
   // --- FOREST / BIRCH ---
-  [BlockType.BIRCH_LOG]: { id: BlockType.BIRCH_LOG, color: '#e3dfd3', name: 'Birch Log', textureSlot: 87, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.BIRCH_LOG]: { id: BlockType.BIRCH_LOG, color: '#e3dfd3', name: 'Birch Log', textureSlot: 87, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.BIRCH_LEAVES]: { 
       id: BlockType.BIRCH_LEAVES, color: '#81c784', name: 'Birch Leaves', transparent: true, textureSlot: 89, hardness: 0.2, 
       drops: [
-          { type: BlockType.BIRCH_SAPLING, chance: 0.05, min: 1, max: 1 }, 
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.BIRCH_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], 
       category: 'natural' 
   },
   [BlockType.BIRCH_PLANKS]: { id: BlockType.BIRCH_PLANKS, color: '#fff9c4', name: 'Birch Planks', textureSlot: 90, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
 
   // --- CHERRY GROVE ---
-  [BlockType.CHERRY_LOG]: { id: BlockType.CHERRY_LOG, color: '#3e1e24', name: 'Cherry Log', textureSlot: 74, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.CHERRY_LOG]: { id: BlockType.CHERRY_LOG, color: '#3e1e24', name: 'Cherry Log', textureSlot: 74, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.CHERRY_LEAVES]: { 
       id: BlockType.CHERRY_LEAVES, color: '#f8bbd0', name: 'Cherry Leaves', transparent: true, textureSlot: 76, hardness: 0.2, 
       drops: [
-          { type: BlockType.CHERRY_SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.CHERRY_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural' 
   },
   [BlockType.CHERRY_PLANKS]: { id: BlockType.CHERRY_PLANKS, color: '#f48fb1', name: 'Cherry Planks', textureSlot: 77, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
   [BlockType.PINK_FLOWER]: { id: BlockType.PINK_FLOWER, color: '#f48fb1', name: 'Pink Petals', textureSlot: 86, hardness: 0, transparent: true, noCollision: true, category: 'natural' },
 
   // --- RED MESA ---
-  [BlockType.RED_SAND]: { id: BlockType.RED_SAND, color: '#d84315', name: 'Red Sand', textureSlot: 78, hardness: 0.5, preferredTool: 'shovel', smeltsInto: BlockType.GLASS, category: 'natural' },
+  [BlockType.RED_SAND]: { id: BlockType.RED_SAND, color: '#d84315', name: 'Red Sand', textureSlot: 78, hardness: 0.5, preferredTool: 'shovel', smeltsInto: ItemType.GLASS, category: 'natural' },
   [BlockType.RED_SANDSTONE]: { id: BlockType.RED_SANDSTONE, color: '#bf360c', name: 'Red Sandstone', textureSlot: 79, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
-  [BlockType.TERRACOTTA]: { id: BlockType.TERRACOTTA, color: '#a1887f', name: 'Terracotta', textureSlot: 80, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.BRICK, category: 'building' },
+  [BlockType.TERRACOTTA]: { id: BlockType.TERRACOTTA, color: '#a1887f', name: 'Terracotta', textureSlot: 80, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.BRICK, category: 'building' },
   [BlockType.TERRACOTTA_YELLOW]: { id: BlockType.TERRACOTTA_YELLOW, color: '#fbc02d', name: 'Yellow Terracotta', textureSlot: 81, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
   [BlockType.TERRACOTTA_RED]: { id: BlockType.TERRACOTTA_RED, color: '#8d6e63', name: 'Red Terracotta', textureSlot: 82, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
   [BlockType.TERRACOTTA_WHITE]: { id: BlockType.TERRACOTTA_WHITE, color: '#d1b1a1', name: 'White Terracotta', textureSlot: 91, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
@@ -101,7 +102,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // --- PLANTS ---
   [BlockType.GRASS_PLANT]: { 
       id: BlockType.GRASS_PLANT, color: '#388e3c', name: 'Grass', textureSlot: 29, hardness: 0, transparent: true, noCollision: true, 
-      drops: [{ type: BlockType.WHEAT_SEEDS, chance: 0.125, min: 1, max: 1 }], category: 'natural' 
+      drops: [{ type: ItemType.WHEAT_SEEDS, chance: 0.125, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.ROSE]: { id: BlockType.ROSE, color: '#d32f2f', name: 'Rose', textureSlot: 30, hardness: 0, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.DANDELION]: { id: BlockType.DANDELION, color: '#fbc02d', name: 'Dandelion', textureSlot: 31, hardness: 0, transparent: true, noCollision: true, category: 'natural' },
@@ -112,251 +113,251 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   // --- ORES ---
   [BlockType.COAL_ORE]: { 
       id: BlockType.COAL_ORE, color: '#212121', name: 'Coal Ore', textureSlot: 15, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1,
-      drops: [{ type: BlockType.COAL, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.COAL, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.IRON_ORE]: { 
       id: BlockType.IRON_ORE, color: '#d7ccc8', name: 'Iron Ore', textureSlot: 16, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 2, 
-      drops: [{ type: BlockType.RAW_IRON, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.RAW_IRON, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.COPPER_ORE]: { 
       id: BlockType.COPPER_ORE, color: '#e67e22', name: 'Copper Ore', textureSlot: 58, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 2,
-      drops: [{ type: BlockType.RAW_COPPER, chance: 1, min: 2, max: 5 }], category: 'natural'
+      drops: [{ type: ItemType.RAW_COPPER, chance: 1, min: 2, max: 5 }], category: 'natural'
   },
   [BlockType.GOLD_ORE]: {
       id: BlockType.GOLD_ORE, color: '#fdd835', name: 'Gold Ore', textureSlot: 96, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 3,
-      drops: [{ type: BlockType.RAW_GOLD, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.RAW_GOLD, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.DIAMOND_ORE]: {
       id: BlockType.DIAMOND_ORE, color: '#00bcd4', name: 'Diamond Ore', textureSlot: 97, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 3,
-      drops: [{ type: BlockType.DIAMOND, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.DIAMOND, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   [BlockType.LAPIS_ORE]: {
       id: BlockType.LAPIS_ORE, color: '#1a237e', name: 'Lapis Ore', textureSlot: 98, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 2,
-      drops: [{ type: BlockType.LAPIS_LAZULI, chance: 1, min: 4, max: 9 }], category: 'natural'
+      drops: [{ type: ItemType.LAPIS_LAZULI, chance: 1, min: 4, max: 9 }], category: 'natural'
   },
   [BlockType.EMERALD_ORE]: {
       id: BlockType.EMERALD_ORE, color: '#00e676', name: 'Emerald Ore', textureSlot: 99, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 3,
-      drops: [{ type: BlockType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural'
+      drops: [{ type: ItemType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural'
   },
   
   [BlockType.CRAFTING_TABLE]: { id: BlockType.CRAFTING_TABLE, color: '#8d6e63', name: 'Crafting Table', textureSlot: 43, hardness: 2.5, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'functional' },
   [BlockType.FURNACE]: { id: BlockType.FURNACE, color: '#616161', name: 'Furnace', textureSlot: 44, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional' },
   [BlockType.FURNACE_ACTIVE]: { 
       id: BlockType.FURNACE_ACTIVE, color: '#616161', name: 'Furnace', textureSlot: 47, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1,
-      drops: [{ type: BlockType.FURNACE, chance: 1, min: 1, max: 1 }]
+      drops: [{ type: ItemType.FURNACE, chance: 1, min: 1, max: 1 }]
   },
   [BlockType.CHEST]: { id: BlockType.CHEST, color: '#8d6e63', name: 'Chest', textureSlot: 52, hardness: 2.5, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'functional' },
   [BlockType.TORCH]: { id: BlockType.TORCH, color: '#ffd600', name: 'Torch', textureSlot: 56, hardness: 0, transparent: true, lightLevel: 14, noCollision: true, category: 'functional' },
   
   [BlockType.BED_FOOT]: { 
       id: BlockType.BED_FOOT, color: '#c62828', name: 'Bed', textureSlot: 65, hardness: 0.2, transparent: true, 
-      drops: [{ type: BlockType.BED_ITEM, chance: 1, min: 1, max: 1 }]
+      drops: [{ type: ItemType.BED_ITEM, chance: 1, min: 1, max: 1 }]
   },
   [BlockType.BED_HEAD]: { 
       id: BlockType.BED_HEAD, color: '#c62828', name: 'Bed', textureSlot: 66, hardness: 0.2, transparent: true,
-      drops: [{ type: BlockType.BED_ITEM, chance: 1, min: 1, max: 1 }]
+      drops: [{ type: ItemType.BED_ITEM, chance: 1, min: 1, max: 1 }]
   },
-  [BlockType.BED_ITEM]: { id: BlockType.BED_ITEM, color: '#c62828', name: 'Bed', textureSlot: 67, hardness: 0, isItem: true, category: 'functional' },
+  [ItemType.BED_ITEM]: { id: ItemType.BED_ITEM, color: '#c62828', name: 'Bed', textureSlot: 67, hardness: 0, isItem: true, category: 'functional' },
 
-  [BlockType.WOOD_PICKAXE]: { id: BlockType.WOOD_PICKAXE, color: '#8d6e63', name: 'Wood Pickaxe', textureSlot: 32, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'pickaxe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
-  [BlockType.STONE_PICKAXE]: { id: BlockType.STONE_PICKAXE, color: '#757575', name: 'Stone Pickaxe', textureSlot: 33, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
-  [BlockType.IRON_PICKAXE]: { id: BlockType.IRON_PICKAXE, color: '#d7ccc8', name: 'Iron Pickaxe', textureSlot: 34, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'pickaxe', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_PICKAXE]: { id: BlockType.COPPER_PICKAXE, color: '#e67e22', name: 'Copper Pickaxe', textureSlot: 61, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
+  [ItemType.WOOD_PICKAXE]: { id: ItemType.WOOD_PICKAXE, color: '#8d6e63', name: 'Wood Pickaxe', textureSlot: 32, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'pickaxe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [ItemType.STONE_PICKAXE]: { id: ItemType.STONE_PICKAXE, color: '#757575', name: 'Stone Pickaxe', textureSlot: 33, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
+  [ItemType.IRON_PICKAXE]: { id: ItemType.IRON_PICKAXE, color: '#d7ccc8', name: 'Iron Pickaxe', textureSlot: 34, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'pickaxe', toolTier: 3, category: 'tools' },
+  [ItemType.COPPER_PICKAXE]: { id: ItemType.COPPER_PICKAXE, color: '#e67e22', name: 'Copper Pickaxe', textureSlot: 61, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
 
-  [BlockType.WOOD_AXE]: { id: BlockType.WOOD_AXE, color: '#8d6e63', name: 'Wood Axe', textureSlot: 36, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'axe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
-  [BlockType.STONE_AXE]: { id: BlockType.STONE_AXE, color: '#757575', name: 'Stone Axe', textureSlot: 37, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'axe', toolTier: 2, category: 'tools' },
-  [BlockType.IRON_AXE]: { id: BlockType.IRON_AXE, color: '#d7ccc8', name: 'Iron Axe', textureSlot: 38, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'axe', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_AXE]: { id: BlockType.COPPER_AXE, color: '#e67e22', name: 'Copper Axe', textureSlot: 62, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'axe', toolTier: 2, category: 'tools' },
+  [ItemType.WOOD_AXE]: { id: ItemType.WOOD_AXE, color: '#8d6e63', name: 'Wood Axe', textureSlot: 36, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'axe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [ItemType.STONE_AXE]: { id: ItemType.STONE_AXE, color: '#757575', name: 'Stone Axe', textureSlot: 37, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'axe', toolTier: 2, category: 'tools' },
+  [ItemType.IRON_AXE]: { id: ItemType.IRON_AXE, color: '#d7ccc8', name: 'Iron Axe', textureSlot: 38, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'axe', toolTier: 3, category: 'tools' },
+  [ItemType.COPPER_AXE]: { id: ItemType.COPPER_AXE, color: '#e67e22', name: 'Copper Axe', textureSlot: 62, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'axe', toolTier: 2, category: 'tools' },
 
-  [BlockType.WOOD_SHOVEL]: { id: BlockType.WOOD_SHOVEL, color: '#8d6e63', name: 'Wood Shovel', textureSlot: 39, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'shovel', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
-  [BlockType.STONE_SHOVEL]: { id: BlockType.STONE_SHOVEL, color: '#757575', name: 'Stone Shovel', textureSlot: 40, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
-  [BlockType.IRON_SHOVEL]: { id: BlockType.IRON_SHOVEL, color: '#d7ccc8', name: 'Iron Shovel', textureSlot: 41, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'shovel', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_SHOVEL]: { id: BlockType.COPPER_SHOVEL, color: '#e67e22', name: 'Copper Shovel', textureSlot: 63, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
+  [ItemType.WOOD_SHOVEL]: { id: ItemType.WOOD_SHOVEL, color: '#8d6e63', name: 'Wood Shovel', textureSlot: 39, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'shovel', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [ItemType.STONE_SHOVEL]: { id: ItemType.STONE_SHOVEL, color: '#757575', name: 'Stone Shovel', textureSlot: 40, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
+  [ItemType.IRON_SHOVEL]: { id: ItemType.IRON_SHOVEL, color: '#d7ccc8', name: 'Iron Shovel', textureSlot: 41, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'shovel', toolTier: 3, category: 'tools' },
+  [ItemType.COPPER_SHOVEL]: { id: ItemType.COPPER_SHOVEL, color: '#e67e22', name: 'Copper Shovel', textureSlot: 63, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
 
-  [BlockType.WOOD_SWORD]: { id: BlockType.WOOD_SWORD, color: '#8d6e63', name: 'Wood Sword', textureSlot: 105, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
-  [BlockType.WOOD_HOE]: { id: BlockType.WOOD_HOE, color: '#8d6e63', name: 'Wood Hoe', textureSlot: 106, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [ItemType.WOOD_SWORD]: { id: ItemType.WOOD_SWORD, color: '#8d6e63', name: 'Wood Sword', textureSlot: 105, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
+  [ItemType.WOOD_HOE]: { id: ItemType.WOOD_HOE, color: '#8d6e63', name: 'Wood Hoe', textureSlot: 106, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
   
-  [BlockType.STONE_SWORD]: { id: BlockType.STONE_SWORD, color: '#757575', name: 'Stone Sword', textureSlot: 107, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.STONE_HOE]: { id: BlockType.STONE_HOE, color: '#757575', name: 'Stone Hoe', textureSlot: 108, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.STONE_SWORD]: { id: ItemType.STONE_SWORD, color: '#757575', name: 'Stone Sword', textureSlot: 107, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.STONE_HOE]: { id: ItemType.STONE_HOE, color: '#757575', name: 'Stone Hoe', textureSlot: 108, hardness: 0, isItem: true, category: 'tools' },
   
-  [BlockType.IRON_SWORD]: { id: BlockType.IRON_SWORD, color: '#d7ccc8', name: 'Iron Sword', textureSlot: 109, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.IRON_HOE]: { id: BlockType.IRON_HOE, color: '#d7ccc8', name: 'Iron Hoe', textureSlot: 110, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.IRON_SWORD]: { id: ItemType.IRON_SWORD, color: '#d7ccc8', name: 'Iron Sword', textureSlot: 109, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.IRON_HOE]: { id: ItemType.IRON_HOE, color: '#d7ccc8', name: 'Iron Hoe', textureSlot: 110, hardness: 0, isItem: true, category: 'tools' },
   
-  [BlockType.COPPER_SWORD]: { id: BlockType.COPPER_SWORD, color: '#e67e22', name: 'Copper Sword', textureSlot: 111, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_HOE]: { id: BlockType.COPPER_HOE, color: '#e67e22', name: 'Copper Hoe', textureSlot: 112, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_SWORD]: { id: ItemType.COPPER_SWORD, color: '#e67e22', name: 'Copper Sword', textureSlot: 111, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_HOE]: { id: ItemType.COPPER_HOE, color: '#e67e22', name: 'Copper Hoe', textureSlot: 112, hardness: 0, isItem: true, category: 'tools' },
 
-  [BlockType.GOLD_PICKAXE]: { id: BlockType.GOLD_PICKAXE, color: '#fbc02d', name: 'Gold Pickaxe', textureSlot: 113, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'pickaxe', toolTier: 1, category: 'tools' },
-  [BlockType.GOLD_AXE]: { id: BlockType.GOLD_AXE, color: '#fbc02d', name: 'Gold Axe', textureSlot: 114, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'axe', toolTier: 1, category: 'tools' },
-  [BlockType.GOLD_SHOVEL]: { id: BlockType.GOLD_SHOVEL, color: '#fbc02d', name: 'Gold Shovel', textureSlot: 115, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'shovel', toolTier: 1, category: 'tools' },
-  [BlockType.GOLD_SWORD]: { id: BlockType.GOLD_SWORD, color: '#fbc02d', name: 'Gold Sword', textureSlot: 116, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.GOLD_HOE]: { id: BlockType.GOLD_HOE, color: '#fbc02d', name: 'Gold Hoe', textureSlot: 117, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.GOLD_PICKAXE]: { id: ItemType.GOLD_PICKAXE, color: '#fbc02d', name: 'Gold Pickaxe', textureSlot: 113, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'pickaxe', toolTier: 1, category: 'tools' },
+  [ItemType.GOLD_AXE]: { id: ItemType.GOLD_AXE, color: '#fbc02d', name: 'Gold Axe', textureSlot: 114, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'axe', toolTier: 1, category: 'tools' },
+  [ItemType.GOLD_SHOVEL]: { id: ItemType.GOLD_SHOVEL, color: '#fbc02d', name: 'Gold Shovel', textureSlot: 115, hardness: 0, isItem: true, toolSpeed: 12.0, toolType: 'shovel', toolTier: 1, category: 'tools' },
+  [ItemType.GOLD_SWORD]: { id: ItemType.GOLD_SWORD, color: '#fbc02d', name: 'Gold Sword', textureSlot: 116, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.GOLD_HOE]: { id: ItemType.GOLD_HOE, color: '#fbc02d', name: 'Gold Hoe', textureSlot: 117, hardness: 0, isItem: true, category: 'tools' },
 
-  [BlockType.DIAMOND_PICKAXE]: { id: BlockType.DIAMOND_PICKAXE, color: '#00bcd4', name: 'Diamond Pickaxe', textureSlot: 118, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'pickaxe', toolTier: 4, category: 'tools' },
-  [BlockType.DIAMOND_AXE]: { id: BlockType.DIAMOND_AXE, color: '#00bcd4', name: 'Diamond Axe', textureSlot: 119, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'axe', toolTier: 4, category: 'tools' },
-  [BlockType.DIAMOND_SHOVEL]: { id: BlockType.DIAMOND_SHOVEL, color: '#00bcd4', name: 'Diamond Shovel', textureSlot: 120, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 4, category: 'tools' },
-  [BlockType.DIAMOND_SWORD]: { id: BlockType.DIAMOND_SWORD, color: '#00bcd4', name: 'Diamond Sword', textureSlot: 121, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.DIAMOND_HOE]: { id: BlockType.DIAMOND_HOE, color: '#00bcd4', name: 'Diamond Hoe', textureSlot: 122, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_PICKAXE]: { id: ItemType.DIAMOND_PICKAXE, color: '#00bcd4', name: 'Diamond Pickaxe', textureSlot: 118, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'pickaxe', toolTier: 4, category: 'tools' },
+  [ItemType.DIAMOND_AXE]: { id: ItemType.DIAMOND_AXE, color: '#00bcd4', name: 'Diamond Axe', textureSlot: 119, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'axe', toolTier: 4, category: 'tools' },
+  [ItemType.DIAMOND_SHOVEL]: { id: ItemType.DIAMOND_SHOVEL, color: '#00bcd4', name: 'Diamond Shovel', textureSlot: 120, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 4, category: 'tools' },
+  [ItemType.DIAMOND_SWORD]: { id: ItemType.DIAMOND_SWORD, color: '#00bcd4', name: 'Diamond Sword', textureSlot: 121, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_HOE]: { id: ItemType.DIAMOND_HOE, color: '#00bcd4', name: 'Diamond Hoe', textureSlot: 122, hardness: 0, isItem: true, category: 'tools' },
 
-  [BlockType.STICK]: { id: BlockType.STICK, color: '#6d4c41', name: 'Stick', textureSlot: 35, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, category: 'ingredients' },
-  [BlockType.COAL]: { id: BlockType.COAL, color: '#212121', name: 'Coal', textureSlot: 48, hardness: 0, isItem: true, isFuel: true, fuelValue: 80000, category: 'ingredients' },
-  [BlockType.CHARCOAL]: { id: BlockType.CHARCOAL, color: '#212121', name: 'Charcoal', textureSlot: 57, hardness: 0, isItem: true, isFuel: true, fuelValue: 80000, category: 'ingredients' },
-  [BlockType.IRON_INGOT]: { id: BlockType.IRON_INGOT, color: '#d7ccc8', name: 'Iron Ingot', textureSlot: 49, hardness: 0, isItem: true, category: 'ingredients' },
-  [BlockType.COPPER_INGOT]: { id: BlockType.COPPER_INGOT, color: '#e67e22', name: 'Copper Ingot', textureSlot: 60, hardness: 0, isItem: true, category: 'ingredients' },
-  [BlockType.RAW_IRON]: { id: BlockType.RAW_IRON, color: '#bcaaa4', name: 'Raw Iron', textureSlot: 55, hardness: 0, isItem: true, smeltsInto: BlockType.IRON_INGOT, category: 'ingredients' },
-  [BlockType.RAW_COPPER]: { id: BlockType.RAW_COPPER, color: '#d35400', name: 'Raw Copper', textureSlot: 59, hardness: 0, isItem: true, smeltsInto: BlockType.COPPER_INGOT, category: 'ingredients' },
+  [ItemType.STICK]: { id: ItemType.STICK, color: '#6d4c41', name: 'Stick', textureSlot: 35, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, category: 'ingredients' },
+  [ItemType.COAL]: { id: ItemType.COAL, color: '#212121', name: 'Coal', textureSlot: 48, hardness: 0, isItem: true, isFuel: true, fuelValue: 80000, category: 'ingredients' },
+  [ItemType.CHARCOAL]: { id: ItemType.CHARCOAL, color: '#212121', name: 'Charcoal', textureSlot: 57, hardness: 0, isItem: true, isFuel: true, fuelValue: 80000, category: 'ingredients' },
+  [ItemType.IRON_INGOT]: { id: ItemType.IRON_INGOT, color: '#d7ccc8', name: 'Iron Ingot', textureSlot: 49, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.COPPER_INGOT]: { id: ItemType.COPPER_INGOT, color: '#e67e22', name: 'Copper Ingot', textureSlot: 60, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.RAW_IRON]: { id: ItemType.RAW_IRON, color: '#bcaaa4', name: 'Raw Iron', textureSlot: 55, hardness: 0, isItem: true, smeltsInto: ItemType.IRON_INGOT, category: 'ingredients' },
+  [ItemType.RAW_COPPER]: { id: ItemType.RAW_COPPER, color: '#d35400', name: 'Raw Copper', textureSlot: 59, hardness: 0, isItem: true, smeltsInto: ItemType.COPPER_INGOT, category: 'ingredients' },
   
-  [BlockType.RAW_GOLD]: { id: BlockType.RAW_GOLD, color: '#fdd835', name: 'Raw Gold', textureSlot: 100, hardness: 0, isItem: true, smeltsInto: BlockType.GOLD_INGOT, category: 'ingredients' },
-  [BlockType.GOLD_INGOT]: { id: BlockType.GOLD_INGOT, color: '#fbc02d', name: 'Gold Ingot', textureSlot: 101, hardness: 0, isItem: true, category: 'ingredients' },
-  [BlockType.DIAMOND]: { id: BlockType.DIAMOND, color: '#00bcd4', name: 'Diamond', textureSlot: 102, hardness: 0, isItem: true, category: 'ingredients' },
-  [BlockType.EMERALD]: { id: BlockType.EMERALD, color: '#00e676', name: 'Emerald', textureSlot: 103, hardness: 0, isItem: true, category: 'ingredients' },
-  [BlockType.LAPIS_LAZULI]: { id: BlockType.LAPIS_LAZULI, color: '#1a237e', name: 'Lapis Lazuli', textureSlot: 104, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.RAW_GOLD]: { id: ItemType.RAW_GOLD, color: '#fdd835', name: 'Raw Gold', textureSlot: 100, hardness: 0, isItem: true, smeltsInto: ItemType.GOLD_INGOT, category: 'ingredients' },
+  [ItemType.GOLD_INGOT]: { id: ItemType.GOLD_INGOT, color: '#fbc02d', name: 'Gold Ingot', textureSlot: 101, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.DIAMOND]: { id: ItemType.DIAMOND, color: '#00bcd4', name: 'Diamond', textureSlot: 102, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.EMERALD]: { id: ItemType.EMERALD, color: '#00e676', name: 'Emerald', textureSlot: 103, hardness: 0, isItem: true, category: 'ingredients' },
+  [ItemType.LAPIS_LAZULI]: { id: ItemType.LAPIS_LAZULI, color: '#1a237e', name: 'Lapis Lazuli', textureSlot: 104, hardness: 0, isItem: true, category: 'ingredients' },
 
-  [BlockType.APPLE]: { 
-      id: BlockType.APPLE, color: '#ff0000', name: 'Apple', textureSlot: 50, hardness: 0, isItem: true, category: 'food',
+  [ItemType.APPLE]: {
+      id: ItemType.APPLE, color: '#ff0000', name: 'Apple', textureSlot: 50, hardness: 0, isItem: true, category: 'food',
       nutrition: 4, saturationModifier: 0.3 // 4 * 0.3 * 2 = 2.4 saturation
   },
-  [BlockType.SAPLING]: { id: BlockType.SAPLING, color: '#388e3c', name: 'Oak Sapling', textureSlot: 51, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.SPRUCE_SAPLING]: { id: BlockType.SPRUCE_SAPLING, color: '#1b5e20', name: 'Spruce Sapling', textureSlot: 146, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.BIRCH_SAPLING]: { id: BlockType.BIRCH_SAPLING, color: '#81c784', name: 'Birch Sapling', textureSlot: 147, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.CHERRY_SAPLING]: { id: BlockType.CHERRY_SAPLING, color: '#f48fb1', name: 'Cherry Sapling', textureSlot: 148, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.WHEAT_SEEDS]: { id: BlockType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, category: 'natural' },
+  [ItemType.SAPLING]: { id: ItemType.SAPLING, color: '#388e3c', name: 'Oak Sapling', textureSlot: 51, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [ItemType.SPRUCE_SAPLING]: { id: ItemType.SPRUCE_SAPLING, color: '#1b5e20', name: 'Spruce Sapling', textureSlot: 146, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [ItemType.BIRCH_SAPLING]: { id: ItemType.BIRCH_SAPLING, color: '#81c784', name: 'Birch Sapling', textureSlot: 147, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [ItemType.CHERRY_SAPLING]: { id: ItemType.CHERRY_SAPLING, color: '#f48fb1', name: 'Cherry Sapling', textureSlot: 148, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [ItemType.WHEAT_SEEDS]: { id: ItemType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, category: 'natural' },
 
   // --- SLABS (half blocks; reuse the parent block's atlas texture) ---
-  [BlockType.OAK_SLAB]: { id: BlockType.OAK_SLAB, color: '#8d6e63', name: 'Oak Slab', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.OAK_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.SPRUCE_SLAB]: { id: BlockType.SPRUCE_SLAB, color: '#5d4037', name: 'Spruce Slab', textureSlot: 27, textureParent: BlockType.SPRUCE_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.SPRUCE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.BIRCH_SLAB]: { id: BlockType.BIRCH_SLAB, color: '#fff9c4', name: 'Birch Slab', textureSlot: 90, textureParent: BlockType.BIRCH_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.BIRCH_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.CHERRY_SLAB]: { id: BlockType.CHERRY_SLAB, color: '#f48fb1', name: 'Cherry Slab', textureSlot: 77, textureParent: BlockType.CHERRY_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.CHERRY_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.COBBLESTONE_SLAB]: { id: BlockType.COBBLESTONE_SLAB, color: '#616161', name: 'Cobblestone Slab', textureSlot: 10, textureParent: BlockType.COBBLESTONE, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.COBBLESTONE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.STONE_SLAB]: { id: BlockType.STONE_SLAB, color: '#757575', name: 'Stone Slab', textureSlot: 2, textureParent: BlockType.STONE, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.STONE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.SANDSTONE_SLAB]: { id: BlockType.SANDSTONE_SLAB, color: '#e6c27e', name: 'Sandstone Slab', textureSlot: 18, textureParent: BlockType.SANDSTONE, shape: 'slab', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.SANDSTONE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.RED_SANDSTONE_SLAB]: { id: BlockType.RED_SANDSTONE_SLAB, color: '#bf360c', name: 'Red Sandstone Slab', textureSlot: 79, textureParent: BlockType.RED_SANDSTONE, shape: 'slab', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.RED_SANDSTONE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.BRICK_SLAB]: { id: BlockType.BRICK_SLAB, color: '#b71c1c', name: 'Brick Slab', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.OAK_SLAB]: { id: BlockType.OAK_SLAB, color: '#8d6e63', name: 'Oak Slab', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.OAK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.SPRUCE_SLAB]: { id: BlockType.SPRUCE_SLAB, color: '#5d4037', name: 'Spruce Slab', textureSlot: 27, textureParent: BlockType.SPRUCE_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.SPRUCE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.BIRCH_SLAB]: { id: BlockType.BIRCH_SLAB, color: '#fff9c4', name: 'Birch Slab', textureSlot: 90, textureParent: BlockType.BIRCH_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.BIRCH_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CHERRY_SLAB]: { id: BlockType.CHERRY_SLAB, color: '#f48fb1', name: 'Cherry Slab', textureSlot: 77, textureParent: BlockType.CHERRY_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.CHERRY_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.COBBLESTONE_SLAB]: { id: BlockType.COBBLESTONE_SLAB, color: '#616161', name: 'Cobblestone Slab', textureSlot: 10, textureParent: BlockType.COBBLESTONE, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.COBBLESTONE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.STONE_SLAB]: { id: BlockType.STONE_SLAB, color: '#757575', name: 'Stone Slab', textureSlot: 2, textureParent: BlockType.STONE, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.STONE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.SANDSTONE_SLAB]: { id: BlockType.SANDSTONE_SLAB, color: '#e6c27e', name: 'Sandstone Slab', textureSlot: 18, textureParent: BlockType.SANDSTONE, shape: 'slab', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.SANDSTONE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.RED_SANDSTONE_SLAB]: { id: BlockType.RED_SANDSTONE_SLAB, color: '#bf360c', name: 'Red Sandstone Slab', textureSlot: 79, textureParent: BlockType.RED_SANDSTONE, shape: 'slab', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.RED_SANDSTONE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.BRICK_SLAB]: { id: BlockType.BRICK_SLAB, color: '#b71c1c', name: 'Brick Slab', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
 
   // --- STAIRS ---
-  [BlockType.OAK_STAIRS]: { id: BlockType.OAK_STAIRS, color: '#8d6e63', name: 'Oak Stairs', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.OAK_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.SPRUCE_STAIRS]: { id: BlockType.SPRUCE_STAIRS, color: '#5d4037', name: 'Spruce Stairs', textureSlot: 27, textureParent: BlockType.SPRUCE_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.SPRUCE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.BIRCH_STAIRS]: { id: BlockType.BIRCH_STAIRS, color: '#fff9c4', name: 'Birch Stairs', textureSlot: 90, textureParent: BlockType.BIRCH_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.BIRCH_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.CHERRY_STAIRS]: { id: BlockType.CHERRY_STAIRS, color: '#f48fb1', name: 'Cherry Stairs', textureSlot: 77, textureParent: BlockType.CHERRY_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.CHERRY_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.COBBLESTONE_STAIRS]: { id: BlockType.COBBLESTONE_STAIRS, color: '#616161', name: 'Cobblestone Stairs', textureSlot: 10, textureParent: BlockType.COBBLESTONE, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.COBBLESTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.STONE_STAIRS]: { id: BlockType.STONE_STAIRS, color: '#757575', name: 'Stone Stairs', textureSlot: 2, textureParent: BlockType.STONE, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.STONE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.SANDSTONE_STAIRS]: { id: BlockType.SANDSTONE_STAIRS, color: '#e6c27e', name: 'Sandstone Stairs', textureSlot: 18, textureParent: BlockType.SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.RED_SANDSTONE_STAIRS]: { id: BlockType.RED_SANDSTONE_STAIRS, color: '#bf360c', name: 'Red Sandstone Stairs', textureSlot: 79, textureParent: BlockType.RED_SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.RED_SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.BRICK_STAIRS]: { id: BlockType.BRICK_STAIRS, color: '#b71c1c', name: 'Brick Stairs', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.OAK_STAIRS]: { id: BlockType.OAK_STAIRS, color: '#8d6e63', name: 'Oak Stairs', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.OAK_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.SPRUCE_STAIRS]: { id: BlockType.SPRUCE_STAIRS, color: '#5d4037', name: 'Spruce Stairs', textureSlot: 27, textureParent: BlockType.SPRUCE_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.SPRUCE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.BIRCH_STAIRS]: { id: BlockType.BIRCH_STAIRS, color: '#fff9c4', name: 'Birch Stairs', textureSlot: 90, textureParent: BlockType.BIRCH_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.BIRCH_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CHERRY_STAIRS]: { id: BlockType.CHERRY_STAIRS, color: '#f48fb1', name: 'Cherry Stairs', textureSlot: 77, textureParent: BlockType.CHERRY_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.CHERRY_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.COBBLESTONE_STAIRS]: { id: BlockType.COBBLESTONE_STAIRS, color: '#616161', name: 'Cobblestone Stairs', textureSlot: 10, textureParent: BlockType.COBBLESTONE, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.COBBLESTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.STONE_STAIRS]: { id: BlockType.STONE_STAIRS, color: '#757575', name: 'Stone Stairs', textureSlot: 2, textureParent: BlockType.STONE, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.STONE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.SANDSTONE_STAIRS]: { id: BlockType.SANDSTONE_STAIRS, color: '#e6c27e', name: 'Sandstone Stairs', textureSlot: 18, textureParent: BlockType.SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.RED_SANDSTONE_STAIRS]: { id: BlockType.RED_SANDSTONE_STAIRS, color: '#bf360c', name: 'Red Sandstone Stairs', textureSlot: 79, textureParent: BlockType.RED_SANDSTONE, shape: 'stairs', transparent: true, hardness: 0.8, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.RED_SANDSTONE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.BRICK_STAIRS]: { id: BlockType.BRICK_STAIRS, color: '#b71c1c', name: 'Brick Stairs', textureSlot: 9, textureParent: BlockType.BRICK, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // Magnetism and equipment.
-  [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnetite Block', textureSlot: 149, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
-  [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnetite Block', textureSlot: 150, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: BlockType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
-  [BlockType.IRON_BLOCK]: { id: BlockType.IRON_BLOCK, color: '#d7ccc8', name: 'Iron Block', textureSlot: 156, hardness: 5.0, preferredTool: 'pickaxe', minHarvestTier: 2, category: 'building', drops: [{ type: BlockType.IRON_BLOCK, chance: 1, min: 1, max: 1 }] },
-  [BlockType.IRON_HELMET]: { id: BlockType.IRON_HELMET, color: '#d7ccc8', name: 'Iron Helmet', textureSlot: 151, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.IRON_CHESTPLATE]: { id: BlockType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 152, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.IRON_LEGGINGS]: { id: BlockType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 153, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.IRON_BOOTS]: { id: BlockType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 154, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.POLARITY_BOOTS_UPGRADE]: { id: BlockType.POLARITY_BOOTS_UPGRADE, color: '#8a7fd6', name: 'Polarity Boots Upgrade', textureSlot: 215, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.UPGRADED_POLARITY_BOOTS]: { id: BlockType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.POSITIVE_MAGNET]: { id: BlockType.POSITIVE_MAGNET, color: '#e53935', name: 'Positive Magnetite Block', textureSlot: 149, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: ItemType.POSITIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.NEGATIVE_MAGNET]: { id: BlockType.NEGATIVE_MAGNET, color: '#1e88e5', name: 'Negative Magnetite Block', textureSlot: 150, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional', drops: [{ type: ItemType.NEGATIVE_MAGNET, chance: 1, min: 1, max: 1 }] },
+  [BlockType.IRON_BLOCK]: { id: BlockType.IRON_BLOCK, color: '#d7ccc8', name: 'Iron Block', textureSlot: 156, hardness: 5.0, preferredTool: 'pickaxe', minHarvestTier: 2, category: 'building', drops: [{ type: ItemType.IRON_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [ItemType.IRON_HELMET]: { id: ItemType.IRON_HELMET, color: '#d7ccc8', name: 'Iron Helmet', textureSlot: 151, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.IRON_CHESTPLATE]: { id: ItemType.IRON_CHESTPLATE, color: '#d7ccc8', name: 'Iron Chestplate', textureSlot: 152, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.IRON_LEGGINGS]: { id: ItemType.IRON_LEGGINGS, color: '#d7ccc8', name: 'Iron Leggings', textureSlot: 153, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.IRON_BOOTS]: { id: ItemType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 154, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.POLARITY_BOOTS]: { id: ItemType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.POLARITY_BOOTS_UPGRADE]: { id: ItemType.POLARITY_BOOTS_UPGRADE, color: '#8a7fd6', name: 'Polarity Boots Upgrade', textureSlot: 215, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.UPGRADED_POLARITY_BOOTS]: { id: ItemType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
   // Boat, use on water to place a boat entity; right-click it to board, sneak
   // to hop out (it stays parked). Breaking the boat drops this item back.
-  [BlockType.BOAT]: { id: BlockType.BOAT, color: '#8d6e63', name: 'Boat', textureSlot: 216, hardness: 0, isItem: true, isFuel: true, fuelValue: 20000, category: 'functional' },
-  [BlockType.GOLD_HELMET]: { id: BlockType.GOLD_HELMET, color: '#fbc02d', name: 'Gold Helmet', textureSlot: 157, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.GOLD_CHESTPLATE]: { id: BlockType.GOLD_CHESTPLATE, color: '#fbc02d', name: 'Gold Chestplate', textureSlot: 158, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.GOLD_LEGGINGS]: { id: BlockType.GOLD_LEGGINGS, color: '#fbc02d', name: 'Gold Leggings', textureSlot: 159, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.GOLD_BOOTS]: { id: BlockType.GOLD_BOOTS, color: '#fbc02d', name: 'Gold Boots', textureSlot: 160, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.DIAMOND_HELMET]: { id: BlockType.DIAMOND_HELMET, color: '#00bcd4', name: 'Diamond Helmet', textureSlot: 161, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.DIAMOND_CHESTPLATE]: { id: BlockType.DIAMOND_CHESTPLATE, color: '#00bcd4', name: 'Diamond Chestplate', textureSlot: 162, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.DIAMOND_LEGGINGS]: { id: BlockType.DIAMOND_LEGGINGS, color: '#00bcd4', name: 'Diamond Leggings', textureSlot: 163, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.DIAMOND_BOOTS]: { id: BlockType.DIAMOND_BOOTS, color: '#00bcd4', name: 'Diamond Boots', textureSlot: 164, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_HELMET]: { id: BlockType.COPPER_HELMET, color: '#e67e22', name: 'Copper Helmet', textureSlot: 165, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_CHESTPLATE]: { id: BlockType.COPPER_CHESTPLATE, color: '#e67e22', name: 'Copper Chestplate', textureSlot: 166, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_LEGGINGS]: { id: BlockType.COPPER_LEGGINGS, color: '#e67e22', name: 'Copper Leggings', textureSlot: 167, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.COPPER_BOOTS]: { id: BlockType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 168, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.BOAT]: { id: ItemType.BOAT, color: '#8d6e63', name: 'Boat', textureSlot: 216, hardness: 0, isItem: true, isFuel: true, fuelValue: 20000, category: 'functional' },
+  [ItemType.GOLD_HELMET]: { id: ItemType.GOLD_HELMET, color: '#fbc02d', name: 'Gold Helmet', textureSlot: 157, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.GOLD_CHESTPLATE]: { id: ItemType.GOLD_CHESTPLATE, color: '#fbc02d', name: 'Gold Chestplate', textureSlot: 158, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.GOLD_LEGGINGS]: { id: ItemType.GOLD_LEGGINGS, color: '#fbc02d', name: 'Gold Leggings', textureSlot: 159, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.GOLD_BOOTS]: { id: ItemType.GOLD_BOOTS, color: '#fbc02d', name: 'Gold Boots', textureSlot: 160, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_HELMET]: { id: ItemType.DIAMOND_HELMET, color: '#00bcd4', name: 'Diamond Helmet', textureSlot: 161, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_CHESTPLATE]: { id: ItemType.DIAMOND_CHESTPLATE, color: '#00bcd4', name: 'Diamond Chestplate', textureSlot: 162, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_LEGGINGS]: { id: ItemType.DIAMOND_LEGGINGS, color: '#00bcd4', name: 'Diamond Leggings', textureSlot: 163, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.DIAMOND_BOOTS]: { id: ItemType.DIAMOND_BOOTS, color: '#00bcd4', name: 'Diamond Boots', textureSlot: 164, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_HELMET]: { id: ItemType.COPPER_HELMET, color: '#e67e22', name: 'Copper Helmet', textureSlot: 165, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_CHESTPLATE]: { id: ItemType.COPPER_CHESTPLATE, color: '#e67e22', name: 'Copper Chestplate', textureSlot: 166, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_LEGGINGS]: { id: ItemType.COPPER_LEGGINGS, color: '#e67e22', name: 'Copper Leggings', textureSlot: 167, hardness: 0, isItem: true, category: 'tools' },
+  [ItemType.COPPER_BOOTS]: { id: ItemType.COPPER_BOOTS, color: '#e67e22', name: 'Copper Boots', textureSlot: 168, hardness: 0, isItem: true, category: 'tools' },
 
   // Packed Ice, denser ice for the Ice Spikes biome
-  [BlockType.PACKED_ICE]: { id: BlockType.PACKED_ICE, color: '#4fc3f7', name: 'Packed Ice', textureSlot: 169, hardness: 1.0, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.PACKED_ICE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.PACKED_ICE]: { id: BlockType.PACKED_ICE, color: '#4fc3f7', name: 'Packed Ice', textureSlot: 169, hardness: 1.0, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.PACKED_ICE, chance: 1, min: 1, max: 1 }] },
 
   // ===== Biome-specific surface blocks (Task ID 5) =====
   // Grass-topped blocks: textureSlot = top texture; the resolver uses a paired
   // side texture + dirt (slot 0) for the bottom. See textureResolver.ts.
-  [BlockType.MOSSY_GRASS]: { id: BlockType.MOSSY_GRASS, color: '#568b48', name: 'Mossy Grass', textureSlot: 170, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.LUSH_GRASS]: { id: BlockType.LUSH_GRASS, color: '#5aaa50', name: 'Lush Grass', textureSlot: 172, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.DARK_GRASS]: { id: BlockType.DARK_GRASS, color: '#2c5230', name: 'Dark Grass', textureSlot: 174, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.MOSSY_GRASS]: { id: BlockType.MOSSY_GRASS, color: '#568b48', name: 'Mossy Grass', textureSlot: 170, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.LUSH_GRASS]: { id: BlockType.LUSH_GRASS, color: '#5aaa50', name: 'Lush Grass', textureSlot: 172, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DARK_GRASS]: { id: BlockType.DARK_GRASS, color: '#2c5230', name: 'Dark Grass', textureSlot: 174, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: ItemType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
   [BlockType.PODZOL]: { id: BlockType.PODZOL, color: '#6e5037', name: 'Podzol', textureSlot: 182, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
 
   // Mountain stone variants
-  [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.ANDESITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
-  [BlockType.DIORITE]: { id: BlockType.DIORITE, color: '#e1e1de', name: 'Diorite', textureSlot: 185, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.DIORITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
-  [BlockType.GRANITE]: { id: BlockType.GRANITE, color: '#af6e5f', name: 'Granite', textureSlot: 186, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.GRANITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },
+  [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: ItemType.ANDESITE, chance: 1, min: 1, max: 1 }], smeltsInto: ItemType.STONE, category: 'building' },
+  [BlockType.DIORITE]: { id: BlockType.DIORITE, color: '#e1e1de', name: 'Diorite', textureSlot: 185, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: ItemType.DIORITE, chance: 1, min: 1, max: 1 }], smeltsInto: ItemType.STONE, category: 'building' },
+  [BlockType.GRANITE]: { id: BlockType.GRANITE, color: '#af6e5f', name: 'Granite', textureSlot: 186, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: ItemType.GRANITE, chance: 1, min: 1, max: 1 }], smeltsInto: ItemType.STONE, category: 'building' },
 
   // Other biome surfaces
   [BlockType.COARSE_DIRT]: { id: BlockType.COARSE_DIRT, color: '#6e5541', name: 'Coarse Dirt', textureSlot: 187, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
   [BlockType.MUD]: { id: BlockType.MUD, color: '#3c3026', name: 'Mud', textureSlot: 188, hardness: 0.4, preferredTool: 'shovel', category: 'natural' },
-  [BlockType.MOSSY_COBBLESTONE]: { id: BlockType.MOSSY_COBBLESTONE, color: '#506050', name: 'Mossy Cobblestone', textureSlot: 189, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building', drops: [{ type: BlockType.MOSSY_COBBLESTONE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MOSSY_COBBLESTONE]: { id: BlockType.MOSSY_COBBLESTONE, color: '#506050', name: 'Mossy Cobblestone', textureSlot: 189, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.STONE, category: 'building', drops: [{ type: ItemType.MOSSY_COBBLESTONE, chance: 1, min: 1, max: 1 }] },
 
   // ===== New tree wood families (Task ID 6): Jungle, Dark Oak, Acacia =====
   // Jungle
-  [BlockType.JUNGLE_LOG]: { id: BlockType.JUNGLE_LOG, color: '#5f6420', name: 'Jungle Log', textureSlot: 190, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.JUNGLE_LOG]: { id: BlockType.JUNGLE_LOG, color: '#5f6420', name: 'Jungle Log', textureSlot: 190, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.JUNGLE_LEAVES]: {
       id: BlockType.JUNGLE_LEAVES, color: '#327028', name: 'Jungle Leaves', transparent: true, textureSlot: 193, hardness: 0.2,
       drops: [
-          { type: BlockType.JUNGLE_SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.BANANA, chance: 0.02, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.JUNGLE_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.BANANA, chance: 0.02, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
   [BlockType.JUNGLE_PLANKS]: { id: BlockType.JUNGLE_PLANKS, color: '#8c6437', name: 'Jungle Planks', textureSlot: 192, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
-  [BlockType.JUNGLE_SAPLING]: { id: BlockType.JUNGLE_SAPLING, color: '#327028', name: 'Jungle Sapling', textureSlot: 194, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.JUNGLE_SLAB]: { id: BlockType.JUNGLE_SLAB, color: '#8c6437', name: 'Jungle Slab', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.JUNGLE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.JUNGLE_STAIRS]: { id: BlockType.JUNGLE_STAIRS, color: '#8c6437', name: 'Jungle Stairs', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.JUNGLE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [ItemType.JUNGLE_SAPLING]: { id: ItemType.JUNGLE_SAPLING, color: '#327028', name: 'Jungle Sapling', textureSlot: 194, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.JUNGLE_SLAB]: { id: BlockType.JUNGLE_SLAB, color: '#8c6437', name: 'Jungle Slab', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.JUNGLE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.JUNGLE_STAIRS]: { id: BlockType.JUNGLE_STAIRS, color: '#8c6437', name: 'Jungle Stairs', textureSlot: 192, textureParent: BlockType.JUNGLE_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.JUNGLE_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // Dark Oak
-  [BlockType.DARK_OAK_LOG]: { id: BlockType.DARK_OAK_LOG, color: '#302218', name: 'Dark Oak Log', textureSlot: 195, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.DARK_OAK_LOG]: { id: BlockType.DARK_OAK_LOG, color: '#302218', name: 'Dark Oak Log', textureSlot: 195, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.DARK_OAK_LEAVES]: {
       id: BlockType.DARK_OAK_LEAVES, color: '#1e461e', name: 'Dark Oak Leaves', transparent: true, textureSlot: 198, hardness: 0.2,
       drops: [
-          { type: BlockType.DARK_OAK_SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.APPLE, chance: 0.02, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.DARK_OAK_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.APPLE, chance: 0.02, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
   [BlockType.DARK_OAK_PLANKS]: { id: BlockType.DARK_OAK_PLANKS, color: '#46321f', name: 'Dark Oak Planks', textureSlot: 197, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
-  [BlockType.DARK_OAK_SAPLING]: { id: BlockType.DARK_OAK_SAPLING, color: '#1e461e', name: 'Dark Oak Sapling', textureSlot: 199, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.DARK_OAK_SLAB]: { id: BlockType.DARK_OAK_SLAB, color: '#46321f', name: 'Dark Oak Slab', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.DARK_OAK_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.DARK_OAK_STAIRS]: { id: BlockType.DARK_OAK_STAIRS, color: '#46321f', name: 'Dark Oak Stairs', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.DARK_OAK_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [ItemType.DARK_OAK_SAPLING]: { id: ItemType.DARK_OAK_SAPLING, color: '#1e461e', name: 'Dark Oak Sapling', textureSlot: 199, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.DARK_OAK_SLAB]: { id: BlockType.DARK_OAK_SLAB, color: '#46321f', name: 'Dark Oak Slab', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.DARK_OAK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.DARK_OAK_STAIRS]: { id: BlockType.DARK_OAK_STAIRS, color: '#46321f', name: 'Dark Oak Stairs', textureSlot: 197, textureParent: BlockType.DARK_OAK_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.DARK_OAK_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // Acacia
-  [BlockType.ACACIA_LOG]: { id: BlockType.ACACIA_LOG, color: '#694e34', name: 'Acacia Log', textureSlot: 200, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: BlockType.CHARCOAL, category: 'natural' },
+  [BlockType.ACACIA_LOG]: { id: BlockType.ACACIA_LOG, color: '#694e34', name: 'Acacia Log', textureSlot: 200, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, smeltsInto: ItemType.CHARCOAL, category: 'natural' },
   [BlockType.ACACIA_LEAVES]: {
       id: BlockType.ACACIA_LEAVES, color: '#6e8c32', name: 'Acacia Leaves', transparent: true, textureSlot: 203, hardness: 0.2,
       drops: [
-          { type: BlockType.ACACIA_SAPLING, chance: 0.05, min: 1, max: 1 },
-          { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }
+          { type: ItemType.ACACIA_SAPLING, chance: 0.05, min: 1, max: 1 },
+          { type: ItemType.STICK, chance: 0.1, min: 1, max: 2 }
       ], category: 'natural'
   },
   [BlockType.ACACIA_PLANKS]: { id: BlockType.ACACIA_PLANKS, color: '#aa8255', name: 'Acacia Planks', textureSlot: 202, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building' },
-  [BlockType.ACACIA_SAPLING]: { id: BlockType.ACACIA_SAPLING, color: '#6e8c32', name: 'Acacia Sapling', textureSlot: 204, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.ACACIA_SLAB]: { id: BlockType.ACACIA_SLAB, color: '#aa8255', name: 'Acacia Slab', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.ACACIA_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: BlockType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [ItemType.ACACIA_SAPLING]: { id: ItemType.ACACIA_SAPLING, color: '#6e8c32', name: 'Acacia Sapling', textureSlot: 204, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.ACACIA_SLAB]: { id: BlockType.ACACIA_SLAB, color: '#aa8255', name: 'Acacia Slab', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: ItemType.ACACIA_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.ACACIA_STAIRS]: { id: BlockType.ACACIA_STAIRS, color: '#aa8255', name: 'Acacia Stairs', textureSlot: 202, textureParent: BlockType.ACACIA_PLANKS, shape: 'stairs', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'building', drops: [{ type: ItemType.ACACIA_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // ===== Magnetic Fields biome content =====
   // Magnetite Block, signature gray metallic terrain (shelves, walls, pillars,
   // arena). Solid, opaque, NOT a magnetic source by itself.
-  [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BLOCK]: { id: BlockType.MAGNETITE_BLOCK, color: '#4a4a55', name: 'Magnetite Block', textureSlot: 205, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.STONE, category: 'natural', drops: [{ type: ItemType.MAGNETITE_BLOCK, chance: 1, min: 1, max: 1 }] },
 
   // Resource crystals, cross-plane, red (positive) / blue (negative). Not
   // magnetic sources this pass; used to craft Polarity Boots and magnetite blocks.
-  [BlockType.POSITIVE_MAGNETITE_CRYSTAL]: { id: BlockType.POSITIVE_MAGNETITE_CRYSTAL, color: '#ff4030', name: 'Positive Magnetite Crystal', textureSlot: 206, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POSITIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
-  [BlockType.NEGATIVE_MAGNETITE_CRYSTAL]: { id: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, color: '#3060ff', name: 'Negative Magnetite Crystal', textureSlot: 207, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
+  [BlockType.POSITIVE_MAGNETITE_CRYSTAL]: { id: BlockType.POSITIVE_MAGNETITE_CRYSTAL, color: '#ff4030', name: 'Positive Magnetite Crystal', textureSlot: 206, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.POSITIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
+  [BlockType.NEGATIVE_MAGNETITE_CRYSTAL]: { id: BlockType.NEGATIVE_MAGNETITE_CRYSTAL, color: '#3060ff', name: 'Negative Magnetite Crystal', textureSlot: 207, hardness: 0.6, transparent: true, noCollision: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.NEGATIVE_MAGNETITE_CRYSTAL, chance: 1, min: 1, max: 1 }] },
 
   // Magnetic Spike, cross-plane hazard rendered as sharp spikes but with solid
   // collision so the player lands on it; multiplies fall damage (see Player.tsx +
   // getFallDamageMultiplierForLandingBlock).
-  [BlockType.MAGNETIC_SPIKE]: { id: BlockType.MAGNETIC_SPIKE, color: '#2b2b30', name: 'Magnetic Spike', textureSlot: 208, hardness: 1.5, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETIC_SPIKE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETIC_SPIKE]: { id: BlockType.MAGNETIC_SPIKE, color: '#2b2b30', name: 'Magnetic Spike', textureSlot: 208, hardness: 1.5, transparent: true, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETIC_SPIKE, chance: 1, min: 1, max: 1 }] },
 
   // Magnetic Boss Summoner, placed at arena center; right-click summons the
   // Magnetic Warden (interaction wired in InteractionController).
-  [BlockType.MAGNETIC_BOSS_SUMMONER]: { id: BlockType.MAGNETIC_BOSS_SUMMONER, color: '#7b1fa2', name: 'Magnetic Boss Summoner', textureSlot: 209, hardness: 4.0, preferredTool: 'pickaxe', minHarvestTier: 2, lightLevel: 7, category: 'functional', drops: [{ type: BlockType.MAGNETIC_BOSS_SUMMONER, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETIC_BOSS_SUMMONER]: { id: BlockType.MAGNETIC_BOSS_SUMMONER, color: '#7b1fa2', name: 'Magnetic Boss Summoner', textureSlot: 209, hardness: 4.0, preferredTool: 'pickaxe', minHarvestTier: 2, lightLevel: 7, category: 'functional', drops: [{ type: ItemType.MAGNETIC_BOSS_SUMMONER, chance: 1, min: 1, max: 1 }] },
 
   // Magnetic Shield Crystal, cross-plane breakable crystal atop each arena
   // pillar; breaking all of them drops the Magnetic Warden's shield.
@@ -364,62 +365,62 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
 
   // Charged Magnetite, emissive lighter accent block for contrast against the
   // dark magnetite terrain (decorative veins on shelves).
-  [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: BlockType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CHARGED_MAGNETITE]: { id: BlockType.CHARGED_MAGNETITE, color: '#8a7fd6', name: 'Charged Magnetite', textureSlot: 211, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 8, category: 'natural', drops: [{ type: ItemType.CHARGED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
 
   // Magnetite Shard, bright cross-plane crystal cluster for contrast decoration.
-  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 12, category: 'natural', drops: [{ type: BlockType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_SHARD]: { id: BlockType.MAGNETITE_SHARD, color: '#7fe0ff', name: 'Magnetite Shard', textureSlot: 212, hardness: 0.4, transparent: true, noCollision: true, lightLevel: 12, category: 'natural', drops: [{ type: ItemType.MAGNETITE_SHARD, chance: 1, min: 1, max: 1 }] },
 
   // Magnetite building set, for the arena (and player builds). Bricks + chiseled
   // get their own textures; slabs/stairs reuse a parent texture via textureParent.
-  [BlockType.MAGNETITE_BRICKS]: { id: BlockType.MAGNETITE_BRICKS, color: '#43434f', name: 'Magnetite Bricks', textureSlot: 213, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICKS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.CHISELED_MAGNETITE]: { id: BlockType.CHISELED_MAGNETITE, color: '#4a4a58', name: 'Chiseled Magnetite', textureSlot: 214, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CHISELED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
-  [BlockType.MAGNETITE_SLAB]: { id: BlockType.MAGNETITE_SLAB, color: '#4a4a55', name: 'Magnetite Slab', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.MAGNETITE_STAIRS]: { id: BlockType.MAGNETITE_STAIRS, color: '#4a4a55', name: 'Magnetite Stairs', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_STAIRS, chance: 1, min: 1, max: 1 }] },
-  [BlockType.MAGNETITE_BRICK_SLAB]: { id: BlockType.MAGNETITE_BRICK_SLAB, color: '#43434f', name: 'Magnetite Brick Slab', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
-  [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BRICKS]: { id: BlockType.MAGNETITE_BRICKS, color: '#43434f', name: 'Magnetite Bricks', textureSlot: 213, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETITE_BRICKS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CHISELED_MAGNETITE]: { id: BlockType.CHISELED_MAGNETITE, color: '#4a4a58', name: 'Chiseled Magnetite', textureSlot: 214, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.CHISELED_MAGNETITE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_SLAB]: { id: BlockType.MAGNETITE_SLAB, color: '#4a4a55', name: 'Magnetite Slab', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETITE_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_STAIRS]: { id: BlockType.MAGNETITE_STAIRS, color: '#4a4a55', name: 'Magnetite Stairs', textureSlot: 205, textureParent: BlockType.MAGNETITE_BLOCK, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETITE_STAIRS, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BRICK_SLAB]: { id: BlockType.MAGNETITE_BRICK_SLAB, color: '#43434f', name: 'Magnetite Brick Slab', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'slab', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETITE_BRICK_SLAB, chance: 1, min: 1, max: 1 }] },
+  [BlockType.MAGNETITE_BRICK_STAIRS]: { id: BlockType.MAGNETITE_BRICK_STAIRS, color: '#43434f', name: 'Magnetite Brick Stairs', textureSlot: 213, textureParent: BlockType.MAGNETITE_BRICKS, shape: 'stairs', transparent: true, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.MAGNETITE_BRICK_STAIRS, chance: 1, min: 1, max: 1 }] },
 
   // ===== Cave content (deep-stone, dripstone, lush, amethyst) =====
   // Deepslate, the harder deep-stone that replaces stone below the deepslate
   // band; mines into cobbled deepslate exactly like stone → cobblestone.
-  [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#585862', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'natural', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
-  [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#4c4c55', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.DEEPSLATE, category: 'building', drops: [{ type: BlockType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.DEEPSLATE]: { id: BlockType.DEEPSLATE, color: '#585862', name: 'Deepslate', textureSlot: 217, hardness: 3.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.STONE, category: 'natural', drops: [{ type: ItemType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.COBBLED_DEEPSLATE]: { id: BlockType.COBBLED_DEEPSLATE, color: '#4c4c55', name: 'Cobbled Deepslate', textureSlot: 218, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: ItemType.DEEPSLATE, category: 'building', drops: [{ type: ItemType.COBBLED_DEEPSLATE, chance: 1, min: 1, max: 1 }] },
 
   // Dripstone caves, lumpy dripstone bedrock + cross-plane pointed dripstone
   // (stalactites hang, stalagmites stand). Pointed dripstone keeps collision.
-  [BlockType.DRIPSTONE_BLOCK]: { id: BlockType.DRIPSTONE_BLOCK, color: '#8a6a55', name: 'Dripstone Block', textureSlot: 219, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.DRIPSTONE_BLOCK, chance: 1, min: 1, max: 1 }] },
-  [BlockType.POINTED_DRIPSTONE]: { id: BlockType.POINTED_DRIPSTONE, color: '#9a745c', name: 'Pointed Dripstone', textureSlot: 220, transparent: true, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.POINTED_DRIPSTONE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.DRIPSTONE_BLOCK]: { id: BlockType.DRIPSTONE_BLOCK, color: '#8a6a55', name: 'Dripstone Block', textureSlot: 219, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.DRIPSTONE_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.POINTED_DRIPSTONE]: { id: BlockType.POINTED_DRIPSTONE, color: '#9a745c', name: 'Pointed Dripstone', textureSlot: 220, transparent: true, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.POINTED_DRIPSTONE, chance: 1, min: 1, max: 1 }] },
 
   // Lush caves, moss carpeting + emissive glow lichen that lights caves softly.
-  [BlockType.MOSS_BLOCK]: { id: BlockType.MOSS_BLOCK, color: '#5a7a35', name: 'Moss Block', textureSlot: 221, hardness: 0.3, preferredTool: 'shovel', category: 'natural', drops: [{ type: BlockType.MOSS_BLOCK, chance: 1, min: 1, max: 1 }] },
-  [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: BlockType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }, { type: BlockType.LUMEN_BERRY, chance: 0.25, min: 1, max: 1 }] },
+  [BlockType.MOSS_BLOCK]: { id: BlockType.MOSS_BLOCK, color: '#5a7a35', name: 'Moss Block', textureSlot: 221, hardness: 0.3, preferredTool: 'shovel', category: 'natural', drops: [{ type: ItemType.MOSS_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.GLOW_LICHEN]: { id: BlockType.GLOW_LICHEN, color: '#6fae8a', name: 'Glow Lichen', textureSlot: 222, transparent: true, noCollision: true, hardness: 0.2, lightLevel: 7, category: 'natural', drops: [{ type: ItemType.GLOW_LICHEN, chance: 1, min: 1, max: 1 }, { type: ItemType.LUMEN_BERRY, chance: 0.25, min: 1, max: 1 }] },
 
   // Amethyst geodes, calcite shell, amethyst lining, budding cores that grow
   // faceted (emissive) clusters. Budding amethyst can't be harvested (drops []).
-  [BlockType.AMETHYST_BLOCK]: { id: BlockType.AMETHYST_BLOCK, color: '#8b5fc9', name: 'Amethyst Block', textureSlot: 223, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.AMETHYST_BLOCK, chance: 1, min: 1, max: 1 }] },
+  [BlockType.AMETHYST_BLOCK]: { id: BlockType.AMETHYST_BLOCK, color: '#8b5fc9', name: 'Amethyst Block', textureSlot: 223, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.AMETHYST_BLOCK, chance: 1, min: 1, max: 1 }] },
   [BlockType.BUDDING_AMETHYST]: { id: BlockType.BUDDING_AMETHYST, color: '#9264d0', name: 'Budding Amethyst', textureSlot: 224, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [] },
-  [BlockType.AMETHYST_CLUSTER]: { id: BlockType.AMETHYST_CLUSTER, color: '#b389e6', name: 'Amethyst Cluster', textureSlot: 225, transparent: true, noCollision: true, hardness: 0.6, lightLevel: 5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: BlockType.AMETHYST_CLUSTER, chance: 1, min: 1, max: 1 }] },
-  [BlockType.CALCITE]: { id: BlockType.CALCITE, color: '#dcdcd6', name: 'Calcite', textureSlot: 226, hardness: 0.75, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: BlockType.CALCITE, chance: 1, min: 1, max: 1 }] },
+  [BlockType.AMETHYST_CLUSTER]: { id: BlockType.AMETHYST_CLUSTER, color: '#b389e6', name: 'Amethyst Cluster', textureSlot: 225, transparent: true, noCollision: true, hardness: 0.6, lightLevel: 5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'natural', drops: [{ type: ItemType.AMETHYST_CLUSTER, chance: 1, min: 1, max: 1 }] },
+  [BlockType.CALCITE]: { id: BlockType.CALCITE, color: '#dcdcd6', name: 'Calcite', textureSlot: 226, hardness: 0.75, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building', drops: [{ type: ItemType.CALCITE, chance: 1, min: 1, max: 1 }] },
 
   // ===== Deepslate ore variants =====
   // Spawn when an ore rolls inside the deepslate band (see chunkGeneration). They
   // drop exactly what the stone ores drop, but are a little tougher to mine.
-  [BlockType.DEEPSLATE_COAL_ORE]: { id: BlockType.DEEPSLATE_COAL_ORE, color: '#2b2b31', name: 'Deepslate Coal Ore', textureSlot: 227, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.COAL, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.DEEPSLATE_IRON_ORE]: { id: BlockType.DEEPSLATE_IRON_ORE, color: '#8a8f9a', name: 'Deepslate Iron Ore', textureSlot: 228, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.RAW_IRON, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.DEEPSLATE_COPPER_ORE]: { id: BlockType.DEEPSLATE_COPPER_ORE, color: '#a86a3c', name: 'Deepslate Copper Ore', textureSlot: 229, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.RAW_COPPER, chance: 1, min: 2, max: 5 }], category: 'natural' },
-  [BlockType.DEEPSLATE_GOLD_ORE]: { id: BlockType.DEEPSLATE_GOLD_ORE, color: '#c8a52c', name: 'Deepslate Gold Ore', textureSlot: 230, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.RAW_GOLD, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.DEEPSLATE_DIAMOND_ORE]: { id: BlockType.DEEPSLATE_DIAMOND_ORE, color: '#3aa9bd', name: 'Deepslate Diamond Ore', textureSlot: 231, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.DIAMOND, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.DEEPSLATE_LAPIS_ORE]: { id: BlockType.DEEPSLATE_LAPIS_ORE, color: '#2b3573', name: 'Deepslate Lapis Ore', textureSlot: 232, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: BlockType.LAPIS_LAZULI, chance: 1, min: 4, max: 9 }], category: 'natural' },
-  [BlockType.DEEPSLATE_EMERALD_ORE]: { id: BlockType.DEEPSLATE_EMERALD_ORE, color: '#2ba85e', name: 'Deepslate Emerald Ore', textureSlot: 233, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: BlockType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_COAL_ORE]: { id: BlockType.DEEPSLATE_COAL_ORE, color: '#2b2b31', name: 'Deepslate Coal Ore', textureSlot: 227, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: ItemType.COAL, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_IRON_ORE]: { id: BlockType.DEEPSLATE_IRON_ORE, color: '#8a8f9a', name: 'Deepslate Iron Ore', textureSlot: 228, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: ItemType.RAW_IRON, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_COPPER_ORE]: { id: BlockType.DEEPSLATE_COPPER_ORE, color: '#a86a3c', name: 'Deepslate Copper Ore', textureSlot: 229, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: ItemType.RAW_COPPER, chance: 1, min: 2, max: 5 }], category: 'natural' },
+  [BlockType.DEEPSLATE_GOLD_ORE]: { id: BlockType.DEEPSLATE_GOLD_ORE, color: '#c8a52c', name: 'Deepslate Gold Ore', textureSlot: 230, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: ItemType.RAW_GOLD, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_DIAMOND_ORE]: { id: BlockType.DEEPSLATE_DIAMOND_ORE, color: '#3aa9bd', name: 'Deepslate Diamond Ore', textureSlot: 231, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: ItemType.DIAMOND, chance: 1, min: 1, max: 1 }], category: 'natural' },
+  [BlockType.DEEPSLATE_LAPIS_ORE]: { id: BlockType.DEEPSLATE_LAPIS_ORE, color: '#2b3573', name: 'Deepslate Lapis Ore', textureSlot: 232, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 2, drops: [{ type: ItemType.LAPIS_LAZULI, chance: 1, min: 4, max: 9 }], category: 'natural' },
+  [BlockType.DEEPSLATE_EMERALD_ORE]: { id: BlockType.DEEPSLATE_EMERALD_ORE, color: '#2ba85e', name: 'Deepslate Emerald Ore', textureSlot: 233, hardness: 4.5, preferredTool: 'pickaxe', minHarvestTier: 3, drops: [{ type: ItemType.EMERALD, chance: 1, min: 1, max: 1 }], category: 'natural' },
 
   // ===== Foods (Atlas-original) =====
   // Banana, a rare drop from jungle leaves; a quick, filling snack.
-  [BlockType.BANANA]: { id: BlockType.BANANA, color: '#ffd54f', name: 'Banana', textureSlot: 234, hardness: 0, isItem: true, category: 'food', nutrition: 5, saturationModifier: 0.3 },
+  [ItemType.BANANA]: { id: ItemType.BANANA, color: '#ffd54f', name: 'Banana', textureSlot: 234, hardness: 0, isItem: true, category: 'food', nutrition: 5, saturationModifier: 0.3 },
   // Lumen Berry, a faintly glowing berry foraged from cave glow lichen. Light
   // snack; carries a soft glow as a dropped item.
-  [BlockType.LUMEN_BERRY]: { id: BlockType.LUMEN_BERRY, color: '#8ef0d0', name: 'Lumen Berry', textureSlot: 235, hardness: 0, isItem: true, lightLevel: 4, category: 'food', nutrition: 3, saturationModifier: 0.3 },
+  [ItemType.LUMEN_BERRY]: { id: ItemType.LUMEN_BERRY, color: '#8ef0d0', name: 'Lumen Berry', textureSlot: 235, hardness: 0, isItem: true, lightLevel: 4, category: 'food', nutrition: 3, saturationModifier: 0.3 },
   // Forager's Bowl, a hearty crafted meal (apple + banana + lumen berry). The
   // best hunger restore available without farming.
-  [BlockType.FORAGERS_BOWL]: { id: BlockType.FORAGERS_BOWL, color: '#c98a3c', name: "Forager's Bowl", textureSlot: 236, hardness: 0, isItem: true, category: 'food', nutrition: 9, saturationModifier: 0.6 }
+  [ItemType.FORAGERS_BOWL]: { id: ItemType.FORAGERS_BOWL, color: '#c98a3c', name: "Forager's Bowl", textureSlot: 236, hardness: 0, isItem: true, category: 'food', nutrition: 9, saturationModifier: 0.6 }
 };
 
 export const ATLAS_COLS = 8;

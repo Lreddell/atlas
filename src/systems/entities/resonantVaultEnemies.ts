@@ -1,4 +1,4 @@
-import type { BlockType } from '../../types.ts';
+import type { ItemType } from '../../types.ts';
 import type { EntityKind, EntityMovementAbility } from './Entity.ts';
 import type { EncounterBounds, EncounterPosition } from './resonantEncounterActivation.ts';
 
@@ -63,9 +63,9 @@ export interface VaultEnemyProfile {
 }
 
 export interface VaultEnemyLootTypes {
-    fracturedCore: BlockType;
-    echoShard: BlockType;
-    vaultBolt: BlockType;
+    fracturedCore: ItemType;
+    echoShard: ItemType;
+    vaultBolt: ItemType;
 }
 
 export const MAX_ROOM_ENEMIES = 6;

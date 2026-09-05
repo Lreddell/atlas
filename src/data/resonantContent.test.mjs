@@ -26,34 +26,34 @@ const ITEM_NAMES = [
 
 test('all resonant blocks and items register into the authoritative BLOCKS table', () => {
   assert.match(definitions, /BLOCKS as Record<number, BlockDef>/);
-  for (const name of WORLD_NAMES) assert.match(definitions, new RegExp(`\\[BlockType\\.${name}\\]`));
-  for (const name of ITEM_NAMES) assert.match(definitions, new RegExp(`\\[BlockType\\.${name}\\]`));
+  for (const name of WORLD_NAMES) assert.match(definitions, new RegExp(`\\[(?:BlockType|ItemType)\\.${name}\\]`));
+  for (const name of ITEM_NAMES) assert.match(definitions, new RegExp(`\\[(?:BlockType|ItemType)\\.${name}\\]`));
   assert.match(index, /resonantInit/);
 });
 
 test('inventory-only resonant content is explicitly marked and world blocks are not', () => {
   for (const name of ITEM_NAMES) {
-    const entry = definitions.match(new RegExp(`\\[BlockType\\.${name}\\]: \\{([^}]+)\\}`))?.[1] ?? '';
+    const entry = definitions.match(new RegExp(`\\[(?:BlockType|ItemType)\\.${name}\\]: \\{([^}]+)\\}`))?.[1] ?? '';
     assert.match(entry, /isItem:\s*true/, `${name} must be inventory-only`);
   }
   for (const name of WORLD_NAMES) {
-    const entry = definitions.match(new RegExp(`\\[BlockType\\.${name}\\]: \\{([^}]+)\\}`))?.[1] ?? '';
+    const entry = definitions.match(new RegExp(`\\[(?:BlockType|ItemType)\\.${name}\\]: \\{([^}]+)\\}`))?.[1] ?? '';
     assert.doesNotMatch(entry, /isItem:\s*true/, `${name} must remain world-placeable`);
   }
 });
 
 test('echo crystal drops shards and active vault blocks emit light', () => {
-  assert.match(definitions, /BlockType\.ECHO_CRYSTAL[\s\S]{0,420}drops:\s*\[\{\s*type:\s*BlockType\.ECHO_SHARD/);
+  assert.match(definitions, /(?:BlockType|ItemType)\.ECHO_CRYSTAL[\s\S]{0,420}drops:\s*\[\{\s*type:\s*(?:BlockType|ItemType)\.ECHO_SHARD/);
   for (const name of ['ECHO_CRYSTAL','RESONANCE_PYLON','PULSE_CONDUIT','RESONANT_LAMP','SENTINEL_CORE','LISTENING_STONE']) {
-    assert.match(definitions, new RegExp(`BlockType\\.${name}[\\s\\S]{0,380}lightLevel:`));
+    assert.match(definitions, new RegExp(`(?:BlockType|ItemType)\\.${name}[\\s\\S]{0,380}lightLevel:`));
   }
 });
 
 test('building recipes remain without prototype gadget recipes', () => {
-  assert.match(recipes, /BlockType\.ECHO_SHARD,\s*BlockType\.ECHO_SHARD[\s\S]{0,120}BlockType\.ECHO_DUST,\s*count:\s*4/);
+  assert.match(recipes, /(?:BlockType|ItemType)\.ECHO_SHARD,\s*(?:BlockType|ItemType)\.ECHO_SHARD[\s\S]{0,120}(?:BlockType|ItemType)\.ECHO_DUST,\s*count:\s*4/);
   assert.match(recipes, /RESONANT_SHAPE_FAMILIES\.flatMap/);
-  assert.doesNotMatch(recipes, /output:\s*\{\s*type:\s*BlockType\.RESONATOR/);
-  assert.doesNotMatch(recipes, /output:\s*\{\s*type:\s*BlockType\.PULSE_BRACER/);
+  assert.doesNotMatch(recipes, /output:\s*\{\s*type:\s*(?:BlockType|ItemType)\.RESONATOR/);
+  assert.doesNotMatch(recipes, /output:\s*\{\s*type:\s*(?:BlockType|ItemType)\.PULSE_BRACER/);
 });
 
 test('resonant content has deterministic pixel art integrated into the shared atlas', () => {

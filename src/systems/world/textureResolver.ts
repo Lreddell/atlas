@@ -1,17 +1,17 @@
 
-import { BlockType } from '../../types';
+import { BlockType, ItemType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
 
 export function resolveTexture(
-    type: BlockType, 
+    type: BlockType | ItemType,
     _dir: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back', 
     dx: number, 
     dy: number, 
     dz: number, 
     rotation: number = 0
 ): { texIdx: number, uvs: number[] } {
-    const def = BLOCKS[type];
+    const def = BLOCKS[type] ?? BLOCKS[BlockType.UNKNOWN];
     let texIdx = def.textureSlot || 0;
     
     // UV Rotation: 0=0, 1=90, 2=180, 3=270

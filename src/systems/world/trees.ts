@@ -1,4 +1,4 @@
-import { BlockType } from '../../types';
+import { BlockType, ItemType } from '../../types';
 
 export type TreeKind = 'oak' | 'spruce' | 'birch' | 'cherry' | 'jungle' | 'dark_oak' | 'acacia';
 
@@ -47,15 +47,15 @@ export function getTreeKindForSapling(type: BlockType): TreeKind | null {
     }
 }
 
-export function getSaplingForLeaves(type: BlockType): BlockType | null {
+export function getSaplingForLeaves(type: BlockType): ItemType | null {
     switch (type) {
-        case BlockType.LEAVES: return BlockType.SAPLING;
-        case BlockType.SPRUCE_LEAVES: return BlockType.SPRUCE_SAPLING;
-        case BlockType.BIRCH_LEAVES: return BlockType.BIRCH_SAPLING;
-        case BlockType.CHERRY_LEAVES: return BlockType.CHERRY_SAPLING;
-        case BlockType.JUNGLE_LEAVES: return BlockType.JUNGLE_SAPLING;
-        case BlockType.DARK_OAK_LEAVES: return BlockType.DARK_OAK_SAPLING;
-        case BlockType.ACACIA_LEAVES: return BlockType.ACACIA_SAPLING;
+        case BlockType.LEAVES: return ItemType.SAPLING;
+        case BlockType.SPRUCE_LEAVES: return ItemType.SPRUCE_SAPLING;
+        case BlockType.BIRCH_LEAVES: return ItemType.BIRCH_SAPLING;
+        case BlockType.CHERRY_LEAVES: return ItemType.CHERRY_SAPLING;
+        case BlockType.JUNGLE_LEAVES: return ItemType.JUNGLE_SAPLING;
+        case BlockType.DARK_OAK_LEAVES: return ItemType.DARK_OAK_SAPLING;
+        case BlockType.ACACIA_LEAVES: return ItemType.ACACIA_SAPLING;
         default: return null;
     }
 }

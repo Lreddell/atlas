@@ -1,3 +1,4 @@
+import { blockForItem } from '../systems/registry/contentIds';
 
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame, useThree, createPortal } from '@react-three/fiber';
@@ -198,7 +199,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         // Slabs / stairs: build the real partial-box shape in hand instead of a cube.
         if (def.shape) {
             const parentType = (def.textureParent ?? itemType) as BlockType;
-            return buildShapedBlockGeometry(itemType, parentType, 0.4);
+            return buildShapedBlockGeometry(blockForItem(itemType) ?? BlockType.UNKNOWN, parentType, 0.4);
         }
 
         const is2D = isSpriteRenderedType(itemType);

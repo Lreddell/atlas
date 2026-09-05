@@ -2,7 +2,7 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Drop, BlockType, type ItemStack } from '../types';
+import { Drop, BlockType, ItemType, type ItemStack } from '../types';
 import { BLOCKS, ATLAS_COLS } from '../data/blocks';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
@@ -358,7 +358,7 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                             drop.velocity,
                             field,
                             dt,
-                            drop.type === BlockType.NEGATIVE_MAGNET ? -1 : 1,
+                            drop.type === ItemType.NEGATIVE_MAGNET ? -1 : 1,
                         );
                     }
                 }

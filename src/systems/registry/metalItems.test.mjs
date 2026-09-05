@@ -28,12 +28,12 @@ const nonMagneticItems = [
 
 test('classifies every approved metal item family', () => {
     for (const item of magneticItems) {
-        assert.match(source, new RegExp(`BlockType\\.${item}\\b`), `${item} is missing`);
+        assert.match(source, new RegExp(`(?:BlockType|ItemType)\\.${item}\\b`), `${item} is missing`);
     }
 });
 
 test('does not classify unrelated item families as magnetic metal', () => {
     for (const item of nonMagneticItems) {
-        assert.doesNotMatch(source, new RegExp(`BlockType\\.${item}\\b`), `${item} must remain unaffected`);
+        assert.doesNotMatch(source, new RegExp(`(?:BlockType|ItemType)\\.${item}\\b`), `${item} must remain unaffected`);
     }
 });

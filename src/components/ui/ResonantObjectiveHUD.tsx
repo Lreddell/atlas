@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { BlockType, type ItemStack } from '../../types';
+import { ItemType, type ItemStack } from '../../types';
 import { resonantVaultRuntime } from '../../systems/world/ResonantVaultRuntime';
 import { getVaultObjective } from '../../systems/world/resonantVaultObjectives';
 import { gameEvents } from '../../systems/events/GameEvents';
@@ -8,7 +8,7 @@ const ENVIRONMENT_ONLY_DISPLAY_MS = 4000;
 
 export const ResonantObjectiveHUD: React.FC<{ inventory: (ItemStack | null)[] }> = ({ inventory }) => {
     const snapshot = useSyncExternalStore(resonantVaultRuntime.subscribe, resonantVaultRuntime.getSnapshot);
-    const hasTuningFork = inventory.some((item) => item?.type === BlockType.ECHO_TUNING_FORK);
+    const hasTuningFork = inventory.some((item) => item?.type === ItemType.ECHO_TUNING_FORK);
     const [completionNotice, setCompletionNotice] = useState<{ vaultId: string; serial: number } | null>(null);
     const baseObjective = snapshot.vaultId ? getVaultObjective({ ...snapshot, hasTuningFork }) : null;
     const objective = completionNotice?.vaultId === snapshot.vaultId

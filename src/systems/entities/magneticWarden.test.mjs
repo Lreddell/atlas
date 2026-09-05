@@ -67,7 +67,7 @@ test('App wires the confirmation modal, no-duplicate spawn, and crystal→shield
 test('the Warden is leashed and refuses to path into the lava moat', () => {
     // Hazard/ledge guard: under its own power it won't step off a ledge or onto lava.
     assert.match(manager, /isSafeGround/);
-    assert.match(manager, /BlockType\.LAVA/);
+    assert.match(manager, /(?:BlockType|ItemType)\.LAVA/);
     assert.match(manager, /getSupportTop/);
     // Hard leash containment around the spawn (home).
     assert.match(manager, /applyLeash/);
@@ -177,7 +177,7 @@ test('death or wandering off despawns the boss (bar clears, re-summon at altar)'
     assert.match(manager, /despawnAllBosses\(\)/);
     assert.match(manager, /private despawnBoss\(/);
     // Despawn clears any standing crystals (set to AIR) and clears the bar.
-    assert.match(manager, /despawnBoss[\s\S]*?BlockType\.AIR/);
+    assert.match(manager, /despawnBoss[\s\S]*?(?:BlockType|ItemType)\.AIR/);
     assert.match(manager, /'boss:cleared'/);
     assert.match(manager, /BOSS_DESPAWN_RADIUS/);
     assert.match(app, /entityManager\.despawnAllBosses\(\)/);
@@ -224,7 +224,7 @@ test('the boss bar shows a recedable purple shield layer (no instructional text)
 });
 
 test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
-    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?drops:\s*\[\{ type: BlockType\.POLARITY_BOOTS_UPGRADE/);
+    assert.match(entity, /magnetic_warden:\s*{[\s\S]*?drops:\s*\[\{ type: (?:BlockType|ItemType)\.POLARITY_BOOTS_UPGRADE/);
     const recipes = read('src/recipes.ts');
     assert.match(recipes, /UPGRADED_POLARITY_BOOTS/);
     const equip = read('src/systems/registry/equipment.ts');
@@ -239,11 +239,11 @@ test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
 test('the arena has water landing pools and a removable dais; crystals spawn later', () => {
     const arena = read('src/systems/world/magneticArena.ts');
     assert.match(arena, /buildPillarLandingPools/);
-    assert.match(arena, /BlockType\.WATER/);
+    assert.match(arena, /(?:BlockType|ItemType)\.WATER/);
     // Crystals are NOT generated with the arena, the summon cutscene spawns them
     // at top+2 (getShieldCrystalPositions), so the arena is empty until you fight.
     assert.match(arena, /getShieldCrystalPositions/);
-    assert.doesNotMatch(arena, /ctx\.setBlock\(c\.x, top \+ 2, c\.z, BlockType\.MAGNETIC_SHIELD_CRYSTAL\)/);
+    assert.doesNotMatch(arena, /ctx\.setBlock\(c\.x, top \+ 2, c\.z, (?:BlockType|ItemType)\.MAGNETIC_SHIELD_CRYSTAL\)/);
     // The dais can be flattened (boss alive) and restored (boss gone).
     assert.match(arena, /export function flattenArenaDais/);
     assert.match(arena, /export function restoreArenaDais/);

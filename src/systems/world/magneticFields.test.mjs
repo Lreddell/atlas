@@ -287,7 +287,7 @@ test('arena generator is a large composed structure with the required parts', ()
     // Shield-crystal positions are exposed (the crystals themselves are spawned by
     // the summon cutscene, not generated with the arena).
     assert.match(a, /getShieldCrystalPositions/);
-    assert.match(a, /BlockType\.LAVA/);
+    assert.match(a, /(?:BlockType|ItemType)\.LAVA/);
     assert.match(a, /POSITIVE_MAGNET/);
     assert.match(a, /NEGATIVE_MAGNET/);
     assert.match(a, /MAGNETITE_BRICKS/);
@@ -363,32 +363,32 @@ test('Magnetic Spike fall multiplier is configured and amplifies', () => {
 
 test('new blocks are defined with the right shape', () => {
     // Magnetite Block: solid opaque (no transparent / noCollision flags).
-    assert.match(blocksSrc, /\[BlockType\.MAGNETITE_BLOCK\]:\s*{[^}]*name:\s*'Magnetite Block'/);
-    const magLine = blocksSrc.match(/\[BlockType\.MAGNETITE_BLOCK\]:\s*{[^}]*}/)[0];
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.MAGNETITE_BLOCK\]:\s*{[^}]*name:\s*'Magnetite Block'/);
+    const magLine = blocksSrc.match(/\[(?:BlockType|ItemType)\.MAGNETITE_BLOCK\]:\s*{[^}]*}/)[0];
     assert.ok(!/noCollision/.test(magLine) && !/transparent/.test(magLine));
 
     // Crystals: cross-plane (transparent + noCollision), self-dropping, natural.
     for (const t of ['POSITIVE_MAGNETITE_CRYSTAL', 'NEGATIVE_MAGNETITE_CRYSTAL']) {
-        const line = blocksSrc.match(new RegExp(`\\[BlockType\\.${t}\\]:\\s*{[^}]*}`))[0];
+        const line = blocksSrc.match(new RegExp(`\\[(?:BlockType|ItemType)\\.${t}\\]:\\s*{[^}]*}`))[0];
         assert.match(line, /transparent:\s*true/);
         assert.match(line, /noCollision:\s*true/);
-        assert.match(line, new RegExp(`drops:\\s*\\[{\\s*type:\\s*BlockType\\.${t}`));
+        assert.match(line, new RegExp(`drops:\\s*\\[{\\s*type:\\s*(?:BlockType|ItemType)\\.${t}`));
         assert.match(line, /category:\s*'natural'/);
     }
 
     // Spike: cross-plane render but solid (keeps collision so the player lands).
-    const spike = blocksSrc.match(/\[BlockType\.MAGNETIC_SPIKE\]:\s*{[^}]*}/)[0];
+    const spike = blocksSrc.match(/\[(?:BlockType|ItemType)\.MAGNETIC_SPIKE\]:\s*{[^}]*}/)[0];
     assert.match(spike, /transparent:\s*true/);
     assert.ok(!/noCollision/.test(spike));
 
-    assert.match(blocksSrc, /\[BlockType\.MAGNETIC_BOSS_SUMMONER\]:/);
-    assert.match(blocksSrc, /\[BlockType\.MAGNETIC_SHIELD_CRYSTAL\]:/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.MAGNETIC_BOSS_SUMMONER\]:/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.MAGNETIC_SHIELD_CRYSTAL\]:/);
 
     // Contrast decoration blocks: emissive solid accent + bright cross-plane shard.
-    const charged = blocksSrc.match(/\[BlockType\.CHARGED_MAGNETITE\]:\s*{[^}]*}/)[0];
+    const charged = blocksSrc.match(/\[(?:BlockType|ItemType)\.CHARGED_MAGNETITE\]:\s*{[^}]*}/)[0];
     assert.match(charged, /lightLevel:\s*\d/);
     assert.ok(!/noCollision/.test(charged), 'charged magnetite is a solid accent');
-    const shard = blocksSrc.match(/\[BlockType\.MAGNETITE_SHARD\]:\s*{[^}]*}/)[0];
+    const shard = blocksSrc.match(/\[(?:BlockType|ItemType)\.MAGNETITE_SHARD\]:\s*{[^}]*}/)[0];
     assert.match(shard, /transparent:\s*true/);
     assert.match(shard, /noCollision:\s*true/);
 });
@@ -400,14 +400,14 @@ test('terrain wiring: edge blend + wall magnets + crystal feature pass', () => {
     assert.match(cg, /computeAmbientTerrainInfo/);
     // Polarity magnets embedded on wall bands.
     assert.match(cg, /getMagnetiteWallPolarity/);
-    assert.match(cg, /POSITIVE_MAGNET\s*:\s*BlockType\.NEGATIVE_MAGNET/);
+    assert.match(cg, /POSITIVE_MAGNET\s*:\s*(?:BlockType|ItemType)\.NEGATIVE_MAGNET/);
     // Feature pass places the resource crystal clusters.
     assert.match(cg, /getMagneticFeature/);
     assert.match(cg, /POSITIVE_MAGNETITE_CRYSTAL/);
 
     // Ocean blend: biome water is WATER (soft shore), not a hard lava border.
     const biomes = read('src/systems/world/biomes.ts');
-    assert.match(biomes, /MAGNETIC_FIELDS:\s*{[\s\S]*?waterBlock:\s*BlockType\.WATER/);
+    assert.match(biomes, /MAGNETIC_FIELDS:\s*{[\s\S]*?waterBlock:\s*(?:BlockType|ItemType)\.WATER/);
 
     // The Charged Magnetite launch-pad bounce was removed.
     const player = read('src/components/Player.tsx');
@@ -415,26 +415,26 @@ test('terrain wiring: edge blend + wall magnets + crystal feature pass', () => {
 });
 
 test('magnetite traversal blocks use magnetite user-facing names', () => {
-    assert.match(blocksSrc, /\[BlockType\.POSITIVE_MAGNET\]:[^\n]*name:\s*'Positive Magnetite Block'/);
-    assert.match(blocksSrc, /\[BlockType\.NEGATIVE_MAGNET\]:[^\n]*name:\s*'Negative Magnetite Block'/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.POSITIVE_MAGNET\]:[^\n]*name:\s*'Positive Magnetite Block'/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.NEGATIVE_MAGNET\]:[^\n]*name:\s*'Negative Magnetite Block'/);
 });
 
 test('Polarity Boots recipe uses two iron ingots and one of each crystal', () => {
-    // push(3, [..FE.. , ..FE.. , PC .. NC], BlockType.POLARITY_BOOTS, 1)
-    const m = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*BlockType\.POLARITY_BOOTS,\s*1\)/);
+    // push(3, [..FE.. , ..FE.. , PC .. NC], ItemType.POLARITY_BOOTS, 1)
+    const m = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*(?:BlockType|ItemType)\.POLARITY_BOOTS,\s*1\)/);
     assert.ok(m, 'expected a 3x3 Polarity Boots recipe');
     const cells = m[1];
     assert.equal((cells.match(/\bFE\b/g) || []).length, 2, 'two iron ingots');
     assert.equal((cells.match(/\bPC\b/g) || []).length, 1, 'one positive crystal');
     assert.equal((cells.match(/\bNC\b/g) || []).length, 1, 'one negative crystal');
-    assert.match(recipesSrc, /const FE = BlockType\.IRON_INGOT/);
-    assert.match(recipesSrc, /const PC = BlockType\.POSITIVE_MAGNETITE_CRYSTAL/);
-    assert.match(recipesSrc, /const NC = BlockType\.NEGATIVE_MAGNETITE_CRYSTAL/);
+    assert.match(recipesSrc, /const FE = (?:BlockType|ItemType)\.IRON_INGOT/);
+    assert.match(recipesSrc, /const PC = (?:BlockType|ItemType)\.POSITIVE_MAGNETITE_CRYSTAL/);
+    assert.match(recipesSrc, /const NC = (?:BlockType|ItemType)\.NEGATIVE_MAGNETITE_CRYSTAL/);
 });
 
 test('magnetite block recipes: eight crystals around one iron ingot', () => {
-    const pos = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*BlockType\.POSITIVE_MAGNET,\s*1\)/);
-    const neg = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*BlockType\.NEGATIVE_MAGNET,\s*1\)/);
+    const pos = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*(?:BlockType|ItemType)\.POSITIVE_MAGNET,\s*1\)/);
+    const neg = recipesSrc.match(/push\(3,\s*\[([^\]]*)\],\s*(?:BlockType|ItemType)\.NEGATIVE_MAGNET,\s*1\)/);
     assert.ok(pos && neg, 'expected magnetite block recipes');
     assert.equal((pos[1].match(/\bPC\b/g) || []).length, 8);
     assert.equal((pos[1].match(/\bFE\b/g) || []).length, 1);
@@ -450,7 +450,7 @@ test('only the crystals are mineable while sealed', () => {
     // Exactly the three crystals, the two craftable resource crystals plus the
     // boss shield crystals; no other terrain becomes mineable while sealed.
     const inside = src.match(/new Set\(\[([\s\S]*?)\]\)/)[1];
-    assert.equal((inside.match(/BlockType\./g) || []).length, 3);
+    assert.equal((inside.match(/(?:BlockType|ItemType)\./g) || []).length, 3);
 });
 
 test('Magnetic Fields biome + sealed region are registered', () => {
@@ -501,7 +501,7 @@ test('cache chests seed loot exactly once and spill it when broken unopened', ()
     assert.match(wm, /setMetadataAt\(x, y, z, meta & ~0x40\)/);
     // Breaking an unopened cache seeds it first, so handleBlockReplaced spills
     // the loot as drops instead of deleting it.
-    assert.match(wm, /oldType === BlockType\.CHEST && type !== BlockType\.CHEST && \(oldRotation & 0x40\) !== 0/);
+    assert.match(wm, /oldType === (?:BlockType|ItemType)\.CHEST && type !== (?:BlockType|ItemType)\.CHEST && \(oldRotation & 0x40\) !== 0/);
     // The chest texture resolver masks to the facing bits, so the cache flag
     // cannot corrupt chest rotation rendering.
     const resolver = read('src/systems/world/textureResolver.ts');

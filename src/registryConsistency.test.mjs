@@ -16,13 +16,13 @@ const enumNames = new Set(
 );
 
 test('every BlockType referenced by recipes exists in the enum', () => {
-    for (const m of recipesSrc.matchAll(/BlockType\.([A-Z0-9_]+)/g)) {
+    for (const m of recipesSrc.matchAll(/(?:BlockType|ItemType)\.([A-Z0-9_]+)/g)) {
         assert.ok(enumNames.has(m[1]), `recipes.ts references unknown BlockType.${m[1]}`);
     }
 });
 
 test('every BlockType referenced by the block registry exists in the enum', () => {
-    for (const m of blocksSrc.matchAll(/BlockType\.([A-Z0-9_]+)/g)) {
+    for (const m of blocksSrc.matchAll(/(?:BlockType|ItemType)\.([A-Z0-9_]+)/g)) {
         assert.ok(enumNames.has(m[1]), `blocks.ts references unknown BlockType.${m[1]}`);
     }
 });
@@ -33,11 +33,11 @@ test('all sixteen armor pieces are craftable', () => {
     assert.match(recipesSrc, /const ARMOR_SETS/);
     for (const material of ['IRON', 'GOLD', 'COPPER']) {
         for (const piece of ['HELMET', 'CHESTPLATE', 'LEGGINGS', 'BOOTS']) {
-            assert.match(recipesSrc, new RegExp(`BlockType\\.${material}_${piece}`), `${material}_${piece} recipe missing`);
+            assert.match(recipesSrc, new RegExp(`(?:BlockType|ItemType)\\.${material}_${piece}`), `${material}_${piece} recipe missing`);
         }
     }
     for (const piece of ['HELMET', 'CHESTPLATE', 'LEGGINGS', 'BOOTS']) {
-        assert.match(recipesSrc, new RegExp(`BlockType\\.DIAMOND_${piece}`), `DIAMOND_${piece} recipe missing`);
+        assert.match(recipesSrc, new RegExp(`(?:BlockType|ItemType)\\.DIAMOND_${piece}`), `DIAMOND_${piece} recipe missing`);
     }
     assert.match(recipesSrc, /push\(3, \[M, M, M, M, null, M, null, null, null\], a\.helmet, 1\)/);
 });
@@ -45,24 +45,24 @@ test('all sixteen armor pieces are craftable', () => {
 test('previously unobtainable items now have survival sources', () => {
     // Wool (bed ingredient) from wheat seeds; packed ice from ice; boat from
     // planks; charged magnetite + magnetic spikes from magnetite materials.
-    assert.match(recipesSrc, /BlockType\.WHEAT_SEEDS[\s\S]{0,120}BlockType\.WOOL/);
-    assert.match(recipesSrc, /BlockType\.ICE[\s\S]{0,120}BlockType\.PACKED_ICE/);
-    assert.match(recipesSrc, /BlockType\.BOAT/);
-    assert.match(recipesSrc, /BlockType\.CHARGED_MAGNETITE/);
-    assert.match(recipesSrc, /BlockType\.MAGNETIC_SPIKE/);
+    assert.match(recipesSrc, /(?:BlockType|ItemType)\.WHEAT_SEEDS[\s\S]{0,120}(?:BlockType|ItemType)\.WOOL/);
+    assert.match(recipesSrc, /(?:BlockType|ItemType)\.ICE[\s\S]{0,120}(?:BlockType|ItemType)\.PACKED_ICE/);
+    assert.match(recipesSrc, /(?:BlockType|ItemType)\.BOAT/);
+    assert.match(recipesSrc, /(?:BlockType|ItemType)\.CHARGED_MAGNETITE/);
+    assert.match(recipesSrc, /(?:BlockType|ItemType)\.MAGNETIC_SPIKE/);
 });
 
 test('the boat item is registered with a name, icon slot, and creative category', () => {
     assert.match(typesSrc, /\bBOAT\s*=\s*169\b/);
-    assert.match(blocksSrc, /\[BlockType\.BOAT\]:[^\n]*name:\s*'Boat'/);
-    assert.match(blocksSrc, /\[BlockType\.BOAT\]:[^\n]*textureSlot:\s*216/);
-    assert.match(blocksSrc, /\[BlockType\.BOAT\]:[^\n]*category:/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.BOAT\]:[^\n]*name:\s*'Boat'/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.BOAT\]:[^\n]*textureSlot:\s*216/);
+    assert.match(blocksSrc, /\[(?:BlockType|ItemType)\.BOAT\]:[^\n]*category:/);
 });
 
 test('no two item entries share a texture slot (block-parent reuse excepted)', () => {
     // Items (isItem: true) must each render their own icon. UPGRADED_POLARITY_BOOTS
     // intentionally reuses the base boots tile (slot 155).
-    const entryStarts = [...blocksSrc.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];
+    const entryStarts = [...blocksSrc.matchAll(/^\s*\[(?:BlockType|ItemType)\.([A-Z0-9_]+)\]:/gm)];
     const seen = new Map();
     entryStarts.forEach((m, i) => {
         const body = blocksSrc.slice(m.index, entryStarts[i + 1]?.index ?? blocksSrc.length);

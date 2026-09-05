@@ -140,27 +140,27 @@ test('the generator drives caves from config + the shared caves.ts sampler', () 
     assert.match(chunkGen, /isCaveCarved\(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg\)/);
     // Deep-stone substitution and the decoration + geode passes are wired in.
     assert.match(chunkGen, /isDeepslateAt\(y, seededRand01\(wx, y, wz, 71\), caveCfg\)/);
-    assert.match(chunkGen, /BlockType\.DEEPSLATE/);
+    assert.match(chunkGen, /(?:BlockType|ItemType)\.DEEPSLATE/);
     assert.match(chunkGen, /Cave decoration pass/);
-    assert.match(chunkGen, /BlockType\.POINTED_DRIPSTONE/);
-    assert.match(chunkGen, /BlockType\.GLOW_LICHEN/);
-    assert.match(chunkGen, /BlockType\.MOSS_BLOCK/);
+    assert.match(chunkGen, /(?:BlockType|ItemType)\.POINTED_DRIPSTONE/);
+    assert.match(chunkGen, /(?:BlockType|ItemType)\.GLOW_LICHEN/);
+    assert.match(chunkGen, /(?:BlockType|ItemType)\.MOSS_BLOCK/);
     assert.match(chunkGen, /Amethyst geodes/);
-    assert.match(chunkGen, /BlockType\.BUDDING_AMETHYST/);
+    assert.match(chunkGen, /(?:BlockType|ItemType)\.BUDDING_AMETHYST/);
     // Ores still host in the deepslate band.
-    assert.match(chunkGen, /!== BlockType\.STONE && blocks\[index\] !== BlockType\.DEEPSLATE/);
+    assert.match(chunkGen, /!== (?:BlockType|ItemType)\.STONE && blocks\[index\] !== (?:BlockType|ItemType)\.DEEPSLATE/);
 });
 
 test('the new cave blocks exist and the cross-plane ones are cutouts', () => {
     for (const b of ['DEEPSLATE', 'COBBLED_DEEPSLATE', 'DRIPSTONE_BLOCK', 'POINTED_DRIPSTONE', 'MOSS_BLOCK', 'GLOW_LICHEN', 'AMETHYST_BLOCK', 'BUDDING_AMETHYST', 'AMETHYST_CLUSTER', 'CALCITE']) {
         assert.match(types, new RegExp(`\\b${b}\\s*=\\s*\\d+`), `${b} missing from BlockType`);
-        assert.match(blocks, new RegExp(`\\[BlockType\\.${b}\\]:`), `${b} missing a block def`);
+        assert.match(blocks, new RegExp(`\\[(?:BlockType|ItemType)\\.${b}\\]:`), `${b} missing a block def`);
     }
     // Deepslate mines into cobbled deepslate (stone → cobblestone parity).
-    assert.match(blocks, /BlockType\.DEEPSLATE[\s\S]*?drops:\s*\[\{\s*type:\s*BlockType\.COBBLED_DEEPSLATE/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.DEEPSLATE[\s\S]*?drops:\s*\[\{\s*type:\s*(?:BlockType|ItemType)\.COBBLED_DEEPSLATE/);
     // Budding amethyst can't be harvested; glow lichen + amethyst cluster glow.
-    assert.match(blocks, /BlockType\.BUDDING_AMETHYST[\s\S]*?drops:\s*\[\]/);
-    assert.match(blocks, /BlockType\.GLOW_LICHEN[\s\S]*?lightLevel:\s*\d+/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.BUDDING_AMETHYST[\s\S]*?drops:\s*\[\]/);
+    assert.match(blocks, /(?:BlockType|ItemType)\.GLOW_LICHEN[\s\S]*?lightLevel:\s*\d+/);
     // The three cross-plane cutouts live in the shared sprite list the mesher
     // builds its cutout/cross tables from.
     assert.ok(geometry.includes('CROSS_RENDERED_BLOCKS'), 'geometry does not consume the shared sprite list');

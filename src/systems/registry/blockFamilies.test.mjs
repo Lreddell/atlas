@@ -36,7 +36,7 @@ const interactionSource = fs.readFileSync(
     'utf8',
 );
 
-const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];
+const blockEntryStarts = [...blocksSource.matchAll(/^\s*\[(?:BlockType|ItemType)\.([A-Z0-9_]+)\]:/gm)];
 const blockEntry = (type) => {
     const index = blockEntryStarts.findIndex((match) => match[1] === type);
     assert.notEqual(index, -1, `${type} block definition is missing`);
@@ -87,7 +87,7 @@ test('all grass-topped blocks drop Dirt', () => {
     for (const type of grassTypes) {
         assert.match(
             blockEntry(type),
-            /drops:\s*\[\{\s*type:\s*BlockType\.DIRT,\s*chance:\s*1,\s*min:\s*1,\s*max:\s*1\s*\}\]/,
+            /drops:\s*\[\{\s*type:\s*(?:BlockType|ItemType)\.DIRT,\s*chance:\s*1,\s*min:\s*1,\s*max:\s*1\s*\}\]/,
             `${type} must drop Dirt`,
         );
     }
@@ -107,7 +107,7 @@ test('wood families share fuel and charcoal behavior', () => {
     for (const [log, planks, sapling, slab, stairs] of familyTypes) {
         assert.match(blockEntry(log), /isFuel:\s*true/);
         assert.match(blockEntry(log), /fuelValue:\s*15000/);
-        assert.match(blockEntry(log), /smeltsInto:\s*BlockType\.CHARCOAL/);
+        assert.match(blockEntry(log), /smeltsInto:\s*(?:BlockType|ItemType)\.CHARCOAL/);
         assert.match(blockEntry(planks), /isFuel:\s*true/);
         assert.match(blockEntry(sapling), /isFuel:\s*true/);
         assert.match(blockEntry(slab), /isFuel:\s*true/);
@@ -123,15 +123,15 @@ test('wood families share fuel and charcoal behavior', () => {
 test('new stone variants drop themselves and smelt into Stone', () => {
     for (const type of ['ANDESITE', 'DIORITE', 'GRANITE']) {
         const entry = blockEntry(type);
-        assert.match(entry, new RegExp(`drops:\\s*\\[\\{\\s*type:\\s*BlockType\\.${type},`));
-        assert.match(entry, /smeltsInto:\s*BlockType\.STONE/);
+        assert.match(entry, new RegExp(`drops:\\s*\\[\\{\\s*type:\\s*(?:BlockType|ItemType)\\.${type},`));
+        assert.match(entry, /smeltsInto:\s*(?:BlockType|ItemType)\.STONE/);
     }
 });
 
 test('placement rotation uses the shared log-family predicate', () => {
     assert.match(
         interactionSource,
-        /isLogBlock\(heldItem\.type\)/,
+        /isLogBlock\(heldBlock\)/,
         'all registered logs must rotate through isLogBlock',
     );
 });

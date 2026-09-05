@@ -1,4 +1,4 @@
-import { BlockType } from '../types';
+import { BlockType, ItemType } from '../types';
 
 /** Short, concrete inventory facts for content used by the definitive vault. */
 export const RESONANT_ITEM_PURPOSES: Readonly<Record<number, readonly string[]>> = {
@@ -21,29 +21,29 @@ export const RESONANT_ITEM_PURPOSES: Readonly<Record<number, readonly string[]>>
     [BlockType.ECHO_STONE_STAIRS]: ['Echo Stone stairs.'],
     [BlockType.ECHO_BRICK_SLAB]: ['Echo Brick half block.'],
     [BlockType.ECHO_BRICK_STAIRS]: ['Echo Brick stairs.'],
-    [BlockType.ECHO_SHARD]: ['Crafts Echo Dust.'],
-    [BlockType.ECHO_DUST]: ['Vault crafting material.'],
-    [BlockType.ECHO_CORE]: ['Rare vault cache material.'],
-    [BlockType.FRACTURED_CORE]: ['Recycles into Echo Dust.'],
-    [BlockType.VAULTSTEEL_SPEAR]: ['Long-reach weapon; strongest at the tip of its reach.'],
-    [BlockType.VAULT_CROSSBOW]: ['Fires Vault Bolts.'],
-    [BlockType.VAULT_BOLT]: ['Ammunition for the Vault Crossbow.'],
-    [BlockType.BELLBREAKER_MAUL]: ['Heavy weapon; breaks guards and armored targets.'],
-    [BlockType.ECHO_TUNING_FORK]: ['Activates marked vault machinery.'],
-    [BlockType.TITAN_HAMMER]: ['Bell Titan weapon; heavy hits crush nearby enemies.'],
+    [ItemType.ECHO_SHARD]: ['Crafts Echo Dust.'],
+    [ItemType.ECHO_DUST]: ['Vault crafting material.'],
+    [ItemType.ECHO_CORE]: ['Rare vault cache material.'],
+    [ItemType.FRACTURED_CORE]: ['Recycles into Echo Dust.'],
+    [ItemType.VAULTSTEEL_SPEAR]: ['Long-reach weapon; strongest at the tip of its reach.'],
+    [ItemType.VAULT_CROSSBOW]: ['Fires Vault Bolts.'],
+    [ItemType.VAULT_BOLT]: ['Ammunition for the Vault Crossbow.'],
+    [ItemType.BELLBREAKER_MAUL]: ['Heavy weapon; breaks guards and armored targets.'],
+    [ItemType.ECHO_TUNING_FORK]: ['Activates marked vault machinery.'],
+    [ItemType.TITAN_HAMMER]: ['Bell Titan weapon; heavy hits crush nearby enemies.'],
 };
 
 const RESONANT_HOTBAR_SUMMARIES: Readonly<Record<number, string>> = {
-    [BlockType.ECHO_SHARD]: 'Crafting material',
-    [BlockType.ECHO_DUST]: 'Vault crafting material',
-    [BlockType.ECHO_CORE]: 'Rare cache material',
-    [BlockType.FRACTURED_CORE]: 'Recycles into Echo Dust',
-    [BlockType.VAULTSTEEL_SPEAR]: 'Long reach | tip strikes hit harder',
-    [BlockType.VAULT_CROSSBOW]: 'Uses Vault Bolts',
-    [BlockType.VAULT_BOLT]: 'Crossbow ammunition',
-    [BlockType.BELLBREAKER_MAUL]: 'Heavy | breaks guards and armor',
-    [BlockType.ECHO_TUNING_FORK]: 'Activates marked machinery',
-    [BlockType.TITAN_HAMMER]: 'Heavy | crushing shock impact',
+    [ItemType.ECHO_SHARD]: 'Crafting material',
+    [ItemType.ECHO_DUST]: 'Vault crafting material',
+    [ItemType.ECHO_CORE]: 'Rare cache material',
+    [ItemType.FRACTURED_CORE]: 'Recycles into Echo Dust',
+    [ItemType.VAULTSTEEL_SPEAR]: 'Long reach | tip strikes hit harder',
+    [ItemType.VAULT_CROSSBOW]: 'Uses Vault Bolts',
+    [ItemType.VAULT_BOLT]: 'Crossbow ammunition',
+    [ItemType.BELLBREAKER_MAUL]: 'Heavy | breaks guards and armor',
+    [ItemType.ECHO_TUNING_FORK]: 'Activates marked machinery',
+    [ItemType.TITAN_HAMMER]: 'Heavy | crushing shock impact',
 };
 
 export function getResonantPurpose(type: number): readonly string[] {

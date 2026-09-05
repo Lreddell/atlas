@@ -1,4 +1,4 @@
-import { BlockType } from '../../types';
+import { ItemType } from '../../types';
 import type { ChestState } from './worldTypes';
 import type { VaultLayout, VaultRoom, VaultRoutePoint } from './resonantVaults';
 
@@ -18,7 +18,7 @@ export type VaultCacheId =
 
 export interface VaultCacheEntry {
     slot: number;
-    itemId: BlockType;
+    itemId: ItemType;
     count: number;
 }
 
@@ -64,53 +64,53 @@ function seededValue(vaultId: string, cacheId: VaultCacheId, salt: number): numb
 }
 
 interface WeightedVaultLoot {
-    itemId: BlockType;
+    itemId: ItemType;
     weight: number;
     min: number;
     max: number;
 }
 
 const PROVISION_POOL: readonly WeightedVaultLoot[] = [
-    { itemId: BlockType.TORCH, weight: 16, min: 8, max: 20 },
-    { itemId: BlockType.APPLE, weight: 8, min: 2, max: 6 },
-    { itemId: BlockType.BANANA, weight: 7, min: 2, max: 5 },
-    { itemId: BlockType.LUMEN_BERRY, weight: 10, min: 3, max: 8 },
-    { itemId: BlockType.FORAGERS_BOWL, weight: 4, min: 1, max: 2 },
+    { itemId: ItemType.TORCH, weight: 16, min: 8, max: 20 },
+    { itemId: ItemType.APPLE, weight: 8, min: 2, max: 6 },
+    { itemId: ItemType.BANANA, weight: 7, min: 2, max: 5 },
+    { itemId: ItemType.LUMEN_BERRY, weight: 10, min: 3, max: 8 },
+    { itemId: ItemType.FORAGERS_BOWL, weight: 4, min: 1, max: 2 },
 ];
 
 const MASONRY_POOL: readonly WeightedVaultLoot[] = [
-    { itemId: BlockType.ECHO_BRICKS, weight: 9, min: 6, max: 18 },
-    { itemId: BlockType.CHISELED_ECHO_STONE, weight: 5, min: 4, max: 12 },
-    { itemId: BlockType.ECHO_STONE_SLAB, weight: 6, min: 6, max: 16 },
-    { itemId: BlockType.ECHO_BRICK_SLAB, weight: 6, min: 6, max: 16 },
+    { itemId: ItemType.ECHO_BRICKS, weight: 9, min: 6, max: 18 },
+    { itemId: ItemType.CHISELED_ECHO_STONE, weight: 5, min: 4, max: 12 },
+    { itemId: ItemType.ECHO_STONE_SLAB, weight: 6, min: 6, max: 16 },
+    { itemId: ItemType.ECHO_BRICK_SLAB, weight: 6, min: 6, max: 16 },
 ];
 
 const ARMORY_POOL: readonly WeightedVaultLoot[] = [
-    { itemId: BlockType.VAULT_BOLT, weight: 18, min: 8, max: 22 },
-    { itemId: BlockType.IRON_SWORD, weight: 9, min: 1, max: 1 },
-    { itemId: BlockType.IRON_PICKAXE, weight: 5, min: 1, max: 1 },
-    { itemId: BlockType.IRON_HELMET, weight: 6, min: 1, max: 1 },
-    { itemId: BlockType.IRON_CHESTPLATE, weight: 4, min: 1, max: 1 },
-    { itemId: BlockType.IRON_LEGGINGS, weight: 5, min: 1, max: 1 },
-    { itemId: BlockType.IRON_BOOTS, weight: 6, min: 1, max: 1 },
-    { itemId: BlockType.IRON_INGOT, weight: 12, min: 2, max: 7 },
+    { itemId: ItemType.VAULT_BOLT, weight: 18, min: 8, max: 22 },
+    { itemId: ItemType.IRON_SWORD, weight: 9, min: 1, max: 1 },
+    { itemId: ItemType.IRON_PICKAXE, weight: 5, min: 1, max: 1 },
+    { itemId: ItemType.IRON_HELMET, weight: 6, min: 1, max: 1 },
+    { itemId: ItemType.IRON_CHESTPLATE, weight: 4, min: 1, max: 1 },
+    { itemId: ItemType.IRON_LEGGINGS, weight: 5, min: 1, max: 1 },
+    { itemId: ItemType.IRON_BOOTS, weight: 6, min: 1, max: 1 },
+    { itemId: ItemType.IRON_INGOT, weight: 12, min: 2, max: 7 },
 ];
 
 const RELIC_POOL: readonly WeightedVaultLoot[] = [
-    { itemId: BlockType.ECHO_DUST, weight: 15, min: 2, max: 7 },
-    { itemId: BlockType.GOLD_INGOT, weight: 8, min: 1, max: 4 },
-    { itemId: BlockType.DIAMOND, weight: 2, min: 1, max: 2 },
-    { itemId: BlockType.LUMEN_BERRY, weight: 8, min: 4, max: 10 },
-    { itemId: BlockType.CHISELED_ECHO_STONE, weight: 7, min: 5, max: 14 },
-    { itemId: BlockType.VAULT_BOLT, weight: 7, min: 6, max: 16 },
+    { itemId: ItemType.ECHO_DUST, weight: 15, min: 2, max: 7 },
+    { itemId: ItemType.GOLD_INGOT, weight: 8, min: 1, max: 4 },
+    { itemId: ItemType.DIAMOND, weight: 2, min: 1, max: 2 },
+    { itemId: ItemType.LUMEN_BERRY, weight: 8, min: 4, max: 10 },
+    { itemId: ItemType.CHISELED_ECHO_STONE, weight: 7, min: 5, max: 14 },
+    { itemId: ItemType.VAULT_BOLT, weight: 7, min: 6, max: 16 },
 ];
 
 const FORGE_POOL: readonly WeightedVaultLoot[] = [
-    { itemId: BlockType.IRON_INGOT, weight: 14, min: 3, max: 8 },
-    { itemId: BlockType.GOLD_INGOT, weight: 5, min: 1, max: 3 },
-    { itemId: BlockType.ECHO_DUST, weight: 12, min: 2, max: 6 },
-    { itemId: BlockType.VAULT_BOLT, weight: 12, min: 8, max: 20 },
-    { itemId: BlockType.CHISELED_ECHO_STONE, weight: 6, min: 4, max: 10 },
+    { itemId: ItemType.IRON_INGOT, weight: 14, min: 3, max: 8 },
+    { itemId: ItemType.GOLD_INGOT, weight: 5, min: 1, max: 3 },
+    { itemId: ItemType.ECHO_DUST, weight: 12, min: 2, max: 6 },
+    { itemId: ItemType.VAULT_BOLT, weight: 12, min: 8, max: 20 },
+    { itemId: ItemType.CHISELED_ECHO_STONE, weight: 6, min: 4, max: 10 },
 ];
 
 function pickWeightedLoot(pool: readonly WeightedVaultLoot[], roll: number): WeightedVaultLoot {
@@ -179,7 +179,7 @@ function getSeededCacheLoot(vaultId: string, cacheId: VaultCacheId): VaultCacheE
     };
     const pools = getLootPools(vaultId, cacheId);
     const rolls = 5 + Math.floor(seededValue(vaultId, cacheId, 41) * 3);
-    const selected = new Map<BlockType, number>();
+    const selected = new Map<ItemType, number>();
     for (let index = 0; index < rolls; index += 1) {
         const pool = pools[index % pools.length];
         const picked = pickWeightedLoot(pool, seededValue(vaultId, cacheId, 100 + index * 11));
@@ -204,27 +204,27 @@ function mergeCacheEntries(primary: VaultCacheEntry[], supplies: VaultCacheEntry
 export function getVaultCacheLoot(vaultId: string, cacheId: VaultCacheId, firstClear: boolean): VaultCacheEntry[] {
     const supplies = getSeededCacheLoot(vaultId, cacheId);
     if (cacheId === 'tuning') {
-        return mergeCacheEntries([{ slot: 13, itemId: BlockType.ECHO_TUNING_FORK, count: 1 }], supplies);
+        return mergeCacheEntries([{ slot: 13, itemId: ItemType.ECHO_TUNING_FORK, count: 1 }], supplies);
     }
     if (cacheId === 'armory') {
-        return mergeCacheEntries([{ slot: 13, itemId: BlockType.VAULTSTEEL_SPEAR, count: 1 }], supplies);
+        return mergeCacheEntries([{ slot: 13, itemId: ItemType.VAULTSTEEL_SPEAR, count: 1 }], supplies);
     }
     if (cacheId === 'ranged') {
         return mergeCacheEntries([
-            { slot: 12, itemId: BlockType.VAULT_CROSSBOW, count: 1 },
-            { slot: 14, itemId: BlockType.VAULT_BOLT, count: 24 },
+            { slot: 12, itemId: ItemType.VAULT_CROSSBOW, count: 1 },
+            { slot: 14, itemId: ItemType.VAULT_BOLT, count: 24 },
         ], supplies);
     }
     if (cacheId === 'heavy') {
-        return mergeCacheEntries([{ slot: 13, itemId: BlockType.BELLBREAKER_MAUL, count: 1 }], supplies);
+        return mergeCacheEntries([{ slot: 13, itemId: ItemType.BELLBREAKER_MAUL, count: 1 }], supplies);
     }
     if (cacheId === 'core') {
         // The claimed Echo Core is delivered here (the claim itself spawns no
         // drops), so a repeat clear still pays out and a first clear cannot
         // double-collect core rewards.
         const rewards: VaultCacheEntry[] = [
-            { slot: 11, itemId: BlockType.ECHO_CORE, count: 1 },
-            { slot: 15, itemId: BlockType.ECHO_DUST, count: firstClear ? 8 : 5 },
+            { slot: 11, itemId: ItemType.ECHO_CORE, count: 1 },
+            { slot: 15, itemId: ItemType.ECHO_DUST, count: firstClear ? 8 : 5 },
         ];
         return mergeCacheEntries(rewards, supplies);
     }

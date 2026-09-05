@@ -1,4 +1,4 @@
-import { BlockType, type GameMode } from '../../types';
+import { BlockType, ItemType, type GameMode } from '../../types';
 import { worldManager } from '../WorldManager';
 import { progression } from '../progression/ProgressionStore';
 import { gameEvents } from '../events/GameEvents';
@@ -83,7 +83,7 @@ export type { VaultPlayerEdit } from './resonantVaultEditRules';
 export interface ResonantUseInput {
     origin: { x: number; y: number; z: number };
     direction: { x: number; y: number; z: number };
-    heldItem: BlockType;
+    heldItem: ItemType;
     target?: { x: number; y: number; z: number; type: BlockType; metadata: number } | null;
     gameMode: GameMode;
 }
@@ -430,7 +430,7 @@ class ResonantVaultRuntime {
     }
 
     useTuningFork(input: ResonantUseInput): boolean {
-        if (input.heldItem !== BlockType.ECHO_TUNING_FORK) return false;
+        if (input.heldItem !== ItemType.ECHO_TUNING_FORK) return false;
         const target = input.target;
         if (!target || (target.type !== BlockType.RESONANCE_PYLON
             && target.type !== BlockType.RESONANCE_PLATE
@@ -1341,7 +1341,7 @@ class ResonantVaultRuntime {
         }
         if (transition.completedNow && exit && progression.completeVaultEscape(layout.vaultId, exit)) {
             for (let index = 0; index < 6; index += 1) {
-                worldManager.spawnDrop(BlockType.ECHO_BRICKS, player.x, player.y + 1, player.z);
+                worldManager.spawnDrop(ItemType.ECHO_BRICKS, player.x, player.y + 1, player.z);
             }
             this.setEntranceEscapeSeal(layout, false);
             this.restoreEscapePlatforms();
