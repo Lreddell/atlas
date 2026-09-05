@@ -4,17 +4,19 @@ import { reduceBossBarState } from './bossBarState';
 import { soundManager } from '../../systems/sound/SoundManager';
 
 // Reusable boss / objective health bar. Driven entirely by the game event bus
-// (boss:spawned / boss:damaged / boss:defeated / boss:shield / boss:polarity) so
-// it has no direct dependency on the entity or combat systems.
+// (boss:spawned / boss:damaged / boss:defeated / boss:shield / boss:polarity /
+// boss:form) so it has no direct dependency on the entity or combat systems.
 
 // Phase thresholds (fraction of max HP) where the boss escalates. The bar draws a
 // segment marker at each so players can read upcoming phase changes, modular:
 // extend this list (or, later, feed it per-boss from boss:spawned) for any number
-// of phases. Magnetic Warden: slam phase at 50%, frenzy at 25%.
+// of phases. Magnetic Warden: the Aegis at two thirds, the Storm at one third.
 const PHASE_MARKERS: Readonly<Record<string, readonly number[]>> = {
-    magnetic_warden: [0.5, 0.25],
+    magnetic_warden: [2 / 3, 1 / 3],
     bell_titan: [0.67, 0.34],
 };
+
+const FORM_NUMERALS = ['', 'I', 'II', 'III'];
 
 // A small Atlas-pixel diamond pip that divides the bar at a phase threshold :
 // a segmented health-bar marker, kept crisp (shapeRendering=crispEdges) and
@@ -38,19 +40,26 @@ const PhaseMarker: React.FC<{ at: number }> = ({ at }) => (
 
 export const BossBar: React.FC = () => {
     const [boss, dispatch] = useReducer(reduceBossBarState, null);
-    // Shield crystals remaining and the starting count, so the bar can draw a
-    // purple shield layer that recedes a quarter at a time as crystals break.
+    // Shield layer: `crystals` is the fraction of the form's tower crystals still
+    // standing. It only ever drops when a crystal is broken (never on its own),
+    // so the purple layer reads as "how many towers are left to climb".
     const [shield, setShield] = React.useState<{ crystals: number; max: number }>({ crystals: 0, max: 0 });
+    // Crystal count for the readout under the bar: ignited per form, lost one by one.
+    const [layers, setLayers] = React.useState<{ standing: number; total: number }>({ standing: 0, total: 0 });
     // Boss polarity (+1 red / -1 blue / 0 unknown), tints the health bar.
     const [polarity, setPolarity] = React.useState(0);
-    // Brief white pulse when the boss crosses a phase threshold (50% / 25%).
+    // Brief white pulse when the boss crosses a phase threshold.
     const [phasePulse, setPhasePulse] = React.useState(false);
+    // The Warden's current form (I Warden / II Aegis / III Storm).
+    const [form, setForm] = React.useState<{ form: number; name: string } | null>(null);
 
     useEffect(() => {
         const offSpawned = gameEvents.on('boss:spawned', ({ bossId, entityId, name, maxHp }) => {
             dispatch({ type: 'spawned', bossId, entityId, name, maxHp });
             setShield({ crystals: 0, max: 0 });
+            setLayers({ standing: 0, total: 0 });
             setPolarity(0);
+            setForm(null);
         });
         const offDamaged = gameEvents.on('boss:damaged', ({ bossId, entityId, hp, maxHp }) => {
             dispatch({ type: 'damaged', bossId, entityId, hp, maxHp });
@@ -58,16 +67,25 @@ export const BossBar: React.FC = () => {
         const offDefeated = gameEvents.on('boss:defeated', ({ bossId, entityId }) => {
             dispatch({ type: 'defeated', bossId, entityId });
             setShield({ crystals: 0, max: 0 });
+            setLayers({ standing: 0, total: 0 });
+            setForm(null);
         });
         const offCleared = gameEvents.on('boss:cleared', () => {
             dispatch({ type: 'cleared' });
             setShield({ crystals: 0, max: 0 });
+            setLayers({ standing: 0, total: 0 });
+            setForm(null);
         });
-        // The first shield event after spawn carries the full count → use it as max.
+        // The first shield event after spawn carries the full amount → use it as max.
         const offShield = gameEvents.on('boss:shield', ({ crystals }) =>
             setShield((s) => ({ crystals, max: Math.max(s.max, crystals) })));
         const offVulnerable = gameEvents.on('boss:vulnerable', () =>
             setShield((s) => ({ ...s, crystals: 0 })));
+        // The crystal readout: a form ignites its crystals, each break drops one.
+        const offCrystals = gameEvents.on('boss:crystals', ({ mode, crystals }) =>
+            setLayers(mode === 'ignite' ? { standing: crystals.length, total: crystals.length } : { standing: 0, total: 0 }));
+        const offLost = gameEvents.on('boss:crystal-lost', ({ remaining }) =>
+            setLayers((l) => ({ ...l, standing: Math.max(0, Math.min(l.total, remaining)) })));
         // Audible telegraph + bar colour each time the boss swaps polarity
         // (editable: sounds/magnetic_warden/polarity).
         const offPolarity = gameEvents.on('boss:polarity', ({ polarity: p }) => {
@@ -81,9 +99,10 @@ export const BossBar: React.FC = () => {
             if (pulseTimer) clearTimeout(pulseTimer);
             pulseTimer = setTimeout(() => setPhasePulse(false), 450);
         });
+        const offForm = gameEvents.on('boss:form', ({ form: f, name }) => setForm({ form: f, name }));
         return () => {
             offSpawned(); offDamaged(); offDefeated(); offCleared();
-            offShield(); offVulnerable(); offPolarity(); offPhase();
+            offShield(); offVulnerable(); offCrystals(); offLost(); offPolarity(); offPhase(); offForm();
             if (pulseTimer) clearTimeout(pulseTimer);
         };
     }, []);
@@ -113,8 +132,8 @@ export const BossBar: React.FC = () => {
                     className="absolute inset-y-0 left-0 transition-[width] duration-150"
                     style={{ width: `${pct * 100}%`, background: fill }}
                 />
-                {/* Purple shield layer on top: full while invulnerable, receding a
-                    quarter per crystal to reveal the health bar beneath. */}
+                {/* Purple shield layer on top: one segment per standing tower
+                    crystal, revealing the health bar beneath as they are broken. */}
                 {shieldPct > 0 && (
                     <div
                         className="absolute inset-y-0 left-0 transition-[width] duration-200"
@@ -126,7 +145,7 @@ export const BossBar: React.FC = () => {
                     />
                 )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
-                    threshold, the slam phase at 50% HP, frenzy at 25%. */}
+                    threshold, the Aegis at two thirds, the Storm at one third. */}
                 {(PHASE_MARKERS[boss.bossId] ?? []).map((at) => <PhaseMarker key={at} at={at} />)}
                 {/* White flash when a phase threshold is crossed. */}
                 <div
@@ -134,6 +153,23 @@ export const BossBar: React.FC = () => {
                     style={{ opacity: phasePulse ? 0.55 : 0 }}
                 />
             </div>
+            {form && (
+                <div className="mt-1 font-pixel text-xs tracking-wider text-[#e6d8ff] [text-shadow:1px_1px_0px_#000]">
+                    FORM {FORM_NUMERALS[form.form] ?? form.form} · {form.name.toUpperCase()}
+                </div>
+            )}
+            {/* The shield readout: the crystals left to break, or EXPOSED. */}
+            {form && layers.total > 0 && (
+                layers.standing > 0 ? (
+                    <div className="mt-[2px] font-pixel text-[10px] tracking-wider text-[#c9a3ff] [text-shadow:1px_1px_0px_#000]">
+                        SHIELDED {'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))} · break the tower crystal{layers.total > 1 ? 's' : ''}
+                    </div>
+                ) : (
+                    <div className="mt-[2px] animate-pulse font-pixel text-[10px] tracking-wider text-[#ffd166] [text-shadow:1px_1px_0px_#000]">
+                        EXPOSED · oppose its colour and strike
+                    </div>
+                )
+            )}
         </div>
     );
 };

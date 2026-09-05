@@ -5,6 +5,7 @@ import { entityManager } from '../systems/entities/EntityManager';
 import { resonantVaultRuntime } from '../systems/world/ResonantVaultRuntime';
 import { bellTitanEncounter } from '../systems/entities/BellTitanEncounter';
 import { bellTitanCinematic } from '../systems/boss/bellTitanCinematic';
+import { viewRig } from '../systems/player/viewRig';
 
 interface ResonantVaultControllerProps {
     active: boolean;
@@ -34,10 +35,12 @@ export const ResonantVaultController: React.FC<ResonantVaultControllerProps> = (
     }, [isDead]);
 
     useFrame((_, delta) => {
+        // The eye, not the camera (which hangs behind the body in third person).
+        const eye = viewRig.third ? viewRig.eye : camera.position;
         const playerPosition = {
-            x: camera.position.x,
-            y: camera.position.y - 1.62,
-            z: camera.position.z,
+            x: eye.x,
+            y: eye.y - 1.62,
+            z: eye.z,
         };
         if (!active || isDead) return;
         if (!isPaused) {

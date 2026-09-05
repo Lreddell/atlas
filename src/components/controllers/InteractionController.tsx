@@ -37,14 +37,49 @@ import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/
 import { getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
+import { aimRay, viewRig } from '../../systems/player/viewRig';
+import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
+import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
 
-// Scratch vectors for camera origin/direction (used every frame)
+// Scratch vectors for the aim origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _boltOrigin = new THREE.Vector3();
 const _boltDirection = new THREE.Vector3();
 const MELEE_REACH = 3.2;
-const DEFLECT_REACH = 5.5;
+
+const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
+    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist);
+    return hit ? hit.distance : null;
+};
+
+/**
+ * The aim ray into _camPos/_camDir: from the player's EYE toward the point
+ * under the crosshair. In first person that is the camera ray itself; in third
+ * person the camera hangs behind the body, so the ray converges on what the
+ * crosshair covers instead of starting from behind the player.
+ */
+function aimFromCamera(camera: THREE.Camera): void {
+    camera.getWorldPosition(_camPos);
+    camera.getWorldDirection(_camDir);
+    if (!viewRig.third) return;
+    const ray = aimRay(
+        { x: _camPos.x, y: _camPos.y, z: _camPos.z },
+        viewRig.eye,
+        { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+        sweepVoxels,
+        64,
+    );
+    _camPos.set(ray.origin.x, ray.origin.y, ray.origin.z);
+    _camDir.set(ray.dir.x, ray.dir.y, ray.dir.z);
+}
+
+/** The player's eye position (the first-person camera spot in either view). */
+function eyePosition(camera: THREE.Camera): THREE.Vector3 {
+    return viewRig.third
+        ? new THREE.Vector3(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z)
+        : camera.position.clone();
+}
 // Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
 // so holding right-click eats repeatedly with a clear gap between bites.
 const EAT_PAUSE_TICKS = 6;
@@ -106,8 +141,7 @@ function canPlayerEdit(x: number, y: number, z: number, edit: VaultPlayerEdit): 
 }
 
 function castFromCamera(camera: THREE.Camera, maxDist: number) {
-    camera.getWorldPosition(_camPos);
-    camera.getWorldDirection(_camDir);
+    aimFromCamera(camera);
     return voxelRaycast(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, maxDist);
 }
 
@@ -271,8 +305,7 @@ export const InteractionController = ({
         // Right-clicking a boat entity within reach boards it (entities take
         // priority over the block behind them, same as melee).
         if (!isContinuous && onEnterBoat) {
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const eHit = entityManager.raycastEntity(_camPos, _camDir, 4.0);
             if (eHit) {
                 const entity = entityManager.getEntity(eHit.id);
@@ -296,8 +329,7 @@ export const InteractionController = ({
         const hit = castFromCamera(camera, reach);
         const heldForUse = inventoryRef.current[selectedSlotRef.current];
         if (!isContinuous && heldForUse?.type === BlockType.ECHO_TUNING_FORK) {
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const targetType = hit ? worldManager.tryGetBlock(hit.bx, hit.by, hit.bz) : null;
             const handled = resonantVaultRuntime.useTuningFork({
                 origin: { x: _camPos.x, y: _camPos.y, z: _camPos.z },
@@ -405,7 +437,7 @@ export const InteractionController = ({
                             const isSneaking = inputState.sneak;
                             const eyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
                             const bodyHeight = isSneaking ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
-                            const feet = camera.position.clone();
+                            const feet = eyePosition(camera);
                             feet.y -= eyeHeight;
                             const halfWidth = PLAYER_WIDTH / 2;
                             const playerAABB = new THREE.Box3(
@@ -476,8 +508,8 @@ export const InteractionController = ({
                 const currentEyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
                 const currentPlayerHeight = isSneaking ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
 
-                const playerFeetPos = camera.position.clone();
-                playerFeetPos.y -= currentEyeHeight; 
+                const playerFeetPos = eyePosition(camera);
+                playerFeetPos.y -= currentEyeHeight;
                 
                 const playerHalfWidth = PLAYER_WIDTH / 2;
                 
@@ -592,8 +624,7 @@ export const InteractionController = ({
             const profile = getVaultWeaponProfile(heldForUse.type);
             if (!profile || weaponCooldown.current > 0) return;
             if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const projectileId = vaultProjectileSystem.fire(
                 { x: _camPos.x + _camDir.x * 0.25, y: _camPos.y + _camDir.y * 0.25, z: _camPos.z + _camDir.z * 0.25 },
                 { x: _camDir.x, y: _camDir.y, z: _camDir.z },
@@ -613,8 +644,7 @@ export const InteractionController = ({
         const held = inventory[selectedSlot];
         const profile = held ? getVaultWeaponProfile(held.type) : null;
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
-        camera.getWorldPosition(_camPos);
-        camera.getWorldDirection(_camDir);
+        aimFromCamera(camera);
         const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
         if (!hit) return false;
         const blockHit = castFromCamera(camera, reach);
@@ -629,7 +659,11 @@ export const InteractionController = ({
         const stagger = resolved?.stagger ?? 0;
         const struckEntity = entityManager.getEntity(hit.id);
         const targetKind = struckEntity?.kind;
-        const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, hit.hitZone);
+        // A strike loaded by a magnetic dash is a Magnet Slam: the boss's
+        // encounter reads the hit zone and lands it harder (and staggers).
+        const slam = motionStatus.surge && struckEntity?.isBoss === true;
+        if (slam) motionRequests.consumeSurge = true;
+        const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
         if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
             const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
             particleFx.burst({
@@ -663,8 +697,8 @@ export const InteractionController = ({
                 }
             }
         }
-        // A shield absorbs the blow: a metallic "clink", no hurt cry, so it is
-        // obvious the boss is invulnerable until its crystals are gone.
+        // The blow bounced (same polarity, a standing shield, or a form change):
+        // a metallic "clink", no hurt cry, so it is obvious nothing landed.
         if (result === 'blocked' && targetKind === 'magnetic_warden') {
             soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
         } else if (result === 'damaged' && targetKind === 'boat') {
@@ -684,17 +718,6 @@ export const InteractionController = ({
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
-    // Hit a Magnetic Warden parry bolt back at it (a purple deflectable bolt
-    // within reach of the crosshair). Takes priority over attacking/mining.
-    const tryDeflectBolt = useCallback((): boolean => {
-        camera.getWorldPosition(_camPos);
-        camera.getWorldDirection(_camDir);
-        if (!entityManager.deflectProjectile(_camPos, _camDir, DEFLECT_REACH)) return false;
-        soundManager.play('entity.magnetic_warden.deflect', { volume: 0.9 });
-        interactionCooldown.current = 5;
-        return true;
-    }, [camera]);
-
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
             if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
@@ -702,10 +725,8 @@ export const InteractionController = ({
 
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
-                // Deflecting a parry bolt, then attacking an entity, both take
-                // priority over mining a block.
-                if (tryDeflectBolt()) { /* deflected */ }
-                else if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+                // Attacking an entity takes priority over mining a block.
+                if (!tryMeleeAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -732,7 +753,7 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack]);
 
     useFrame((_, delta) => {
         weaponCooldown.current = Math.max(0, weaponCooldown.current - Math.min(delta, 0.1));

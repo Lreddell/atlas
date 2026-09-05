@@ -242,22 +242,29 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Equipped armor readout (icons + durability bars, bottom-left) */}
             {gameMode === 'survival' && equipment && <ArmorReadout equipment={equipment} />}
 
+            {/* Selected item name. Lifted clear of whatever else is stacked in the
+                bottom centre: the hotbar always, plus the hearts and (when worn)
+                the armor pips in survival, so the label never lands on them. */}
+            {gameMode !== 'spectator' && inventory[selectedSlot] && (
+                <div
+                    className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center bg-black/40 px-3 py-1 rounded pointer-events-none transition-opacity duration-200 z-40"
+                    style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}
+                >
+                    <div className="text-white font-bold text-shadow-md text-base">
+                        {BLOCKS[inventory[selectedSlot]!.type].name}
+                    </div>
+                    {(() => {
+                        const summary = summarizeItemStats(inventory[selectedSlot]!);
+                        return summary
+                            ? <div className="text-[11px] text-gray-300 text-shadow-sm font-pixel">{summary}</div>
+                            : null;
+                    })()}
+                </div>
+            )}
+
             {/* Hotbar */}
             {gameMode !== 'spectator' && (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
-                    {inventory[selectedSlot] && (
-                        <div className="flex flex-col items-center bg-black/40 px-3 py-1 rounded mb-1 pointer-events-none transition-opacity duration-200">
-                            <div className="text-white font-bold text-shadow-md text-base">
-                                {BLOCKS[inventory[selectedSlot]!.type].name}
-                            </div>
-                            {(() => {
-                                const summary = summarizeItemStats(inventory[selectedSlot]!);
-                                return summary
-                                    ? <div className="text-[11px] text-gray-300 text-shadow-sm font-pixel">{summary}</div>
-                                    : null;
-                            })()}
-                        </div>
-                    )}
                     <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
                         {inventory.slice(0, 9).map((it, i) => (
                             <Slot

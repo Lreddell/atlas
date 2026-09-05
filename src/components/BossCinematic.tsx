@@ -2,21 +2,15 @@ import React, { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { bossSummon } from '../systems/boss/bossSummon';
-import { entityManager } from '../systems/entities/EntityManager';
-import { worldManager } from '../systems/WorldManager';
-import { BlockType } from '../types';
-import { particleFx, FX_CHARGED } from '../systems/fx/particleFx';
 
 // Drives the summon cutscene inside the Canvas: while active it owns the camera
 // (Player physics is paused, mouse-look disabled) and draws thick humming beams
 // from each crystal to the altar; once the beams collapse it draws the swelling
 // energy ball (which persists after the camera hands back to the player). Mounted
-// always; idle until bossSummon.running.
+// always; idle until bossSummon.running. (The fight itself, including the
+// tower crystals' shield beams, is drawn by MagneticWardenRenderer.)
 
-const SHIELD_BEAM = 0xc060ff;   // all summon/shield beams are this purple (consistent)
-// Hoisted predicate: this lookup runs inside useFrame every rendered frame.
-const isShieldedBossWithCrystals = (e: { isBoss?: boolean; shieldCrystalPositions?: unknown[] }) =>
-    !!e.isBoss && (e.shieldCrystalPositions?.length ?? 0) > 0;
+const SHIELD_BEAM = 0xc060ff;   // all summon beams are this purple (consistent)
 const _dir = new THREE.Vector3();
 const _mid = new THREE.Vector3();
 const _crystal = new THREE.Vector3();
@@ -49,9 +43,6 @@ export const BossCinematic: React.FC = () => {
     const ballRef = useRef<THREE.Mesh | null>(null);
     const coreRef = useRef<THREE.Mesh | null>(null);
     const wasActive = useRef(false);
-    // Per-crystal beam bookkeeping for the fight phase (crystal-tethered shield beams).
-    const wasStanding = useRef<boolean[]>([false, false, false, false]);
-    const brokenAt = useRef<number[]>([0, 0, 0, 0]);
 
     useFrame(() => {
         const active = bossSummon.isActive();
@@ -67,57 +58,17 @@ export const BossCinematic: React.FC = () => {
         }
         wasActive.current = active;
 
-        // Beams: during the cutscene they feed the energy ball (crystal → altar).
-        // Once the boss spawns they re-target the BOSS and track it, each beam
-        // a tether lasting until its crystal is destroyed, then dissipating
-        // with a burst (and a sound, played in App on crystal:broken).
+        // Beams: during the cutscene they feed the energy ball (crystal → altar)
+        // right up until it detonates and consumes the crystals.
         const cutsceneProg = bossSummon.beamProgress;
-        const boss = cutsceneProg <= 0
-            ? entityManager.findEntity(isShieldedBossWithCrystals)
-            : undefined;
-
         for (let i = 0; i < 4; i++) {
             const m = beamRefs.current[i];
             if (!m) continue;
-
-            // Cutscene: crystal → swelling ball at the altar.
             if (cutsceneProg > 0 && bossSummon.crystals[i]) {
                 const c = bossSummon.crystals[i];
                 drawBeam(m, c.x + 0.5, c.y + 0.5, c.z + 0.5,
                     bossSummon.altar.x, bossSummon.altar.y, bossSummon.altar.z,
                     cutsceneProg, SHIELD_BEAM, 0.4 + 0.35 * Math.sin(now * 0.02 + i));
-                wasStanding.current[i] = true;
-                continue;
-            }
-
-            const c = boss?.shieldCrystalPositions?.[i];
-            const standing = !!c && !!boss?.shielded
-                && worldManager.getBlock(c.x, c.y, c.z, false) === BlockType.MAGNETIC_SHIELD_CRYSTAL;
-
-            // Fight: crystal → boss (tracking). Beam lasts while its crystal stands.
-            if (standing && c && boss) {
-                drawBeam(m, c.x + 0.5, c.y + 0.5, c.z + 0.5,
-                    boss.pos.x, boss.pos.y + boss.height * 0.5, boss.pos.z,
-                    1, SHIELD_BEAM, 0.45 + 0.3 * Math.sin(now * 0.03 + i));
-                wasStanding.current[i] = true;
-                continue;
-            }
-
-            // The crystal just shattered this frame → erupt, then fade the beam out.
-            if (wasStanding.current[i] && c && boss) {
-                wasStanding.current[i] = false;
-                brokenAt.current[i] = now;
-                particleFx.burst({
-                    x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1],
-                    count: 44, speed: 10, upBias: 4, spread: 1, size: 0.3, life: 0.9, gravity: 5, drag: 1,
-                });
-            }
-
-            const since = now - brokenAt.current[i];
-            if (c && boss && brokenAt.current[i] > 0 && since < 350) {
-                drawBeam(m, c.x + 0.5, c.y + 0.5, c.z + 0.5,
-                    boss.pos.x, boss.pos.y + boss.height * 0.5, boss.pos.z,
-                    1, SHIELD_BEAM, 0.6 * (1 - since / 350));
             } else {
                 m.visible = false;
             }

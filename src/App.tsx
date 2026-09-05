@@ -20,11 +20,18 @@ import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
+import { BossCompass } from './components/ui/BossCompass';
+import { CombatFeedback } from './components/ui/CombatFeedback';
+import { motionStatus } from './systems/player/playerMotion';
+import { viewRig, type ViewMode } from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { BellTitanCinematic } from './components/BellTitanCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
+import { magneticWardenEncounter } from './systems/boss/MagneticWardenEncounter';
 import { bellTitanCinematic } from './systems/boss/bellTitanCinematic';
+import { wardenDefeat } from './systems/boss/wardenDefeat';
+import { WardenDefeatCinematic } from './components/WardenDefeatCinematic';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
@@ -33,7 +40,7 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
@@ -78,7 +85,7 @@ import {
 } from './types';
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
-import { resetInputState } from './systems/player/playerInput';
+import { inputState, resetInputState } from './systems/player/playerInput';
 import { loadGenConfig, normalizeGenConfigSnapshot, resetGenConfig, type WorldGenConfigSnapshot } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
@@ -103,6 +110,22 @@ const WEB_PANORAMA_PREFIX = 'web:';
 const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
 const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
 const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
+/**
+ * Resolve an item by its display name for the chat commands. Spaces and
+ * underscores are both accepted, so "polarity boots" (what the HUD calls it)
+ * and "polarity_boots" (what autocomplete offers) both find the same item.
+ */
+const normalizeItemName = (label: string) => label.toLowerCase().replace(/[\s_]+/g, '');
+const findBlockByName = (label: string): BlockType | null => {
+    const norm = normalizeItemName(label);
+    if (!norm) return null;
+    for (const key in BLOCKS) {
+        const t = Number(key) as BlockType;
+        const def = BLOCKS[t];
+        if (def?.name && normalizeItemName(def.name) === norm) return t;
+    }
+    return null;
+};
 const commandItems = Array.from(new Set(
     Object.values(BLOCKS)
         .filter(Boolean)
@@ -304,9 +327,14 @@ const App: React.FC = () => {
   const daisRestoreRef = useRef<{ id: number; run: () => void } | null>(null);
   // True while handleStartGame is running (guards against double-click double-open).
   const startingWorldRef = useRef(false);
-  // True while the towers' magnet climb faces are present (placed for a fight, until
-  // stripped at 50% or on reset), so we never strip/place redundantly.
-  const climbMagnetsActiveRef = useRef(false);
+  // The player's current magnetic mode, readable from fixed-step entity ticks
+  // (the polarity rule needs to know whether the player controls a polarity).
+  const magneticModeRef = useRef<MagneticMode>('none');
+  // First / third person (F5). The Warden fight switches to third person on its
+  // own and hands the previous view back when it ends; the held item hides
+  // behind the camera in third person (the body model carries the pose instead).
+  const [viewMode, setViewMode] = useState<ViewMode>(viewRig.mode);
+  const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
   // Entity id of the boat the player is riding, or null. Boats are real world
@@ -578,6 +606,7 @@ const App: React.FC = () => {
   // drowning), which armor does not reduce.
   const applyRawDamage = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
+      gameEvents.emit('player:damaged', { amount: d });
       setHealth(h => {
           const newHealth = Math.max(0, h - d);
           if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
@@ -612,6 +641,11 @@ const App: React.FC = () => {
           // Authored hazard recovery uses the same physics-safe teleport path as
           // commands and respawn, which also clears velocity and fall distance.
           (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
+          // The polarity rule: +1 / -1 with Polarity Boots, 0 (neutral) without.
+          () => (magneticModeRef.current === 'controlled' ? inputState.magneticPolarity : 0),
+          // The kit's invulnerability windows (a roll's i-frames, a dash, a leap):
+          // every attack, bolt, ring and contact hit passes through.
+          () => motionStatus.invulnerable,
       );
   }, [damagePlayer]);
 
@@ -627,6 +661,7 @@ const App: React.FC = () => {
   const magneticMode: MagneticMode = controllable
       ? 'controlled'
       : (!magnetShielded && isWearingIronArmor(equipment) ? 'ferro' : 'none');
+  magneticModeRef.current = magneticMode;
   // Polarity boots soften falls while the ability is active; the upgraded pair
   // softens them further. 1 = no reduction.
   const fallDamageFactor = magneticMode === 'controlled'
@@ -1000,11 +1035,8 @@ const App: React.FC = () => {
       if (!a) return;
       summonArenaRef.current = null;
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      // Never leave the magnet climb faces on the walls after a fight.
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
+      // (The encounter itself strips the towers' magnet climb faces and any
+      // standing crystals when the boss leaves, defeated or not.)
       const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       if (daisDelayMs > 0) {
           // Tracked (id + the restore itself) so quitting the world inside the
@@ -1042,6 +1074,7 @@ const App: React.FC = () => {
       }
       bossSummon.cancel();
       bellTitanCinematic.cancel();
+      wardenDefeat.cancel();
       setCinematicMode(false);
       // Despawns a live boss (clears its crystals + fires boss:cleared → restores
       // the arena and nulls the ref). If there was no live boss (e.g. quit during
@@ -1054,10 +1087,6 @@ const App: React.FC = () => {
       worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
       restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
   }, []);
 
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
@@ -1101,6 +1130,12 @@ const App: React.FC = () => {
               controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               return;
           }
+          if (source === 'magnetic_warden') {
+              // The defeat cutscene never moved the player (physics was paused);
+              // only the camera was borrowed, so just give the look back.
+              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
+              return;
+          }
           // Hand the player back at the cutscene's return spot (farther from the
           // altar) looking straight at the energy ball, room to run before it blows.
           const rp = bossSummon.returnPos;
@@ -1112,41 +1147,103 @@ const App: React.FC = () => {
       });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
-      // The boss launched a deflectable parry bolt, telegraph it with a cue.
-      const offParry = gameEvents.on('boss:parry', () => {
-          soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
-      });
-      // The Warden took a hit (a deflected bolt landing, etc.), a hurt grunt.
+      // The Warden took a hit: a hurt grunt (a punish-window hit lands harder).
       const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
       });
-      // Slam attack: a rise telegraph, then the shockwave impact.
+      // Every authored Warden action announces itself: windups get their own
+      // cues (editable slots under sounds/magnetic_warden/), so the telegraph
+      // is audible as well as visible.
+      const offAction = gameEvents.on('boss:action', ({ bossId, action }) => {
+          if (bossId !== 'magnetic_warden') return;
+          switch (action) {
+              case 'volley_windup': soundManager.play('entity.magnetic_warden.volley', { volume: 0.6 }); break;
+              case 'lash_windup': soundManager.play('entity.magnetic_warden.lash', { volume: 0.7 }); break;
+              case 'draw_windup': soundManager.play('entity.magnetic_warden.draw', { volume: 0.8 }); break;
+              case 'draw_recovery': soundManager.play('entity.magnetic_warden.repel', { volume: 0.9 }); break;
+              case 'swap_windup': soundManager.play('entity.magnetic_warden.swap_charge', { volume: 0.6 }); break;
+              case 'stagger': soundManager.play('entity.magnetic_warden.stagger', { volume: 0.8 }); break;
+              case 'shatter': soundManager.play('entity.magnetic_warden.shatter', { volume: 1.0 }); break;
+              case 'crash': soundManager.play('entity.magnetic_warden.crash', { volume: 1.0 }); break;
+              case 'storm_rise': soundManager.play('entity.magnetic_warden.storm', { volume: 1.0 }); break;
+              default: break;
+          }
+      });
+      // The Charge: a coil, then the lunge itself.
+      const offCharge = gameEvents.on('boss:charge', ({ phase }) => {
+          if (phase === 'windup') soundManager.play('entity.magnetic_warden.charge_windup', { volume: 0.75 });
+          else if (phase === 'lunge') soundManager.play('entity.magnetic_warden.charge_lunge', { volume: 0.9 });
+      });
+      // Plunge: a rise telegraph, then the ring impact (also every Storm beat ring).
       const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
               { volume: phase === 'rise' ? 0.7 : 0.95 });
       });
-      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue. At frenzy
+      // The Storm metronome: two ticks count the beat in, then the beat itself.
+      const offBeatTick = gameEvents.on('boss:beat-tick', ({ remaining }) => {
+          soundManager.play('entity.magnetic_warden.beat_tick', { volume: 0.55, pitch: remaining <= 0.5 ? 1.25 : 1.0 });
+      });
+      const offBeat = gameEvents.on('boss:beat', ({ second }) => {
+          soundManager.play('entity.magnetic_warden.beat', { volume: second ? 0.8 : 0.9, pitch: second ? 1.15 : 1.0 });
+      });
+      // The tower crystals: a form ignites its own; each lost crystal is a flinch
+      // until the last one drops the shield; the towers announce every flip.
+      const offCrystals = gameEvents.on('boss:crystals', ({ mode }) => {
+          if (mode === 'ignite') soundManager.play('entity.magnetic_warden.crystal_ignite', { volume: 0.85 });
+      });
+      const offLost = gameEvents.on('boss:crystal-lost', ({ remaining }) => {
+          if (remaining > 0) soundManager.play('entity.magnetic_warden.flinch', { volume: 0.7 });
+      });
+      const offShieldBroken = gameEvents.on('boss:shield-broken', () => soundManager.play('entity.magnetic_warden.shield_break', { volume: 1.0 }));
+      const offTowers = gameEvents.on('boss:towers', ({ phase }) => {
+          soundManager.play(phase === 'flux' ? 'entity.magnetic_warden.tower_flux' : 'entity.magnetic_warden.tower_flip', { volume: phase === 'flux' ? 0.6 : 0.7 });
+      });
+      // The polarity rule, audibly: a matched bolt clinks off the boots (a
+      // matched strike clinks off the Warden via the melee 'blocked' result).
+      const offRepelled = gameEvents.on('bolt:repelled', () => {
+          soundManager.play('entity.magnetic_warden.repelled', { volume: 0.45, pitch: 1.3 + Math.random() * 0.35 });
+      });
+      // The player's kit.
+      const offDodge = gameEvents.on('player:dodge', ({ kind }) => {
+          const slot = kind === 'roll' ? 'entity.player.roll' : kind === 'dash' ? 'entity.player.dash' : kind === 'leap' ? 'entity.player.leap' : 'entity.player.launch';
+          soundManager.play(slot);
+      });
+      const offDodged = gameEvents.on('player:dodged', () => soundManager.play('entity.player.dodged'));
+      const offSurge = gameEvents.on('player:surge', ({ armed }) => { if (armed) soundManager.play('entity.player.surge'); });
+      const offPlayerSlam = gameEvents.on('player:slam', ({ landed }) => {
+          soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
+      });
+      const offShocked = gameEvents.on('player:shocked', () => soundManager.play('entity.player.shocked'));
+      // The view (F5), and the fight's own third-person framing.
+      const offView = gameEvents.on('view:changed', ({ mode }) => setViewMode(mode));
+      const offSpawnView = gameEvents.on('boss:spawned', ({ bossId }) => {
+          if (bossId !== 'magnetic_warden' || viewRig.mode === 'third') return;
+          preFightViewRef.current = viewRig.mode;
+          viewRig.mode = 'third';
+          gameEvents.emit('view:changed', { mode: 'third' });
+      });
+      const restoreView = () => {
+          const previous = preFightViewRef.current;
+          preFightViewRef.current = null;
+          if (previous === null || viewRig.mode === previous) return;
+          viewRig.mode = previous;
+          gameEvents.emit('view:changed', { mode: previous });
+      };
+      const offDefeatView = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') restoreView(); });
+      const offClearView = gameEvents.on('boss:cleared', restoreView);
+      // Form changes (Aegis at 2/3, Storm at 1/3): an enrage cue. At the Storm
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
           if (phase >= 3) musicController.setBossFrenzy(true);
-          // Entering the slam phase (≤50%): strip the towers' magnet climb faces so
-          // the player can't climb up to perch above the slam. The shield is already
-          // broken by now (the towers stay as cover, just unclimbable).
-          const a = summonArenaRef.current;
-          if (phase >= 2 && a && climbMagnetsActiveRef.current) {
-              climbMagnetsActiveRef.current = false;
-              stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-          }
       });
       // Reset the frenzy music whenever a fight begins or ends.
       const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
       const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
-      // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
-      // its tracking beam dissipates, BossCinematic handles the visual).
-      const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
-          entityManager.onShieldCrystalBroken(regionId);
+      // Breaking a tower crystal: the encounter drops the shield layer it powers
+      // (it listens itself); here only the shatter cue.
+      const offCrystal = gameEvents.on('crystal:broken', () => {
           soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
       });
       // Upgraded-boots ability toggle (N) → recompute magneticMode.
@@ -1154,7 +1251,10 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
+          offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offCharge(); offSlam(); offPhase(); offCrystal(); offPower();
+          offBeatTick(); offBeat(); offCrystals(); offLost(); offShieldBroken(); offTowers(); offRepelled();
+          offDodge(); offDodged(); offSurge(); offPlayerSlam(); offShocked();
+          offView(); offSpawnView(); offDefeatView(); offClearView();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
@@ -1940,25 +2040,21 @@ const App: React.FC = () => {
           if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
       } else if (parts[0] === '/giveitem' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
-          if (found === null) { logMsg(`Unknown item: ${parts[1]}`, 'error'); }
-          else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
+          // Item names are several words ("Polarity Boots", "Magnetite Bricks"),
+          // so everything after the command is the name, minus a trailing count.
+          const tail = parts.slice(1);
+          const count = tail.length > 1 && /^\d+$/.test(tail[tail.length - 1])
+              ? Math.max(1, parseInt(tail.pop() as string, 10))
+              : 1;
+          const label = tail.join(' ');
+          const found = findBlockByName(label);
+          if (found === null) { logMsg(`Unknown item: ${label}`, 'error'); }
+          else { addToInventory(found, count); logMsg(`Gave ${count}x ${BLOCKS[found].name}`, 'success'); }
       } else if (parts[0] === '/equip' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
+          const label = parts.slice(1).join(' ');
+          const found = findBlockByName(label);
           const slot = found !== null ? slotForItem(found) : undefined;
-          if (found === null) logMsg(`Unknown item: ${parts[1]}`, 'error');
+          if (found === null) logMsg(`Unknown item: ${label}`, 'error');
           else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
           else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
       } else if (parts[0] === '/unequip' && parts[1]) {
@@ -2057,6 +2153,18 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
+    // F5: first / third person. Handled here rather than in the movement input
+    // so it works whether or not the pointer is locked (and so the browser
+    // never reloads the page instead of switching the view).
+    if (e.code === 'F5') {
+        e.preventDefault();
+        if (appState === 'game' && !isEditableTarget && !isCapturingPanorama) {
+            const next: ViewMode = viewRig.mode === 'third' ? 'first' : 'third';
+            viewRig.mode = next;
+            gameEvents.emit('view:changed', { mode: next });
+        }
+        return;
+    }
     if (e.code === 'F4') {
         if (showAtlasViewer) {
             e.preventDefault();
@@ -2175,7 +2283,7 @@ const App: React.FC = () => {
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -3052,6 +3160,8 @@ const App: React.FC = () => {
                     {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
                     <BossBar />
                     <CinematicOverlay />
+                    {!showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
+                    {!showDeathScreen && !cinematicMode && !openContainer && gameMode !== 'spectator' && <CombatFeedback />}
                     {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
                     {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
@@ -3086,9 +3196,6 @@ const App: React.FC = () => {
                                 const centerX = x, centerZ = z, baseY = y - 4;
                                 const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
                                 summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
-                                // The climb-face magnets light up tower-by-tower as each crystal
-                                // spawns (in the cutscene); flag it so the reset strips them.
-                                climbMagnetsActiveRef.current = true;
 
                                 const cam = controlsRef.current?.getCamera();
                                 const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
@@ -3104,11 +3211,12 @@ const App: React.FC = () => {
                                         // baseY is the platform floor; spawn one above so the boss
                                         // settles on top of it (the dais is flattened by now). The
                                         // run-away grace already happened (the energy-ball charge),
-                                        // so it spawns aggro and the fight starts immediately.
-                                        entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
+                                        // so it spawns aggro and the fight starts immediately. The
+                                        // encounter takes the tower crystals that shield its forms.
+                                        const boss = entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
                                             bossId, regionId: regionId ?? undefined,
-                                            shieldCrystalPositions: crystals,
                                         });
+                                        if (boss) magneticWardenEncounter.begin(boss.id, { centerX, centerZ, baseY, crystals });
                                     },
                                 });
                             }}
@@ -3162,6 +3270,7 @@ const App: React.FC = () => {
                     <EntityRenderer />
                     <BossCinematic />
                     <BellTitanCinematic />
+                    <WardenDefeatCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                     <FxParticles isPaused={worldPaused} />
@@ -3201,7 +3310,7 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && viewMode !== 'third' && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>

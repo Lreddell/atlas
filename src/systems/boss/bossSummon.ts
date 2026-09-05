@@ -3,13 +3,15 @@
 // A self-driven (requestAnimationFrame) cinematic, deliberately dragged out:
 //   1. fade to black (biome music keeps playing)
 //   2. ORBIT the camera around the OUTSIDE of the arena (pivoting on the centre)
-//   3. as the camera sweeps past each tower, that shield crystal SPAWNS with an
+//   3. as the camera sweeps past each tower, that tower crystal SPAWNS with an
 //      explosion + shake + sound (slow intervals)
 //   4. thick humming beams grow slowly from every crystal to the altar
 //   5. the camera pushes in slowly toward the altar as the beams arrive
 //   6. the beams collapse into an ENERGY BALL at the altar, control returns to the
 //      player here, and the ball swells (this is the grace window to run away)
-//   7. the ball explodes with a rumble and the boss spawns AGGRO, the fight is on.
+//   7. the ball explodes with a rumble, the crystals are CONSUMED into it, and the
+//      boss spawns AGGRO, the fight is on. (The Warden is forged from the four
+//      crystals; its Aegis form expels them back onto the towers mid-fight.)
 //
 // Per-frame state (camera / beams / ball / fade) is read by the in-Canvas
 // <BossCinematic/> and the DOM <CinematicOverlay/>. Block edits / particles /
@@ -21,7 +23,7 @@ import { soundManager } from '../sound/SoundManager';
 import { gameEvents } from '../events/GameEvents';
 import { addTrauma } from '../player/cameraShake';
 import { BlockType } from '../../types';
-import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges, placePillarClimbMagnets } from '../world/magneticArena';
+import { getShieldCrystalPositions, flattenArenaDais, flattenArenaBridges } from '../world/magneticArena';
 import { particleFx, FX_CHARGED, FX_POSITIVE, FX_NEGATIVE } from '../fx/particleFx';
 
 export interface SummonParams {
@@ -270,6 +272,12 @@ class BossSummon {
             // polarity sparks raining out of the explosion.
             particleFx.burst({ x: ax, y: ay, z: az, color: [1, 1, 1], color2: FX_CHARGED, count: 120, speed: 18, upBias: 5, spread: 1, size: 0.4, life: 1.2, gravity: 8, drag: 0.7 });
             particleFx.burst({ x: ax, y: ay, z: az, color: FX_POSITIVE, color2: FX_NEGATIVE, count: 90, speed: 10, upBias: 7, spread: 1, size: 0.3, life: 1.8, gravity: 3, drag: 0.5 });
+            // The four crystals are consumed into the Warden (it is forged from
+            // them); the Aegis form expels them back onto the towers later.
+            worldManager.setBlocks(this.crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
+            for (const c of this.crystals) {
+                particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 30, speed: 7, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 4, drag: 0.9 });
+            }
             flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             // Drop the four causeways into the lava, the player is now sealed on
             // the central island for the duration of the fight.
@@ -299,9 +307,8 @@ class BossSummon {
         this.crystalsShown = this.spawned.size;
         const c = this.crystals[i];
         worldManager.setBlock(c.x, c.y, c.z, BlockType.MAGNETIC_SHIELD_CRYSTAL);
-        // Light up THIS pillar's magnet climb faces as its crystal appears, so the
-        // climb route forms tower-by-tower across the cutscene.
-        placePillarClimbMagnets(p.centerX, p.centerZ, p.baseY, i, (edits) => worldManager.setBlocks(edits));
+        // (The towers stay plain brick here: their magnet climb faces ignite with
+        // the crystals when the Warden's Aegis form re-forms them mid-fight.)
         // An explosion of light at the tower: a white core + violet sparks.
         particleFx.burst({
             x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5,

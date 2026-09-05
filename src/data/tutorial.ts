@@ -59,6 +59,8 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Q: Drop held item (Ctrl+Q drops the whole stack)',
             'R: Flip magnetic polarity (needs Polarity Boots)',
             'N: Toggle polarity power on/off (upgraded boots)',
+            'C: Dodge roll (always available, in the air too; a landing rolled through takes no fall damage). With Polarity Boots it also becomes a magnetic dash onto an opposite magnet face or into an opposed Warden, a repel leap away from a matched one, or a launch off a wall',
+            'F5: Toggle first / third person (the Warden fight switches to third person on its own)',
             '/ or T: Open command input',
             'Esc: Pause / menu back',
             'F3: Toggle debug screen',
@@ -93,11 +95,16 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
             'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
             'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones, providing enough force to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
-            'Summon the Magnetic Warden at the central altar. Break its four shield crystals, strike its deflectable bolts back at it, and survive the slam and frenzy phases to cleanse the region.'
+            'Summon the Magnetic Warden at the central altar. It fights in three forms, and one rule runs the whole duel: same polarity repels, opposite attracts. Match its colour and its bolts bounce off your boots; oppose it and you are drawn in close enough to strike.',
+            'Every form is shielded by tower crystals, and the only way through a shield is to break every crystal of that form. Each lit tower carries the Warden\'s polarity on its climb faces: oppose it to cling and climb, and when the Warden swaps colour the tower swaps with it. A flux window opens before each flip: flip (R) inside it to hold on, or the settled tower throws you off. Press C on a wall for a magnetic launch back toward the platform (aim for the landing pools).',
+            'Its first form duels you on the platform (Volley, Lash, a Draw into a Repel burst, and a Charge down a marked lane) while its one crystal stands. Its second, the Aegis, lights two towers and hovers out to contest whichever one you climb, firing down at you; break both and it crashes into the pool below that tower, reeling. Its last form, the Storm, holds the final tower and flips polarity on a beat: the tower flips with every beat, each flip is a ring you must be pinned against, and once its crystal falls it is exposed for the finale.'
         ],
         bullets: [
             'Press R to flip your polarity; press N to switch the ability off entirely (upgraded boots).',
             'Same polarity repels, opposite attracts; use repulsion to launch and attraction to stick.',
+            'C is one button, resolved by that rule: a dodge roll with i-frames, a magnetic dash onto an opposite magnet face (or into an opposed, exposed Warden, which arms a Magnet Slam: your next strike lands harder and staggers it), a repel leap away from a matched Warden, or a launch off a wall.',
+            'Bolts you match bounce off your boots; bolts you oppose curve in. A roll through a bolt, a ring or a lunge takes no damage.',
+            'Its ground rings launch a matching polarity and pin the opposite one. Its melee bounces off a matching polarity: oppose it to land hits.',
             'Iron armor is ferromagnetic: without boots it drags you toward every magnet, with no control.',
             'Ruin caches hold magnetite building materials, crystals, and sometimes rarer metals.',
             'The Warden drops a boot upgrade, and defeating it permanently unlocks the region.',
