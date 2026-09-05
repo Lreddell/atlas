@@ -10,6 +10,12 @@ export default [
   },
   js.configs.recommended,
   {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  {
     // Electron main-process / preload CommonJS modules (Node runtime).
     files: ['electron/**/*.cjs'],
     languageOptions: {

@@ -1,0 +1,1440 @@
+{
+  "schema": 1,
+  "measuredAt": "2026-09-04T23:18:34.830Z",
+  "commit": "4d2bf26e8e90f2ab0fc0c8a4ac8ae8867ac485b1",
+  "host": {
+    "os": "win32 10.0.26200",
+    "cpu": "AMD Ryzen 7 7700X 8-Core Processor             ",
+    "threads": 16,
+    "ramBytes": 33411727360,
+    "node": "v24.15.0"
+  },
+  "scope": "CPU and serialization only. No GPU frame-rate, gameplay, or target-hardware claim.",
+  "chunkSize": 16,
+  "worldHeight": 384,
+  "generationMs": {
+    "count": 12,
+    "p50": 32.88,
+    "p95": 50.388,
+    "p99": 50.388
+  },
+  "encodeMs": {
+    "count": 60,
+    "p50": 0.136,
+    "p95": 0.285,
+    "p99": 0.372
+  },
+  "decodeMs": {
+    "count": 60,
+    "p50": 0.121,
+    "p95": 0.232,
+    "p99": 0.618
+  },
+  "export": {
+    "version": 2,
+    "chunks": 4,
+    "bytes": 1573401,
+    "encodeMs": 11.138,
+    "decodeMs": 2.791
+  },
+  "references": {
+    "src/types.ts": "dbc0ce01c1138d1bc22e9dd1b25832569865c97fa24cffc5d530326b80be0846",
+    "src/data/blocks.ts": "f85303c1fa4bc0ec04ad826b68d128de626521a654a2f3a8f2cb6a69973372c5",
+    "src/data/resonantDefinitions.ts": "9c3df359b67a0207e17d89e308d0acc9c052b2b483c0ce1c71dca5319079dd51"
+  },
+  "definitions": [
+    {
+      "id": 0,
+      "name": "AIR",
+      "classification": "block"
+    },
+    {
+      "id": 1,
+      "name": "DIRT",
+      "classification": "block"
+    },
+    {
+      "id": 2,
+      "name": "GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 3,
+      "name": "STONE",
+      "classification": "block"
+    },
+    {
+      "id": 5,
+      "name": "LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 6,
+      "name": "SAND",
+      "classification": "block"
+    },
+    {
+      "id": 7,
+      "name": "WATER",
+      "classification": "block"
+    },
+    {
+      "id": 8,
+      "name": "BEDROCK",
+      "classification": "block"
+    },
+    {
+      "id": 9,
+      "name": "LOG",
+      "classification": "block"
+    },
+    {
+      "id": 10,
+      "name": "OAK_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 11,
+      "name": "BRICK",
+      "classification": "block"
+    },
+    {
+      "id": 12,
+      "name": "COBBLESTONE",
+      "classification": "block"
+    },
+    {
+      "id": 13,
+      "name": "GLASS",
+      "classification": "block"
+    },
+    {
+      "id": 14,
+      "name": "COAL_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 15,
+      "name": "IRON_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 16,
+      "name": "CRAFTING_TABLE",
+      "classification": "block"
+    },
+    {
+      "id": 17,
+      "name": "FURNACE",
+      "classification": "block"
+    },
+    {
+      "id": 18,
+      "name": "FURNACE_ACTIVE",
+      "classification": "block"
+    },
+    {
+      "id": 19,
+      "name": "CHEST",
+      "classification": "block"
+    },
+    {
+      "id": 20,
+      "name": "TORCH",
+      "classification": "block"
+    },
+    {
+      "id": 21,
+      "name": "COPPER_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 22,
+      "name": "LAVA",
+      "classification": "block"
+    },
+    {
+      "id": 23,
+      "name": "WOOL",
+      "classification": "block"
+    },
+    {
+      "id": 24,
+      "name": "BED_FOOT",
+      "classification": "block"
+    },
+    {
+      "id": 25,
+      "name": "BED_HEAD",
+      "classification": "block"
+    },
+    {
+      "id": 26,
+      "name": "OBSIDIAN",
+      "classification": "block"
+    },
+    {
+      "id": 27,
+      "name": "SANDSTONE",
+      "classification": "block"
+    },
+    {
+      "id": 28,
+      "name": "SNOW_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 29,
+      "name": "ICE",
+      "classification": "block"
+    },
+    {
+      "id": 30,
+      "name": "CACTUS",
+      "classification": "block"
+    },
+    {
+      "id": 31,
+      "name": "DEAD_BUSH",
+      "classification": "block"
+    },
+    {
+      "id": 32,
+      "name": "SPRUCE_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 33,
+      "name": "SPRUCE_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 34,
+      "name": "SNOWY_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 35,
+      "name": "SPRUCE_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 36,
+      "name": "GRASS_PLANT",
+      "classification": "block"
+    },
+    {
+      "id": 37,
+      "name": "ROSE",
+      "classification": "block"
+    },
+    {
+      "id": 38,
+      "name": "DANDELION",
+      "classification": "block"
+    },
+    {
+      "id": 39,
+      "name": "DEBUG_CROSS",
+      "classification": "block"
+    },
+    {
+      "id": 40,
+      "name": "CHERRY_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 41,
+      "name": "CHERRY_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 42,
+      "name": "CHERRY_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 43,
+      "name": "RED_SAND",
+      "classification": "block"
+    },
+    {
+      "id": 44,
+      "name": "RED_SANDSTONE",
+      "classification": "block"
+    },
+    {
+      "id": 45,
+      "name": "TERRACOTTA",
+      "classification": "block"
+    },
+    {
+      "id": 46,
+      "name": "TERRACOTTA_YELLOW",
+      "classification": "block"
+    },
+    {
+      "id": 47,
+      "name": "TERRACOTTA_RED",
+      "classification": "block"
+    },
+    {
+      "id": 48,
+      "name": "BASALT",
+      "classification": "block"
+    },
+    {
+      "id": 49,
+      "name": "MAGMA",
+      "classification": "block"
+    },
+    {
+      "id": 50,
+      "name": "DEEPSLATE",
+      "classification": "block"
+    },
+    {
+      "id": 51,
+      "name": "COBBLED_DEEPSLATE",
+      "classification": "block"
+    },
+    {
+      "id": 52,
+      "name": "DRIPSTONE_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 53,
+      "name": "POINTED_DRIPSTONE",
+      "classification": "block"
+    },
+    {
+      "id": 54,
+      "name": "MOSS_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 55,
+      "name": "GLOW_LICHEN",
+      "classification": "block"
+    },
+    {
+      "id": 56,
+      "name": "AMETHYST_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 57,
+      "name": "BUDDING_AMETHYST",
+      "classification": "block"
+    },
+    {
+      "id": 58,
+      "name": "AMETHYST_CLUSTER",
+      "classification": "block"
+    },
+    {
+      "id": 59,
+      "name": "CALCITE",
+      "classification": "block"
+    },
+    {
+      "id": 60,
+      "name": "DEEPSLATE_COAL_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 61,
+      "name": "DEEPSLATE_IRON_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 62,
+      "name": "DEEPSLATE_COPPER_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 63,
+      "name": "DEEPSLATE_GOLD_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 64,
+      "name": "DEEPSLATE_DIAMOND_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 65,
+      "name": "DEEPSLATE_LAPIS_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 66,
+      "name": "DEEPSLATE_EMERALD_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 67,
+      "name": "BANANA",
+      "classification": "item"
+    },
+    {
+      "id": 68,
+      "name": "LUMEN_BERRY",
+      "classification": "item"
+    },
+    {
+      "id": 69,
+      "name": "FORAGERS_BOWL",
+      "classification": "item"
+    },
+    {
+      "id": 70,
+      "name": "ECHO_STONE",
+      "classification": "block"
+    },
+    {
+      "id": 71,
+      "name": "ECHO_BRICKS",
+      "classification": "block"
+    },
+    {
+      "id": 72,
+      "name": "CRACKED_ECHO_BRICKS",
+      "classification": "block"
+    },
+    {
+      "id": 73,
+      "name": "CHISELED_ECHO_STONE",
+      "classification": "block"
+    },
+    {
+      "id": 74,
+      "name": "ECHO_MOSAIC",
+      "classification": "block"
+    },
+    {
+      "id": 75,
+      "name": "ECHO_CRYSTAL",
+      "classification": "block"
+    },
+    {
+      "id": 76,
+      "name": "RESONANCE_PYLON",
+      "classification": "block"
+    },
+    {
+      "id": 78,
+      "name": "PULSE_CONDUIT",
+      "classification": "block"
+    },
+    {
+      "id": 79,
+      "name": "PHASE_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 80,
+      "name": "RESONANCE_PLATE",
+      "classification": "block"
+    },
+    {
+      "id": 81,
+      "name": "RESONANT_LAMP",
+      "classification": "block"
+    },
+    {
+      "id": 82,
+      "name": "ECHO_SPIKES",
+      "classification": "block"
+    },
+    {
+      "id": 83,
+      "name": "SENTINEL_CORE",
+      "classification": "block"
+    },
+    {
+      "id": 84,
+      "name": "LISTENING_STONE",
+      "classification": "block"
+    },
+    {
+      "id": 85,
+      "name": "VAULT_SEAL",
+      "classification": "block"
+    },
+    {
+      "id": 86,
+      "name": "PINK_FLOWER",
+      "classification": "block"
+    },
+    {
+      "id": 87,
+      "name": "BIRCH_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 88,
+      "name": "BIRCH_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 89,
+      "name": "BIRCH_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 91,
+      "name": "TERRACOTTA_WHITE",
+      "classification": "block"
+    },
+    {
+      "id": 92,
+      "name": "TERRACOTTA_ORANGE",
+      "classification": "block"
+    },
+    {
+      "id": 93,
+      "name": "TERRACOTTA_MAGENTA",
+      "classification": "block"
+    },
+    {
+      "id": 94,
+      "name": "TERRACOTTA_LIGHT_GRAY",
+      "classification": "block"
+    },
+    {
+      "id": 95,
+      "name": "TERRACOTTA_BROWN",
+      "classification": "block"
+    },
+    {
+      "id": 96,
+      "name": "GOLD_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 97,
+      "name": "DIAMOND_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 98,
+      "name": "LAPIS_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 99,
+      "name": "EMERALD_ORE",
+      "classification": "block"
+    },
+    {
+      "id": 100,
+      "name": "WOOD_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 101,
+      "name": "STONE_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 102,
+      "name": "IRON_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 103,
+      "name": "STICK",
+      "classification": "item"
+    },
+    {
+      "id": 104,
+      "name": "WOOD_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 105,
+      "name": "STONE_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 106,
+      "name": "IRON_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 107,
+      "name": "WOOD_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 108,
+      "name": "STONE_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 109,
+      "name": "IRON_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 110,
+      "name": "COAL",
+      "classification": "item"
+    },
+    {
+      "id": 111,
+      "name": "IRON_INGOT",
+      "classification": "item"
+    },
+    {
+      "id": 112,
+      "name": "APPLE",
+      "classification": "item"
+    },
+    {
+      "id": 113,
+      "name": "SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 114,
+      "name": "RAW_IRON",
+      "classification": "item"
+    },
+    {
+      "id": 115,
+      "name": "CHARCOAL",
+      "classification": "item"
+    },
+    {
+      "id": 116,
+      "name": "COPPER_INGOT",
+      "classification": "item"
+    },
+    {
+      "id": 117,
+      "name": "RAW_COPPER",
+      "classification": "item"
+    },
+    {
+      "id": 118,
+      "name": "COPPER_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 119,
+      "name": "COPPER_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 120,
+      "name": "COPPER_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 121,
+      "name": "BED_ITEM",
+      "classification": "item"
+    },
+    {
+      "id": 122,
+      "name": "WHEAT_SEEDS",
+      "classification": "item"
+    },
+    {
+      "id": 123,
+      "name": "RAW_GOLD",
+      "classification": "item"
+    },
+    {
+      "id": 124,
+      "name": "GOLD_INGOT",
+      "classification": "item"
+    },
+    {
+      "id": 125,
+      "name": "DIAMOND",
+      "classification": "item"
+    },
+    {
+      "id": 126,
+      "name": "LAPIS_LAZULI",
+      "classification": "item"
+    },
+    {
+      "id": 127,
+      "name": "EMERALD",
+      "classification": "item"
+    },
+    {
+      "id": 128,
+      "name": "WOOD_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 129,
+      "name": "WOOD_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 130,
+      "name": "STONE_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 131,
+      "name": "STONE_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 132,
+      "name": "IRON_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 133,
+      "name": "IRON_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 134,
+      "name": "GOLD_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 135,
+      "name": "GOLD_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 136,
+      "name": "GOLD_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 137,
+      "name": "GOLD_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 138,
+      "name": "GOLD_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 139,
+      "name": "DIAMOND_PICKAXE",
+      "classification": "item"
+    },
+    {
+      "id": 140,
+      "name": "DIAMOND_AXE",
+      "classification": "item"
+    },
+    {
+      "id": 141,
+      "name": "DIAMOND_SHOVEL",
+      "classification": "item"
+    },
+    {
+      "id": 142,
+      "name": "DIAMOND_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 143,
+      "name": "DIAMOND_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 144,
+      "name": "COPPER_SWORD",
+      "classification": "item"
+    },
+    {
+      "id": 145,
+      "name": "COPPER_HOE",
+      "classification": "item"
+    },
+    {
+      "id": 146,
+      "name": "SPRUCE_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 147,
+      "name": "BIRCH_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 148,
+      "name": "CHERRY_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 149,
+      "name": "OAK_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 150,
+      "name": "SPRUCE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 151,
+      "name": "BIRCH_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 152,
+      "name": "CHERRY_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 153,
+      "name": "COBBLESTONE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 154,
+      "name": "STONE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 155,
+      "name": "SANDSTONE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 156,
+      "name": "RED_SANDSTONE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 157,
+      "name": "BRICK_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 158,
+      "name": "OAK_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 159,
+      "name": "SPRUCE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 160,
+      "name": "BIRCH_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 161,
+      "name": "CHERRY_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 162,
+      "name": "COBBLESTONE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 163,
+      "name": "STONE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 164,
+      "name": "SANDSTONE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 165,
+      "name": "RED_SANDSTONE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 166,
+      "name": "BRICK_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 167,
+      "name": "POLARITY_BOOTS_UPGRADE",
+      "classification": "item"
+    },
+    {
+      "id": 168,
+      "name": "UPGRADED_POLARITY_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 169,
+      "name": "BOAT",
+      "classification": "item"
+    },
+    {
+      "id": 170,
+      "name": "ECHO_SHARD",
+      "classification": "item"
+    },
+    {
+      "id": 171,
+      "name": "ECHO_DUST",
+      "classification": "item"
+    },
+    {
+      "id": 173,
+      "name": "ECHO_CORE",
+      "classification": "item"
+    },
+    {
+      "id": 177,
+      "name": "FRACTURED_CORE",
+      "classification": "item"
+    },
+    {
+      "id": 178,
+      "name": "ECHO_STONE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 179,
+      "name": "ECHO_STONE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 180,
+      "name": "ECHO_BRICK_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 181,
+      "name": "ECHO_BRICK_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 182,
+      "name": "VAULTSTEEL_SPEAR",
+      "classification": "item"
+    },
+    {
+      "id": 183,
+      "name": "VAULT_CROSSBOW",
+      "classification": "item"
+    },
+    {
+      "id": 184,
+      "name": "VAULT_BOLT",
+      "classification": "item"
+    },
+    {
+      "id": 185,
+      "name": "BELLBREAKER_MAUL",
+      "classification": "item"
+    },
+    {
+      "id": 186,
+      "name": "ECHO_TUNING_FORK",
+      "classification": "item"
+    },
+    {
+      "id": 187,
+      "name": "TITAN_HAMMER",
+      "classification": "item"
+    },
+    {
+      "id": 190,
+      "name": "POSITIVE_MAGNET",
+      "classification": "block"
+    },
+    {
+      "id": 191,
+      "name": "NEGATIVE_MAGNET",
+      "classification": "block"
+    },
+    {
+      "id": 192,
+      "name": "IRON_HELMET",
+      "classification": "item"
+    },
+    {
+      "id": 193,
+      "name": "IRON_CHESTPLATE",
+      "classification": "item"
+    },
+    {
+      "id": 194,
+      "name": "IRON_LEGGINGS",
+      "classification": "item"
+    },
+    {
+      "id": 195,
+      "name": "IRON_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 196,
+      "name": "POLARITY_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 197,
+      "name": "IRON_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 198,
+      "name": "GOLD_HELMET",
+      "classification": "item"
+    },
+    {
+      "id": 199,
+      "name": "GOLD_CHESTPLATE",
+      "classification": "item"
+    },
+    {
+      "id": 200,
+      "name": "GOLD_LEGGINGS",
+      "classification": "item"
+    },
+    {
+      "id": 201,
+      "name": "GOLD_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 202,
+      "name": "DIAMOND_HELMET",
+      "classification": "item"
+    },
+    {
+      "id": 203,
+      "name": "DIAMOND_CHESTPLATE",
+      "classification": "item"
+    },
+    {
+      "id": 204,
+      "name": "DIAMOND_LEGGINGS",
+      "classification": "item"
+    },
+    {
+      "id": 205,
+      "name": "DIAMOND_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 206,
+      "name": "COPPER_HELMET",
+      "classification": "item"
+    },
+    {
+      "id": 207,
+      "name": "COPPER_CHESTPLATE",
+      "classification": "item"
+    },
+    {
+      "id": 208,
+      "name": "COPPER_LEGGINGS",
+      "classification": "item"
+    },
+    {
+      "id": 209,
+      "name": "COPPER_BOOTS",
+      "classification": "item"
+    },
+    {
+      "id": 210,
+      "name": "PACKED_ICE",
+      "classification": "block"
+    },
+    {
+      "id": 211,
+      "name": "MOSSY_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 212,
+      "name": "LUSH_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 213,
+      "name": "DARK_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 214,
+      "name": "MEADOW_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 215,
+      "name": "SAVANNA_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 216,
+      "name": "JUNGLE_GRASS",
+      "classification": "block"
+    },
+    {
+      "id": 217,
+      "name": "PODZOL",
+      "classification": "block"
+    },
+    {
+      "id": 218,
+      "name": "ANDESITE",
+      "classification": "block"
+    },
+    {
+      "id": 219,
+      "name": "DIORITE",
+      "classification": "block"
+    },
+    {
+      "id": 220,
+      "name": "GRANITE",
+      "classification": "block"
+    },
+    {
+      "id": 221,
+      "name": "COARSE_DIRT",
+      "classification": "block"
+    },
+    {
+      "id": 222,
+      "name": "MUD",
+      "classification": "block"
+    },
+    {
+      "id": 223,
+      "name": "MOSSY_COBBLESTONE",
+      "classification": "block"
+    },
+    {
+      "id": 224,
+      "name": "JUNGLE_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 225,
+      "name": "JUNGLE_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 226,
+      "name": "JUNGLE_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 227,
+      "name": "JUNGLE_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 228,
+      "name": "JUNGLE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 229,
+      "name": "JUNGLE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 230,
+      "name": "DARK_OAK_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 231,
+      "name": "DARK_OAK_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 232,
+      "name": "DARK_OAK_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 233,
+      "name": "DARK_OAK_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 234,
+      "name": "DARK_OAK_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 235,
+      "name": "DARK_OAK_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 236,
+      "name": "ACACIA_LOG",
+      "classification": "block"
+    },
+    {
+      "id": 237,
+      "name": "ACACIA_LEAVES",
+      "classification": "block"
+    },
+    {
+      "id": 238,
+      "name": "ACACIA_PLANKS",
+      "classification": "block"
+    },
+    {
+      "id": 239,
+      "name": "ACACIA_SAPLING",
+      "classification": "item"
+    },
+    {
+      "id": 240,
+      "name": "ACACIA_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 241,
+      "name": "ACACIA_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 242,
+      "name": "MAGNETITE_BLOCK",
+      "classification": "block"
+    },
+    {
+      "id": 243,
+      "name": "POSITIVE_MAGNETITE_CRYSTAL",
+      "classification": "block"
+    },
+    {
+      "id": 244,
+      "name": "NEGATIVE_MAGNETITE_CRYSTAL",
+      "classification": "block"
+    },
+    {
+      "id": 245,
+      "name": "MAGNETIC_SPIKE",
+      "classification": "block"
+    },
+    {
+      "id": 246,
+      "name": "MAGNETIC_BOSS_SUMMONER",
+      "classification": "block"
+    },
+    {
+      "id": 247,
+      "name": "MAGNETIC_SHIELD_CRYSTAL",
+      "classification": "block"
+    },
+    {
+      "id": 248,
+      "name": "CHARGED_MAGNETITE",
+      "classification": "block"
+    },
+    {
+      "id": 249,
+      "name": "MAGNETITE_SHARD",
+      "classification": "block"
+    },
+    {
+      "id": 250,
+      "name": "MAGNETITE_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 251,
+      "name": "MAGNETITE_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 252,
+      "name": "MAGNETITE_BRICKS",
+      "classification": "block"
+    },
+    {
+      "id": 253,
+      "name": "MAGNETITE_BRICK_SLAB",
+      "classification": "block"
+    },
+    {
+      "id": 254,
+      "name": "MAGNETITE_BRICK_STAIRS",
+      "classification": "block"
+    },
+    {
+      "id": 255,
+      "name": "CHISELED_MAGNETITE",
+      "classification": "block"
+    }
+  ],
+  "samples": [
+    {
+      "seed": 12345,
+      "cx": 0,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 21,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3338,
+      "semanticSha256": "4e3a8551c1b8a7a21bc6e45846b85b2355042ac7b24c82f18f32d68fd5f8efe5"
+    },
+    {
+      "seed": 12345,
+      "cx": 1,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 20,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3933,
+      "semanticSha256": "2da57ff051e97c5a21e2b48bb4854b604cdcb8e5e7489de4e3defeaacbefdfda"
+    },
+    {
+      "seed": 12345,
+      "cx": -1,
+      "cz": -1,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 19,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3420,
+      "semanticSha256": "0e050663cb318a1f3022091ac780fa41bdc9286b089864ca3ca847e7d3f1ec7f"
+    },
+    {
+      "seed": 12345,
+      "cx": 8,
+      "cz": 8,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 19,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 2644,
+      "semanticSha256": "f140e78d68e999028ce59e3b50f1d89d927c143220694603a52a296c38b9438b"
+    },
+    {
+      "seed": 1729,
+      "cx": 0,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 31,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 6087,
+      "semanticSha256": "5ec88139a433f6d855e31f9ca4470b61cc92d4dcc19604682223b8d19a310943"
+    },
+    {
+      "seed": 1729,
+      "cx": 1,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 23,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3778,
+      "semanticSha256": "f415cbb76fb2c8aaa845c9e16d6bc80a84934e673d0bc3678dcec9e2408faca6"
+    },
+    {
+      "seed": 1729,
+      "cx": -1,
+      "cz": -1,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 29,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 4736,
+      "semanticSha256": "4e45a9512902a9f1d4f84f9e9a43b6de16108355de8ee9e5784418f1327e900b"
+    },
+    {
+      "seed": 1729,
+      "cx": 8,
+      "cz": 8,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 19,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3195,
+      "semanticSha256": "33b53a8b3e7cab3978a79a2029b5e6981e29ba3bdbf97724f18ce484288d3091"
+    },
+    {
+      "seed": 334033944,
+      "cx": 0,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 24,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 4046,
+      "semanticSha256": "d4be60ac9771a686db3a9d215ca56a167b532e2e5e9769584897aab961f16106"
+    },
+    {
+      "seed": 334033944,
+      "cx": 1,
+      "cz": 0,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 19,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 3461,
+      "semanticSha256": "adb518e8339fb689cd76b1206011b67191289aeeff0800cbe3463032c6e21ba4"
+    },
+    {
+      "seed": 334033944,
+      "cx": -1,
+      "cz": -1,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 25,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 4446,
+      "semanticSha256": "e649d134e231e78cf49efac8ec2768b0a8c30db88cffb979e4815ce11150f28e"
+    },
+    {
+      "seed": 334033944,
+      "cx": 8,
+      "cz": 8,
+      "voxels": 98304,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metaBytes": 98304,
+      "paletteSize": 16,
+      "bodyBytes": 294933,
+      "deflatedBodyBytes": 2673,
+      "semanticSha256": "7cc50393dd9568fbe99c26d0733284ca23c6a7416c3a9d1b588fa7fc981db68d"
+    }
+  ]
+}

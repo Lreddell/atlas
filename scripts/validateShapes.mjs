@@ -8,7 +8,6 @@
 // Verifies: double slabs render/occlude as full cubes; straight/inner/outer stair
 // geometry; neighbor-based corner resolution incl. left/right + canTakeShape veto;
 // and paired source/target face occlusion (two partial faces that jointly seal).
-/* global console, process */
 
 // ---- mirror of blockShapes.ts ----
 const POS_Z = 0, POS_X = 2, NEG_X = 3, SLAB_DOUBLE = 2;
