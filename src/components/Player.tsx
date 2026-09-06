@@ -26,8 +26,8 @@ import {
     climbSurfaces, CLIMB_SHOCK_DAMAGE, CLIMB_SHOCK_LAUNCH_SPEED, CLIMB_SHOCK_LAUNCH_UP,
 } from '../systems/player/climbSurfaces';
 import {
-    advanceMotion, armSurge, consumeSurge, createMotionState, endMotion, markDodgeRefused, motionRequests,
-    previewDodge, resolveDodge, rollAbsorbsLanding, rollVelocity, writeMotionStatus,
+    advanceMotion, armSurge, canArmMagnetSlam, consumeSurge, createMotionState, endMotion, markDodgeRefused, motionRequests,
+    isInvulnerable, previewDodge, resolveDodge, rollAbsorbsLanding, rollVelocity, writeMotionStatus,
     DASH_RANGE, DASH_SPEED, LEAP_SPEED, LEAP_UP,
     type DodgeContext, type MotionState, type MotionVec3,
 } from '../systems/player/playerMotion';
@@ -256,7 +256,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     };
     }, [isLocked, isPaused]);
 
-  const applyDamage = (amount: number) => {
+  const applyDamage = (amount: number, fall = false) => {
+      if (fall ? rollAbsorbsLanding(motion.current) : isInvulnerable(motion.current)) return;
       if (gameMode !== 'survival' || isDead) return;
       if (spawnImmunityTicks.current > 0) return;
 
@@ -463,6 +464,14 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       const boss: DodgeContext['boss'] = bossEntity
           ? { x: bossEntity.pos.x, y: bossEntity.pos.y + bossEntity.height * 0.5, z: bossEntity.pos.z, polarity: bossEntity.polarity, radius: bossEntity.width * 0.5, vulnerable: !bossEntity.shielded }
           : null;
+      if (boss) {
+          const dx = boss.x - pos.current.x, dy = boss.y - (pos.current.y + height * 0.5), dz = boss.z - pos.current.z;
+          const distance = Math.hypot(dx, dy, dz);
+          const obstacle = distance > 0.001
+              ? sweepVoxels(pos.current.x, pos.current.y + height * 0.5, pos.current.z, dx / distance, dy / distance, dz / distance, distance)
+              : null;
+          boss.lineOfSight = obstacle === null || obstacle >= distance - boss.radius;
+      }
       return {
           attached: adhesion.current.active,
           grounded: grounded.current,
@@ -521,10 +530,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   };
 
   /** A dash ended (arrived or blocked): settle, and arm the slam if it reached the boss. */
-  const finishDash = () => {
+  const finishDash = (position: MotionVec3, height: number, arrived: boolean, blocked: boolean) => {
       const m = motion.current;
       if (m.action !== 'dash') return;
-      const ontoBoss = m.onto === 'boss';
+      const context = buildKitContext(getMovementIntent(), height);
+      context.position = position;
+      const ontoBoss = canArmMagnetSlam(m, context, arrived, blocked);
       motion.current = ontoBoss ? armSurge(endMotion(m)) : endMotion(m);
       if (ontoBoss) {
           addTrauma(0.2);
@@ -596,7 +607,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       }
       newVel.set(m.dir.x, m.dir.y, m.dir.z).multiplyScalar(DASH_SPEED);
       if (arrived || blocked) {
-          finishDash();
+          finishDash(newPos, height, arrived, blocked);
           newVel.multiplyScalar(0.15);
       }
       return { position: newPos, velocity: newVel, grounded: false };
@@ -688,7 +699,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         if (invulnerabilityTimer.current > 0) invulnerabilityTimer.current--;
         if (invulnerabilityTimer.current <= 0) lastDamageTaken.current = 0;
 
-        motion.current = advanceMotion(motion.current, FIXED_DT);
+        const beforeMotion = motion.current;
+        motion.current = advanceMotion(beforeMotion, FIXED_DT);
+        // Timers advance before movement. Give a dash its final physical step
+        // so a fractional last step can arrive and validate its slam.
+        if (beforeMotion.action === 'dash' && motion.current.action === 'none') {
+            motion.current = { ...motion.current, action: 'dash', target: beforeMotion.target,
+                onto: beforeMotion.onto, dir: beforeMotion.dir, time: beforeMotion.duration,
+                duration: beforeMotion.duration + FIXED_DT };
+        }
         const height = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
 
         // --- Magnetic wall adhesion: hard-detach triggers + path selection ---
@@ -818,7 +837,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                     const multiplier = getFallDamageMultiplierForLandingBlock(landedBlock);
                     // Polarity boots cushion the impact (fallDamageFactor < 1 while
                     // the ability is active; upgraded boots cushion more).
-                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor));
+                    applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor), true);
                 }
                 fallDistance.current = 0;
             }

@@ -14,10 +14,6 @@ interface ResonantVaultControllerProps {
     gameMode: GameMode;
 }
 
-type PlayerDamageBridge = {
-    playerDamageHandler: ((amount: number, knockX: number, knockZ: number) => void) | null;
-};
-
 export const ResonantVaultController: React.FC<ResonantVaultControllerProps> = ({ active, isPaused, isDead, gameMode }) => {
     const { camera } = useThree();
 
@@ -46,8 +42,7 @@ export const ResonantVaultController: React.FC<ResonantVaultControllerProps> = (
         if (!isPaused) {
             const damage = resonantVaultRuntime.tick(Math.min(delta, 0.1), playerPosition, gameMode);
             if (damage > 0) {
-                const bridge = entityManager as unknown as PlayerDamageBridge;
-                bridge.playerDamageHandler?.(damage, 0, 0);
+                entityManager.tryDamagePlayer(damage, 0, 0);
             }
         }
     });

@@ -5,7 +5,6 @@ import { entityManager } from '../systems/entities/EntityManager';
 import { ENTITY_KINDS } from '../systems/entities/Entity';
 import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
 import { MagneticWardenRenderer } from './MagneticWardenRenderer';
-import { PlayerModel } from './PlayerModel';
 import { BossCompassTracker } from './BossCompassTracker';
 
 const POLARITY_RED = 0xe53935;
@@ -141,7 +140,6 @@ export const EntityRenderer: React.FC = () => {
         <>
             <ResonantVaultEnemyRenderer />
             <MagneticWardenRenderer />
-            <PlayerModel />
             <BossCompassTracker />
             {ids.map((id) => {
                 const e = entityManager.getEntity(id);

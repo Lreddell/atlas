@@ -4,6 +4,12 @@ import * as THREE from 'three';
 import { playerPose, viewRig } from '../systems/player/viewRig';
 import { motionStatus } from '../systems/player/playerMotion';
 import { gameEvents } from '../systems/events/GameEvents';
+import { BlockType } from '../types';
+import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
+import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { isSpriteRenderedType } from '../data/spriteBlocks';
+import { playerAttack, playerMining, attackPose } from '../systems/combat/playerAttack';
+import { headLookPitch } from '../systems/player/playerAnimation';
 import { WALK_SPEED } from '../systems/player/playerConstants';
 
 // The player's own body, drawn only in third person: a blocky explorer with
@@ -44,7 +50,6 @@ const _mat = new THREE.Matrix4();
 const _axis = new THREE.Vector3();
 const _rollDir = new THREE.Vector3();
 
-const SWING_SECONDS = 0.3;
 /** Height (blocks) of the body's centre of mass: the tumble pivots here. */
 const PIVOT_Y = 0.95;
 
@@ -52,7 +57,7 @@ const PIVOT_Y = 0.95;
 interface Pose {
     /** Whole-body offsets. */
     bodyY: number;
-    bodyLean: number;      // pitch: + leans forward
+    bodyLean: number;      // pitch: negative leans toward model forward (-Z)
     bodyRoll: number;      // bank into a turn
     bodyTwist: number;     // yaw of the chest against the hips
     squash: number;        // 1 = neutral, < 1 = compressed on landing
@@ -86,7 +91,11 @@ function resetPose(p: Pose): void {
     p.legRUpper = 0; p.legRLower = 0; p.legROut = 0;
 }
 
-export const PlayerModel: React.FC = () => {
+export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType }) => {
+    const heldGeometry = useMemo(() => createHeldItemGeometry(itemType), [itemType]);
+    const heldMaterial = useMemo(() => new THREE.MeshLambertMaterial({ map: textureAtlasManager.getTexture(), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), []);
+    useEffect(() => () => heldGeometry?.dispose(), [heldGeometry]);
+    useEffect(() => () => heldMaterial.dispose(), [heldMaterial]);
     const rootRef = useRef<THREE.Group>(null);
     const pivotRef = useRef<THREE.Group>(null);
     const bodyRef = useRef<THREE.Group>(null);
@@ -108,13 +117,11 @@ export const PlayerModel: React.FC = () => {
     const wasRolling = useRef(false);
     const walkPhase = useRef(0);
     const climbPhase = useRef(0);
-    const swingStart = useRef(-1);
     const hurtUntil = useRef(0);
     const landUntil = useRef(0);
     const landStrength = useRef(0);
     const wasGrounded = useRef(true);
     const fallSpeed = useRef(0);
-    const clockRef = useRef(0);
 
     const materials = useMemo(() => ({
         skin: new THREE.MeshLambertMaterial({ color: SKIN }),
@@ -131,35 +138,22 @@ export const PlayerModel: React.FC = () => {
     useEffect(() => () => { for (const m of Object.values(materials)) m.dispose(); }, [materials]);
 
     useEffect(() => {
-        // A mining / attack swing follows the same left-click the held item does;
-        // authored weapon uses have their own event. The body flinches on damage.
-        const onMouseDown = (e: MouseEvent) => {
-            if (e.button === 0 && document.pointerLockElement) swingStart.current = clockRef.current;
-        };
-        const onWeapon = () => { swingStart.current = clockRef.current; };
         const offDamaged = gameEvents.on('player:damaged', () => { hurtUntil.current = Date.now() + 260; });
-        window.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('atlas:weapon-used', onWeapon as EventListener);
-        return () => {
-            offDamaged();
-            window.removeEventListener('mousedown', onMouseDown);
-            window.removeEventListener('atlas:weapon-used', onWeapon as EventListener);
-        };
+        return offDamaged;
     }, []);
 
-    useFrame(({ clock }, delta) => {
+    useFrame((_, delta) => {
         const root = rootRef.current;
         const pivot = pivotRef.current;
         const body = bodyRef.current;
         const torso = torsoRef.current;
         const head = headRef.current;
         if (!root || !pivot || !body || !torso || !head) return;
-        clockRef.current = clock.elapsedTime;
         root.visible = viewRig.showModel;
         if (!root.visible) return;
 
         const dt = Math.min(0.1, delta);
-        const t = clock.elapsedTime;
+        const t = playerPose.time;
         const pose = playerPose;
         const speed = Math.hypot(pose.vx, pose.vz);
         const now = Date.now();
@@ -224,22 +218,22 @@ export const PlayerModel: React.FC = () => {
             blendRate = 26;
         } else if (action === 'dash') {
             // Pulled by the field: arms speared forward, legs trailed, body flat.
-            p.bodyLean = 1.05;
+            p.bodyLean = -1.05;
             p.bodyY = 0.12;
-            p.headPitch = -0.75;
-            p.armLUpper = -2.85; p.armRUpper = -2.85;
-            p.armLLower = -0.15; p.armRLower = -0.15;
+            p.headPitch = 0.75;
+            p.armLUpper = 2.85; p.armRUpper = 2.85;
+            p.armLLower = 0.15; p.armRLower = 0.15;
             p.armLOut = 0.16; p.armROut = -0.16;
-            p.legLUpper = -0.35; p.legRUpper = -0.2;
-            p.legLLower = 0.5; p.legRLower = 0.8;
+            p.legLUpper = 0.35; p.legRUpper = 0.2;
+            p.legLLower = -0.5; p.legRLower = -0.8;
             blendRate = 22;
         } else if (action === 'leap') {
             // Kicked away from a matching pole: arms up, knees drawn in.
             p.bodyLean = -0.3;
-            p.armLUpper = -2.5; p.armRUpper = -2.5;
+            p.armLUpper = 2.5; p.armRUpper = 2.5;
             p.armLOut = 0.7; p.armROut = -0.7;
-            p.legLUpper = -1.0; p.legRUpper = -0.5;
-            p.legLLower = 1.2; p.legRLower = 0.7;
+            p.legLUpper = 1.0; p.legRUpper = 0.5;
+            p.legLLower = -1.2; p.legRLower = -0.7;
             blendRate = 20;
         } else if (pose.attached) {
             // Wall climb: chest to the face, opposite hand and foot reaching.
@@ -248,56 +242,61 @@ export const PlayerModel: React.FC = () => {
             p.bodyY = 0.02;
             p.bodyLean = -0.12;
             p.headPitch = -0.28;
-            p.armLUpper = -2.5 + reach * 0.55; p.armRUpper = -2.5 - reach * 0.55;
-            p.armLLower = -0.45; p.armRLower = -0.45;
+            p.armLUpper = 2.5 - reach * 0.55; p.armRUpper = 2.5 + reach * 0.55;
+            p.armLLower = 0.45; p.armRLower = 0.45;
             p.armLOut = 0.55; p.armROut = -0.55;
-            p.legLUpper = -0.55 - reach * 0.45; p.legRUpper = -0.55 + reach * 0.45;
-            p.legLLower = 0.85; p.legRLower = 0.85;
+            p.legLUpper = 0.55 + reach * 0.45; p.legRUpper = 0.55 - reach * 0.45;
+            p.legLLower = -0.85; p.legRLower = -0.85;
             p.legLOut = 0.28; p.legROut = -0.28;
         } else if (!pose.grounded) {
             const rising = pose.vy > 1.5;
             if (rising) {
                 p.bodyLean = -0.12;
-                p.armLUpper = -2.2; p.armRUpper = -2.2;
-                p.armLLower = -0.5; p.armRLower = -0.5;
+                p.armLUpper = 2.2; p.armRUpper = 2.2;
+                p.armLLower = 0.5; p.armRLower = 0.5;
                 p.armLOut = 0.3; p.armROut = -0.3;
-                p.legLUpper = -0.85; p.legRUpper = -0.25;
-                p.legLLower = 1.1; p.legRLower = 0.35;
+                p.legLUpper = 0.85; p.legRUpper = 0.25;
+                p.legLLower = -1.1; p.legRLower = -0.35;
             } else {
                 // Falling: arms out for balance, legs reaching for the ground.
                 const drop = Math.min(1, -pose.vy / 16);
                 p.bodyLean = 0.1 + 0.12 * drop;
-                p.armLUpper = -1.1 - 0.5 * drop; p.armRUpper = -1.1 - 0.5 * drop;
+                p.armLUpper = 1.1 + 0.5 * drop; p.armRUpper = 1.1 + 0.5 * drop;
                 p.armLOut = 0.9 + 0.3 * drop; p.armROut = -0.9 - 0.3 * drop;
-                p.armLLower = -0.35; p.armRLower = -0.35;
-                p.legLUpper = 0.35 * drop; p.legRUpper = -0.3 * drop;
+                p.armLLower = 0.35; p.armRLower = 0.35;
+                p.legLUpper = -0.35 * drop; p.legRUpper = 0.3 * drop;
                 p.legLLower = -0.35; p.legRLower = -0.2;
             }
         } else {
             // Grounded locomotion. One phase drives legs, arms and the body bob.
             const stride = Math.min(1.4, speed / WALK_SPEED);
-            walkPhase.current += speed * dt * (pose.sprint ? 2.6 : 2.2);
+            const along = speed > 0.1 ? (pose.vx * _forward.x + pose.vz * _forward.z) / speed : 0;
+            const across = speed > 0.1 ? (pose.vx * _right.x + pose.vz * _right.z) / speed : 0;
+            walkPhase.current += speed * dt * (pose.sprint ? 2.6 : 2.2) * (along < -0.2 ? -1 : 1);
             const swing = Math.sin(walkPhase.current);
             const lift = Math.cos(walkPhase.current);
             const amp = (pose.sprint ? 1.15 : 0.8) * stride;
-            p.legLUpper = swing * amp;
-            p.legRUpper = -swing * amp;
+            p.legLUpper = swing * amp * Math.max(0.25, Math.abs(along));
+            p.legRUpper = -p.legLUpper;
+            p.legLOut = swing * amp * across * 0.45;
+            p.legROut = -p.legLOut;
             // Knees only bend on the back half of the stride (a real gait).
             p.legLLower = -Math.max(0, -swing) * amp * 1.5;
             p.legRLower = -Math.max(0, swing) * amp * 1.5;
             p.armLUpper = -swing * amp * 0.85;
             p.armRUpper = swing * amp * 0.85;
-            p.armLLower = -Math.max(0, -swing) * amp * 0.7 - 0.15 * stride;
-            p.armRLower = -Math.max(0, swing) * amp * 0.7 - 0.15 * stride;
+            p.armLLower = Math.max(0, -swing) * amp * 0.7 + 0.15 * stride;
+            p.armRLower = Math.max(0, swing) * amp * 0.7 + 0.15 * stride;
             p.bodyY = Math.abs(lift) * 0.045 * stride;
             p.bodyTwist = -swing * 0.16 * stride;
-            p.bodyLean = pose.sprint ? 0.26 : 0.06 * stride;
+            p.bodyLean = -(pose.sprint ? 0.22 : 0.06 * stride) * along;
+            p.bodyRoll = -across * stride * 0.06;
 
             if (pose.sneak) {
                 p.bodyY -= 0.28;
-                p.bodyLean = 0.42;
+                p.bodyLean = -0.42;
                 p.squash = 0.9;
-                p.headPitch = -0.2;
+                p.headPitch = 0.2;
                 p.legLLower -= 0.5; p.legRLower -= 0.5;
                 p.legLOut = 0.16; p.legROut = -0.16;
                 p.armLOut = 0.2; p.armROut = -0.2;
@@ -309,7 +308,7 @@ export const PlayerModel: React.FC = () => {
                 p.bodyY = breathe * 0.018;
                 p.bodyRoll = Math.sin(t * 0.6) * 0.03;
                 p.armLUpper = breathe * 0.05; p.armRUpper = -breathe * 0.05;
-                p.armLLower = -0.12; p.armRLower = -0.12;
+                p.armLLower = 0.12; p.armRLower = 0.12;
                 p.armLOut = 0.08; p.armROut = -0.08;
             }
         }
@@ -327,28 +326,34 @@ export const PlayerModel: React.FC = () => {
         }
 
         // The head tracks the look pitch in every clip that has not claimed it.
-        p.headPitch += -pose.pitch * 0.55;
+        p.headPitch += action === 'roll' ? -pose.pitch * 0.55 : headLookPitch(pose.pitch, p.bodyLean);
 
         // A hit knocks the chest back for a beat.
         if (hurt) {
             const k = (hurtUntil.current - now) / 260;
-            p.bodyLean -= 0.3 * k;
+            p.bodyLean += 0.3 * k;
             p.bodyRoll += 0.12 * k;
             p.armLOut += 0.3 * k; p.armROut -= 0.3 * k;
         }
 
-        // Attack swing: the right arm overrides its clip for the swing's length.
-        if (swingStart.current >= 0) {
-            const k = (t - swingStart.current) / SWING_SECONDS;
-            if (k >= 1) {
-                swingStart.current = -1;
-            } else {
-                const arc = Math.sin(k * Math.PI);
-                p.armRUpper = -0.4 - 1.9 * arc;
-                p.armRLower = -0.7 * arc;
-                p.armROut = -0.1 - 0.25 * arc;
-                p.bodyTwist += 0.22 * arc;
-                blendRate = Math.max(blendRate, 30);
+        // Carry the selected item in a relaxed forward grip. Combat takes priority
+        // over locomotion in the upper body; evade poses remain untouched.
+        if (action === 'none' && !pose.attached) {
+            if (itemType !== null) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
+            const attack = attackPose(playerAttack);
+            if (attack.weight) {
+                p.armRUpper = attack.shoulder;
+                p.armRLower = attack.elbow;
+                p.armROut = -0.15 - attack.sweep * 0.5;
+                p.bodyTwist += attack.twist;
+                p.armLUpper = 0.3 + attack.shoulder * 0.25;
+                p.armLLower = 0.5;
+                blendRate = 32;
+            } else if (playerMining.active) {
+                const arc = 0.5 + Math.sin(playerMining.elapsed * 12) * 0.5;
+                p.armRUpper = 0.45 + arc * 1.25;
+                p.armRLower = 0.25 + arc * 0.4;
+                p.bodyTwist += arc * 0.12;
             }
         }
 
@@ -443,6 +448,12 @@ export const PlayerModel: React.FC = () => {
                             <group ref={armRLowerRef} position={[0, -0.36, 0]}>
                                 <mesh position={[0, -0.17, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.19, 0.34, 0.19]} /></mesh>
                                 <mesh position={[0, -0.38, 0]} material={materials.skin}><boxGeometry args={[0.18, 0.12, 0.18]} /></mesh>
+                                {heldGeometry && itemType !== null && <group position={[0, -0.38, -0.06]}>
+                                    <mesh geometry={heldGeometry} material={heldMaterial} castShadow
+                                        position={isSpriteRenderedType(itemType) ? [0, 0.16, -0.14] : [0, -0.02, -0.18]}
+                                        rotation={isSpriteRenderedType(itemType) ? [0, Math.PI / 2, -Math.PI / 4] : [0, 0, 0]}
+                                        scale={isSpriteRenderedType(itemType) ? 1.5 : 0.8} />
+                                </group>}
                             </group>
                         </group>
                     </group>

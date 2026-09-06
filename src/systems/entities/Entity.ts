@@ -99,6 +99,8 @@ export interface EntityMagneticField {
 // ring is the player's own Magnet Slam impact, purely visual here.
 export interface Shockwave {
     id: number;
+    /** Encounter owner, so a part break only cancels that boss's hazards. */
+    sourceId?: number;
     x: number;
     y: number;
     z: number;

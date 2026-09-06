@@ -42,7 +42,7 @@ function ctx(overrides = {}) {
         grounded: true,
         flying: false,
         moveDir: { x: 1, y: 0, z: 0 },
-        forward: { x: 0, y: 0, z: -1 },
+        forward: { x: 1, y: 0, z: 0 },
         playerPolarity: 1,
         position: { x: 0, y: 10, z: 0 },
         bodyHeight: 1.8,
@@ -55,7 +55,7 @@ function ctx(overrides = {}) {
 
 const boss = (overrides = {}) => ({ x: 6, y: 11.4, z: 0, polarity: -1, radius: 0.9, vulnerable: true, ...overrides });
 
-test('F with nothing magnetic around is a roll along the held direction, or a backstep with none', () => {
+test('C rolls along the held direction, or keeps the original neutral backstep', () => {
     const roll = resolveDodge(createMotionState(), ctx());
     assert.equal(roll.result.kind, 'roll');
     assert.deepEqual(roll.result.dir, { x: 1, y: 0, z: 0 });
@@ -67,7 +67,7 @@ test('F with nothing magnetic around is a roll along the held direction, or a ba
     const back = resolveDodge(createMotionState(), ctx({ moveDir: null }));
     assert.equal(back.result.kind, 'roll');
     assert.equal(back.result.backstep, true);
-    assert.deepEqual(back.result.dir, { x: -0, y: 0, z: 1 });
+    assert.deepEqual(back.result.dir, { x: -1, y: 0, z: -0 });
     assert.equal(back.state.duration, BACKSTEP_DURATION);
 });
 
@@ -93,9 +93,9 @@ test('a roll covers about five blocks and its i-frames open a few frames in', ()
     assert.ok(rollDistance(true) < rollDistance(), 'a backstep is shorter than a roll');
     // Airborne the roll drives harder: the save-yourself move after a launch.
     assert.ok(airTravelled > travelled * 1.1, `air roll ${airTravelled} vs ground ${travelled}`);
-    assert.ok(firstInvulnerable >= ROLL_IFRAME_START && firstInvulnerable < 0.1);
+    assert.ok(firstInvulnerable >= ROLL_IFRAME_START && firstInvulnerable < ROLL_IFRAME_START + 0.011);
     assert.ok(lastInvulnerable <= ROLL_IFRAME_END);
-    assert.ok(invulnerableSeconds >= 0.35 && invulnerableSeconds <= 0.45, `${invulnerableSeconds}s of i-frames`);
+    assert.ok(Math.abs(invulnerableSeconds - 0.15) < STEP, `${invulnerableSeconds}s of i-frames`);
     assert.equal(rollSpeedAt(0, ROLL_DURATION, 11), 11);
     assert.equal(rollSpeedAt(ROLL_DURATION, ROLL_DURATION, 11), 0);
     assert.ok(rollTuck({ ...state, action: 'roll', time: 0.3, duration: 0.6 }) > 0.99);
@@ -108,7 +108,9 @@ test('a roll covers about five blocks and its i-frames open a few frames in', ()
 
 test('a landing mid-roll is absorbed, and a roll re-pressed at its end chains into the next', () => {
     const rolling = resolveDodge(createMotionState(), ctx()).state;
-    assert.equal(rollAbsorbsLanding(rolling), true);
+    assert.equal(rollAbsorbsLanding(rolling), false);
+    assert.equal(rollAbsorbsLanding({ ...rolling, time: 0.15 }), true);
+    assert.equal(rollAbsorbsLanding({ ...rolling, time: 0.2 }), false);
     assert.equal(rollAbsorbsLanding(createMotionState()), false);
     assert.equal(rollAbsorbsLanding({ ...rolling, action: 'dash' }), false);
     // The last few frames accept the next press, so chained rolls never drop one.

@@ -45,7 +45,8 @@ test('a wall behind the player pulls the camera in, and inside the body the mode
     assert.ok(close.armLength < THIRD_PERSON_RIG.hideModelBelow);
     assert.equal(close.showModel, false);
     const cramped = placeThirdPersonCamera(eye, forward, right, up, wallAt(0.5));
-    near(cramped.armLength, THIRD_PERSON_RIG.minDistance);
+    near(cramped.armLength, 0.5 - THIRD_PERSON_RIG.margin);
+    assert.ok(cramped.camera.z < 0.5, 'the preferred arm minimum cannot push the camera through a wall');
     assert.equal(cramped.showModel, false);
     // A wall on the shoulder side collapses the pivot toward the eye.
     const shoulderWall = (ox, oy, oz, dx) => (dx > 0.5 ? 0.3 : null);

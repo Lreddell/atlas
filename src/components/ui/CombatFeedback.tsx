@@ -21,6 +21,7 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 interface FeedbackView {
     cooldown: number;
+    stamina: number;
     refusedAt: number;
     dodgedAt: number;
     shockedAt: number;
@@ -28,7 +29,7 @@ interface FeedbackView {
 }
 
 export const CombatFeedback: React.FC = () => {
-    const [view, setView] = useState<FeedbackView>({ cooldown: 0, refusedAt: 0, dodgedAt: 0, shockedAt: 0, flux: null });
+    const [view, setView] = useState<FeedbackView>({ stamina: 100, cooldown: 0, refusedAt: 0, dodgedAt: 0, shockedAt: 0, flux: null });
 
     useEffect(() => {
         let dodgedAt = 0;
@@ -42,15 +43,16 @@ export const CombatFeedback: React.FC = () => {
             const now = climbSurfaces.clock;
             const open = zone !== null && now >= zone.opensAt && now < zone.until;
             const next: FeedbackView = {
+                stamina: motionStatus.stamina,
                 cooldown: Math.round(motionStatus.cooldown * 40) / 40,
-                refusedAt: motionStatus.refusedAt,
-                dodgedAt,
-                shockedAt,
+                refusedAt: Date.now() - motionStatus.refusedAt < 400 ? motionStatus.refusedAt : 0,
+                dodgedAt: Date.now() - dodgedAt < 650 ? dodgedAt : 0,
+                shockedAt: Date.now() - shockedAt < 1400 ? shockedAt : 0,
                 flux: open && zone
                     ? { remaining: Math.round((zone.until - now) * 20) / 20, total: Math.max(0.001, zone.until - zone.opensAt) }
                     : null,
             };
-            const key = `${next.cooldown}|${next.refusedAt}|${next.dodgedAt}|${next.shockedAt}|${next.flux ? next.flux.remaining : 'x'}`;
+            const key = `${next.stamina}|${next.cooldown}|${next.refusedAt}|${next.dodgedAt}|${next.shockedAt}|${next.flux ? next.flux.remaining : 'x'}`;
             if (key === last) return;
             last = key;
             setView(next);
@@ -68,6 +70,12 @@ export const CombatFeedback: React.FC = () => {
 
     return (
         <div className="pointer-events-none absolute inset-0 z-[145] select-none">
+            {view.stamina < 100 && (
+                <div className="absolute bottom-[148px] left-1/2 w-[180px] -translate-x-1/2" role="meter" aria-label="Roll stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)}>
+                    <div className="mb-1 text-center font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000]">STAMINA</div>
+                    <div className="h-2 border border-black bg-black/60"><div className="h-full transition-[width] duration-75" style={{ width: `${view.stamina}%`, background: view.stamina < 30 ? '#e9a45d' : '#8fd9b1' }} /></div>
+                </div>
+            )}
             {/* Dodge cooldown ring around the crosshair. Hidden once ready, so a
                 clean screen means "the kit will answer". */}
             {(cooling || refused) && (

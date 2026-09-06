@@ -154,7 +154,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         // --- Form I body.
         const body = bodyRef.current;
         if (body) {
-            const showBody = snap.form === 1;
+            const showBody = snap.form === 1 || action === 'shatter';
             body.visible = showBody;
             if (showBody) {
                 const breathe = Math.sin(t * 1.4) * 0.03;
@@ -216,7 +216,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         //     for the Draw, streams back in the Charge, and flies apart in the shatter.
         const halo = haloRef.current;
         if (halo) {
-            const showHalo = snap.form === 1;
+            const showHalo = snap.form === 1 || action === 'shatter';
             halo.visible = showHalo;
             if (showHalo) {
                 let radius = 1.5, spin = t * 0.9, offset = 0, y = 2.35, alpha = 1;
@@ -247,7 +247,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         const core = coreRef.current;
         if (core) {
             let y = 1.6, scale = 0.55, spinRate = 0.8;
-            if (snap.form === 1 && action === 'shatter') { y = 1.6 + 1.2 * p; scale = 0.55 + 0.55 * p; }
+            if (action === 'shatter') { y = 1.6 + 1.2 * p; scale = 0.55 + 0.55 * p; }
             else if (snap.form === 2) { y = entity.height * 0.5; scale = 1.05; spinRate = reeling ? 0.15 : 1.1; }
             else if (snap.form === 3) { y = entity.height * 0.5; scale = 1.35; spinRate = action === 'spiral' ? 3.2 : 1.2; }
             core.position.set(0, y, snap.form === 1 && action !== 'shatter' ? 0.55 : 0);

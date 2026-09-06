@@ -39,6 +39,7 @@ import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSyste
 import { particleFx } from '../../systems/fx/particleFx';
 import { aimRay, viewRig } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
+import { playerAttack, playerMining, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
 import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
 
 // Scratch vectors for the aim origin/direction (used every frame)
@@ -188,6 +189,10 @@ export const InteractionController = ({
     const isRightMouseDown = useRef(false);
     const interactionCooldown = useRef(0);
     const weaponCooldown = useRef(0);
+    const attackHeld = useRef(false);
+    const attackBuffer = useRef(0);
+    const attackItem = useRef<{ slot: number; type: BlockType | null } | null>(null);
+    useEffect(() => { Object.assign(playerAttack, createAttackState()); return () => { Object.assign(playerAttack, createAttackState()); }; }, []);
     const eatingTimer = useRef(0);
     const lastPlacementTime = useRef(0);
     const lastBreakTime = useRef(0);
@@ -622,7 +627,7 @@ export const InteractionController = ({
 
         if (!isContinuous && heldForUse?.type === BlockType.VAULT_CROSSBOW) {
             const profile = getVaultWeaponProfile(heldForUse.type);
-            if (!profile || weaponCooldown.current > 0) return;
+            if (!profile || weaponCooldown.current > 0 || attackBusy(playerAttack) || motionStatus.action !== 'none') return;
             if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
             aimFromCamera(camera);
             const projectileId = vaultProjectileSystem.fire(
@@ -634,6 +639,9 @@ export const InteractionController = ({
             if (projectileId === null) return;
             damageHeldItem(selectedSlotRef.current, profile.durabilityCost);
             weaponCooldown.current = profile.cooldownSeconds;
+            beginAttack(playerAttack, 'crossbow', profile.cooldownSeconds);
+            playerAttack.struck = true;
+            attackItem.current = null;
             window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
         }
     }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
@@ -645,78 +653,117 @@ export const InteractionController = ({
         const profile = held ? getVaultWeaponProfile(held.type) : null;
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
         aimFromCamera(camera);
-        const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
-        if (!hit) return false;
+        if (profile?.kind === 'crossbow') return true;
+        const hits = new Map<number, NonNullable<ReturnType<typeof entityManager.raycastEntity>>>();
+        const direct = entityManager.raycastEntity(_camPos, _camDir, reach);
         const blockHit = castFromCamera(camera, reach);
-        if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
-        if (profile?.kind === 'crossbow' || weaponCooldown.current > 0) return true;
-        const resolved = held ? resolveVaultMeleeHit(
-            held.type,
-            entityManager.getCombatTraits(hit.id),
-            { distance: hit.dist },
-        ) : null;
-        const damage = resolved?.damage ?? getAttackDamage(held);
-        const stagger = resolved?.stagger ?? 0;
-        const struckEntity = entityManager.getEntity(hit.id);
-        const targetKind = struckEntity?.kind;
-        // A strike loaded by a magnetic dash is a Magnet Slam: the boss's
-        // encounter reads the hit zone and lands it harder (and staggers).
-        const slam = motionStatus.surge && struckEntity?.isBoss === true;
-        if (slam) motionRequests.consumeSurge = true;
-        const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
-        if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
-            const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
-            particleFx.burst({
-                x: struckEntity.pos.x,
-                y: struckEntity.pos.y + struckEntity.height * 0.55,
-                z: struckEntity.pos.z,
-                color: heavy ? [0.62, 0.5, 0.31] : [0.56, 0.61, 0.57],
-                color2: [0.78, 0.7, 0.5],
-                count: heavy ? 18 : 10,
-                speed: heavy ? 4.2 : 2.8,
-                upBias: 0.8,
-                spread: 0.65,
-                size: heavy ? 0.1 : 0.065,
-                life: 0.34,
-                gravity: 4,
-                drag: 1.8,
-            });
-            soundManager.playAt(
-                resolved.technique === 'titan_crush' ? 'vault.enemy.tollkeeper_impact' : 'block.amethyst.hit',
-                { x: struckEntity.pos.x, y: struckEntity.pos.y + struckEntity.height * 0.45, z: struckEntity.pos.z },
-                { volume: heavy ? 0.82 : 0.48, pitch: resolved.technique === 'spear_sweet_spot' ? 1.42 : 0.78, fallback: false },
-            );
-            if (resolved.technique === 'titan_crush') {
-                for (const nearby of entityManager.getEntities()) {
-                    if (nearby.id === hit.id || nearby.hp <= 0 || nearby.kind === 'boat' || nearby.kind === 'bell_titan') continue;
-                    const dx = nearby.pos.x - struckEntity.pos.x;
-                    const dz = nearby.pos.z - struckEntity.pos.z;
-                    const distance = Math.hypot(dx, dz);
-                    if (distance > 2.8 || Math.abs(nearby.pos.y - struckEntity.pos.y) > 2.2) continue;
-                    entityManager.damageEntity(nearby.id, 3.5, dx / (distance || 1), dz / (distance || 1), 0.45);
+        if (direct && isEntityHitVisible(direct.dist, blockHit?.distance ?? null)) hits.set(direct.id, direct);
+        const forward = _camDir.clone();
+        const angle = profile?.kind === 'spear' || playerAttack.combo === 2 ? 30 : 120;
+        // Sweep the visible bodies in the authored arc. Each ray still respects
+        // voxels, foreground entities and encounter-specific crystal hit zones.
+        for (const entity of entityManager.getEntities()) {
+            if (entity.hp <= 0 || hits.has(entity.id)) continue;
+            const dx = entity.pos.x - _camPos.x;
+            const dy = entity.pos.y + entity.height * 0.5 - _camPos.y;
+            const dz = entity.pos.z - _camPos.z;
+            if (!inAttackArc(dx, dy, dz, forward.x, forward.y, forward.z, reach + entity.width * 0.5, angle)) continue;
+            _camDir.set(dx, dy, dz).normalize();
+            const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
+            const wall = sweepVoxels(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, reach);
+            if (hit && isEntityHitVisible(hit.dist, wall)) hits.set(hit.id, hit);
+        }
+        if (!hits.size) return false;
+        const collateralHits = new Set<number>();
+        for (const hit of hits.values()) {
+            _camDir.copy(forward);
+            const resolved = held ? resolveVaultMeleeHit(
+                held.type,
+                entityManager.getCombatTraits(hit.id),
+                { distance: hit.dist },
+            ) : null;
+            const damage = resolved?.damage ?? getAttackDamage(held);
+            const stagger = resolved?.stagger ?? 0;
+            const struckEntity = entityManager.getEntity(hit.id);
+            const targetKind = struckEntity?.kind;
+            // A strike loaded by a magnetic dash is a Magnet Slam: the boss's
+            // encounter reads the hit zone and lands it harder (and staggers).
+            const slam = motionStatus.surge && !motionRequests.consumeSurge && struckEntity?.isBoss === true;
+            if (slam) motionRequests.consumeSurge = true;
+            const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
+            if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
+                const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
+                particleFx.burst({
+                    x: struckEntity.pos.x,
+                    y: struckEntity.pos.y + struckEntity.height * 0.55,
+                    z: struckEntity.pos.z,
+                    color: heavy ? [0.62, 0.5, 0.31] : [0.56, 0.61, 0.57],
+                    color2: [0.78, 0.7, 0.5],
+                    count: heavy ? 18 : 10,
+                    speed: heavy ? 4.2 : 2.8,
+                    upBias: 0.8,
+                    spread: 0.65,
+                    size: heavy ? 0.1 : 0.065,
+                    life: 0.34,
+                    gravity: 4,
+                    drag: 1.8,
+                });
+                soundManager.playAt(
+                    resolved.technique === 'titan_crush' ? 'vault.enemy.tollkeeper_impact' : 'block.amethyst.hit',
+                    { x: struckEntity.pos.x, y: struckEntity.pos.y + struckEntity.height * 0.45, z: struckEntity.pos.z },
+                    { volume: heavy ? 0.82 : 0.48, pitch: resolved.technique === 'spear_sweet_spot' ? 1.42 : 0.78, fallback: false },
+                );
+                if (resolved.technique === 'titan_crush') {
+                    for (const nearby of entityManager.getEntities()) {
+                        if (hits.has(nearby.id) || collateralHits.has(nearby.id) || nearby.hp <= 0 || nearby.kind === 'boat' || nearby.kind === 'bell_titan') continue;
+                        const dx = nearby.pos.x - struckEntity.pos.x;
+                        const dz = nearby.pos.z - struckEntity.pos.z;
+                        const distance = Math.hypot(dx, dz);
+                        if (distance > 2.8 || Math.abs(nearby.pos.y - struckEntity.pos.y) > 2.2) continue;
+                        entityManager.damageEntity(nearby.id, 3.5, dx / (distance || 1), dz / (distance || 1), 0.45);
+                        collateralHits.add(nearby.id);
+                    }
                 }
             }
-        }
-        // The blow bounced (same polarity, a standing shield, or a form change):
-        // a metallic "clink", no hurt cry, so it is obvious nothing landed.
-        if (result === 'blocked' && targetKind === 'magnetic_warden') {
-            soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
-        } else if (result === 'damaged' && targetKind === 'boat') {
-            // Wooden props knock, they don't cry.
-            soundManager.play('block.wood.hit', { volume: 0.8 });
-        } else if (result === 'damaged' && targetKind !== 'bell_titan') {
-            soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+            // The blow bounced (same polarity, a standing shield, or a form change):
+            // a metallic "clink", no hurt cry, so it is obvious nothing landed.
+            if (result === 'blocked' && targetKind === 'magnetic_warden') {
+                soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
+            } else if (result === 'damaged' && targetKind === 'boat') {
+                // Wooden props knock, they don't cry.
+                soundManager.play('block.wood.hit', { volume: 0.8 });
+            } else if (result === 'damaged' && targetKind !== 'bell_titan') {
+                soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+            }
         }
         if (held) damageHeldItem(selectedSlot, profile?.durabilityCost ?? (isSword(held.type) ? 1 : 2));
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
-        if (profile) {
-            weaponCooldown.current = profile.cooldownSeconds;
-            window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
-        } else {
-            interactionCooldown.current = 6;
-        }
+
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
+
+    const requestAttack = useCallback((): boolean => {
+        const held = inventory[selectedSlot];
+        const profile = held ? getVaultWeaponProfile(held.type) : null;
+        if (profile?.kind === 'crossbow') return true;
+        const sword = held ? isSword(held.type) : false;
+        aimFromCamera(camera);
+        const hit = entityManager.raycastEntity(_camPos, _camDir, profile?.reach ?? MELEE_REACH);
+        const block = castFromCamera(camera, Math.max(profile?.reach ?? MELEE_REACH, gameMode === 'creative' ? 5.2 : 4.5));
+        // Swords and vault melee weapons swing through air; tools retain mining.
+        if (!sword && !profile && block && (!hit || !isEntityHitVisible(hit.dist, block.distance))) return false;
+        if (attackBusy(playerAttack) || weaponCooldown.current > 0 || motionStatus.action !== 'none') return true;
+        const name = held ? BlockType[held.type] : '';
+        const kind = profile?.kind ?? (sword ? 'sword' : name?.endsWith('_AXE') ? 'axe' : held ? 'tool' : 'unarmed');
+        const duration = profile?.cooldownSeconds ?? (kind === 'sword' ? 0.625 : kind === 'axe' ? 1 : kind === 'tool' ? 0.8 : 0.5);
+        if (beginAttack(playerAttack, kind, duration)) {
+            attackBuffer.current = 0;
+            attackItem.current = { slot: selectedSlot, type: held?.type ?? null };
+            breakingRef.current = null;
+            setBreakingVisual(null);
+        }
+        return true;
+    }, [camera, inventory, selectedSlot, setBreakingVisual, gameMode]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
@@ -726,7 +773,9 @@ export const InteractionController = ({
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
                 // Attacking an entity takes priority over mining a block.
-                if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+                attackHeld.current = true;
+                attackBuffer.current = 0.15;
+                if (!requestAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -735,6 +784,7 @@ export const InteractionController = ({
         };
         const onUp = (e: MouseEvent) => {
             if(e.button === 0) {
+                attackHeld.current = false;
                 isLeftMouseDown.current = false;
                 breakingRef.current = null;
                 deniedDwellRef.current = null;
@@ -753,11 +803,14 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, requestAttack]);
 
     useFrame((_, delta) => {
-        weaponCooldown.current = Math.max(0, weaponCooldown.current - Math.min(delta, 0.1));
+        playerMining.active = false;
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
+            attackHeld.current = false;
+            attackBuffer.current = 0;
+            cancelAttack(playerAttack);
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             eatingTimer.current = 0;
@@ -765,6 +818,22 @@ export const InteractionController = ({
             if (highlightMeshRef.current) highlightMeshRef.current.visible = false;
             return;
         }
+
+        const combatDt = Math.min(delta, 0.1);
+        weaponCooldown.current = Math.max(0, weaponCooldown.current - combatDt);
+        const committed = attackItem.current;
+        if (motionStatus.action !== 'none' || (committed && (committed.slot !== selectedSlot || committed.type !== (inventory[selectedSlot]?.type ?? null)))) {
+            cancelAttack(playerAttack);
+            attackBuffer.current = 0;
+        }
+        if (advanceAttack(playerAttack, combatDt)) tryMeleeAttack();
+        if ((attackHeld.current || attackBuffer.current > 0) && requestAttack()) {
+            isLeftMouseDown.current = false;
+            breakingRef.current = null;
+            setBreakingVisual(null);
+        }
+        attackBuffer.current = Math.max(0, attackBuffer.current - combatDt);
+        if (attackBusy(playerAttack)) isLeftMouseDown.current = false;
 
         if (interactionCooldown.current > 0) {
             interactionCooldown.current--;
@@ -835,6 +904,8 @@ export const InteractionController = ({
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
                 // Keyed by target AND hotbar slot: switching tools mid-break resets
+                playerMining.active = true;
+                playerMining.elapsed += Math.min(delta, 0.1);
                 // progress, so the harvest check + durability cost at completion
                 // always charge the tool that actually did the mining (no switching
                 // to an empty slot on the last frame to mine for free).

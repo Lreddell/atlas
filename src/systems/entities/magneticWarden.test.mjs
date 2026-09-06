@@ -81,6 +81,10 @@ test('EntityManager dispatches registered brains and resolves bolts, rings and i
     assert.match(manager, /getPlayerPolarity\(\): number/);
     assert.match(manager, /tryDamagePlayer\(amount: number, knockX: number, knockZ: number, source: PlayerHitSource = 'attack'\): boolean/);
     assert.match(manager, /gameEvents\.emit\('player:dodged', \{ source \}\)/);
+    assert.match(manager, /damagePlayer\(amount: number, knockX: number, knockZ: number\): void \{\s*this.tryDamagePlayer\(amount, knockX, knockZ\)/);
+    const vaultController = read('src/components/ResonantVaultController.tsx');
+    assert.match(vaultController, /entityManager.tryDamagePlayer\(damage, 0, 0\)/);
+    assert.doesNotMatch(vaultController, /playerDamageHandler|PlayerDamageBridge/);
     // Bolts: same polarity bounces (spent), opposite homes and hits, a roll lets it pass.
     assert.match(manager, /polarityRelation\(playerPolarity, p\.polarity\) === 'same'/);
     assert.match(manager, /p\.bounced = true;/);
@@ -89,7 +93,7 @@ test('EntityManager dispatches registered brains and resolves bolts, rings and i
     assert.match(manager, /gameEvents\.emit\('player:dodged', \{ source: 'bolt' \}\)/);
     // Rings: opposite pinned safe, a roll dodges, same is launched + hurt, neutral hurt.
     assert.match(manager, /s\.kind === 'polarity' && targetable && pp/);
-    assert.match(manager, /if \(relation === 'opposite'\) continue; \/\/ pinned safe/);
+    assert.match(manager, /if \(relation === 'opposite'\) \{\s*if \(s.radius <= s.maxRadius\) survivors.push\(s\);\s*continue; \/\/ pinned safe/);
     assert.match(manager, /gameEvents\.emit\('player:dodged', \{ source: 'ring' \}\)/);
     assert.match(manager, /if \(relation === 'same'\) \{[\s\S]*?playerImpulseHandler\?\.\(ox \* 13, 19, oz \* 13\)/);
     // Contact damage goes through the same gate, only for kinds that declare it.
@@ -178,7 +182,7 @@ test('App attaches the encounter to the summoned boss and feeds it the player po
 test('melee aims from the eye, loads a Magnet Slam, and a bounced strike still clinks', () => {
     assert.doesNotMatch(interaction, /tryDeflectBolt|deflectProjectile|DEFLECT_REACH/);
     assert.match(interaction, /function aimFromCamera\(camera: THREE\.Camera\)/);
-    assert.match(interaction, /const slam = motionStatus\.surge && struckEntity\?\.isBoss === true;/);
+    assert.match(interaction, /const slam = motionStatus\.surge && !motionRequests\.consumeSurge && struckEntity\?\.isBoss === true;/);
     assert.match(interaction, /slam \? MAGNET_SLAM_HIT_ZONE : hit\.hitZone/);
     assert.match(interaction, /motionRequests\.consumeSurge = true/);
     assert.match(interaction, /result === 'blocked' && targetKind === 'magnetic_warden'/);
@@ -244,9 +248,9 @@ test('the summon cutscene consumes its crystals into the Warden and leaves the t
 });
 
 test('the Warden renders its three-form body, the tower shield, and every telegraph from the snapshot', () => {
-    assert.match(entityRenderer, /'magnetic_warden',\n\]\)/);
+    assert.match(entityRenderer, /'magnetic_warden',\r?\n\]\)/);
     assert.match(entityRenderer, /<MagneticWardenRenderer \/>/);
-    assert.match(entityRenderer, /<PlayerModel \/>/);
+    assert.match(app, /<PlayerModel itemType=\{inventory\[selectedSlot\]\?\.type \?\? null\} \/>/);
     assert.match(entityRenderer, /<BossCompassTracker \/>/);
     assert.match(entityRenderer, /p\.kind === 'spiral' \? 0\.62 : 1/);
     assert.match(entityRenderer, /s\.kind === 'slam' \? SLAM_RING/);

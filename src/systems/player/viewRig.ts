@@ -90,7 +90,9 @@ export function placeThirdPersonCamera(
     const back = { x: -dir.x, y: -dir.y, z: -dir.z };
     let arm = rig.distance;
     const hit = sweep(pivot.x, pivot.y, pivot.z, back.x, back.y, back.z, rig.distance + rig.margin);
-    if (hit !== null) arm = Math.max(rig.minDistance, Math.min(rig.distance, hit - rig.margin));
+    // Collision outranks the preferred minimum. Otherwise a nearby wall pushes
+    // the camera THROUGH itself by forcing the arm back out to minDistance.
+    if (hit !== null) arm = Math.max(0, Math.min(rig.distance, hit - rig.margin));
     const camera: RigVec3 = { x: pivot.x + back.x * arm, y: pivot.y + back.y * arm, z: pivot.z + back.z * arm };
     return { camera, pivot, armLength: arm, showModel: arm >= rig.hideModelBelow };
 }

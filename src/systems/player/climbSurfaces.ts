@@ -20,6 +20,8 @@ export interface FluxVec3 {
 }
 
 export interface ClimbFluxZone {
+    /** A broken crystal leaves a safe grip until its climber launches clear. */
+    retiring?: boolean;
     /** Stable id (one per tower). */
     id: string;
     /** Inclusive block-cell bounds of the surface's magnet cells. */
@@ -117,7 +119,8 @@ export class ClimbSurfaceRegistry {
      * face of the surface holds the climber, otherwise opposite attracts.
      */
     isAttractive(playerPolarity: number, blockPolarity: number, x: number, y: number, z: number, now: number): boolean {
-        if (blockPolarity === 0) return false;
+        if (blockPolarity === 0 || playerPolarity === 0) return false;
+        if (this.zoneAt(x, y, z)?.retiring) return true;
         if (this.inFlux(x, y, z, now)) return true;
         return attractsByPolarity(playerPolarity, blockPolarity);
     }
@@ -138,7 +141,7 @@ export class ClimbSurfaceRegistry {
         // Only a window that actually opened can settle against a climber, and
         // only right as it closes (a climber cannot be holding the wrong
         // polarity any later: they are already off the face).
-        if (!zone || zone.until <= zone.opensAt || now < zone.until || now > zone.until + CLIMB_SHOCK_SETTLE_SECONDS) return null;
+        if (!zone || zone.retiring || zone.until <= zone.opensAt || now < zone.until || now > zone.until + CLIMB_SHOCK_SETTLE_SECONDS) return null;
         if (playerPolarity === 0 || Math.sign(playerPolarity) !== Math.sign(zone.polarity)) return null;
         if (zone.safeTarget) {
             const dx = zone.safeTarget.x - climber.x;

@@ -45,6 +45,7 @@ import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
+import { PlayerModel } from './components/PlayerModel';
 import { HeldItem } from './components/HeldItem';
 import { Chat, ChatMessage } from './components/ui/Chat';
 import { DeathScreen } from './components/ui/DeathScreen';
@@ -3268,6 +3269,7 @@ const App: React.FC = () => {
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
+                {gameMode !== 'spectator' && !isDead && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} />}
                     <BossCinematic />
                     <BellTitanCinematic />
                     <WardenDefeatCinematic />

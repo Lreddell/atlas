@@ -1,4 +1,4 @@
-// The player's F-key kit: one button, resolved by the polarity rule.
+// The player's C-key kit: one button, resolved by aim, movement and polarity.
 //
 //   - attached to a wall              → jump off (the ordinary detach)
 //   - aiming at an OPPOSITE magnet face within reach → MAGNETIC DASH onto it
@@ -39,6 +39,8 @@ export interface MotionState {
     surgeRemaining: number;
     /** Seconds left before a dash may reach the boss again (prevents slam spam). */
     slamLockout: number;
+    stamina: number;
+    staminaDelay: number;
 }
 
 export interface DodgeBoss {
@@ -51,6 +53,8 @@ export interface DodgeBoss {
     radius: number;
     /** Whether the boss can currently take a hit (the dash is offered only then). */
     vulnerable: boolean;
+    /** A solid voxel between player and boss prevents a magnetic acquisition. */
+    lineOfSight?: boolean;
 }
 
 export interface DodgeMagnet {
@@ -85,14 +89,14 @@ export type DodgeResolution =
     | { kind: 'dash'; target: MotionVec3; dir: MotionVec3; duration: number; onto: 'surface' | 'boss' }
     | { kind: 'leap'; dir: MotionVec3 }
     | { kind: 'jump-off' }
-    | { kind: 'none'; reason: 'busy' | 'cooldown' | 'flying' };
+    | { kind: 'none'; reason: 'busy' | 'cooldown' | 'flying' | 'stamina' };
 
 // --- Tuning -----------------------------------------------------------------
 
 /** Roll length (seconds) and its invulnerability window inside it. */
 export const ROLL_DURATION = 0.6;
-export const ROLL_IFRAME_START = 0.03;
-export const ROLL_IFRAME_END = 0.42;
+export const ROLL_IFRAME_START = 0.10;
+export const ROLL_IFRAME_END = 0.25;
 /** Peak roll speed (blocks/s); the curve eases out so a roll covers ~5.2 blocks. */
 export const ROLL_PEAK_SPEED = 13;
 /** A backstep (no direction held) is shorter and quicker. */
@@ -119,6 +123,9 @@ export const DASH_COOLDOWN = 1.2;
 export const DASH_FACE_STANDOFF = 0.12;
 /** Gap left between the body and the boss at the end of a dash. */
 export const DASH_BOSS_GAP = 0.7;
+/** Magnetic moves are deliberate: face the target, and do not strafe/backstep. */
+export const MAGNETIC_AIM_DOT = 0.8;
+export const MAGNETIC_MOVE_DOT = 0.5;
 
 /** Repel leap: reach of the boss field that kicks you out, and the launch. */
 export const LEAP_RANGE = 10;
@@ -135,7 +142,10 @@ export const SLAM_LOCKOUT = 1.5;
 /** A roll re-pressed within this long of its end chains straight into the next one. */
 export const ROLL_CHAIN_WINDOW = 0.12;
 /** A roll landed within this long of touchdown absorbs the whole fall. */
-export const ROLL_LANDING_WINDOW = 0.35;
+export const ROLL_LANDING_WINDOW = 0.10;
+export const ROLL_STAMINA_COST = 30;
+export const STAMINA_REGEN_DELAY = 1.1;
+export const STAMINA_REGEN_RATE = 24;
 
 export function createMotionState(): MotionState {
     return {
@@ -148,6 +158,8 @@ export function createMotionState(): MotionState {
         cooldowns: { roll: 0, dash: 0, leap: 0 },
         surgeRemaining: 0,
         slamLockout: 0,
+        stamina: 100,
+        staminaDelay: 0,
     };
 }
 
@@ -201,7 +213,7 @@ export function dashBossTarget(boss: DodgeBoss, from: MotionVec3, bodyWidth: num
 }
 
 /**
- * Resolve a press of F. Pure: returns the resolution and the next state
+ * Resolve a press of C. Pure: returns the resolution and the next state
  * (unchanged when nothing happens). Player.tsx applies the physics.
  */
 export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: MotionState; result: DodgeResolution } {
@@ -216,13 +228,16 @@ export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: Mo
 
     const cd = state.cooldowns;
     const boots = ctx.playerPolarity !== 0;
+    const movement = ctx.moveDir;
+    const advancing = movement === null || movement.x * ctx.forward.x + movement.z * ctx.forward.z >= MAGNETIC_MOVE_DOT;
 
     // A magnet face in the crosshair that attracts: dash onto it.
-    if (boots && ctx.aimedMagnet && ctx.aimedMagnet.distance <= DASH_RANGE
+    if (boots && advancing && ctx.aimedMagnet && ctx.aimedMagnet.distance <= DASH_RANGE
         && relation(ctx.playerPolarity, ctx.aimedMagnet.polarity) === 'opposite') {
-        if (cd.dash > 0) return { state, result: { kind: 'none', reason: 'cooldown' } };
-        const target = dashSurfaceTarget(ctx.aimedMagnet, ctx.bodyWidth, ctx.bodyHeight);
-        return beginDash(state, ctx.position, target, 'surface');
+        if (cd.dash <= 0) {
+            const target = dashSurfaceTarget(ctx.aimedMagnet, ctx.bodyWidth, ctx.bodyHeight);
+            return beginDash(state, ctx.position, target, 'surface');
+        }
     }
 
     if (boots && ctx.boss) {
@@ -230,16 +245,17 @@ export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: Mo
         const dy = ctx.boss.y - (ctx.position.y + ctx.bodyHeight * 0.5);
         const dz = ctx.boss.z - ctx.position.z;
         const distance = Math.hypot(dx, dy, dz);
+        const horizontal = Math.hypot(dx, dz);
+        const aimed = horizontal < 0.5 || (dx * ctx.forward.x + dz * ctx.forward.z) / horizontal >= MAGNETIC_AIM_DOT;
+        const intentional = advancing && aimed && ctx.boss.lineOfSight !== false;
         const rel = relation(ctx.playerPolarity, ctx.boss.polarity);
         // A dash into a shielded boss would only buy a wasted slam and a fall,
         // so the kit offers it only while a hit can land.
-        if (rel === 'opposite' && ctx.boss.vulnerable && distance <= DASH_RANGE + ctx.boss.radius && state.slamLockout <= 0) {
-            if (cd.dash > 0) return { state, result: { kind: 'none', reason: 'cooldown' } };
+        if (intentional && rel === 'opposite' && ctx.boss.vulnerable && distance <= DASH_RANGE + ctx.boss.radius && state.slamLockout <= 0 && cd.dash <= 0) {
             const target = dashBossTarget(ctx.boss, ctx.position, ctx.bodyWidth, ctx.bodyHeight);
             return beginDash(state, ctx.position, target, 'boss');
         }
-        if (rel === 'same' && distance <= LEAP_RANGE + ctx.boss.radius) {
-            if (cd.leap > 0) return { state, result: { kind: 'none', reason: 'cooldown' } };
+        if (intentional && rel === 'same' && distance <= LEAP_RANGE + ctx.boss.radius && cd.leap <= 0) {
             const h = Math.hypot(dx, dz);
             const dir = h > 1e-6 ? { x: -dx / h, y: 0, z: -dz / h } : { x: -ctx.forward.x, y: 0, z: -ctx.forward.z };
             const next: MotionState = {
@@ -257,6 +273,7 @@ export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: Mo
     }
 
     if (cd.roll > 0) return { state, result: { kind: 'none', reason: 'cooldown' } };
+    if (state.stamina < ROLL_STAMINA_COST) return { state, result: { kind: 'none', reason: 'stamina' } };
     const backstep = ctx.moveDir === null;
     const dir = backstep
         ? norm({ x: -ctx.forward.x, y: 0, z: -ctx.forward.z })
@@ -271,6 +288,8 @@ export function resolveDodge(state: MotionState, ctx: DodgeContext): { state: Mo
         target: null,
         onto: null,
         cooldowns: { ...cd, roll: ROLL_COOLDOWN },
+        stamina: state.stamina - ROLL_STAMINA_COST,
+        staminaDelay: STAMINA_REGEN_DELAY,
     };
     return { state: next, result: { kind: 'roll', dir, duration, backstep } };
 }
@@ -293,14 +312,16 @@ function beginDash(state: MotionState, from: MotionVec3, target: MotionVec3, ont
     return { state: next, result: { kind: 'dash', target: { ...target }, dir, duration, onto } };
 }
 
-/** What F would do right now (for the HUD prompt); never mutates. */
+/** What C would do right now; never mutates. */
 export function previewDodge(state: MotionState, ctx: DodgeContext): DodgeResolution['kind'] {
     return resolveDodge(state, ctx).result.kind;
 }
 
 /** Advance timers; ends an action when its duration runs out. */
 export function advanceMotion(state: MotionState, dt: number): MotionState {
-    const step = Math.max(0, dt);
+    const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+    state = { ...state, staminaDelay: Math.max(0, state.staminaDelay - step),
+        stamina: Math.min(100, state.stamina + Math.max(0, step - state.staminaDelay) * STAMINA_REGEN_RATE) };
     const cooldowns = {
         roll: Math.max(0, state.cooldowns.roll - step),
         dash: Math.max(0, state.cooldowns.dash - step),
@@ -325,6 +346,16 @@ export function endMotion(state: MotionState): MotionState {
 /** A dash reached the boss: arm the Magnet Slam. */
 export function armSurge(state: MotionState): MotionState {
     return { ...state, surgeRemaining: SURGE_DURATION };
+}
+
+/** Award a slam only on a real, unobstructed arrival at a still-exposed boss. */
+export function canArmMagnetSlam(state: MotionState, ctx: DodgeContext, arrived: boolean, blocked: boolean): boolean {
+    const boss = ctx.boss;
+    if (!arrived || blocked || state.action !== 'dash' || state.onto !== 'boss' || !boss
+        || !boss.vulnerable || boss.lineOfSight === false || relation(ctx.playerPolarity, boss.polarity) !== 'opposite') return false;
+    const reach = boss.radius + ctx.bodyWidth * 0.5 + DASH_BOSS_GAP + 0.6;
+    return Math.hypot(ctx.position.x - boss.x, ctx.position.z - boss.z) <= reach
+        && Math.abs(ctx.position.y + ctx.bodyHeight * 0.5 - boss.y) <= ctx.bodyHeight;
 }
 
 /** Spend the armed slam on a hit; returns whether one was armed. */
@@ -352,7 +383,8 @@ export function rollVelocity(state: MotionState, airborne = false): MotionVec3 {
  * on the roll instead of on their health.
  */
 export function rollAbsorbsLanding(state: MotionState): boolean {
-    return state.action === 'roll';
+    return state.action === 'roll' && state.time >= ROLL_IFRAME_START
+        && state.time < ROLL_IFRAME_START + ROLL_LANDING_WINDOW;
 }
 
 /** Whether the roll is in its tucked (fastest) half, for the animation. */
@@ -364,7 +396,7 @@ export function rollTuck(state: MotionState): number {
 
 export function isInvulnerable(state: MotionState): boolean {
     switch (state.action) {
-        case 'roll': return state.time >= ROLL_IFRAME_START && state.time <= ROLL_IFRAME_END;
+        case 'roll': return state.time >= ROLL_IFRAME_START && state.time < ROLL_IFRAME_END;
         case 'dash': return true;
         case 'leap': return state.time <= LEAP_IFRAMES;
         default: return false;
@@ -375,6 +407,7 @@ export function isInvulnerable(state: MotionState): boolean {
 export interface MotionStatus {
     action: MotionKind;
     invulnerable: boolean;
+    stamina: number;
     surge: boolean;
     surgeFraction: number;
     /** 0..1 progress through the current action. */
@@ -392,6 +425,7 @@ export interface MotionStatus {
 export const motionStatus: MotionStatus = {
     action: 'none',
     invulnerable: false,
+    stamina: 100,
     surge: false,
     surgeFraction: 0,
     progress: 0,
@@ -411,6 +445,7 @@ export const motionRequests = {
 
 export function writeMotionStatus(state: MotionState, prompt: DodgeResolution['kind'], target: MotionStatus = motionStatus): MotionStatus {
     target.action = state.action;
+    target.stamina = state.stamina;
     target.invulnerable = isInvulnerable(state);
     target.surge = state.surgeRemaining > 0;
     target.surgeFraction = SURGE_DURATION > 0 ? state.surgeRemaining / SURGE_DURATION : 0;
@@ -428,7 +463,7 @@ export function writeMotionStatus(state: MotionState, prompt: DodgeResolution['k
     const actionRemaining = state.action === 'none' ? 0 : Math.max(0, state.duration - state.time);
     const total = Math.max(span, state.duration);
     target.cooldown = total > 0 ? Math.max(0, Math.min(1, Math.max(remaining, actionRemaining) / total)) : 0;
-    target.ready = state.action === 'none' && remaining <= 0;
+    target.ready = state.action === 'none' && remaining <= 0 && (prompt === 'dash' || prompt === 'leap' || state.stamina >= ROLL_STAMINA_COST);
     target.prompt = prompt;
     return target;
 }

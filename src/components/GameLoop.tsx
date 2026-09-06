@@ -6,6 +6,7 @@ import { entityManager } from '../systems/entities/EntityManager';
 import { FIXED_DT, MAX_SUBSTEPS } from '../systems/player/playerConstants';
 import { tickFood, FoodState } from '../systems/player/playerFood';
 import { vaultProjectileSystem } from '../systems/combat/VaultProjectileSystem';
+import { motionStatus } from '../systems/player/playerMotion';
 
 interface GameLoopProps {
     isPaused: boolean;
@@ -45,7 +46,7 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
 
             if (foodStateRef.current) {
                 const newHealth = tickFood(foodStateRef.current, currentHealth, gameMode, isDead);
-                if (newHealth !== currentHealth) {
+                if (newHealth !== currentHealth && (newHealth > currentHealth || !motionStatus.invulnerable)) {
                     currentHealth = newHealth;
                     setHealth(newHealth);
                 }

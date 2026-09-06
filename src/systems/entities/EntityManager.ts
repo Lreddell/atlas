@@ -8,6 +8,7 @@ import { ENTITY_KINDS, type Entity, type EntityKind, type NavigationRuntimeState
 import { addTrauma } from '../player/cameraShake';
 import { particleFx, polarityFxColor, FX_CHARGED } from '../fx/particleFx';
 import { polarityRelation } from '../boss/magneticWardenCore';
+import { ringSweepsPlayer, segmentHitsBox } from '../boss/wardenCombatGeometry';
 import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
 import { BLOCKS } from '../../data/blocks';
@@ -55,6 +56,7 @@ export interface ProjectileSpec {
 }
 
 export interface ShockwaveSpec {
+    sourceId?: number;
     x: number; y: number; z: number;
     polarity: number;
     maxRadius: number;
@@ -199,7 +201,7 @@ class EntityManager {
 
     /** Deal attack damage to the player (armor applies in App) with a knockback direction. */
     damagePlayer(amount: number, knockX: number, knockZ: number): void {
-        this.playerDamageHandler?.(amount, knockX, knockZ);
+        this.tryDamagePlayer(amount, knockX, knockZ);
     }
 
     /** Whether the player's kit is currently granting invulnerability. */
@@ -269,6 +271,7 @@ class EntityManager {
     spawnShockwave(spec: ShockwaveSpec): Shockwave {
         const wave: Shockwave = {
             id: this.nextShockwaveId++,
+            sourceId: spec.sourceId,
             x: spec.x,
             y: spec.y,
             z: spec.z,
@@ -299,6 +302,12 @@ class EntityManager {
     clearProjectilesAndShockwaves(): void {
         this.projectiles = [];
         this.shockwaves = [];
+    }
+
+    /** Cancel a single encounter's lingering attacks when its armor breaks. */
+    clearHazardsFrom(sourceId: number): void {
+        this.projectiles = this.projectiles.filter((p) => p.sourceId !== sourceId);
+        this.shockwaves = this.shockwaves.filter((wave) => wave.sourceId !== sourceId);
     }
 
     // --- Physics helpers exposed to registered brains ---
@@ -1205,6 +1214,7 @@ class EntityManager {
         const playerPolarity = this.getPlayerPolarity();
         const survivors: Projectile[] = [];
         for (const p of this.projectiles) {
+            const previous = { x: p.pos.x, y: p.pos.y, z: p.pos.z };
             p.ttl -= dt;
             if (pp && p.homing && !p.bounced && polarityRelation(playerPolarity, p.polarity) === 'opposite') {
                 // Attraction: steer toward the player's chest at a capped rate,
@@ -1225,13 +1235,28 @@ class EntityManager {
             p.pos.z += p.vel.z * dt;
             if (p.ttl <= 0) continue;
             // Only solid blocks stop a bolt, water landing pools and foliage don't.
-            if (isSolid(worldManager, Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) continue;
+            const travel = Math.hypot(p.pos.x - previous.x, p.pos.y - previous.y, p.pos.z - previous.z);
+            const steps = Math.max(1, Math.ceil(travel / 0.2));
+            let occluded = false;
+            for (let step = 1; step <= steps; step += 1) {
+                const t = step / steps;
+                if (isSolid(worldManager, Math.floor(previous.x + (p.pos.x - previous.x) * t),
+                    Math.floor(previous.y + (p.pos.y - previous.y) * t), Math.floor(previous.z + (p.pos.z - previous.z) * t))) {
+                    occluded = true;
+                    // Resolve a player crossed before this wall, never one beyond it.
+                    p.pos.set(previous.x + (p.pos.x - previous.x) * t,
+                        previous.y + (p.pos.y - previous.y) * t, previous.z + (p.pos.z - previous.z) * t);
+                    break;
+                }
+            }
 
             if (targetable && pp && !p.bounced) {
                 // Hit the whole player AABB (centre ± body), not just a low point.
                 const cx = pp.x, cy = pp.y + PLAYER_HEIGHT * 0.5, cz = pp.z;
                 const dx = p.pos.x - cx, dy = p.pos.y - cy, dz = p.pos.z - cz;
-                if (Math.abs(dx) < 0.85 && Math.abs(dz) < 0.85 && Math.abs(dy) < 1.1) {
+                if (segmentHitsBox(previous, p.pos,
+                    { x: cx - 0.55, y: cy - 1.0, z: cz - 0.55 },
+                    { x: cx + 0.55, y: cy + 1.0, z: cz + 0.55 })) {
                     if (polarityRelation(playerPolarity, p.polarity) === 'same') {
                         // Repelled: a spark fan off the boots and the bolt bounces
                         // away, spent (it fades on its own, never re-hits).
@@ -1254,14 +1279,14 @@ class EntityManager {
                     if (this.isPlayerInvulnerable()) {
                         // A roll's i-frames: the bolt passes clean through.
                         gameEvents.emit('player:dodged', { source: 'bolt' });
-                        survivors.push(p);
+                        if (!occluded) survivors.push(p);
                         continue;
                     }
                     this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
                     continue;
                 }
             }
-            survivors.push(p);
+            if (!occluded) survivors.push(p);
         }
         this.projectiles = survivors;
     }
@@ -1279,19 +1304,24 @@ class EntityManager {
         const playerPolarity = this.getPlayerPolarity();
         const survivors: Shockwave[] = [];
         for (const s of this.shockwaves) {
+            const previousRadius = s.radius;
             s.radius += s.speed * dt;
             if (!s.hit && s.kind === 'polarity' && targetable && pp) {
                 const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
                 // Resolve once the ring's edge sweeps over the player (and they're
                 // near the floor, a player already airborne above it is skipped).
-                if (s.radius >= dist && Math.abs(pp.y - s.y) < 3.5) {
+                if (ringSweepsPlayer(previousRadius, s.radius, s.maxRadius, dist, pp.y - s.y)) {
                     s.hit = true;
                     const relation = polarityRelation(playerPolarity, s.polarity);
                     const d = dist || 1;
                     const ox = (pp.x - s.x) / d, oz = (pp.z - s.z) / d;
-                    if (relation === 'opposite') continue; // pinned safe
+                    if (relation === 'opposite') {
+                        if (s.radius <= s.maxRadius) survivors.push(s);
+                        continue; // pinned safe; keep the visible ring travelling
+                    }
                     if (this.isPlayerInvulnerable()) {
                         gameEvents.emit('player:dodged', { source: 'ring' });
+                        if (s.radius <= s.maxRadius) survivors.push(s);
                         continue;
                     }
                     if (relation === 'same') {
