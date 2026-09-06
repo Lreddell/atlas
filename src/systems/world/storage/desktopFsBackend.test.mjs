@@ -14,8 +14,9 @@ import { loadTs } from './bundleTs.mjs';
 
 const require = createRequire(import.meta.url);
 const { SavesManager } = require('../../../../electron/saves/savesManager.cjs');
-const { DesktopFsBackend } = await loadTs(`
+const { DesktopFsBackend, upgradeLegacyBlocks } = await loadTs(`
     export { DesktopFsBackend } from './src/systems/world/storage/DesktopFsBackend.ts';
+    export { upgradeLegacyBlocks } from './src/systems/world/storage/contentCodec.ts';
 `);
 
 const meta = (id, name = 'World') => ({ id, name, seed: 's', seedNum: 7, created: 1, lastPlayed: 2, gameMode: 'survival', time: 1000 });
@@ -51,6 +52,11 @@ function makeLegacy(worlds, chunksByWorld) {
         async listWorlds() { return worlds.map((w) => ({ ...w })); },
         async readAllChunks(id) { return (chunksByWorld[id] || []).map((c) => ({ ...c })); },
         async readMeta(id) { return worlds.find((w) => w.id === id); },
+        async createRecoveryCopy(id, backupId) {
+            const source = worlds.find(w => w.id === id);
+            worlds.push({ ...structuredClone(source), id: backupId, recoverySourceId: id });
+            chunksByWorld[backupId] = structuredClone(chunksByWorld[id] ?? []);
+        },
         async writeMeta(m) { const i = worlds.findIndex((w) => w.id === m.id); if (i >= 0) worlds[i] = m; else worlds.push(m); },
         async renameWorld(id, name) { const w = worlds.find((w) => w.id === id); if (w) w.name = name; },
         async deleteWorld(id) { const i = worlds.findIndex((w) => w.id === id); if (i >= 0) worlds.splice(i, 1); delete chunksByWorld[id]; },
@@ -100,7 +106,7 @@ test('failed migration keeps the source intact and the world still visible', asy
     // "good" migrated to fs; "bad" failed but is still listed (surfaced from legacy).
     const worlds = await be.listWorlds();
     const ids = worlds.map((w) => w.id).sort();
-    assert.deepEqual(ids, ['bad', 'good']);
+    assert.deepEqual(ids, ['bad', 'bad_pre_v3', 'good', 'good_pre_v3']);
     await fs.access(path.join(root, 'good', 'level.json'));
     await assert.rejects(() => fs.access(path.join(root, 'bad', 'level.json'))); // not on fs
     // The legacy source for "bad" is untouched and still readable through the backend.
@@ -124,7 +130,10 @@ test('create + write + read + export/import round-trips through the filesystem b
     const imported = await be.importWorld(exported);
     assert.notEqual(imported.id, 'w2');
     assert.equal(imported.name, 'Fresh (2)');
-    assert.deepEqual([...(await be.readChunk(imported.id, 0, 0)).blocks], [...chunk(0, 0, 11).blocks]);
+    const restored = await be.readChunk(imported.id, 0, 0);
+    const upgraded = upgradeLegacyBlocks(chunk(0, 0, 11).blocks);
+    assert.deepEqual(restored.blocks, upgraded.blocks);
+    assert.deepEqual(restored.unknownBlocks, upgraded.unknownBlocks);
     await fs.rm(root, { recursive: true, force: true });
 });
 

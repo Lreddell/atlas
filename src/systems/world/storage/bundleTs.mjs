@@ -15,6 +15,7 @@ export async function loadTs(entrySource) {
         bundle: true,
         format: 'esm',
         platform: 'node',
+        define: { __APP_VERSION__: JSON.stringify('test'), __APP_DISPLAY_VERSION__: JSON.stringify('Test') },
         stdin: { contents: entrySource, resolveDir: ROOT, sourcefile: 'storage-test-entry.ts' },
         write: false,
     });

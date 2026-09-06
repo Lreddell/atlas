@@ -11,7 +11,8 @@ import { RegionFile, type Compressor } from '../acr/acrCodec';
 import { REGION_EDGE } from '../acr/acrFormat';
 import { OpfsRandomAccessFile } from '../acr/opfsFile';
 import { regionFileName, slotForChunk } from '../regionMath';
-import type { ChunkBatchEntry, ChunkStorageData, WorldMetadata } from '../types';
+import type { ChunkBatchEntry, ChunkStorageData } from '../types';
+import type { WorldMetadataRecord as WorldMetadata } from '../metadataCodec';
 import type { RawChunk } from '../worldExport';
 import type { OpfsDirHandle, OpfsFileHandle, OpfsSyncAccessHandle } from './opfsTypes';
 
@@ -46,12 +47,12 @@ export class OpfsSavesCore {
     private async worldDir(worldId: string, create: boolean): Promise<OpfsDirHandle | null> {
         const id = assertSafeId(worldId);
         try { return await this.root.getDirectoryHandle(id, { create }); }
-        catch (e) { if (create) throw e; return null; }
+        catch (e) { if (create || (e as Error).name !== 'NotFoundError') throw e; return null; }
     }
 
     private async readBytes(dir: OpfsDirHandle, name: string): Promise<Uint8Array | null> {
         let fh: OpfsFileHandle;
-        try { fh = await dir.getFileHandle(name); } catch { return null; }
+        try { fh = await dir.getFileHandle(name); } catch (e) { if ((e as Error).name !== 'NotFoundError') throw e; return null; }
         const file = await fh.getFile();
         return new Uint8Array(await file.arrayBuffer());
     }
@@ -135,12 +136,12 @@ export class OpfsSavesCore {
         if (!worldDir) return null;
         let regionDir: OpfsDirHandle;
         try { regionDir = await worldDir.getDirectoryHandle('region', { create }); }
-        catch { if (create) throw new Error('Cannot open region dir'); return null; }
+        catch (e) { if (create || (e as Error).name !== 'NotFoundError') throw e; return null; }
 
         const name = regionFileName(rx, rz);
         let fileHandle: OpfsFileHandle;
         try { fileHandle = await regionDir.getFileHandle(name, { create }); }
-        catch { if (create) throw new Error(`Cannot open region file ${name}`); return null; }
+        catch (e) { if (create || (e as Error).name !== 'NotFoundError') throw e; return null; }
 
         const handle = await fileHandle.createSyncAccessHandle();
         const rf = new RegionFile(new OpfsRandomAccessFile(handle), this.compressor);
@@ -182,7 +183,7 @@ export class OpfsSavesCore {
             const entry = await this.getRegion(worldId, g.rx, g.rz, true);
             if (!entry) throw new Error('Failed to open region for write');
             entry.lastUsed = Date.now();
-            await entry.rf.writeChunkBatch(g.entries.map((e) => ({ slot: e.slot, blocks: e.blocks, light: e.light, meta: e.meta, timestamp: e.timestamp })));
+            await entry.rf.writeChunkBatch(g.entries.map((e) => ({ ...e, slot: e.slot })));
         }
     }
 
@@ -190,7 +191,7 @@ export class OpfsSavesCore {
         const worldDir = await this.worldDir(worldId, false);
         if (!worldDir) return [];
         let regionDir: OpfsDirHandle;
-        try { regionDir = await worldDir.getDirectoryHandle('region'); } catch { return []; }
+        try { regionDir = await worldDir.getDirectoryHandle('region'); } catch (e) { if ((e as Error).name !== 'NotFoundError') throw e; return []; }
         const out: RawChunk[] = [];
         for await (const [name, handle] of regionDir.entries()) {
             const m = REGION_NAME_RE.exec(name);
@@ -204,7 +205,7 @@ export class OpfsSavesCore {
                 if (!data) continue;
                 const localX = slot % REGION_EDGE;
                 const localZ = Math.floor(slot / REGION_EDGE);
-                out.push({ cx: rx * REGION_EDGE + localX, cz: rz * REGION_EDGE + localZ, blocks: data.blocks, light: data.light, meta: data.meta, timestamp: data.timestamp });
+                out.push({ cx: rx * REGION_EDGE + localX, cz: rz * REGION_EDGE + localZ, ...data });
             }
         }
         return out;

@@ -34,7 +34,7 @@ test('base64 helpers round-trip arbitrary bytes', () => {
 test('export then import preserves metadata fields and all chunks', () => {
     const exported = encodeExportedWorld(meta(), [rawChunk(0, 0), rawChunk(-1, 5)]);
     assert.equal(exported.format, 'atlas-world-export');
-    assert.equal(exported.version, 2);
+    assert.equal(exported.version, 3);
     const { metaFields, chunks } = decodeExportedWorld(exported);
     assert.equal(metaFields.name, 'My World');
     assert.equal(metaFields.seedNum, 42);
@@ -52,12 +52,14 @@ test('export then import preserves metadata fields and all chunks', () => {
 });
 
 test('a v1 export (no progression) still imports', () => {
-    const exported = encodeExportedWorld(meta(), [rawChunk(0, 0)]);
-    exported.version = 1;
+    const exported = { format: 'atlas-world-export', version: 1, meta: meta(), chunks: [
+        { cx: 0, cz: 0, blocks: bytesToBase64(new Uint8Array([1, 2, 3])), light: 'BA==', meta: 'AA==' },
+    ] };
     delete exported.meta.progression;
     const { metaFields, chunks } = decodeExportedWorld(exported);
     assert.equal(metaFields.progression, undefined);
     assert.equal(chunks.length, 1);
+    assert.deepEqual([...chunks[0].blocks], [1, 2, 3]);
 });
 
 test('a non-Atlas file is rejected', () => {

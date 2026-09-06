@@ -1,6 +1,8 @@
 
 import { BlockType, ItemType, ItemStack } from '../types';
 import { itemForBlock } from './registry/contentIds';
+import { assertWorldBlockId } from './registry/worldBlockCatalog';
+import type { ChunkBatchEntry } from './world/storage/types';
 import { BLOCKS } from '../data/blocks';
 import * as WorldTypes from './world/worldTypes';
 import * as WorldStore from './world/worldStore';
@@ -205,7 +207,10 @@ export class WorldManager {
   // so an edit landing while the async flush is in flight keeps its chunk dirty
   // (and is re-saved next pass) instead of being silently lost.
   private dirtyEditVersion = new Map<string, number>();
-  private saving = false; // guards processSaveQueue against overlapping runs
+  private pendingSave: Promise<void> | null = null;
+  private lastSaveError: unknown = null;
+  private storageLoadError: Error | null = null;
+  private containerSignatures = new Map<string, string>();
 
   constructor() {
     this.state = WorldTypes.createWorldState();
@@ -251,6 +256,9 @@ export class WorldManager {
   }
 
   public reset() {
+    this.lastSaveError = null;
+    this.storageLoadError = null;
+    this.containerSignatures.clear();
     this.queuesDirty = false;
     this.knownMissingStorageChunks.clear();
       this.vaultPreflightPromises.clear();
@@ -416,6 +424,9 @@ export class WorldManager {
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          if (result.unknownBlocks) this.state.unknownBlocks.set(key, result.unknownBlocks);
+          TileEntities.restoreChunkEntities(this.state, key, result.tileEntities);
+          if (result.tileEntities) this.containerSignatures.set(key, JSON.stringify(TileEntities.captureChunkEntities(this.state, key)));
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
               if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
@@ -617,6 +628,7 @@ export class WorldManager {
   }
 
   public processStreamingJobs() {
+      if (this.storageLoadError) return;
     this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
@@ -645,6 +657,7 @@ export class WorldManager {
             if (this.knownMissingStorageChunks.has(key)) {
                 void this.preflightThenGenerate(job.cx, job.cz, ticket);
             } else {
+                const loadState = this.state;
                 WorldStorage.loadChunk(this.activeWorldId, job.cx, job.cz).then(async data => {
                     if (this.activeGenTickets.get(key) !== ticket) return;
 
@@ -652,23 +665,31 @@ export class WorldManager {
                     if (this.activeGenTickets.get(key) !== ticket) return;
 
                     if (data) {
+                        const volume = CHUNK_SIZE * CHUNK_SIZE * (MAX_Y - MIN_Y + 1);
+                        if (data.blocks.length !== volume || data.light.length !== volume || data.meta.length !== volume) {
+                            throw new Error(`Saved chunk ${key} has an invalid voxel count`);
+                        }
                         this.knownMissingStorageChunks.delete(key);
                         this.handleWorkerMessage({
                             type: 'GEN_DONE',
                             cx: job.cx,
                             cz: job.cz,
                             ticket,
-                            result: { blocks: data.blocks, light: data.light, meta: data.meta }
+                            result: data
                         });
                     } else {
                         this.knownMissingStorageChunks.add(key);
                         this.triggerWorkerGen(job.cx, job.cz, ticket);
                     }
                 }).catch((error) => {
-                    console.warn(`[WorldManager] Failed to load chunk ${job.cx},${job.cz} from storage. Falling back to generation.`, error);
+                    if (this.state !== loadState) return;
                     if (this.activeGenTickets.get(key) === ticket) {
-                        this.triggerWorkerGen(job.cx, job.cz, ticket);
+                        this.activeGenTickets.delete(key);
+                        this.inFlightGen = Math.max(0, this.inFlightGen - 1);
+                        this.genStartedAt.delete(key);
                     }
+                    this.storageLoadError = new Error(`Could not read saved chunk ${key}. Your saved terrain has been preserved. ${error instanceof Error ? error.message : String(error)}`);
+                    this.log(this.storageLoadError.message, 'error');
                 });
             }
         } else {
@@ -993,11 +1014,15 @@ export class WorldManager {
   }
 
   public async forceSave() {
+      // Join an in-flight autosave before taking the final snapshot.
+      if (this.pendingSave) await this.pendingSave;
       await this.processSaveQueue();
+      if (this.lastSaveError) throw this.lastSaveError;
   }
 
   /** True when there are unsaved chunk edits (lets callers skip no-op autosaves). */
   public hasUnsavedChunks(): boolean {
+      this.scanContainerChanges();
       return this.dirtyChunks.size > 0;
   }
 
@@ -1006,36 +1031,61 @@ export class WorldManager {
       this.dirtyEditVersion.set(key, (this.dirtyEditVersion.get(key) ?? 0) + 1);
   }
 
-  private async processSaveQueue() {
-      // Re-entrancy guard: the 3s timer and an explicit forceSave can overlap.
-      if (this.saving) return;
-      if (this.dirtyChunks.size === 0 || !this.activeWorldId) return;
+  private scanContainerChanges(onlyKey?: string): void {
+      const keys = onlyKey ? new Set([onlyKey]) : new Set(this.containerSignatures.keys());
+      if (!onlyKey) {
+          for (const position of this.state.chests.keys()) keys.add(TileEntities.entityChunkKey(position));
+          for (const position of this.state.furnaces.keys()) keys.add(TileEntities.entityChunkKey(position));
+      }
+      for (const key of keys) {
+          const signature = JSON.stringify(TileEntities.captureChunkEntities(this.state, key));
+          if (!this.containerSignatures.has(key) && signature === '{"chests":{},"furnaces":{}}') continue;
+          if (signature !== this.containerSignatures.get(key)) this.markDirty(key);
+      }
+  }
 
-      this.saving = true;
+  private processSaveQueue(): Promise<void> {
+      if (this.pendingSave) return this.pendingSave;
+      this.scanContainerChanges();
+      this.pendingSave = this.writeSaveQueue().catch(error => {
+          this.lastSaveError = error;
+          console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', error);
+      }).finally(() => { this.pendingSave = null; });
+      return this.pendingSave;
+  }
+
+  private async writeSaveQueue(): Promise<void> {
+      if (this.storageLoadError) throw this.storageLoadError;
+      if (this.dirtyChunks.size === 0 || !this.activeWorldId) return;
       const worldId = this.activeWorldId;
-      try {
+      const state = this.state;
           // Snapshot the dirty set and build ONE batch. The backend groups chunks
           // by region and commits per region (payload-before-header). Dirty flags
           // are cleared only AFTER the write succeeds; on failure they remain dirty
           // so the chunks are retried on the next pass (no silent data loss).
           const keys = Array.from(this.dirtyChunks);
-          const batch: Array<{ cx: number; cz: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array }> = [];
-          const savedKeys: Array<{ key: string; version: number }> = [];
+          const batch: ChunkBatchEntry[] = [];
+          const savedKeys: Array<{ key: string; version: number; containers: string }> = [];
           for (const key of keys) {
               const [cx, cz] = key.split(',').map(Number);
               const blocks = WorldStore.getChunkData(this.state, cx, cz);
               const light = WorldStore.getLightData(this.state, cx, cz);
               const meta = WorldStore.getMetadataData(this.state, cx, cz);
               if (blocks && light && meta) {
-                  batch.push({ cx, cz, blocks, light, meta });
-                  savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
+                  const tileEntities = TileEntities.captureChunkEntities(state, key);
+                  batch.push({ cx, cz, blocks: blocks.slice(), light: light.slice(), meta: meta.slice(),
+                      unknownBlocks: structuredClone(state.unknownBlocks.get(key)), tileEntities });
+                  savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0, containers: JSON.stringify(tileEntities) });
               }
           }
           if (batch.length === 0) return;
 
           await WorldStorage.saveChunks(worldId, batch);
+          if (this.state !== state || this.activeWorldId !== worldId) return;
+          this.lastSaveError = null;
 
           for (const s of savedKeys) {
+              this.containerSignatures.set(s.key, s.containers);
               this.knownMissingStorageChunks.delete(s.key); // now known to exist on disk
               // Clear the flag only if no NEW edit landed while the write was in
               // flight, an edit made after the snapshot may have missed the
@@ -1045,11 +1095,6 @@ export class WorldManager {
                   this.dirtyEditVersion.delete(s.key);
               }
           }
-      } catch (e) {
-          console.error('[WorldManager] Chunk batch save failed; chunks stay dirty for retry.', e);
-      } finally {
-          this.saving = false;
-      }
   }
 
   /**
@@ -1062,12 +1107,15 @@ export class WorldManager {
    */
   private evict(cx: number, cz: number): boolean {
       const key = WorldCoords.getChunkKey(cx, cz);
+      this.scanContainerChanges(key);
 
       if (this.dirtyChunks.has(key)) {
           return false; // defer, keep the dirty key + chunk data until confirmed persisted
       }
 
       WorldStore.evictChunk(this.state, cx, cz);
+      TileEntities.unloadChunkEntities(this.state, key);
+      this.containerSignatures.delete(key);
       this.chunkStages.delete(key);
       this.meshCache.delete(key);
       this.pendingRemesh.delete(key);
@@ -1111,8 +1159,9 @@ export class WorldManager {
       this.setDesiredChunks(chunks);
 
       onProgress('Terrain', 0, total, 0);
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve, reject) => {
           const check = () => {
+              if (this.storageLoadError) { reject(this.storageLoadError); return; }
               genDone = 0;
               let allGen = true;
               for (const c of chunks) {
@@ -1137,8 +1186,9 @@ export class WorldManager {
           onProgress('Meshing', 0, 0, 100);
           return;
       }
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve, reject) => {
           const check = () => {
+              if (this.storageLoadError) { reject(this.storageLoadError); return; }
               meshDone = 0;
               let allMeshed = true;
               for (const c of meshTargets) {
@@ -1561,7 +1611,7 @@ export class WorldManager {
     if (!chunk) return BlockType.AIR;
     return chunk[WorldCoords.index3D(lx, y, lz)];
   }
-  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint8Array | null {
+  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint16Array | null {
     const chunk = WorldStore.getChunkData(this.state, cx, cz);
     if (chunk) return chunk;
     if (autoGenerate && this.getStage(cx, cz) === ChunkStage.EMPTY) { this.queueGen(cx, cz, 0); }
@@ -1613,6 +1663,7 @@ export class WorldManager {
       });
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
+    assertWorldBlockId(type);
     if (y < MIN_Y || y > MAX_Y) return [];
     // NOTE: the sealed-region edit check is enforced at the player-interaction
     // layer (InteractionController), NOT here, setBlock is also the chokepoint
@@ -1624,6 +1675,12 @@ export class WorldManager {
     const index = WorldCoords.index3D(lx, y, lz);
     const oldType = chunk[index];
     const oldRotation = WorldStore.getMetadataData(this.state, cx, cz)?.[index] ?? 0;
+    if (oldType === type && oldRotation === rotation) return [];
+    const unknownBlocks = this.state.unknownBlocks.get(WorldCoords.getChunkKey(cx, cz));
+    if (oldType === BlockType.UNKNOWN && oldType !== type) {
+        this.spawnDrop({ type: ItemType.UNKNOWN, count: 1, unknownKey: unknownBlocks?.[index] ?? 'atlas:unknown' }, x, y, z);
+        if (unknownBlocks) delete unknownBlocks[index];
+    }
     // Breaking an unopened natural loot cache (chest with the 0x40 meta bit):
     // seed its contents first so handleBlockReplaced spills the loot as drops
     // instead of silently discarding it.
@@ -1689,6 +1746,7 @@ export class WorldManager {
     const relit: { x: number; y: number; z: number }[] = [];
     let changed = false;
     for (const e of edits) {
+      assertWorldBlockId(e.type);
       if (e.y < MIN_Y || e.y > MAX_Y) continue;
       const { cx, cz, lx, lz } = WorldCoords.worldToChunk(e.x, e.z);
       const chunk = this.getChunkData(cx, cz, true);

@@ -642,6 +642,7 @@ const App: React.FC = () => {
   // True once the player has been warned about a failing save, reset on the next
   // success, so a recurring problem surfaces once instead of every autosave tick.
   const saveErrorNotifiedRef = useRef(false);
+  const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const saveGame = useCallback(async (opts?: {
       force?: boolean;
@@ -651,7 +652,8 @@ const App: React.FC = () => {
       // a crash before the next autosave reloaded the player dead.
       playerOverrides?: { health?: number; hunger?: number; saturation?: number; breath?: number };
   }) => {
-      if (!activeWorldIdRef.current) return;
+      const savingWorldId = activeWorldIdRef.current;
+      if (!savingWorldId) return true;
 
       const currentRotation = controlsRef.current?.getRotation() || { x: 0, y: 0 };
       const playerData = {
@@ -666,6 +668,8 @@ const App: React.FC = () => {
           selectedSlot: selectedSlot,
           equipment: equipment,
           cursorStack: cursorStack, // previously dropped on reload; now persisted
+          craftingGrid2x2,
+          craftingGrid3x3,
           ...opts?.playerOverrides,
       };
       const spawnPoint = worldManager.getSpawnPoint();
@@ -677,17 +681,16 @@ const App: React.FC = () => {
       // tick finds nothing dirty and no player/world change since the last save.
       const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
-          return;
+          return true;
       }
 
-      // A save failure must never crash the session: every caller fires this
-      // forget-style, so a thrown error would become an unhandled rejection and
-      // trip the fatal-error overlay, forcing a reload that loses more progress
-      // than the failed save did. Catch here, warn the player once (until a save
-      // succeeds again), and resolve normally so quit/respawn flows still proceed.
+      // Serialize snapshots so an older autosave cannot overwrite a newer one.
+      // Failure is an explicit result: the quit flow must keep this session open.
+      const save = async (): Promise<boolean> => {
       try {
-          const meta = await WorldStorage.getWorldMeta(activeWorldIdRef.current);
-          if (!meta) return;
+          if (activeWorldIdRef.current !== savingWorldId) return false;
+          const meta = await WorldStorage.getWorldMeta(savingWorldId);
+          if (!meta) throw new Error('World metadata is missing');
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
           meta.gameMode = gameMode; // persist command-driven gamemode changes
@@ -703,11 +706,12 @@ const App: React.FC = () => {
               }
           }
           meta.boats = boatsData;
-          await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
+          await WorldStorage.saveWorldMeta(meta);
           lastSaveSignatureRef.current = signature;
           saveErrorNotifiedRef.current = false; // a good save re-arms the warning
           console.log(`[AutoSave] World ${meta.name} saved.`);
+          return true;
       } catch (e) {
           console.error('[AutoSave] save failed:', e);
           if (!saveErrorNotifiedRef.current) {
@@ -715,8 +719,12 @@ const App: React.FC = () => {
               const msg = e instanceof Error ? e.message : String(e);
               worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
+          return false;
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
+      };
+      saveQueueRef.current = saveQueueRef.current.then(save, save);
+      return saveQueueRef.current;
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, craftingGrid2x2, craftingGrid3x3]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -758,7 +766,7 @@ const App: React.FC = () => {
       const api = window.atlasDesktop;
       if (!api?.onFlushRequest) return;
       api.onFlushRequest(() => {
-          void saveGameRef.current({ force: true }).finally(() => { void api.flushComplete?.(); });
+          void saveGameRef.current({ force: true }).then(saved => { void api.flushComplete?.(saved); });
       });
   }, []);
 
@@ -920,6 +928,7 @@ const App: React.FC = () => {
           setDrops(p => [...p, {
                 id: Math.random().toString(), 
                 type: stack.type,
+                unknownKey: stack.unknownKey,
                 count: stack.count,
                 instance: stack.instance ? structuredClone(stack.instance) : undefined,
                 position: [x+0.5, y+0.5, z+0.5],
@@ -950,6 +959,7 @@ const App: React.FC = () => {
                     newDrops.push({
                          id: Math.random().toString(),
                          type: item.type,
+                         unknownKey: item.unknownKey,
                          count: item.count,
                          instance: item.instance ? structuredClone(item.instance) : undefined,
                          position: [playerPosRef.current.x, playerPosRef.current.y + 1.0, playerPosRef.current.z],
@@ -1412,6 +1422,7 @@ const App: React.FC = () => {
     setDrops(prev => [...prev, {
       id: Math.random().toString(),
       type: item.type,
+      unknownKey: item.unknownKey,
       count: item.count,
       instance: item.instance ? structuredClone(item.instance) : undefined,
       position: [position.x, position.y + 1, position.z],
@@ -2642,7 +2653,11 @@ const App: React.FC = () => {
       resonantVaultRuntime.reset();
       resetSummonArena();
       const quittingWorldId = activeWorldIdRef.current;
-      saveGame({ force: true }).then(() => {
+      saveGame({ force: true }).then(saved => {
+          if (!saved) {
+              setAppNotice({ type: 'error', message: 'Save failed. Your session is still open; free storage space and try Save and Quit again.' });
+              return;
+          }
           // Release the world (drops the filesystem session lock + closes handles).
           if (quittingWorldId) void WorldStorage.closeWorld(quittingWorldId).catch(() => {});
           soundManager.setGamePaused(false, 2.5);
@@ -2687,7 +2702,7 @@ const App: React.FC = () => {
       // sync-access-handle lock in the OPFS worker, a no-op on IndexedDB. A locked
       // world (already open in another window/tab) must NOT be entered as writable :
       // two writers would corrupt the save, so abort back to the menu with a clear
-      // message. Other (non-lock) open errors are logged and entry proceeds.
+      // message. Any other open or migration error also prevents writable entry.
       try {
           await WorldStorage.openWorld(worldId);
       } catch (lockErr) {
@@ -2697,7 +2712,7 @@ const App: React.FC = () => {
               setAppNotice({ type: 'error', message: 'This world is already open in another window or tab. Close it there first.' });
               return;
           }
-          console.warn('[Saves] Could not acquire world lock:', lockErr);
+          throw lockErr;
       }
       // Entering a world is a user gesture, ask the browser to keep our storage
       // persistent so worlds aren't auto-evicted under storage pressure (no-op on
@@ -2762,6 +2777,8 @@ const App: React.FC = () => {
           setSelectedSlot(meta.player.selectedSlot);
           setEquipment({ ...createEmptyEquipment(), ...(meta.player.equipment as Partial<Equipment> | undefined) });
           setCursorStack(meta.player.cursorStack ?? null); // restore a held-on-cursor item
+          setCraftingGrid2x2(meta.player.craftingGrid2x2 ?? Array(4).fill(null));
+          setCraftingGrid3x3(meta.player.craftingGrid3x3 ?? Array(9).fill(null));
 
           
           // World entry is the other authorized recovery boundary: an active
@@ -2782,6 +2799,8 @@ const App: React.FC = () => {
           // New World Logic
           setInventory(Array(36).fill(null)); 
           setCursorStack(null);
+          setCraftingGrid2x2(Array(4).fill(null));
+          setCraftingGrid3x3(Array(9).fill(null));
           setEquipment(createEmptyEquipment());
           setHealth(20); setHunger(20); setSaturation(5); setBreath(MAX_BREATH);
           
@@ -2833,11 +2852,11 @@ const App: React.FC = () => {
           }
           worldManager.reset();
           setAppState('menu');
-          setAppNotice({ type: 'error', message: 'Failed to start the world. The save was closed safely.' });
+          setAppNotice({ type: 'error', message: `Failed to start the world. ${error instanceof Error ? error.message : String(error)}` });
       } finally {
           startingWorldRef.current = false;
       }
-    }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory]);
+    }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory, setCraftingGrid2x2, setCraftingGrid3x3]);
 
   useEffect(() => {
       if (appState !== 'game') return;

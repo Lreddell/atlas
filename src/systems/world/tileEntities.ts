@@ -2,6 +2,37 @@
 import { WorldState, FurnaceState, ChestState } from './worldTypes';
 import { ItemStack, BlockType } from '../../types';
 import { BLOCKS } from '../../data/blocks';
+import { CHUNK_SIZE } from '../../constants';
+import type { ChunkEntities } from './storage/contentCodec';
+
+export function entityChunkKey(key: string): string {
+    const [x, , z] = key.split(',').map(Number);
+    return `${Math.floor(x / CHUNK_SIZE)},${Math.floor(z / CHUNK_SIZE)}`;
+}
+
+export function captureChunkEntities(state: WorldState, key: string): ChunkEntities {
+    const chests = Object.fromEntries([...state.chests].filter(([position]) => entityChunkKey(position) === key));
+    const furnaces = Object.fromEntries([...state.furnaces].filter(([position]) => entityChunkKey(position) === key));
+    return structuredClone({ chests, furnaces });
+}
+
+export function unloadChunkEntities(state: WorldState, key: string): void {
+    for (const position of state.chests.keys()) if (entityChunkKey(position) === key) state.chests.delete(position);
+    for (const position of state.furnaces.keys()) if (entityChunkKey(position) === key) state.furnaces.delete(position);
+}
+
+export function restoreChunkEntities(state: WorldState, key: string, saved?: ChunkEntities): void {
+    unloadChunkEntities(state, key);
+    if (!saved) return;
+    for (const [position, chest] of Object.entries(saved.chests ?? {})) {
+        if (entityChunkKey(position) !== key || !/^[-\d]+,[-\d]+,[-\d]+$/.test(position)) throw new Error('Saved chest crosses its chunk boundary');
+        state.chests.set(position, structuredClone(chest));
+    }
+    for (const [position, furnace] of Object.entries(saved.furnaces ?? {})) {
+        if (entityChunkKey(position) !== key || !/^[-\d]+,[-\d]+,[-\d]+$/.test(position)) throw new Error('Saved furnace crosses its chunk boundary');
+        state.furnaces.set(position, structuredClone(furnace));
+    }
+}
 
 export function getFurnace(state: WorldState, x: number, y: number, z: number): FurnaceState | undefined {
     return state.furnaces.get(`${x},${y},${z}`);

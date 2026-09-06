@@ -419,6 +419,7 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                     if (dist < 1.4) {
                         const fullyCollected = onCollect(drop.id, {
                             type: drop.type,
+                            unknownKey: drop.unknownKey,
                             count: drop.count,
                             instance: drop.instance ? structuredClone(drop.instance) : undefined,
                         });

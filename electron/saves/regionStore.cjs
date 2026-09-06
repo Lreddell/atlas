@@ -59,7 +59,7 @@ class RegionStore {
 
         const file = path.join(this.regionDir, regionFileName(rx, rz));
         let exists = true;
-        try { await fsp.access(file); } catch { exists = false; }
+        try { await fsp.access(file); } catch (error) { if (error.code !== 'ENOENT') throw error; exists = false; }
         if (!exists && !createIfMissing) return null;
 
         await fsp.mkdir(this.regionDir, { recursive: true });
@@ -103,7 +103,7 @@ class RegionStore {
             const { rx, rz, slot } = slotForChunk(c.cx, c.cz);
             const k = `${rx}.${rz}`;
             if (!groups.has(k)) groups.set(k, { rx, rz, entries: [] });
-            groups.get(k).entries.push({ slot, blocks: c.blocks, light: c.light, meta: c.meta, timestamp: c.timestamp });
+            groups.get(k).entries.push({ ...c, slot });
         }
         for (const g of groups.values()) {
             const entry = await this._getRegion(g.rx, g.rz, true);
@@ -114,7 +114,7 @@ class RegionStore {
     // Enumerate every stored chunk across all region files (for export).
     async listAllChunks() {
         let names = [];
-        try { names = await fsp.readdir(this.regionDir); } catch { return []; }
+        try { names = await fsp.readdir(this.regionDir); } catch (error) { if (error.code !== 'ENOENT') throw error; return []; }
         const out = [];
         for (const name of names) {
             const m = REGION_NAME_RE.exec(name);
@@ -132,7 +132,7 @@ class RegionStore {
                 out.push({
                     cx: rx * REGION_EDGE + localX,
                     cz: rz * REGION_EDGE + localZ,
-                    blocks: data.blocks, light: data.light, meta: data.meta, timestamp: data.timestamp,
+                    ...data,
                 });
             }
         }

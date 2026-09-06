@@ -9,6 +9,7 @@ export interface StackLike {
     type: number;
     count: number;
     instance?: StackInstanceData;
+    unknownKey?: string;
 }
 
 const stableInstanceJson = (instance: StackInstanceData | undefined): string =>
@@ -24,6 +25,7 @@ export const canStackByPolicy = (
 ): boolean =>
     stackLimit > 1
     && a.type === b.type
+    && a.unknownKey === b.unknownKey
     && stableInstanceJson(a.instance) === stableInstanceJson(b.instance);
 
 export const cloneStack = <T extends StackLike>(stack: T, count = stack.count): T => ({

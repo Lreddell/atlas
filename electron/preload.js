@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('atlasDesktop', {
   // App-quit flush handshake: main asks the renderer to save before the window
   // closes; the renderer replies when done so no final edits are lost on quit.
   onFlushRequest: (callback) => ipcRenderer.on('app:flush-request', () => callback()),
-  flushComplete: () => ipcRenderer.invoke('app:flush-complete'),
+  flushComplete: (saved = true) => ipcRenderer.invoke('app:flush-complete', saved),
   // Filesystem world saves (desktop). Chunk bytes cross as Uint8Array (never base64).
   saves: {
     list: () => ipcRenderer.invoke('saves:list'),

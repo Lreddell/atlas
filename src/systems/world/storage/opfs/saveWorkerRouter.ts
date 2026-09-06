@@ -2,7 +2,8 @@
 // it can be unit-tested against an OpfsSavesCore backed by a fake OPFS.
 
 import type { OpfsSavesCore } from './OpfsSavesCore';
-import type { ChunkBatchEntry, WorldMetadata } from '../types';
+import type { ChunkBatchEntry } from '../types';
+import type { WorldMetadataRecord as WorldMetadata } from '../metadataCodec';
 
 export async function handleSaveRequest(core: OpfsSavesCore, op: string, args: unknown[]): Promise<unknown> {
     const a = args as [string, ...unknown[]];

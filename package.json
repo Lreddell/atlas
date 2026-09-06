@@ -5,6 +5,10 @@
   "description": "Voxel action-adventure game built with Electron, React, and Three.js",
   "main": "electron/main.js",
   "scripts": {
+    "storage:codec": "node scripts/build-storage-codec.mjs",
+    "predev": "npm run storage:codec",
+    "prebuild": "npm run storage:codec",
+    "preelectron:dev": "npm run storage:codec",
     "dev": "vite --port 5173 --strictPort",
     "build": "npm run seo:check && vite build",
     "preview": "vite preview",

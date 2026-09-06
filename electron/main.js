@@ -103,19 +103,23 @@ let pendingFlushResolve = null;
 function attachQuitFlush(win) {
   let flushing = false;
   win.on('close', (event) => {
-    if (flushing) return; // the post-flush destroy() path
-    flushing = true;
     event.preventDefault();
+    if (flushing) return;
+    flushing = true;
 
     let settled = false;
-    const finish = () => {
+    const finish = (saved = false) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       pendingFlushResolve = null;
-      if (!win.isDestroyed()) win.destroy();
+      flushing = false;
+      if (saved && !win.isDestroyed()) win.destroy();
+      else if (!win.isDestroyed()) {
+        dialog.showMessageBox(win, { type: 'error', title: 'World not saved', message: 'Atlas could not confirm your save. The window remains open so you can retry.', buttons: ['Keep playing'] });
+      }
     };
-    const timer = setTimeout(finish, 3000); // never hang on an unresponsive renderer
+    const timer = setTimeout(() => finish(false), 15000);
     pendingFlushResolve = finish;
 
     if (win.webContents && !win.webContents.isDestroyed()) {
@@ -126,8 +130,8 @@ function attachQuitFlush(win) {
   });
 }
 
-ipcMain.handle('app:flush-complete', () => {
-  if (pendingFlushResolve) pendingFlushResolve();
+ipcMain.handle('app:flush-complete', (_event, saved) => {
+  if (pendingFlushResolve) pendingFlushResolve(saved === true);
   return { ok: true };
 });
 

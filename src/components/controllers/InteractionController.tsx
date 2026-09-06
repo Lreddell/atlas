@@ -944,7 +944,7 @@ export const InteractionController = ({
                     if (targetType === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
                         gameEvents.emit('crystal:broken', { x: bx, y: by, z: bz, regionId: getRegionAt(bx, by, bz)?.id ?? null });
                     }
-                    const droppedItems = worldManager.setBlock(bx, by, bz, BlockType.AIR);
+                    worldManager.setBlock(bx, by, bz, BlockType.AIR);
                     if (gameMode === 'survival') {
                         const heldItem = inventoryRef.current[selectedSlotRef.current] as ItemStack | null;
                         const targetDef = BLOCKS[targetType];
@@ -967,10 +967,9 @@ export const InteractionController = ({
                         }
 
                         if (canHarvest) {
-                            droppedItems.forEach(item => spawnDrop(item, bx, by, bz));
                             if (targetDef.drops) {
                                 targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
-                            } else {
+                            } else if (targetType !== BlockType.UNKNOWN) {
                                 spawnDrop(itemForBlock(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType), bx, by, bz);
                             }
                             if (isDoubleSlab) spawnDrop(itemForBlock(targetType), bx, by, bz); // second half

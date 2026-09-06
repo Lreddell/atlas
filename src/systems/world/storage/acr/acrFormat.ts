@@ -41,13 +41,19 @@
 //   off 5   ..     payload bytes    (the CHUNK BODY below, deflated if type=1)
 //
 // CHUNK BODY (the framed chunk, before optional compression):
-//   off 0   u8     bodySchema       = 1   (forward-compatible payload schema)
+//   off 0   u8     bodySchema       = 1 (legacy byte blocks) or 2 (ATP1 palette)
 //   off 1   u64    timestampMs      (chunk save timestamp; preserves the
 //                                     existing ChunkStorageData.timestamp)
 //   off 9   u32    blocksLen
 //   off 13  u32    lightLen
 //   off 17  u32    metaLen
 //   off 21  ..     blocks bytes | light bytes | meta bytes  (concatenated)
+// Body 2's blocks section is ATP1: 16-byte header (magic, u32 cell count,
+// u32 dictionary length, u8 bits/index, three reserved zeros), UTF-8 JSON
+// {keys, tileEntities}, then little-bit-order packed local palette indices.
+// Keys are stable namespaced identities. Unknown keys retain their original
+// spelling and payload; they never become air. Containers carry keyed items.
+// Light and orientation/placement metadata remain byte arrays in both bodies.
 //
 // COMMIT ORDERING (crash-safety): a writer MUST write the payload sectors and
 // flush them BEFORE writing the location/timestamp table entry that points at

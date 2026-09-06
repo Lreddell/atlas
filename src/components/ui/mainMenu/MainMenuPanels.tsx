@@ -173,11 +173,11 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
 
         <div className="flex w-full flex-col gap-3">
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton label="Play Selected World" onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-[calc(100vw-2rem)] sm:w-[280px]" />
+                <MenuButton label={worlds.find(world => world.id === selectedWorldId)?.recoverySourceId ? 'Restore as New World' : 'Play Selected World'} onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-[calc(100vw-2rem)] sm:w-[280px]" />
                 <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[calc(100vw-2rem)] sm:w-[280px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
+                <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId || !!worlds.find(world => world.id === selectedWorldId)?.recoverySourceId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
                 <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[calc(100vw-2rem)] sm:w-[185px]" />
             </div>
             <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">

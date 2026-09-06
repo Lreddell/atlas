@@ -25,6 +25,9 @@
   "magnetic_fields": [
     "assets/rvx/sounds/music/magnetic_fields/magnetite.ogg"
   ],
+  "meadow": [
+    "assets/rvx/sounds/music/meadow/claude.ogg"
+  ],
   "menu": [
     "assets/rvx/sounds/music/menu/atlas.ogg",
     "assets/rvx/sounds/music/menu/menu1.ogg",

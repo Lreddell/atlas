@@ -56,7 +56,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
 
     let cxCache = -999999999;
     let czCache = -999999999;
-    let chunkCache: Uint8Array | undefined;
+    let chunkCache: Uint16Array | undefined;
     let lightCache: Uint8Array | undefined;
     let metaCache: Uint8Array | undefined;
     const refreshCache = (cx: number, cz: number) => {
@@ -148,7 +148,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
 export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCount: number, qBlock: Int32Array, blockCount: number) {
     let cxCache = -999999999;
     let czCache = -999999999;
-    let chunkCache: Uint8Array | undefined;
+    let chunkCache: Uint16Array | undefined;
     let lightCache: Uint8Array | undefined;
     let metaCache: Uint8Array | undefined;
 

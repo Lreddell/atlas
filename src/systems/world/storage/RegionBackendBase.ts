@@ -7,6 +7,7 @@
 
 import type { StorageBackend } from './StorageBackend';
 import type { IndexedDbBackend } from './IndexedDbBackend';
+import { decodeWorldMetadata, encodeWorldMetadata, type WorldMetadataRecord } from './metadataCodec';
 import { migrateWorlds } from './migration';
 import type {
     ChunkBatchEntry,
@@ -26,10 +27,10 @@ const MIGRATION_BATCH = 64; // chunks per writeChunks call during migration/impo
 
 /** A region store's operations, normalized to "return data / throw on error". */
 export interface NormalizedSavesApi {
-    list(): Promise<WorldMetadata[]>;
-    readMeta(worldId: string): Promise<WorldMetadata | undefined>;
-    writeMeta(meta: WorldMetadata): Promise<void>;
-    create(meta: WorldMetadata): Promise<void>;
+    list(): Promise<WorldMetadataRecord[]>;
+    readMeta(worldId: string): Promise<WorldMetadataRecord | undefined>;
+    writeMeta(meta: WorldMetadataRecord): Promise<void>;
+    create(meta: WorldMetadataRecord): Promise<void>;
     delete(worldId: string): Promise<void>;
     rename(worldId: string, name: string): Promise<void>;
     readChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null>;
@@ -68,6 +69,10 @@ export abstract class RegionBackendBase implements StorageBackend {
             listLegacy: () => this.legacy.listWorlds(),
             listExisting: async () => Array.from(this.fsIds),
             migrateOne: async (world) => {
+                const recoveryBackupId = world.recoveryBackupId ?? `${world.id}_pre_v3`;
+                if (world.schemaVersion !== 3 && !world.recoverySourceId && !await this.legacy.readMeta(recoveryBackupId)) {
+                    await this.legacy.createRecoveryCopy(world.id, recoveryBackupId);
+                }
                 // Chunks FIRST, level.json (via create) LAST = the commit point. If
                 // anything fails, no level.json exists, so the world stays
                 // IndexedDB-only (visible + loadable) and re-migrates next launch.
@@ -75,7 +80,9 @@ export abstract class RegionBackendBase implements StorageBackend {
                 for (let i = 0; i < chunks.length; i += MIGRATION_BATCH) {
                     await this.api.writeChunks(world.id, chunks.slice(i, i + MIGRATION_BATCH));
                 }
-                await this.api.create(world);
+                await this.api.create(encodeWorldMetadata({ ...world,
+                    ...(!world.recoverySourceId && world.schemaVersion !== 3 ? { recoveryBackupId } : {}),
+                }));
                 this.fsIds.add(world.id);
             },
         });
@@ -94,7 +101,7 @@ export abstract class RegionBackendBase implements StorageBackend {
     // --- metadata ---
 
     async listWorlds(): Promise<WorldMetadata[]> {
-        const fsWorlds = await this.api.list();
+        const fsWorlds = (await this.api.list()).map(decodeWorldMetadata);
         this.fsIds = new Set(fsWorlds.map((w) => w.id));
         const merged = [...fsWorlds];
         for (const w of await this.legacy.listWorlds()) if (!this.fsIds.has(w.id)) merged.push(w);
@@ -102,20 +109,33 @@ export abstract class RegionBackendBase implements StorageBackend {
     }
 
     async readMeta(worldId: string): Promise<WorldMetadata | undefined> {
-        return (await this.onFs(worldId)) ? this.api.readMeta(worldId) : this.legacy.readMeta(worldId);
+        if (!(await this.onFs(worldId))) return this.legacy.readMeta(worldId);
+        const record = await this.api.readMeta(worldId);
+        return record ? decodeWorldMetadata(record) : undefined;
     }
 
     async writeMeta(meta: WorldMetadata): Promise<void> {
-        return (await this.onFs(meta.id)) ? this.api.writeMeta(meta) : this.legacy.writeMeta(meta);
+        return (await this.onFs(meta.id)) ? this.api.writeMeta(encodeWorldMetadata(meta)) : this.legacy.writeMeta(meta);
     }
 
     async createWorld(meta: WorldMetadata): Promise<void> {
-        await this.api.create(meta);
+        await this.api.create(encodeWorldMetadata(meta));
         this.fsIds.add(meta.id);
     }
 
     async renameWorld(worldId: string, name: string): Promise<void> {
         return (await this.onFs(worldId)) ? this.api.rename(worldId, name) : this.legacy.renameWorld(worldId, name);
+    }
+
+    async createRecoveryCopy(worldId: string, backupId: string): Promise<void> {
+        if (!(await this.onFs(worldId))) return this.legacy.createRecoveryCopy(worldId, backupId);
+        const record = await this.api.readMeta(worldId);
+        if (!record) throw new Error('Cannot back up missing world');
+        const chunks = await this.api.readChunksAll(worldId);
+        for (let i = 0; i < chunks.length; i += MIGRATION_BATCH) await this.api.writeChunks(backupId, chunks.slice(i, i + MIGRATION_BATCH));
+        // Metadata is the commit point: a partial copy is never advertised.
+        await this.api.create({ ...record, id: backupId, name: `${record.name} (pre-migration recovery)`, recoverySourceId: worldId });
+        this.fsIds.add(backupId);
     }
 
     async deleteWorld(worldId: string): Promise<void> {
@@ -157,7 +177,7 @@ export abstract class RegionBackendBase implements StorageBackend {
 
     async exportWorld(worldId: string): Promise<ExportedWorldData> {
         if (await this.onFs(worldId)) {
-            const meta = await this.api.readMeta(worldId);
+            const meta = await this.readMeta(worldId);
             if (!meta) throw new Error('World metadata not found.');
             return encodeExportedWorld(meta, await this.api.readChunksAll(worldId));
         }

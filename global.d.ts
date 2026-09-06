@@ -79,7 +79,7 @@ interface AtlasDesktopApi {
     saves?: AtlasDesktopSavesApi;
     /** App-quit flush handshake: main asks the renderer to save before closing. */
     onFlushRequest?: (callback: () => void) => void;
-    flushComplete?: () => Promise<{ ok: boolean }>;
+    flushComplete?: (saved: boolean) => Promise<{ ok: boolean }>;
 }
 
 declare global {

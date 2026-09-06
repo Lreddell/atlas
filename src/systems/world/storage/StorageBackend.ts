@@ -29,6 +29,8 @@ export interface StorageBackend {
     deleteWorld(worldId: string): Promise<void>;
     /** Rename a world: updates only the name in metadata. ID and chunks are untouched. */
     renameWorld(worldId: string, name: string): Promise<void>;
+    /** Preserve the original wire records before the first schema upgrade. */
+    createRecoveryCopy(worldId: string, backupId: string): Promise<void>;
 
     // --- World session lifecycle ---
     /** Acquire the world for writing (e.g. a session lock). Throws/reports on conflict. */

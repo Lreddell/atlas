@@ -4,6 +4,8 @@
 // the migration source for the desktop filesystem backend.
 
 import type { StorageBackend } from './StorageBackend';
+import { encodeChunkBody, decodeChunkBody } from './acr/acrCodec';
+import { encodeWorldMetadata, decodeWorldMetadata, type WorldMetadataRecord } from './metadataCodec';
 import type {
     ChunkBatchEntry,
     ChunkCoordinate,
@@ -67,7 +69,10 @@ export class IndexedDbBackend implements StorageBackend {
         const db = await this.getDB();
         return new Promise((resolve, reject) => {
             const req = db.transaction(META_STORE, 'readonly').objectStore(META_STORE).getAll();
-            req.onsuccess = () => resolve(req.result as WorldMetadata[]);
+            req.onsuccess = () => {
+                try { resolve((req.result as WorldMetadataRecord[]).map(decodeWorldMetadata)); }
+                catch (error) { reject(error); }
+            };
             req.onerror = () => reject(req.error);
         });
     }
@@ -76,7 +81,10 @@ export class IndexedDbBackend implements StorageBackend {
         const db = await this.getDB();
         return new Promise((resolve, reject) => {
             const req = db.transaction(META_STORE, 'readonly').objectStore(META_STORE).get(worldId);
-            req.onsuccess = () => resolve(req.result as WorldMetadata | undefined);
+            req.onsuccess = () => {
+                try { resolve(req.result ? decodeWorldMetadata(req.result) : undefined); }
+                catch (error) { reject(error); }
+            };
             req.onerror = () => reject(req.error);
         });
     }
@@ -84,7 +92,7 @@ export class IndexedDbBackend implements StorageBackend {
     async writeMeta(meta: WorldMetadata): Promise<void> {
         const db = await this.getDB();
         const tx = db.transaction(META_STORE, 'readwrite');
-        tx.objectStore(META_STORE).put(meta);
+        tx.objectStore(META_STORE).put(encodeWorldMetadata(meta));
         return this.txDone(tx);
     }
 
@@ -115,16 +123,51 @@ export class IndexedDbBackend implements StorageBackend {
 
     async readChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null> {
         if (!worldId) return null;
-        try {
-            const db = await this.getDB();
-            return await new Promise((resolve, reject) => {
-                const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(this.chunkKey(worldId, cx, cz));
-                req.onsuccess = () => resolve((req.result as ChunkStorageData) || null);
-                req.onerror = () => reject(req.error);
-            });
-        } catch {
-            return null;
+        const db = await this.getDB();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(this.chunkKey(worldId, cx, cz));
+            req.onsuccess = () => {
+                try { resolve(this.decodeChunkRecord(req.result)); }
+                catch (error) { reject(error); }
+            };
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    private decodeChunkRecord(value: unknown): ChunkStorageData | null {
+        if (value === undefined || value === null) return null;
+        const record = value as { schema?: number; body?: Uint8Array } & ChunkStorageData;
+        if (record.schema !== undefined) {
+            if (record.schema !== 2 || !(record.body instanceof Uint8Array)) throw new Error('Unsupported IndexedDB chunk record');
+            return decodeChunkBody(record.body);
         }
+        if (!(record.blocks instanceof Uint8Array) || !(record.light instanceof Uint8Array) || !(record.meta instanceof Uint8Array)) throw new Error('Invalid legacy IndexedDB chunk');
+        return record;
+    }
+
+    async createRecoveryCopy(worldId: string, backupId: string): Promise<void> {
+        const db = await this.getDB();
+        const tx = db.transaction([META_STORE, STORE_NAME], 'readwrite');
+        const done = this.txDone(tx);
+        const metadata = tx.objectStore(META_STORE);
+        const chunks = tx.objectStore(STORE_NAME);
+        const read = metadata.get(worldId);
+        read.onsuccess = () => {
+            if (!read.result) { tx.abort(); return; }
+            const source = read.result;
+            const cursorRequest = chunks.openCursor(IDBKeyRange.bound(`chunk_${worldId}_`, `chunk_${worldId}_￿`));
+            cursorRequest.onsuccess = () => {
+                const cursor = cursorRequest.result;
+                if (!cursor) {
+                    metadata.put({ ...source, id: backupId, name: `${source.name} (pre-migration recovery)`, recoverySourceId: worldId });
+                    return;
+                }
+                const coordinate = this.parseChunkKey(String(cursor.key), worldId);
+                if (coordinate) chunks.put(cursor.value, this.chunkKey(backupId, coordinate.cx, coordinate.cz));
+                cursor.continue();
+            };
+        };
+        await done;
     }
 
     async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {
@@ -165,7 +208,7 @@ export class IndexedDbBackend implements StorageBackend {
         const tx = db.transaction(STORE_NAME, 'readwrite'); // whole batch in ONE transaction
         const store = tx.objectStore(STORE_NAME);
         for (const c of chunks) {
-            const data: ChunkStorageData = { blocks: c.blocks, light: c.light, meta: c.meta, timestamp: c.timestamp ?? Date.now() };
+            const data = { schema: 2, body: encodeChunkBody(c.blocks, c.light, c.meta, c.timestamp ?? Date.now(), c) };
             store.put(data, this.chunkKey(worldId, c.cx, c.cz));
         }
         return this.txDone(tx);
@@ -183,10 +226,11 @@ export class IndexedDbBackend implements StorageBackend {
                 const cursor = req.result;
                 if (!cursor) { resolve(out); return; }
                 const parsed = this.parseChunkKey(String(cursor.key || ''), worldId);
-                const value = cursor.value as ChunkStorageData | undefined;
-                if (parsed && value?.blocks && value?.light && value?.meta) {
-                    out.push({ cx: parsed.cx, cz: parsed.cz, blocks: value.blocks, light: value.light, meta: value.meta, timestamp: Number(value.timestamp) || Date.now() });
-                }
+                try {
+                    const value = this.decodeChunkRecord(cursor.value);
+                    if (!parsed || !value) throw new Error('Invalid saved chunk entry');
+                    out.push({ ...parsed, ...value });
+                } catch (error) { reject(error); return; }
                 cursor.continue();
             };
             req.onerror = () => reject(req.error);

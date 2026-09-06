@@ -7,6 +7,8 @@
 
 import type { ItemStack } from '../../../types';
 import type { ProgressionData } from '../../progression/ProgressionStore';
+import type { ChunkExtras } from './contentCodec';
+import type { StoredWorldMetadata } from './metadataCodec';
 
 export interface PlayerData {
     position: { x: number, y: number, z: number };
@@ -26,9 +28,14 @@ export interface PlayerData {
      * (optional, so older saves still load) prevents that item loss.
      */
     cursorStack?: ItemStack | null;
+    craftingGrid2x2?: (ItemStack | null)[];
+    craftingGrid3x3?: (ItemStack | null)[];
 }
 
 export interface WorldMetadata {
+    schemaVersion?: 1 | 2 | 3;
+    recoveryBackupId?: string;
+    recoverySourceId?: string;
     id: string;
     name: string;
     seed: string; // The string input
@@ -66,24 +73,25 @@ export interface ChunkCoordinate {
     cz: number;
 }
 
-export interface ChunkStorageData {
-    blocks: Uint8Array;
+export interface ChunkStorageData extends ChunkExtras {
+    blocks: Uint8Array | Uint16Array;
     light: Uint8Array;
     meta: Uint8Array;
     timestamp: number;
 }
 
 /** A chunk plus its coordinates, used for batched writes. */
-export interface ChunkBatchEntry {
+export interface ChunkBatchEntry extends ChunkExtras {
     cx: number;
     cz: number;
-    blocks: Uint8Array;
+    blocks: Uint8Array | Uint16Array;
     light: Uint8Array;
     meta: Uint8Array;
     timestamp?: number;
 }
 
 export interface ExportedChunkData {
+    encoding?: 'palette-v1';
     cx: number;
     cz: number;
     blocks: string;
@@ -96,9 +104,9 @@ export interface ExportedWorldData {
     format: 'atlas-world-export';
     // v2 adds optional meta.progression. v1 files import fine (progression
     // defaults to empty), so both versions are accepted on import.
-    version: 1 | 2;
+    version: 1 | 2 | 3;
     exportedAt: number;
-    meta: Omit<WorldMetadata, 'id' | 'created' | 'lastPlayed'> & {
+    meta: Omit<WorldMetadata | StoredWorldMetadata, 'id' | 'created' | 'lastPlayed'> & {
         name: string;
         seed: string;
         seedNum: number;

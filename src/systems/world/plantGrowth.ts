@@ -21,7 +21,7 @@ interface WorldAccess {
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
-    getChunkData(cx: number, cz: number): Uint8Array | null;
+    getChunkData(cx: number, cz: number): Uint16Array | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
 }

@@ -100,9 +100,19 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     const handlePlayWorld = useCallback(async (worldId?: string | null) => {
         const nextWorldId = worldId ?? selectedWorldId;
         if (nextWorldId) {
-            onStart(nextWorldId);
+            const world = worlds.find(entry => entry.id === nextWorldId);
+            if (world?.recoverySourceId) {
+                try {
+                    const restored = await WorldStorage.importWorld(await WorldStorage.exportWorld(nextWorldId));
+                    await loadWorlds();
+                    setSelectedWorldId(restored.id);
+                    setMenuNotice({ type: 'success', message: `Restored ${restored.name}. The original recovery copy is still available.` });
+                } catch (error) {
+                    setMenuNotice({ type: 'error', message: `Could not restore this copy: ${error instanceof Error ? error.message : String(error)}` });
+                }
+            } else onStart(nextWorldId);
         }
-    }, [onStart, selectedWorldId]);
+    }, [onStart, selectedWorldId, worlds, loadWorlds]);
 
     // Opens the confirmation modal (the actual deletion runs in confirmDeleteWorld).
     const handleDeleteWorld = useCallback(() => {

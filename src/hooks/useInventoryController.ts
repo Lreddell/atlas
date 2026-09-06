@@ -84,7 +84,8 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
         setDrops(p => [...p, { 
             id: Math.random().toString(), 
-            type: item.type, 
+            type: item.type,
+            unknownKey: item.unknownKey,
             count: item.count, 
             instance: item.instance ? structuredClone(item.instance) : undefined,
             position: [spawnPos.x, spawnPos.y, spawnPos.z], 

@@ -19,9 +19,10 @@ export interface ChestState {
 }
 
 export interface WorldState {
-    chunks: Map<string, Uint8Array>;
+    chunks: Map<string, Uint16Array>;
     lights: Map<string, Uint8Array>;
     metadata: Map<string, Uint8Array>;
+    unknownBlocks: Map<string, Record<number, string>>;
     listeners: Map<string, Set<ChunkUpdateCallback>>;
     furnaces: Map<string, FurnaceState>;
     chests: Map<string, ChestState>;
@@ -32,6 +33,7 @@ export const createWorldState = (): WorldState => ({
     chunks: new Map(),
     lights: new Map(),
     metadata: new Map(),
+    unknownBlocks: new Map(),
     listeners: new Map(),
     furnaces: new Map(),
     chests: new Map(),

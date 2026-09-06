@@ -6,6 +6,8 @@
 // See src/systems/world/storage/acr/acrFormat.ts for the authoritative layout.
 
 'use strict';
+const { encodeBlockPalette, decodeBlockPalette } = require('./paletteCore.cjs');
+
 
 const ACR_MAGIC = [0x41, 0x43, 0x52, 0x31]; // "ACR1"
 const ACR_FORMAT_VERSION = 1;
@@ -46,15 +48,17 @@ function getU64(buf, off) {
     return getU32(buf, off) * 0x100000000 + getU32(buf, off + 4);
 }
 
-function encodeChunkBody(blocks, light, meta, timestampMs) {
-    const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
-    out[0] = BODY_SCHEMA_VERSION;
+function encodeChunkBody(blocks, light, meta, timestampMs, extras = {}) {
+    const schema = blocks instanceof Uint16Array ? 2 : BODY_SCHEMA_VERSION;
+    const encodedBlocks = blocks instanceof Uint16Array ? encodeBlockPalette(blocks, extras) : blocks;
+    const out = new Uint8Array(BODY_HEADER_BYTES + encodedBlocks.length + light.length + meta.length);
+    out[0] = schema;
     putU64(out, 1, timestampMs);
-    putU32(out, 9, blocks.length);
+    putU32(out, 9, encodedBlocks.length);
     putU32(out, 13, light.length);
     putU32(out, 17, meta.length);
     let p = BODY_HEADER_BYTES;
-    out.set(blocks, p); p += blocks.length;
+    out.set(encodedBlocks, p); p += encodedBlocks.length;
     out.set(light, p); p += light.length;
     out.set(meta, p);
     return out;
@@ -67,7 +71,7 @@ function decodeChunkBody(body) {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
+    if (schema !== BODY_SCHEMA_VERSION && schema !== 2) {
         throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
@@ -82,6 +86,10 @@ function decodeChunkBody(body) {
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
+    if (schema === 2) {
+        try { return { ...decodeBlockPalette(blocks), light, meta, timestamp }; }
+        catch (error) { throw new AcrFormatError('Invalid palette chunk: ' + String(error)); }
+    }
     return { blocks, light, meta, timestamp };
 }
 
@@ -181,8 +189,8 @@ class RegionFile {
         return decodeChunkBody(body);
     }
 
-    async _encodePayload(blocks, light, meta, timestampMs) {
-        const body = encodeChunkBody(blocks, light, meta, timestampMs);
+    async _encodePayload(blocks, light, meta, timestampMs, extras = {}) {
+        const body = encodeChunkBody(blocks, light, meta, timestampMs, extras);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
@@ -219,8 +227,8 @@ class RegionFile {
         for (let s = offset; s < offset + count; s++) this.free[s] = true;
     }
 
-    async _writePayloadSectors(slot, blocks, light, meta, timestampMs) {
-        const payload = await this._encodePayload(blocks, light, meta, timestampMs);
+    async _writePayloadSectors(slot, blocks, light, meta, timestampMs, extras = {}) {
+        const payload = await this._encodePayload(blocks, light, meta, timestampMs, extras);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
@@ -249,7 +257,7 @@ class RegionFile {
         const placed = [];
         for (const e of bySlot.values()) {
             const ts = (e.timestamp == null) ? Date.now() : e.timestamp;
-            placed.push(await this._writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts));
+            placed.push(await this._writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts, e));
         }
         await this.file.flush(); // payloads durable
         for (const p of placed) {

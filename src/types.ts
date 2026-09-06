@@ -543,6 +543,8 @@ export interface ItemStack {
   type: ItemId;
   count: number;
   instance?: ItemInstance;
+  /** Original namespaced identity when its content is unavailable. */
+  unknownKey?: string;
 }
 
 export interface Drop {
@@ -550,6 +552,7 @@ export interface Drop {
     type: ItemId;
     count: number;
     instance?: ItemInstance;
+    unknownKey?: string;
     position: [number, number, number];
     velocity: [number, number, number];
     createdAt: number;

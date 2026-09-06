@@ -3,11 +3,11 @@ import { WorldState, ChunkUpdateCallback } from './worldTypes';
 import { getChunkKey } from './worldCoords';
 import { CHUNK_SIZE, WORLD_HEIGHT } from '../../constants';
 
-export function getChunkData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
+export function getChunkData(state: WorldState, cx: number, cz: number): Uint16Array | undefined {
     return state.chunks.get(getChunkKey(cx, cz));
 }
 
-export function setChunkData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
+export function setChunkData(state: WorldState, cx: number, cz: number, data: Uint16Array) {
     state.chunks.set(getChunkKey(cx, cz), data);
 }
 
@@ -58,5 +58,6 @@ export function evictChunk(state: WorldState, cx: number, cz: number) {
     state.chunks.delete(key);
     state.lights.delete(key);
     state.metadata.delete(key);
+    state.unknownBlocks.delete(key);
     state.listeners.delete(key);
 }

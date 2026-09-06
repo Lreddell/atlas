@@ -1,3 +1,4 @@
+import { encodeBlockPalette, decodeBlockPalette, type ChunkExtras } from '../contentCodec';
 // Pure-TypeScript .acr region codec. No Node, DOM, React, or Electron deps, it
 // drives an abstract RandomAccessFile and an injectable Compressor, so the same
 // code can run over a Node file handle, an OPFS sync-access handle (future), or
@@ -74,19 +75,22 @@ function getU64(buf: Uint8Array, off: number): number {
 
 /** Frame {blocks, light, meta, timestamp} into the uncompressed chunk body. */
 export function encodeChunkBody(
-    blocks: Uint8Array,
+    blocks: Uint8Array | Uint16Array,
     light: Uint8Array,
     meta: Uint8Array,
     timestampMs: number,
+    extras: ChunkExtras = {},
 ): Uint8Array {
-    const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
-    out[0] = BODY_SCHEMA_VERSION;
+    const schema = blocks instanceof Uint16Array ? 2 : BODY_SCHEMA_VERSION;
+    const encodedBlocks = blocks instanceof Uint16Array ? encodeBlockPalette(blocks, extras) : blocks;
+    const out = new Uint8Array(BODY_HEADER_BYTES + encodedBlocks.length + light.length + meta.length);
+    out[0] = schema;
     putU64(out, 1, timestampMs);
-    putU32(out, 9, blocks.length);
+    putU32(out, 9, encodedBlocks.length);
     putU32(out, 13, light.length);
     putU32(out, 17, meta.length);
     let p = BODY_HEADER_BYTES;
-    out.set(blocks, p); p += blocks.length;
+    out.set(encodedBlocks, p); p += encodedBlocks.length;
     out.set(light, p); p += light.length;
     out.set(meta, p);
     return out;
@@ -103,7 +107,7 @@ export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
+    if (schema !== BODY_SCHEMA_VERSION && schema !== 2) {
         throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
@@ -118,6 +122,10 @@ export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
+    if (schema === 2) {
+        try { return { ...decodeBlockPalette(blocks), light, meta, timestamp }; }
+        catch (error) { throw new AcrFormatError('Invalid palette chunk: ' + String(error)); }
+    }
     return { blocks, light, meta, timestamp };
 }
 
@@ -245,8 +253,8 @@ export class RegionFile {
     }
 
     /** Encode a chunk body into its slot payload (length + compression + bytes). */
-    private async encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Promise<Uint8Array> {
-        const body = encodeChunkBody(blocks, light, meta, timestampMs);
+    private async encodePayload(blocks: Uint8Array | Uint16Array, light: Uint8Array, meta: Uint8Array, timestampMs: number, extras: ChunkExtras): Promise<Uint8Array> {
+        const body = encodeChunkBody(blocks, light, meta, timestampMs, extras);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
@@ -297,9 +305,9 @@ export class RegionFile {
      * Crash-safe: a relocated chunk's old sectors stay valid until commit.
      */
     private async writePayloadSectors(
-        slot: number, blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number,
+        slot: number, blocks: Uint8Array | Uint16Array, light: Uint8Array, meta: Uint8Array, timestampMs: number, extras: ChunkExtras,
     ): Promise<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> {
-        const payload = await this.encodePayload(blocks, light, meta, timestampMs);
+        const payload = await this.encodePayload(blocks, light, meta, timestampMs, extras);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
@@ -331,7 +339,7 @@ export class RegionFile {
     }
 
     /** Write a single chunk (payload sectors flushed before the header commit). */
-    async writeChunk(slot: number, data: { blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }): Promise<void> {
+    async writeChunk(slot: number, data: { blocks: Uint8Array | Uint16Array; light: Uint8Array; meta: Uint8Array; timestamp?: number } & ChunkExtras): Promise<void> {
         await this.writeChunkBatch([{ slot, ...data }]);
     }
 
@@ -340,18 +348,18 @@ export class RegionFile {
      * entries (flush), then free relocated old runs. The header flush is the
      * single commit point for the whole batch.
      */
-    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>): Promise<void> {
+    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint8Array | Uint16Array; light: Uint8Array; meta: Uint8Array; timestamp?: number } & ChunkExtras>): Promise<void> {
         this.ensureOpen();
         if (entries.length === 0) return;
 
         // De-dupe slots (last write wins) so a batch never double-allocates a slot.
-        const bySlot = new Map<number, { slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>();
+        const bySlot = new Map<number, { slot: number; blocks: Uint8Array | Uint16Array; light: Uint8Array; meta: Uint8Array; timestamp?: number } & ChunkExtras>();
         for (const e of entries) bySlot.set(e.slot, e);
 
         const placed: Array<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> = [];
         for (const e of bySlot.values()) {
             const ts = e.timestamp ?? Date.now();
-            placed.push(await this.writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts));
+            placed.push(await this.writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts, e));
         }
         await this.file.flush(); // (1) payloads durable
 

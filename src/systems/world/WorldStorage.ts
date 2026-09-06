@@ -11,6 +11,7 @@ import { normalizeGenConfigSnapshot } from './genConfig';
 import { IndexedDbBackend } from './storage/IndexedDbBackend';
 import { OpfsBackend, opfsBackendSupported } from './storage/OpfsBackend';
 import type { StorageBackend } from './storage/StorageBackend';
+import { upgradeLegacyBlocks, type ChunkExtras } from './storage/contentCodec';
 import type {
     ChunkBatchEntry,
     ChunkCoordinate,
@@ -33,6 +34,27 @@ export type {
 
 class WorldStorageSystem {
     private backendPromise: Promise<StorageBackend> | null = null;
+    private migrations = new Map<string, Promise<void>>();
+
+    private async prepareWritableWorld(id: string): Promise<void> {
+        const pending = this.migrations.get(id);
+        if (pending) return pending;
+        const operation = (async () => {
+            const backend = await this.getBackend();
+            const meta = await backend.readMeta(id);
+            if (!meta) throw new Error('World metadata not found');
+            if (meta.recoverySourceId) throw new Error('Recovery copies are protected. Export this copy, then import it to restore a playable world.');
+            if (meta.schemaVersion === 3) return;
+            const backupId = `${id}_pre_v3`;
+            const backup = await backend.readMeta(backupId);
+            if (backup && backup.recoverySourceId !== id) throw new Error('Recovery identifier already belongs to another world');
+            if (!backup) await backend.createRecoveryCopy(id, backupId);
+            await backend.writeMeta({ ...meta, schemaVersion: 3, recoveryBackupId: backupId });
+        })();
+        this.migrations.set(id, operation);
+        try { await operation; }
+        catch (error) { this.migrations.delete(id); throw error; }
+    }
 
     /** Pick + initialize the backend once. Desktop filesystem when the bridge
      *  exists, OPFS in supported browsers, and IndexedDB otherwise. Feature
@@ -91,11 +113,14 @@ class WorldStorageSystem {
     }
 
     public async saveWorldMeta(meta: WorldMetadata): Promise<void> {
+        await this.prepareWritableWorld(meta.id);
         const backend = await this.getBackend();
         const existing = await backend.readMeta(meta.id);
         return backend.writeMeta({
             ...(existing ?? {}),
             ...meta,
+            schemaVersion: 3,
+            recoveryBackupId: existing?.recoveryBackupId ?? meta.recoveryBackupId,
             resonantVaultReservations: meta.resonantVaultReservations
                 ?? existing?.resonantVaultReservations,
         });
@@ -130,6 +155,7 @@ class WorldStorageSystem {
             : normalizeGenConfigSnapshot(worldGenConfig) ?? undefined;
 
         const meta: WorldMetadata = {
+            schemaVersion: 3,
             id,
             name: name || 'New World',
             seed: seedInput,
@@ -148,18 +174,23 @@ class WorldStorageSystem {
     }
 
     public async deleteWorld(id: string): Promise<void> {
+        this.migrations.delete(id);
         return (await this.getBackend()).deleteWorld(id);
     }
 
     /** Rename a world (updates metadata name only; id + chunks unchanged). */
     public async renameWorld(id: string, name: string): Promise<void> {
+        await this.prepareWritableWorld(id);
         return (await this.getBackend()).renameWorld(id, name);
     }
 
     // --- WORLD SESSION LIFECYCLE (additive) ---
 
     public async openWorld(id: string): Promise<void> {
-        return (await this.getBackend()).openWorld(id);
+        const backend = await this.getBackend();
+        await backend.openWorld(id);
+        try { await this.prepareWritableWorld(id); }
+        catch (error) { await backend.closeWorld(id); throw error; }
     }
 
     public async closeWorld(id: string): Promise<void> {
@@ -170,18 +201,22 @@ class WorldStorageSystem {
 
     /** Persist a batch of chunks (grouped per region by the backend). */
     public async saveChunks(worldId: string, chunks: ChunkBatchEntry[]): Promise<void> {
+        await this.prepareWritableWorld(worldId);
         return (await this.getBackend()).writeChunks(worldId, chunks);
     }
 
     /** Back-compat single-chunk write (wraps the batch path). */
-    public async saveChunk(worldId: string, cx: number, cz: number, data: { blocks: Uint8Array, light: Uint8Array, meta: Uint8Array }): Promise<void> {
+    public async saveChunk(worldId: string, cx: number, cz: number, data: { blocks: Uint16Array, light: Uint8Array, meta: Uint8Array } & ChunkExtras): Promise<void> {
         if (!worldId) return;
-        return this.saveChunks(worldId, [{ cx, cz, blocks: data.blocks, light: data.light, meta: data.meta }]);
+        return this.saveChunks(worldId, [{ ...data, cx, cz }]);
     }
 
-    public async loadChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null> {
+    public async loadChunk(worldId: string, cx: number, cz: number): Promise<(ChunkStorageData & { blocks: Uint16Array }) | null> {
         if (!worldId) return null;
-        return (await this.getBackend()).readChunk(worldId, cx, cz);
+        const stored = await (await this.getBackend()).readChunk(worldId, cx, cz);
+        if (!stored) return null;
+        if (stored.blocks instanceof Uint16Array) return { ...stored, blocks: stored.blocks };
+        return { ...stored, ...upgradeLegacyBlocks(stored.blocks) };
     }
 
     public async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {
@@ -196,7 +231,12 @@ class WorldStorageSystem {
     }
 
     public async importWorld(data: ExportedWorldData): Promise<WorldMetadata> {
-        return (await this.getBackend()).importWorld(data);
+        // An imported recovery copy becomes a separate playable world; the
+        // protected source is never overwritten or consumed by restoration.
+        const copy = structuredClone(data);
+        delete copy.meta.recoverySourceId;
+        delete copy.meta.recoveryBackupId;
+        return (await this.getBackend()).importWorld(copy);
     }
 }
 

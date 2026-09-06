@@ -115,8 +115,8 @@ test('the .acr format decision is the widened-count Atlas variant (no .mcc overf
 test('WorldManager batches dirty chunks and only clears them after a successful write', () => {
     const wm = read('src/systems/WorldManager.ts');
     // Re-entrancy guard.
-    assert.match(wm, /private saving = false/);
-    assert.match(wm, /if \(this\.saving\) return;/);
+    assert.match(wm, /private pendingSave: Promise<void> \| null/);
+    assert.match(wm, /if \(this\.pendingSave\) return this\.pendingSave;/);
     // Builds one batch and calls the batched API.
     assert.match(wm, /await WorldStorage\.saveChunks\(worldId, batch\)/);
     // Dirty flags cleared only inside the post-await success path (in a try, after
@@ -125,7 +125,8 @@ test('WorldManager batches dirty chunks and only clears them after a successful 
     assert.match(wm, /await WorldStorage\.saveChunks\(worldId, batch\);[\s\S]*?dirtyEditVersion\.get\(s\.key\) \?\? 0\) === s\.version[\s\S]*?this\.dirtyChunks\.delete\(s\.key\)/);
     assert.match(wm, /private markDirty\(key: string\): void \{[\s\S]*?dirtyEditVersion\.set/);
     // On failure, chunks stay dirty for retry (no clear in catch).
-    assert.match(wm, /catch \(e\) \{[\s\S]*?stay dirty for retry/);
+    assert.match(wm, /catch\(error => \{[\s\S]*?stay dirty for retry/);
+    assert.match(wm, /if \(this\.lastSaveError\) throw this\.lastSaveError/);
     // knownMissing updated only after a successful persist.
     assert.match(wm, /this\.knownMissingStorageChunks\.delete\(s\.key\); \/\/ now known to exist on disk/);
     // (Eviction of dirty chunks is covered by its own test below, it now DEFERS
@@ -149,20 +150,20 @@ test('the final save is reliable on quit/close (web visibilitychange + desktop f
     assert.match(app, /document\.visibilityState === 'hidden'/);
     assert.match(app, /addEventListener\('visibilitychange', onVisibility\)/);
     // Desktop: the renderer answers the main-process flush request, then acks.
-    assert.match(app, /onFlushRequest\(\(\) => \{[\s\S]*?saveGameRef\.current\(\{ force: true \}\)[\s\S]*?flushComplete\?\.\(\)/);
+    assert.match(app, /onFlushRequest\(\(\) => \{[\s\S]*?saveGameRef\.current\(\{ force: true \}\)[\s\S]*?flushComplete\?\.\(saved\)/);
 
     const preload = read('electron/preload.js');
     assert.match(preload, /onFlushRequest:/);
-    assert.match(preload, /flushComplete: \(\) => ipcRenderer\.invoke\('app:flush-complete'\)/);
+    assert.match(preload, /flushComplete: \(saved = true\) => ipcRenderer\.invoke\('app:flush-complete', saved\)/);
 
     const main = read('electron/main.js');
     // close is held (preventDefault), the renderer is asked to flush, and a timeout
     // guarantees quit never hangs on an unresponsive renderer.
     assert.match(main, /event\.preventDefault\(\)/);
     assert.match(main, /webContents\.send\('app:flush-request'\)/);
-    assert.match(main, /setTimeout\(finish, 3000\)/);
+    assert.match(main, /setTimeout\(\(\) => finish\(false\), 15000\)/);
     assert.match(main, /ipcMain\.handle\('app:flush-complete'/);
-    assert.match(main, /win\.destroy\(\)/);
+    assert.match(main, /if \(saved && !win\.isDestroyed\(\)\) win\.destroy\(\)/);
 });
 
 test('a locked world aborts entry instead of silently continuing as writable', () => {
