@@ -111,14 +111,17 @@ export const BossBar: React.FC = () => {
 
     const pct = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
     const shieldPct = shield.max > 0 ? Math.max(0, Math.min(1, shield.crystals / shield.max)) : 0;
-    // Health stays red; polarity is a separate signed badge.
-    const fill = 'linear-gradient(180deg, #db655c 0%, #a53932 100%)';
+    // Health fill tints to the boss's current polarity (red = +, blue = −).
+    const fill = boss.bossId === 'bell_titan'
+        ? 'linear-gradient(180deg, #d6bd87 0%, #8a6335 55%, #49351f 100%)'
+        : polarity < 0
+        ? 'linear-gradient(180deg, #6ab0ff 0%, #1e7ae0 55%, #0a3f8f 100%)'
+        : 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)';
 
     return (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center">
+        <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] -translate-x-1/2 flex-col items-center">
             <div className="mb-1 font-pixel text-lg text-white [text-shadow:2px_2px_0px_#000]">
-                {boss.name}
-                {boss.bossId === 'magnetic_warden' && <span className="ml-2 rounded border border-current bg-black/60 px-1.5" style={{ color: polarity < 0 ? '#79b9ee' : '#ef7770' }} aria-label={polarity < 0 ? 'Negative polarity' : 'Positive polarity'}>{polarity < 0 ? '−' : '+'}</span>}
+                {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
             </div>
             <div
                 className="relative h-4 w-full overflow-hidden border border-black/80"
@@ -129,6 +132,18 @@ export const BossBar: React.FC = () => {
                     className="absolute inset-y-0 left-0 transition-[width] duration-150"
                     style={{ width: `${pct * 100}%`, background: fill }}
                 />
+                {/* Purple shield layer on top: one segment per standing tower
+                    crystal, revealing the health bar beneath as they are broken. */}
+                {shieldPct > 0 && (
+                    <div
+                        className="absolute inset-y-0 left-0 transition-[width] duration-200"
+                        style={{
+                            width: `${shieldPct * 100}%`,
+                            background: 'linear-gradient(180deg, #c9a3ff 0%, #8e24aa 55%, #5b148f 100%)',
+                            boxShadow: 'inset 0 0 6px rgba(255,255,255,0.4)',
+                        }}
+                    />
+                )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
                     threshold, the Aegis at two thirds, the Storm at one third. */}
                 {(PHASE_MARKERS[boss.bossId] ?? []).map((at) => <PhaseMarker key={at} at={at} />)}
@@ -138,24 +153,20 @@ export const BossBar: React.FC = () => {
                     style={{ opacity: phasePulse ? 0.55 : 0 }}
                 />
             </div>
-            {shieldPct > 0 && <div className="mt-1 flex w-full items-center gap-2" role="meter" aria-label="Boss shield" aria-valuenow={Math.round(shieldPct * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <svg viewBox="0 0 16 16" className="h-3 w-3 text-slate-200" aria-hidden="true"><path d="M2 2h12v5c0 4-6 7-6 7S2 11 2 7Z" fill="currentColor" /></svg>
-                <div className="h-1 flex-1 bg-black/70"><div className="h-full bg-slate-300 transition-[width] duration-200" style={{ width: `${shieldPct * 100}%` }} /></div>
-            </div>}
             {form && (
-                <div className="mt-1 font-pixel text-xs tracking-wider text-white/80 [text-shadow:1px_1px_0px_#000]">
+                <div className="mt-1 font-pixel text-xs tracking-wider text-[#e6d8ff] [text-shadow:1px_1px_0px_#000]">
                     FORM {FORM_NUMERALS[form.form] ?? form.form} · {form.name.toUpperCase()}
                 </div>
             )}
             {/* The shield readout: the crystals left to break, or EXPOSED. */}
             {form && layers.total > 0 && (
                 layers.standing > 0 ? (
-                    <div className="mt-[2px] font-pixel text-[10px] tracking-wider text-slate-200 [text-shadow:1px_1px_0px_#000]">
-                        <span aria-label={`SHIELDED: ${layers.standing} tower crystals remaining`}>{'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))}</span>
+                    <div className="mt-[2px] font-pixel text-[10px] tracking-wider text-[#c9a3ff] [text-shadow:1px_1px_0px_#000]">
+                        SHIELDED {'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))} · break the tower crystal{layers.total > 1 ? 's' : ''}
                     </div>
                 ) : (
                     <div className="mt-[2px] animate-pulse font-pixel text-[10px] tracking-wider text-[#ffd166] [text-shadow:1px_1px_0px_#000]">
-                        EXPOSED
+                        EXPOSED · oppose its colour and strike
                     </div>
                 )
             )}

@@ -5,7 +5,7 @@ import { getPolaritySoundEvent } from '../../systems/player/polarityFeedback';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { motionStatus } from '../../systems/player/playerMotion';
 
-// The player's current polarity: the magnet block icon, its label, and (during
+// The player's current polarity: the magnet block icon, its key prompt, and (during
 // the Warden fight) the armed Magnet Slam. The centered HUD stacks it above
 // the hotbar's item-name label, clear of the hearts and armor readout.
 //
@@ -67,20 +67,20 @@ export const PolarityIndicator: React.FC = () => {
                     </div>
                 </div>
             )}
-            <div
-                className={`h-12 w-12 border-4 border-[#1a1a1a] bg-[#777] p-1 shadow-[inset_2px_2px_0_#d8d8d8,inset_-2px_-2px_0_#3a3a3a,2px_2px_0_#000] transition-[transform,filter,box-shadow] duration-150 ${
-                    switching ? 'scale-125 brightness-150' : 'scale-100 brightness-100'
-                } ${surge.armed ? 'shadow-[0_0_14px_4px_rgba(255,255,255,0.75)]' : ''}`}
-            >
-                <img
-                    src={texturePath}
-                    alt=""
-                    className="h-full w-full"
-                    style={{ imageRendering: 'pixelated' }}
-                />
-            </div>
-            <div className="whitespace-nowrap font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000,-1px_-1px_0_#000]">
-                {positive ? 'Positive (R)' : 'Negative (R)'}
+            <div className="relative h-12 w-12" role="img" aria-label={`${positive ? 'Positive' : 'Negative'} polarity. R to switch.`}>
+                <div
+                    className={`h-12 w-12 border-4 border-[#1a1a1a] bg-[#777] p-1 shadow-[inset_2px_2px_0_#d8d8d8,inset_-2px_-2px_0_#3a3a3a,2px_2px_0_#000] transition-[transform,filter,box-shadow] duration-150 ${
+                        switching ? 'scale-125 brightness-150' : 'scale-100 brightness-100'
+                    } ${surge.armed ? 'shadow-[0_0_14px_4px_rgba(255,255,255,0.75)]' : ''}`}
+                >
+                    <img
+                        src={texturePath}
+                        alt=""
+                        className="h-full w-full"
+                        style={{ imageRendering: 'pixelated' }}
+                    />
+                </div>
+                <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">R</kbd>
             </div>
         </div>
     );

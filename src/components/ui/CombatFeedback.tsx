@@ -47,12 +47,11 @@ export const CombatFeedback: React.FC<{ magnetic?: boolean }> = ({ magnetic = fa
                     strokeDasharray={CIRCUMFERENCE} strokeDashoffset={CIRCUMFERENCE * (view.refused ? 0 : view.cooldown)}
                     transform="rotate(-90 22 22)" opacity={view.refused ? 0.95 : 0.8} />
             </svg>}
-            {view.flux > 0 && <div className={`absolute left-1/2 top-[34%] flex -translate-x-1/2 items-center gap-2 rounded border bg-black/80 px-3 py-2 ${view.aligned ? 'border-green-300/50 text-green-200' : 'border-amber-300/60 text-amber-200'}`} role="status" aria-label={view.aligned ? 'Polarity aligned: hold on' : 'Tower flipping: press R to hold on'}>
-                <span aria-hidden="true" className="text-xl">{view.aligned ? '✓' : '↔'}</span>
-                {!view.aligned && <kbd className="rounded border border-current px-1.5 font-sans text-sm">R</kbd>}
-                <div className="h-1 w-16 bg-white/15"><div className="h-full bg-current" style={{ width: `${view.flux * 100}%` }} /></div>
+            {view.flux > 0 && !view.aligned && <div className="absolute left-1/2 top-[34%] w-[92px] -translate-x-1/2" role="status" aria-label="Tower flipping: press R to hold on">
+                <div className="mb-1 text-center font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]">R SWITCH</div>
+                <div className="h-1 border border-black bg-black/60"><div className="h-full bg-white" style={{ width: `${view.flux * 100}%` }} /></div>
             </div>}
-            {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 rounded bg-black/75 px-2 text-xl text-amber-200" role="status" aria-label="Shocked off: wrong polarity">⚡</div>}
+            {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]" role="status" aria-label="Shocked off: wrong polarity">SHOCKED OFF</div>}
             {view.dodged && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-lg text-white drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack dodged">✓</div>}
         </div>, document.body)}
     </div>;
