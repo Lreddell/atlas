@@ -32,7 +32,7 @@ export const BossCompass: React.FC = () => {
     const degrees = (view.angle * 180) / Math.PI;
 
     return (
-        <div className="pointer-events-none absolute left-1/2 top-1/2 z-[140] select-none">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-40 select-none">
             <div
                 className="absolute flex flex-col items-center"
                 style={{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }}

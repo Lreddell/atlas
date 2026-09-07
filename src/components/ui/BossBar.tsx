@@ -119,7 +119,7 @@ export const BossBar: React.FC = () => {
         : 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)';
 
     return (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-[150] flex w-[520px] -translate-x-1/2 flex-col items-center">
+        <div className="pointer-events-none absolute left-1/2 top-4 z-40 flex w-[520px] -translate-x-1/2 flex-col items-center">
             <div className="mb-1 font-pixel text-lg text-white [text-shadow:2px_2px_0px_#000]">
                 {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
             </div>

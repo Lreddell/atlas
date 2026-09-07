@@ -381,9 +381,19 @@ test('the kit readouts live in the HUD layer, not above it', () => {
     assert.match(hud, /\{gameMode !== 'spectator' && <CombatOverlay \/>\}/);
     assert.match(hud, /<CombatFeedback magnetic=\{magnetic\} \/>/);
     assert.match(hud, /absolute left-1\/2 z-40 flex w-\[320px\]/);
-    // The rest of the HUD it has to match.
-    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-20 left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/]) {
+    // The rest of the HUD it has to match: armor, vitals, hotbar, crosshair.
+    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-20 left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/, /id="crosshair"[^>]*z-40/]) {
         assert.match(hud, layer);
+    }
+    // Every other in-game overlay is in the same layer. Anything above the pause
+    // menu's z-50 floats over it unblurred, which is the bug this whole test
+    // exists to keep out: the boss bar and compass ride with the vitals, and the
+    // polarity vignette with the fire overlay a layer below.
+    assert.match(read('src/components/ui/BossBar.tsx'), /absolute left-1\/2 top-4 z-40/);
+    assert.match(read('src/components/ui/BossCompass.tsx'), /absolute left-1\/2 top-1\/2 z-40/);
+    assert.match(read('src/components/ui/PolarityVignette.tsx'), /absolute inset-0 z-30/);
+    for (const f of ['BossBar', 'BossCompass', 'PolarityVignette', 'ResonantObjectiveHUD']) {
+        assert.doesNotMatch(read(`src/components/ui/${f}.tsx`), /z-\[\d\d\d\]|fixed inset-0/);
     }
 });
 

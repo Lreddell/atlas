@@ -180,7 +180,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                     Spectator Mode
                 </div>
             ) : (
-                 <div id="crosshair" className="border-2 border-white opacity-60 rounded-full mix-blend-difference z-50"></div>
+                 <div id="crosshair" className="border-2 border-white opacity-60 rounded-full mix-blend-difference z-40"></div>
             )}
             
             {/* Health/Hunger - Only in Survival */}
