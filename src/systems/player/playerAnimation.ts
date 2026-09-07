@@ -3,6 +3,16 @@ export function headLookPitch(cameraPitch: number, bodyLean = 0): number {
     return Math.max(-1.2, Math.min(1.2, cameraPitch * 0.7 - bodyLean));
 }
 
+/**
+ * How far the head turns to make up a body/aim split (the free third-person
+ * view). Wrapped to the short way round and capped at what a neck can do, so a
+ * body facing fully away just looks over its shoulder instead of spinning.
+ */
+export function headLookYaw(offset: number): number {
+    const wrapped = Math.atan2(Math.sin(offset), Math.cos(offset));
+    return Math.max(-1.1, Math.min(1.1, wrapped * 0.75));
+}
+
 /** Raised food hand and repeated small bites, matching the familiar Minecraft cadence. */
 export function eatingPose(time: number) {
     const bite = Math.sin(time * 22);

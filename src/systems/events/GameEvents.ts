@@ -68,7 +68,7 @@ export interface GameEventMap {
     'player:shocked': { x: number; y: number; z: number };
     /** The player took damage (any source). */
     'player:damaged': { amount: number };
-    'view:changed': { mode: 'first' | 'third' };
+    'view:changed': { mode: 'first' | 'third' | 'free' };
     'entity:died': { entityId: number; type: string; x: number; y: number; z: number; yaw: number };
     'combat:start': Record<string, never>;
     'combat:stop': Record<string, never>;

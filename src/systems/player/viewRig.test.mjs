@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera, smoothThirdPersonCamera, playerModelOpacity, firstPersonHandOpacity } from './viewRig.ts';
+import {
+    THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera, smoothThirdPersonCamera,
+    playerModelOpacity, firstPersonHandOpacity, isThirdPerson, angleDelta, easeAngle, walkYaw,
+    detachedFlyStep, nextDetachedStage, DETACHED_FLY_SPEED,
+} from './viewRig.ts';
 
 const clear = () => null;
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
@@ -120,4 +124,58 @@ test('returning to first person eases to the exact eye, and reversing mid-transi
     assert.equal(hand, 1);
     assert.equal(spring.distance, 0);
     assert.equal(spring.offset, 0);
+});
+
+test('both third-person views hang the camera on the arm; first person does not', () => {
+    assert.equal(isThirdPerson('first'), false);
+    assert.equal(isThirdPerson('third'), true);
+    assert.equal(isThirdPerson('free'), true);
+});
+
+test('the free view walks the eight directions around the camera, camera unmoved', () => {
+    // Forward is the camera's own heading, and each key combination is 45 deg off it.
+    near(walkYaw(0, 1, 0), 0);
+    near(walkYaw(0, 0, 1), -Math.PI / 2); // strafe right faces +x
+    near(walkYaw(0, 0, -1), Math.PI / 2);
+    near(walkYaw(0, 1, 1), -Math.PI / 4);
+    near(Math.abs(walkYaw(0, -1, 0)), Math.PI); // backpedal turns the body around
+    // The camera's heading only shifts the whole set; it is never changed by walking.
+    near(walkYaw(1.2, 1, 0), 1.2);
+    near(walkYaw(1.2, 0, 1), 1.2 - Math.PI / 2);
+    assert.equal(walkYaw(1.2, 0, 0), null, 'standing still holds the current facing');
+});
+
+test('the body eases onto a heading the short way round and settles there', () => {
+    near(angleDelta(3.0, -3.0), 2 * Math.PI - 6.0);
+    near(angleDelta(-3.0, 3.0), 6.0 - 2 * Math.PI);
+    // Turning from just under +pi to just over -pi crosses the seam, not the long way.
+    const stepped = easeAngle(3.1, -3.1, 11, 1 / 60);
+    assert.ok(stepped > 3.1, 'the short way round is forward through +pi');
+    // And it converges rather than oscillating.
+    let yaw = 0;
+    for (let i = 0; i < 240; i++) yaw = easeAngle(yaw, 1.5, 11, 1 / 60);
+    near(yaw, 1.5, 1e-3);
+});
+
+test('the detached camera flies along its own look at a fixed speed', () => {
+    const dt = 0.5;
+    const ahead = detachedFlyStep(0, 0, 1, 0, 0, DETACHED_FLY_SPEED, dt);
+    near(ahead.x, 0, 1e-9);
+    near(ahead.y, 0, 1e-9);
+    near(ahead.z, -DETACHED_FLY_SPEED * dt);
+    // Pitched up, forward climbs.
+    const climbing = detachedFlyStep(0, Math.PI / 4, 1, 0, 0, DETACHED_FLY_SPEED, dt);
+    near(climbing.y, DETACHED_FLY_SPEED * dt * Math.SQRT1_2);
+    // A diagonal is no faster than a straight line, and up is world up.
+    const diagonal = detachedFlyStep(0, 0, 1, 1, 1, DETACHED_FLY_SPEED, dt);
+    near(Math.hypot(diagonal.x, diagonal.y, diagonal.z), DETACHED_FLY_SPEED * dt);
+    assert.ok(diagonal.y > 0);
+    const still = detachedFlyStep(0, 0, 0, 0, 0, DETACHED_FLY_SPEED, dt);
+    assert.deepEqual(still, { x: 0, y: 0, z: 0 });
+});
+
+test('F7 cycles place, park, release', () => {
+    assert.equal(nextDetachedStage('off'), 'placing');
+    assert.equal(nextDetachedStage('placing'), 'locked');
+    assert.equal(nextDetachedStage('locked'), 'off');
 });

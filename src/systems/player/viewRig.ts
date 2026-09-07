@@ -15,7 +15,14 @@ export interface RigVec3 {
     z: number;
 }
 
-export type ViewMode = 'first' | 'third';
+export type ViewMode = 'first' | 'third' | 'free';
+
+/**
+ * Both third-person views hang the camera on the same spring arm. They differ
+ * only in what the BODY does: 'third' welds it to the camera, 'free' lets it
+ * keep its own facing (see FREE_BODY_TURN_RATE).
+ */
+export const isThirdPerson = (mode: ViewMode): boolean => mode !== 'first';
 
 export interface ThirdPersonRig {
     /** Arm length (blocks) behind the pivot. */
@@ -171,11 +178,50 @@ export function lookBasis(yaw: number, pitch: number): { forward: RigVec3; right
     return { forward, right, up };
 }
 
+// --- Free third person (F6) -------------------------------------------------
+// The 'free' view unbolts the body from the camera. The camera still orbits the
+// eye on the same spring arm, but a full 360 deg of it is usable because the
+// body no longer spins to match: WASD picks one of eight headings around the
+// camera and the body turns onto that heading, leaving the camera where it was
+// pointed. While an action plays the body swings back onto the aim, so a swing,
+// a placed block or a mined face still reads as coming from the character.
+
+/** How fast the body swings onto a new walk heading (exponential, per second). */
+export const FREE_BODY_TURN_RATE = 11;
+/** Faster, for the swing back onto the aim while acting: an action must read immediately. */
+export const FREE_BODY_AIM_TURN_RATE = 26;
+
+/** Shortest signed difference from `from` to `to`, in (-PI, PI]. */
+export function angleDelta(from: number, to: number): number {
+    const d = to - from;
+    return Math.atan2(Math.sin(d), Math.cos(d));
+}
+
+/** Frame-rate independent ease of an angle onto a target the short way round. */
+export function easeAngle(current: number, target: number, rate: number, dt: number): number {
+    return current + angleDelta(current, target) * (1 - Math.exp(-rate * Math.max(0, Math.min(dt, 0.1))));
+}
+
+/**
+ * The heading WASD walks in for a camera at `cameraYaw`: the eight directions
+ * around the camera, matching how the movement input is rotated into the world.
+ * Null when nothing is held, which is the body holding its current facing.
+ */
+export function walkYaw(cameraYaw: number, forward: number, right: number): number | null {
+    if (forward === 0 && right === 0) return null;
+    return cameraYaw + Math.atan2(-right, forward);
+}
+
 /** Live rig state shared with everything that needs the eye instead of the camera. */
 export interface ViewRigState {
     mode: ViewMode;
     /** Whether the third-person placement is in effect this frame. */
     third: boolean;
+    /**
+     * The camera is parked away from the player (F7), so the crosshair no longer
+     * means anything: aiming casts straight out of the eye instead of through it.
+     */
+    detached: boolean;
     /** The player's eye (first-person camera position, before shake). */
     eye: RigVec3;
     /** Unit look direction. */
@@ -189,6 +235,7 @@ export interface ViewRigState {
 export const viewRig: ViewRigState = {
     mode: 'first',
     third: false,
+    detached: false,
     eye: { x: 0, y: 0, z: 0 },
     dir: { x: 0, y: 0, z: -1 },
     camera: { x: 0, y: 0, z: 0 },
@@ -202,9 +249,15 @@ export interface PlayerPose {
     x: number;
     y: number;
     z: number;
-    /** Body yaw (radians, the look yaw) and look pitch. */
+    /** Body yaw (radians) and look pitch. */
     yaw: number;
     pitch: number;
+    /**
+     * Where the player is AIMING (the camera's yaw). Equal to `yaw` except in
+     * the free view, where the body keeps its own facing and only the head
+     * turns the rest of the way toward the aim.
+     */
+    lookYaw: number;
     /** Velocity (blocks/s). */
     vx: number;
     vy: number;
@@ -228,6 +281,7 @@ export interface PlayerPose {
 export const playerPose: PlayerPose = {
     x: 0, y: 0, z: 0,
     yaw: 0, pitch: 0,
+    lookYaw: 0,
     vx: 0, vy: 0, vz: 0,
     grounded: false,
     inWater: false,
@@ -240,3 +294,66 @@ export const playerPose: PlayerPose = {
     polarity: 0,
     time: 0,
 };
+
+// --- The detached camera (F7) -----------------------------------------------
+// A tripod. The first press lifts the camera off the player and flies it into
+// place with the movement keys while the body stands still; the second bolts it
+// down and hands the player back, framed by that fixed shot; the third puts the
+// camera back on the player, in whatever view mode it left.
+
+export type DetachedCameraStage = 'off' | 'placing' | 'locked';
+
+export interface DetachedCameraState {
+    stage: DetachedCameraStage;
+    /** Where the tripod stands. */
+    x: number;
+    y: number;
+    z: number;
+    /** Its look, in the same world-up yaw/pitch frame as the player camera. */
+    yaw: number;
+    pitch: number;
+}
+
+export const detachedCamera: DetachedCameraState = {
+    stage: 'off',
+    x: 0, y: 0, z: 0,
+    yaw: 0, pitch: 0,
+};
+
+/** The stage F7 moves to from `stage`. */
+export const nextDetachedStage = (stage: DetachedCameraStage): DetachedCameraStage =>
+    stage === 'off' ? 'placing' : stage === 'placing' ? 'locked' : 'off';
+
+/** Put the camera back on the player (leaving a world, a cutscene taking over). */
+export const releaseDetachedCamera = (): void => {
+    detachedCamera.stage = 'off';
+    // Cleared here too: the player rig rewrites it every frame, but it must not
+    // stay set for the frames between an unmount and the next rig update.
+    viewRig.detached = false;
+};
+
+/** Flight speed of the camera while it is being placed (blocks/s), and its sprint. */
+export const DETACHED_FLY_SPEED = 9;
+export const DETACHED_FLY_SPRINT = 26;
+/** The tripod pitches as far as the player camera does. */
+export const DETACHED_MAX_PITCH = 1.55;
+
+/**
+ * One step of free flight for the detached camera: forward/right along its own
+ * look (so holding forward while pitched up climbs) and `up` along world up.
+ * Normalised, so a diagonal is not faster than a straight line.
+ */
+export function detachedFlyStep(
+    yaw: number, pitch: number,
+    forward: number, right: number, up: number,
+    speed: number, dt: number,
+): RigVec3 {
+    const basis = lookBasis(yaw, pitch);
+    const x = basis.forward.x * forward + basis.right.x * right;
+    const y = basis.forward.y * forward + up;
+    const z = basis.forward.z * forward + basis.right.z * right;
+    const length = Math.hypot(x, y, z);
+    if (length < 1e-6) return { x: 0, y: 0, z: 0 };
+    const k = (speed * Math.max(0, dt)) / length;
+    return { x: x * k, y: y * k, z: z * k };
+}

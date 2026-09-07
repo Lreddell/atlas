@@ -32,7 +32,13 @@ import {
     DASH_RANGE, DASH_SPEED, LEAP_SPEED, LEAP_UP,
     type DodgeContext, type MotionState, type MotionVec3,
 } from '../systems/player/playerMotion';
-import { aimRay, smoothThirdPersonCamera, playerPose, viewRig } from '../systems/player/viewRig';
+import {
+    aimRay, smoothThirdPersonCamera, playerPose, viewRig, isThirdPerson,
+    detachedCamera, detachedFlyStep, walkYaw, easeAngle,
+    FREE_BODY_TURN_RATE, FREE_BODY_AIM_TURN_RATE,
+    DETACHED_FLY_SPEED, DETACHED_FLY_SPRINT, DETACHED_MAX_PITCH,
+} from '../systems/player/viewRig';
+import { attackBusy, playerAttack, playerInteraction, playerMining } from '../systems/combat/playerAttack';
 import { voxelRaycast } from '../systems/world/voxelRaycast';
 import { gameEvents } from '../systems/events/GameEvents';
 import { particleFx, polarityFxColor } from '../systems/fx/particleFx';
@@ -177,6 +183,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const renderPos = useRef(position.clone());
   const currentEyeHeight = useRef(EYE_HEIGHT_STANDING);
   const cameraSpring = useRef({ distance: 0, offset: 0 });
+  // Free third person (F6): the body's own facing, which the camera no longer drags around.
+  const bodyYaw = useRef(0);
+  // The detached camera (F7): the player's look while the render camera is parked
+  // somewhere else, plus the edge detection that hands the look back on release.
+  const parkedLook = useRef({ yaw: 0, pitch: 0 });
+  const wasParked = useRef(false);
 
   // Magnetic wall adhesion (Phase 10): explicit state + edge-detection for jump
   // and polarity-flip detach, plus the camera "unroll" easing back to world-up.
@@ -666,6 +678,61 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         intent.dodge = false;
     }
 
+    // Camera setup mode (F7, first press): the movement keys fly the detached
+    // camera into place instead of the body, so the shot can be framed from
+    // anywhere. The body stands still until the camera is parked.
+    if (detachedCamera.stage === 'placing') {
+        const step = detachedFlyStep(
+            detachedCamera.yaw, detachedCamera.pitch,
+            (intent.forward ? 1 : 0) - (intent.backward ? 1 : 0),
+            (intent.right ? 1 : 0) - (intent.left ? 1 : 0),
+            (intent.jump ? 1 : 0) - (intent.sneak ? 1 : 0),
+            inputState.sprint ? DETACHED_FLY_SPRINT : DETACHED_FLY_SPEED, dt,
+        );
+        detachedCamera.x += step.x; detachedCamera.y += step.y; detachedCamera.z += step.z;
+        intent.forward = false; intent.backward = false;
+        intent.left = false; intent.right = false;
+        intent.jump = false; intent.sneak = false; intent.sprint = false;
+        intent.flyToggle = false; intent.dodge = false;
+        consumeDodgePress();
+    }
+
+    // The detached camera parks the render camera away from the body, so the mouse
+    // has to drive something else: the tripod itself while the shot is being framed,
+    // and the player's own look once it is bolted down. The camera Euler holds the
+    // PLAYER's look for the whole frame -- movement, aiming and the body all read it
+    // -- and the parked shot is written over it at the end, just before the render.
+    const parked = detachedCamera.stage !== 'off';
+    const wallLook = adhesion.current.active || unrolling.current;
+    if (parked && !wasParked.current) {
+        // The tripod starts exactly where the player was already looking from.
+        detachedCamera.x = camera.position.x; detachedCamera.y = camera.position.y; detachedCamera.z = camera.position.z;
+        detachedCamera.yaw = camera.rotation.y; detachedCamera.pitch = camera.rotation.x;
+        parkedLook.current.yaw = camera.rotation.y; parkedLook.current.pitch = camera.rotation.x;
+    } else if (!parked && wasParked.current && !wallLook) {
+        // Released: hand the look back to the mouse exactly where the player left it.
+        camera.rotation.set(parkedLook.current.pitch, parkedLook.current.yaw, camera.rotation.z);
+        lookBridge.active = false;
+        lookBridge.dYaw = 0; lookBridge.dPitch = 0;
+    }
+    wasParked.current = parked;
+    if (parked) {
+        lookBridge.active = true;
+        if (detachedCamera.stage === 'placing') {
+            // Framing the shot: the mouse aims the tripod, and swallowing the deltas
+            // here holds the player's look exactly where they left it.
+            detachedCamera.yaw += lookBridge.dYaw;
+            detachedCamera.pitch = Math.max(-DETACHED_MAX_PITCH, Math.min(DETACHED_MAX_PITCH, detachedCamera.pitch + lookBridge.dPitch));
+            lookBridge.dYaw = 0; lookBridge.dPitch = 0;
+        } else if (!wallLook) {
+            // Bolted down: the player keeps aiming and turning, only the shot is frozen.
+            parkedLook.current.yaw += lookBridge.dYaw;
+            parkedLook.current.pitch = Math.max(-1.55, Math.min(1.55, parkedLook.current.pitch + lookBridge.dPitch));
+            lookBridge.dYaw = 0; lookBridge.dPitch = 0;
+        }
+        if (!wallLook) camera.rotation.set(parkedLook.current.pitch, parkedLook.current.yaw, camera.rotation.z);
+    }
+
     if (intent.flyToggle && gameMode === 'creative') {
         isFlying.current = !isFlying.current;
         if (isFlying.current) {
@@ -1092,6 +1159,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     } else {
         camera.rotation.z = damageTilt.current;
     }
+    // Whatever branch owned the look this frame, remember it: releasing the tripod
+    // has to hand back the look the player actually has, not the shot's.
+    if (parked) { parkedLook.current.yaw = camera.rotation.y; parkedLook.current.pitch = camera.rotation.x; }
 
     // The eye: where the player looks from, in both views.
     let eyeX: number, eyeY: number, eyeZ: number;
@@ -1114,8 +1184,20 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     viewRig.dir.x = _viewDir.x; viewRig.dir.y = _viewDir.y; viewRig.dir.z = _viewDir.z;
 
     // Third person: the camera hangs on a voxel-aware spring arm behind and over
-    // the shoulder of the eye; first person puts it at the eye.
-    if ((viewRig.mode === 'third' || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0) && !bossSummon.isActive()) {
+    // the shoulder of the eye; first person puts it at the eye. The tripod (F7)
+    // outranks both: the shot is fixed wherever it was left.
+    const extendArm = isThirdPerson(viewRig.mode);
+    if (parked) {
+        camera.position.set(detachedCamera.x, detachedCamera.y, detachedCamera.z);
+        camera.rotation.set(detachedCamera.pitch, detachedCamera.yaw, 0);
+        cameraSpring.current.distance = 0; cameraSpring.current.offset = 0;
+        viewRig.third = true;
+        viewRig.detached = true;
+        viewRig.armLength = 0;
+        // The body is just another thing in the shot, so it always draws (it still
+        // fades if the tripod happens to stand inside it).
+        viewRig.showModel = !isDead;
+    } else if ((extendArm || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0) && !bossSummon.isActive()) {
         _camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
         _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
         const placement = smoothThirdPersonCamera(
@@ -1123,26 +1205,31 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             viewRig.dir,
             { x: _camRight.x, y: _camRight.y, z: _camRight.z },
             { x: _camUp.x, y: _camUp.y, z: _camUp.z },
-            sweepCamera, cameraSpring.current, dt, viewRig.mode === 'third',
+            sweepCamera, cameraSpring.current, dt, extendArm,
         );
         camera.position.set(placement.camera.x, placement.camera.y, placement.camera.z);
-        viewRig.third = viewRig.mode === 'third' || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0;
+        viewRig.third = extendArm || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0;
+        viewRig.detached = false;
         viewRig.armLength = placement.armLength;
         viewRig.showModel = viewRig.third && !isDead; // The model fades by camera proximity instead of popping off.
     } else {
         camera.position.set(eyeX, eyeY, eyeZ);
         cameraSpring.current.distance = 0; cameraSpring.current.offset = 0;
         viewRig.third = false;
+        viewRig.detached = false;
         viewRig.armLength = 0;
         viewRig.showModel = false;
     }
     viewRig.camera.x = camera.position.x; viewRig.camera.y = camera.position.y; viewRig.camera.z = camera.position.z;
 
     // Global camera shake (boss slams etc.) on top of the resolved eye position.
+    // A parked tripod stands still through it: it is not on the player any more.
     sampleShake(_shakeOffset, delta);
-    camera.position.x += _shakeOffset.x;
-    camera.position.y += _shakeOffset.y;
-    camera.position.z += _shakeOffset.z;
+    if (!parked) {
+        camera.position.x += _shakeOffset.x;
+        camera.position.y += _shakeOffset.y;
+        camera.position.z += _shakeOffset.z;
+    }
 
     // The body, for the third-person model.
     playerPose.x = renderPos.current.x; playerPose.y = renderPos.current.y; playerPose.z = renderPos.current.z;
@@ -1153,14 +1240,43 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         playerPose.z = eyeZ - aCam.localUp.z * currentEyeHeight.current;
         const look = wallViewDir(aCam, _wallView);
         playerPose.yaw = Math.atan2(-look.x, -look.z);
+        playerPose.lookYaw = playerPose.yaw;
+        bodyYaw.current = playerPose.yaw; // Leaving the wall resumes the free view from here.
         playerPose.pitch = aCam.lookPitch;
         playerPose.up.x = aCam.localUp.x; playerPose.up.y = aCam.localUp.y; playerPose.up.z = aCam.localUp.z;
         const basis = computeLocalBasis(aCam.normal, { x: look.x, y: look.y, z: look.z });
         playerPose.wallForward.x = basis.forward.x; playerPose.wallForward.y = basis.forward.y; playerPose.wallForward.z = basis.forward.z;
         playerPose.wallRight.x = basis.right.x; playerPose.wallRight.y = basis.right.y; playerPose.wallRight.z = basis.right.z;
     } else {
-        playerPose.yaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+        const lookYaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+        playerPose.lookYaw = lookYaw;
         playerPose.pitch = Math.asin(Math.max(-1, Math.min(1, _viewDir.y)));
+        if (viewRig.mode === 'free' && !isDead) {
+            // The free view unbolts the body from the camera: it turns onto
+            // whichever of the eight walk directions the keys ask for and holds
+            // that facing while the camera keeps orbiting. An action pulls it back
+            // onto the aim, so a swing, a placed block or a mined face still reads
+            // as coming from the character rather than out of its shoulder.
+            // A roll is a dodge, and keeps whichever way the body was already
+            // going; a dash or a leap is aimed, so it turns onto the aim like
+            // any other action.
+            const acting = motion.current.action === 'dash' || motion.current.action === 'leap'
+                || attackBusy(playerAttack) || playerMining.active || inputState.eating
+                || playerInteraction.leftHeld || playerInteraction.placementElapsed < 1;
+            const walk = walkYaw(
+                lookYaw,
+                (intent.forward ? 1 : 0) - (intent.backward ? 1 : 0),
+                (intent.right ? 1 : 0) - (intent.left ? 1 : 0),
+            );
+            const target = acting ? lookYaw : walk;
+            if (target !== null) {
+                bodyYaw.current = easeAngle(bodyYaw.current, target, acting ? FREE_BODY_AIM_TURN_RATE : FREE_BODY_TURN_RATE, dt);
+            }
+            playerPose.yaw = bodyYaw.current;
+        } else {
+            bodyYaw.current = lookYaw;
+            playerPose.yaw = lookYaw;
+        }
         playerPose.up.x = 0; playerPose.up.y = 1; playerPose.up.z = 0;
     }
     playerPose.vx = vel.current.x; playerPose.vy = vel.current.y; playerPose.vz = vel.current.z;

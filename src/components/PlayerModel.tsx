@@ -14,7 +14,7 @@ import type { Equipment } from '../systems/registry/equipment';
 import { BLOCKS } from '../data/blocks';
 import { inputState } from '../systems/player/playerInput';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
-import { headLookPitch, eatingPose, crouchPose, airbornePose, placementPose } from '../systems/player/playerAnimation';
+import { headLookPitch, headLookYaw, eatingPose, crouchPose, airbornePose, placementPose } from '../systems/player/playerAnimation';
 import { usePlayerSkin, type PlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
@@ -336,6 +336,10 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
 
         // The head tracks the look pitch in every clip that has not claimed it.
         p.headPitch += action === 'roll' ? -pose.pitch * 0.55 : headLookPitch(pose.pitch, p.bodyLean + p.torsoLean);
+        // In the free view the body and the aim come apart, so the head makes up
+        // the difference (as far as a neck goes) and the character keeps watching
+        // where you are looking while it runs somewhere else.
+        if (action !== 'roll') p.headYaw += headLookYaw(pose.lookYaw - pose.yaw);
 
         // A hit knocks the chest back for a beat.
         if (hurt) {

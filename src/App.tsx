@@ -21,7 +21,9 @@ import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { BossCompass } from './components/ui/BossCompass';
 import { motionStatus } from './systems/player/playerMotion';
-import { viewRig, type ViewMode } from './systems/player/viewRig';
+import {
+    viewRig, isThirdPerson, detachedCamera, nextDetachedStage, releaseDetachedCamera, type ViewMode,
+} from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { BellTitanCinematic } from './components/BellTitanCinematic';
@@ -329,9 +331,10 @@ const App: React.FC = () => {
   // The player's current magnetic mode, readable from fixed-step entity ticks
   // (the polarity rule needs to know whether the player controls a polarity).
   const magneticModeRef = useRef<MagneticMode>('none');
-  // First / third person (F5). The Warden fight switches to third person on its
-  // own and hands the previous view back when it ends; the held item hides
-  // behind the camera in third person (the body model carries the pose instead).
+  // First / third person (F5) and the free third person (F6). The Warden fight
+  // switches to third person on its own when neither is already on, and hands the
+  // previous view back when it ends; the held item hides behind the camera in
+  // third person (the body model carries the pose instead).
   const [, setViewMode] = useState<ViewMode>(viewRig.mode);
   const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
@@ -1072,6 +1075,7 @@ const App: React.FC = () => {
           flush();
       }
       bossSummon.cancel();
+      releaseDetachedCamera();
       bellTitanCinematic.cancel();
       wardenDefeat.cancel();
       setCinematicMode(false);
@@ -1216,7 +1220,7 @@ const App: React.FC = () => {
       // The view (F5), and the fight's own third-person framing.
       const offView = gameEvents.on('view:changed', ({ mode }) => setViewMode(mode));
       const offSpawnView = gameEvents.on('boss:spawned', ({ bossId }) => {
-          if (bossId !== 'magnetic_warden' || viewRig.mode === 'third') return;
+          if (bossId !== 'magnetic_warden' || isThirdPerson(viewRig.mode)) return;
           preFightViewRef.current = viewRig.mode;
           viewRig.mode = 'third';
           gameEvents.emit('view:changed', { mode: 'third' });
@@ -2152,15 +2156,27 @@ const App: React.FC = () => {
     const isEditableTarget = isEditableElement(e.target);
 
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    // F5: first / third person. Handled here rather than in the movement input
-    // so it works whether or not the pointer is locked (and so the browser
-    // never reloads the page instead of switching the view).
-    if (e.code === 'F5') {
+    // F5 / F6: the two third-person views. Handled here rather than in the
+    // movement input so they work whether or not the pointer is locked (and so
+    // the browser never reloads or moves focus instead of switching the view).
+    if (e.code === 'F5' || e.code === 'F6') {
         e.preventDefault();
         if (appState === 'game' && !isEditableTarget && !isCapturingPanorama) {
-            const next: ViewMode = viewRig.mode === 'third' ? 'first' : 'third';
+            // F5 is the over-the-shoulder view (the body faces the camera); F6 is
+            // the free one (the body keeps its own facing while the camera orbits).
+            const view: ViewMode = e.code === 'F6' ? 'free' : 'third';
+            const next: ViewMode = viewRig.mode === view ? 'first' : view;
             viewRig.mode = next;
             gameEvents.emit('view:changed', { mode: next });
+        }
+        return;
+    }
+    // F7 cycles the detached camera: place it, bolt it down, put it back. The
+    // view mode is never touched, so releasing it returns to whatever was on.
+    if (e.code === 'F7') {
+        e.preventDefault();
+        if (appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
+            detachedCamera.stage = nextDetachedStage(detachedCamera.stage);
         }
         return;
     }
@@ -2282,7 +2298,7 @@ const App: React.FC = () => {
     if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
     if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
     if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, cinematicMode, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2618,6 +2634,9 @@ const App: React.FC = () => {
 
   const handleRespawn = () => {
     soundManager.play("ui.click");
+    // Respawning moves the body; a tripod left at the death site would frame an
+    // empty room, so the camera comes back with the player.
+    releaseDetachedCamera();
     setShowDeathScreen(false);
     deathScreenActiveRef.current = false;
     setHealth(20); setHunger(20); setSaturation(5); foodStateRef.current = createFoodState(); setBreath(MAX_BREATH); setRespawnKey(prev => prev + 1); setIsOnFire(false);
@@ -2830,6 +2849,7 @@ const App: React.FC = () => {
       entityManager.clear();
       vaultProjectileSystem.clear();
       bossSummon.cancel();
+      releaseDetachedCamera();
       setCinematicMode(false);
       summonArenaRef.current = null;
       // Per-world React state: item entities and chat/log lines belong to the
@@ -3202,6 +3222,7 @@ const App: React.FC = () => {
                                     startQuat.setFromRotationMatrix(lookM);
                                 }
                                 handleInventoryContainerChange(null);
+                                releaseDetachedCamera();
                                 bossSummon.begin({
                                     centerX, centerZ, baseY, startPos, startQuat,
                                     onSpawnBoss: () => {

@@ -37,7 +37,7 @@ import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/
 import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
-import { aimRay, viewRig } from '../../systems/player/viewRig';
+import { aimRay, viewRig, detachedCamera } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
 import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
 import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
@@ -63,6 +63,14 @@ const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number,
 function aimFromCamera(camera: THREE.Camera): void {
     camera.getWorldPosition(_camPos);
     camera.getWorldDirection(_camDir);
+    if (viewRig.detached) {
+        // The camera is parked somewhere else entirely (F7), so the crosshair no
+        // longer covers what the player is aiming at. Aim straight out of the eye
+        // along their own look, exactly as first person does.
+        _camPos.set(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z);
+        _camDir.set(viewRig.dir.x, viewRig.dir.y, viewRig.dir.z);
+        return;
+    }
     if (!viewRig.third) return;
     const ray = aimRay(
         { x: _camPos.x, y: _camPos.y, z: _camPos.z },
@@ -771,6 +779,7 @@ export const InteractionController = ({
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
             if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
+            if (detachedCamera.stage === 'placing') return; // Framing the shot, not playing.
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
@@ -813,7 +822,7 @@ export const InteractionController = ({
     useFrame((_, delta) => {
         playerMining.active = false;
         if (isLocked && Number.isFinite(playerInteraction.placementElapsed)) playerInteraction.placementElapsed = Math.min(1, playerInteraction.placementElapsed + Math.min(delta, 0.1));
-        if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
+        if (openContainer || !isLocked || isDead || gameMode === 'spectator' || detachedCamera.stage === 'placing') {
             playerInteraction.leftHeld = false;
             playerInteraction.placementElapsed = Infinity;
             attackHeld.current = false;
