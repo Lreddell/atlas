@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
+import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
 import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
@@ -251,22 +252,6 @@ function waitForAnimationFrames(count: number) {
     });
 }
 
-async function waitForFovToSettle(getCurrentFov: () => number, targetFov: number, maxFrames = 120) {
-    let stableFrames = 0;
-    for (let frame = 0; frame < maxFrames; frame += 1) {
-        await waitForAnimationFrames(1);
-        const current = getCurrentFov();
-        if (Math.abs(current - targetFov) < 0.25) {
-            stableFrames += 1;
-            if (stableFrames >= 3) return;
-        } else {
-            stableFrames = 0;
-        }
-    }
-}
-
-type CubeFaceKey = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
-
 function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
     const atlas = document.createElement('canvas');
     atlas.width = faceSize * 4;
@@ -345,6 +330,8 @@ const App: React.FC = () => {
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [hudHidden, setHudHidden] = useState(false);
+  const gameRendererRef = useRef<RootState | null>(null);
   const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -1123,19 +1110,28 @@ const App: React.FC = () => {
           restoreSummonAltar(BOSS_DEFEAT_ALTAR_DELAY_MS);
       });
       // The summon cutscene pauses player control while the camera is scripted.
-      const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
+      const offCineStart = gameEvents.on('cinematic:start', () => {
+          releaseDetachedCamera();
+          setCinematicMode(true);
+      });
       const offCineEnd = gameEvents.on('cinematic:end', ({ source, returnPosition, returnPitch, returnYaw }) => {
           setCinematicMode(false);
-          if (source === 'bell_titan' && returnPosition) {
+          if ((source === 'bell_titan' || source === 'magnetic_warden') && returnPosition) {
+              // Skipping the cinematic can beat the delayed reconstruction.
+              if (source === 'magnetic_warden' && daisRestoreRef.current) {
+                  const pending = daisRestoreRef.current;
+                  daisRestoreRef.current = null;
+                  clearTimeout(pending.id);
+                  pending.run();
+              }
               const feet = new THREE.Vector3(returnPosition.x, returnPosition.y, returnPosition.z);
+              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               playerRef.current?.teleport(feet);
               playerPosRef.current.copy(feet);
-              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               return;
           }
           if (source === 'magnetic_warden') {
-              // The defeat cutscene never moved the player (physics was paused);
-              // only the camera was borrowed, so just give the look back.
+              // Cancellation restores the look without moving the player.
               controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               return;
           }
@@ -1143,10 +1139,10 @@ const App: React.FC = () => {
           // altar) looking straight at the energy ball, room to run before it blows.
           const rp = bossSummon.returnPos;
           const feet = new THREE.Vector3(rp.x, playerPosRef.current.y, rp.z);
-          playerRef.current?.teleport(feet);
-          playerPosRef.current.copy(feet);
           const euler = new THREE.Euler().setFromQuaternion(bossSummon.returnQuat, 'YXZ');
           controlsRef.current?.setRotation(euler.x, euler.y);
+          playerRef.current?.teleport(feet);
+          playerPosRef.current.copy(feet);
       });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
@@ -1551,99 +1547,20 @@ const App: React.FC = () => {
       setMessages(prev => [...prev.slice(-19), { id: Date.now() + Math.random(), text: text, type, timestamp: Date.now(), clickAction }]);
   }, []);
 
-    const capturePanoramaDataUrl = useCallback(async () => {
-      const controls = controlsRef.current;
-      const sourceCanvas = document.querySelector('canvas') as HTMLCanvasElement | null;
-
-      if (!controls || !sourceCanvas) {
-          throw new Error('Camera or render canvas unavailable.');
-      }
-
-      if (sourceCanvas.width <= 0 || sourceCanvas.height <= 0) {
-          throw new Error('Render canvas is not ready yet.');
-      }
-
-      const captureSize = Math.min(sourceCanvas.width, sourceCanvas.height);
-      const cropX = Math.floor((sourceCanvas.width - captureSize) / 2);
-      const cropY = Math.floor((sourceCanvas.height - captureSize) / 2);
-      const previousFov = fov;
-      if (previousFov !== 90) {
-          setFov(90);
-          await waitForFovToSettle(() => controls.getFov(), 90);
-      }
-
-      const makeFaceCanvas = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = captureSize;
-          canvas.height = captureSize;
-          return canvas;
-      };
-
-      const faces: Record<CubeFaceKey, HTMLCanvasElement> = {
-          px: makeFaceCanvas(),
-          nx: makeFaceCanvas(),
-          py: makeFaceCanvas(),
-          ny: makeFaceCanvas(),
-          pz: makeFaceCanvas(),
-          nz: makeFaceCanvas(),
-      };
-
-      const drawFace = (face: CubeFaceKey) => {
-          const ctx = faces[face].getContext('2d');
-          if (!ctx) throw new Error('Failed to initialize face canvas context.');
-          ctx.drawImage(sourceCanvas, cropX, cropY, captureSize, captureSize, 0, 0, captureSize, captureSize);
-      };
-
-    const originalRotation = controls.getRotation();
-      const baseYaw = originalRotation.y;
-      const basePitch = 0;
-      try {
-          controls.setRotation(basePitch, baseYaw + Math.PI / 2);
-          await waitForAnimationFrames(3);
-          drawFace('px');
-
-          controls.setRotation(basePitch, baseYaw - Math.PI / 2);
-          await waitForAnimationFrames(3);
-          drawFace('nx');
-
-          controls.setRotation(-Math.PI / 2, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('py');
-
-          controls.setRotation(Math.PI / 2, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('ny');
-
-          controls.setRotation(basePitch, baseYaw + Math.PI);
-          await waitForAnimationFrames(3);
-          drawFace('pz');
-
-          controls.setRotation(basePitch, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('nz');
-      } finally {
-          controls.setRotation(originalRotation.x, originalRotation.y);
-          await waitForAnimationFrames(2);
-          if (previousFov !== 90) {
-              setFov(previousFov);
-              await waitForFovToSettle(() => controls.getFov(), previousFov);
-          }
-      }
-
-      const orderedFaceDataUrls = [
-          faces.pz.toDataURL('image/png'),
-          faces.px.toDataURL('image/png'),
-          faces.nz.toDataURL('image/png'),
-          faces.nx.toDataURL('image/png'),
-          faces.py.toDataURL('image/png'),
-          faces.ny.toDataURL('image/png'),
-      ];
-
+  const capturePanoramaDataUrl = useCallback(async () => {
+      // Let React hide the player and hand before taking a world-only capture.
+      await waitForAnimationFrames(2);
+      const state = gameRendererRef.current;
+      if (!state || state.gl.getContext().isContextLost()) throw new Error('Game renderer unavailable.');
+      const { gl, scene, camera } = state;
+      const captureSize = Math.min(2048, gl.domElement.width, gl.domElement.height, gl.capabilities.maxTextureSize);
+      if (captureSize <= 0) throw new Error('Game renderer is not ready yet.');
+      const faces = capturePanoramaFaces(gl, scene, camera, captureSize);
       return {
           atlasDataUrl: buildPanoramaAtlas(faces, captureSize),
-          cubeFaces: orderedFaceDataUrls,
+          cubeFaces: [faces.pz, faces.px, faces.nz, faces.nx, faces.py, faces.ny].map(face => face.toDataURL('image/png')),
       };
-  }, [fov]);
+  }, []);
 
   const captureAndSavePanorama = useCallback(async () => {
       const desktopApi = window.atlasDesktop;
@@ -2155,13 +2072,18 @@ const App: React.FC = () => {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
 
+    if (e.code === 'F1') {
+        e.preventDefault();
+        if (!e.repeat && appState === 'game' && !isEditableTarget) setHudHidden(hidden => !hidden);
+        return;
+    }
     if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
     // F5 / F6: the two third-person views. Handled here rather than in the
     // movement input so they work whether or not the pointer is locked (and so
     // the browser never reloads or moves focus instead of switching the view).
     if (e.code === 'F5' || e.code === 'F6') {
         e.preventDefault();
-        if (appState === 'game' && !isEditableTarget && !isCapturingPanorama) {
+        if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             // F5 is the over-the-shoulder view (the body faces the camera); F6 is
             // the free one (the body keeps its own facing while the camera orbits).
             const view: ViewMode = e.code === 'F6' ? 'free' : 'third';
@@ -2175,7 +2097,7 @@ const App: React.FC = () => {
     // view mode is never touched, so releasing it returns to whatever was on.
     if (e.code === 'F7') {
         e.preventDefault();
-        if (appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
+        if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             detachedCamera.stage = nextDetachedStage(detachedCamera.stage);
         }
         return;
@@ -3170,22 +3092,22 @@ const App: React.FC = () => {
           <>
             {appState === 'game' && (
                 <>
-                    <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={{ backgroundColor: overlayColor }} />
-                    {isOnFire && !isDead && <FireOverlay />}
+                    {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={{ backgroundColor: overlayColor }} />}
+                    {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
-                    {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
+                    {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
-                    <BossBar />
+                    {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
+                    <div hidden={hudHidden}><BossBar /></div>
                     <CinematicOverlay />
-                    {!showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
-                    {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
+                    {!hudHidden && !showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
+                    {!hudHidden && ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
                             Sneak (Shift) to hop out of the boat
                         </div>
                     )}
-                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
+                    {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
@@ -3246,7 +3168,7 @@ const App: React.FC = () => {
                             }}
                         />
                     )}
-                    <Chat 
+                    {(!hudHidden || showCommandInput) && <Chat
                         messages={messages} 
                         showInput={showCommandInput} 
                         inputValue={commandValue} 
@@ -3260,12 +3182,13 @@ const App: React.FC = () => {
                         onMessageClick={(action) => executeCommand(action)} 
                         showSuggestions={showSuggestions}
                         interactionsDisabled={!!openContainer || isPaused || showAtlasViewer || showDeathScreen}
-                    />
+                    />}
                 </>
             )}
 
             <Canvas 
                 key={canvasKey} 
+                onCreated={state => { gameRendererRef.current = state; }}
                 shadows={shadowsEnabled ? { type: THREE.BasicShadowMap } : false} 
                 gl={{ antialias: antialiasing, preserveDrawingBuffer: isElectron }}
                 camera={{ fov: 70, near: 0.1, far: 1000, position: [currentSpawnPos.x, currentSpawnPos.y, currentSpawnPos.z] }} 
@@ -3286,7 +3209,7 @@ const App: React.FC = () => {
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
-                {gameMode !== 'spectator' && !isDead && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}
+                {gameMode !== 'spectator' && !isDead && !cinematicMode && !isCapturingPanorama && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}
                     <BossCinematic />
                     <BellTitanCinematic />
                     <WardenDefeatCinematic />
@@ -3296,6 +3219,7 @@ const App: React.FC = () => {
                 </Suspense>
 
                 <InteractionController
+                    hideHighlights={hudHidden || isCapturingPanorama || cinematicMode}
                     isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
@@ -3303,8 +3227,8 @@ const App: React.FC = () => {
                     onPlaceBoat={handlePlaceBoat} onEnterBoat={handleEnterBoat}
                 />
 
-                <BreakingVisualMesh suspended={isCapturingPanorama} />
-                {appState === 'game' && showMagneticFields && (
+                <BreakingVisualMesh suspended={hudHidden || isCapturingPanorama || cinematicMode} />
+                {appState === 'game' && !hudHidden && !isCapturingPanorama && showMagneticFields && (
                     <MagneticFieldDebug playerPosRef={playerPosRef} />
                 )}
 
@@ -3315,7 +3239,6 @@ const App: React.FC = () => {
                             ref={playerRef} key={respawnKey} position={currentSpawnPos}
                             isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode}
                             isPaused={worldPaused || cinematicMode} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
-                            forcedFov={isCapturingPanorama ? 90 : null}
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
                             }} 
@@ -3329,7 +3252,7 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {!hudHidden && gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>

@@ -21,7 +21,13 @@ interface CameraControlsProps {
 }
 
 export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsProps>(({ onLock, onUnlock, disableMouseLook = false }, ref) => {
-    const { camera, gl } = useThree();
+    const { camera, gl, scene } = useThree();
+    // The game owns the camera for its entire lifetime. Hiding the hand (F1,
+    // cinematics, panorama) must not detach the camera from the scene graph.
+    useEffect(() => {
+        scene.add(camera);
+        return () => { scene.remove(camera); };
+    }, [scene, camera]);
     const isLocked = useRef(false);
     const lockElRef = useRef<HTMLElement | null>(null);
 
@@ -47,7 +53,8 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
         },
         getCamera: () => {
             const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
+            if (viewRig.detached) dir.set(viewRig.dir.x, viewRig.dir.y, viewRig.dir.z);
+            else camera.getWorldDirection(dir);
             // The player's EYE: in third person the camera itself hangs behind the body.
             const pos = viewRig.third
                 ? new THREE.Vector3(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z)

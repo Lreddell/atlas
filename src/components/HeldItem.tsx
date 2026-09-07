@@ -74,7 +74,7 @@ const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
 export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked, brightness }) => {
     const skin = usePlayerSkin();
     const skinTexture = useSkinTexture(skin);
-    const { camera, scene } = useThree();
+    const { camera } = useThree();
     const groupRef = useRef<THREE.Group>(null);
     const itemStack = inventory[selectedSlot];
     const itemType = itemStack ? itemStack.type : null;
@@ -86,14 +86,6 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
     }, []);
-
-    // Ensure camera is part of the scene graph so its children (the hand) are rendered
-    useEffect(() => {
-        scene.add(camera);
-        return () => {
-            scene.remove(camera);
-        };
-    }, [scene, camera]);
 
     const itemMaterial = useMemo(() => {
         if (!texture) return null;
@@ -131,7 +123,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
     useFrame((state, delta) => {
         if (groupRef.current) {
-            const opacity = firstPersonHandOpacity(viewRig.camera, viewRig.eye);
+            const opacity = viewRig.detached ? 0 : firstPersonHandOpacity(viewRig.camera, viewRig.eye);
             groupRef.current.visible = opacity > 0.001;
             groupRef.current.traverse(object => {
                 if (!(object instanceof THREE.Mesh)) return;

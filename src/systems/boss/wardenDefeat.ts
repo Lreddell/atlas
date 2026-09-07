@@ -6,7 +6,7 @@
 //   2. it orbits and pulls back while the cracks flare brighter and faster
 //   3. the core detonates in a white flash, a polarity ring and a rain of shards
 //   4. the camera rises over the arena as the light dies and the towers go dark
-//   5. control returns where the player was standing, looking at the wreck
+//   5. control returns on the south side of the dais, facing the altar
 //
 // Per-frame state (camera / core / flash) is read by <WardenDefeatCinematic/>
 // in the Canvas and by the DOM <CinematicOverlay/>. Space skips to the end.
@@ -220,15 +220,18 @@ class WardenDefeat {
         this.stop();
     }
 
-    private handBack(): void {
+    private handBack(completed = true): void {
         if (this.firedEnd) return;
         this.firedEnd = true;
         this.active = false;
         const p = this.params;
         gameEvents.emit('cinematic:end', {
             source: 'magnetic_warden',
-            returnPitch: p?.returnPitch ?? 0,
-            returnYaw: p?.returnYaw ?? 0,
+            // The dais extends five blocks from the centre; this spot is on the
+            // central platform, clear of the restored steps and summoner.
+            returnPosition: completed && p ? { x: p.centerX + 0.5, y: p.floorY, z: p.centerZ + 10.5 } : undefined,
+            returnPitch: completed ? 0.12 : (p?.returnPitch ?? 0),
+            returnYaw: completed ? 0 : (p?.returnYaw ?? 0),
         });
         this.notify();
     }
@@ -238,7 +241,7 @@ class WardenDefeat {
         if (!this.running) return;
         this.flash = 0;
         this.collapse = 1;
-        this.handBack();
+        this.handBack(false);
         this.stop();
         this.notify();
     }

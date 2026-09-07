@@ -15,6 +15,7 @@ import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type Ma
 import { entityManager } from '../systems/entities/EntityManager';
 import { bossSummon } from '../systems/boss/bossSummon';
 import { sampleShake, addTrauma } from '../systems/player/cameraShake';
+import { findUnstuckPosition } from '../systems/player/unstuck';
 import { checkCollision, getSupportTop, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
     createAdhesionState, findAdhesionCandidate, computeLocalBasis, projectInput, detachImpulse,
@@ -180,6 +181,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const isFlying = useRef(false);
   const spawnImmunityTicks = useRef(60);
   const prevPos = useRef(position.clone());
+  const lastClearPos = useRef(position.clone());
   const renderPos = useRef(position.clone());
   const currentEyeHeight = useRef(EYE_HEIGHT_STANDING);
   const cameraSpring = useRef({ distance: 0, offset: 0 });
@@ -223,6 +225,18 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   useImperativeHandle(ref, () => ({
       teleport: (newPos: Vector3) => {
           pos.current.copy(newPos);
+          lastClearPos.current.copy(newPos);
+          adhesion.current = createAdhesionState();
+          unrolling.current = false;
+          rollT.current = 1;
+          lookBridge.active = false;
+          lookBridge.dYaw = 0; lookBridge.dPitch = 0;
+          wasParked.current = false;
+          camera.up.set(0, 1, 0);
+          cameraSpring.current = { distance: 0, offset: 0 };
+          bodyYaw.current = camera.rotation.y;
+          viewRig.showModel = false; // Wait for the first pose at the new position.
+          timeAccumulator.current = 0;
           vel.current.set(0, 0, 0);
           prevPos.current.copy(newPos);
           renderPos.current.copy(newPos);
@@ -250,6 +264,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
     // Reset physics state to match the new start position
     pos.current.copy(position);
+    lastClearPos.current.copy(position);
     prevPos.current.copy(position);
     renderPos.current.copy(position);
     vel.current.set(0, 0, 0);
@@ -643,6 +658,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         const pc = camera as PerspectiveCamera;
         if (forcedFov !== null && Number.isFinite(forcedFov)) {
             pc.fov = forcedFov;
+        } else if (detachedCamera.stage !== 'off') {
+            pc.fov = baseFov;
         } else {
             const hSpeed = Math.sqrt(vel.current.x * vel.current.x + vel.current.z * vel.current.z);
             const effectiveSprint = !isPaused && isLocked && intent.sprint && !intent.sneak && hSpeed > 3.0;
@@ -764,6 +781,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     let dodgePending = intent.dodge && !isDead && gameMode !== 'spectator';
     if (intent.dodge && !dodgePending) consumeDodgePress();
 
+    // Stay crouched under low ceilings rather than expanding into a block.
+    if (!intent.sneak && gameMode !== 'spectator' && !adhesion.current.active
+        && checkCollision(worldManager, pos.current, PLAYER_WIDTH, PLAYER_HEIGHT)
+        && !checkCollision(worldManager, pos.current, PLAYER_WIDTH, PLAYER_HEIGHT_SNEAK)) {
+        intent.sneak = true;
+    }
+
     let steps = 0;
     while (timeAccumulator.current >= FIXED_DT && steps < MAX_SUBSTEPS) {
         prevPos.current.copy(pos.current);
@@ -783,6 +807,28 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 duration: beforeMotion.duration + FIXED_DT };
         }
         const height = intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
+        if (gameMode !== 'spectator' && !adhesion.current.active) {
+            // Streaming barriers are not new solid blocks: wait for the footprint
+            // to load instead of ejecting the player when crossing a chunk edge.
+            const r = PLAYER_WIDTH / 2;
+            const loaded = [-r, r].every(dx => [-r, r].every(dz =>
+                worldManager.hasChunk(Math.floor((pos.current.x + dx) / CHUNK_SIZE), Math.floor((pos.current.z + dz) / CHUNK_SIZE))));
+            const collides = (p: { x: number; y: number; z: number }) => checkCollision(worldManager, p, PLAYER_WIDTH, height);
+            if (loaded && collides(pos.current)) {
+                const exit = findUnstuckPosition(pos.current, collides)
+                    ?? (!collides(lastClearPos.current) ? lastClearPos.current : null);
+                if (exit) {
+                    pos.current.set(exit.x, exit.y, exit.z);
+                    prevPos.current.copy(pos.current);
+                    renderPos.current.copy(pos.current);
+                    vel.current.set(0, 0, 0);
+                    fallDistance.current = 0;
+                    grounded.current = false;
+                    motion.current = endMotion(motion.current);
+                }
+            }
+            if (loaded && !collides(pos.current)) lastClearPos.current.copy(pos.current);
+        }
 
         // --- Magnetic wall adhesion: hard-detach triggers + path selection ---
         const a = adhesion.current;
@@ -1273,6 +1319,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                 bodyYaw.current = easeAngle(bodyYaw.current, target, acting ? FREE_BODY_AIM_TURN_RATE : FREE_BODY_TURN_RATE, dt);
             }
             playerPose.yaw = bodyYaw.current;
+            // Orbiting is observation, not a request for the head to twist around.
+            playerPose.lookYaw = acting ? lookYaw : bodyYaw.current;
+            if (!acting) playerPose.pitch = 0;
         } else {
             bodyYaw.current = lookYaw;
             playerPose.yaw = lookYaw;

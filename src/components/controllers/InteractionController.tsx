@@ -155,6 +155,7 @@ function castFromCamera(camera: THREE.Camera, maxDist: number) {
 }
 
 interface InteractionControllerProps {
+    hideHighlights?: boolean;
     isLocked: boolean;
     selectedSlot: number;
     inventory: (ItemStack | null)[];
@@ -178,7 +179,7 @@ interface InteractionControllerProps {
 }
 
 export const InteractionController = ({ 
-    isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
+    hideHighlights = false, isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onPlaceBoat, onEnterBoat
 }: InteractionControllerProps) => {
     const { camera } = useThree();
@@ -884,7 +885,7 @@ export const InteractionController = ({
                  // Geometry is in [0,1] block-local space, so sit at the block's min corner.
                  highlightMeshRef.current.scale.set(1, 1, 1);
                  highlightMeshRef.current.position.set(bx, by, bz);
-                 highlightMeshRef.current.visible = true;
+                 highlightMeshRef.current.visible = !hideHighlights && !viewRig.detached;
             } else {
                  highlightMeshRef.current.visible = false;
             }
