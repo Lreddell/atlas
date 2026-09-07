@@ -349,6 +349,24 @@ export const releaseDetachedCamera = (): void => {
     viewRig.detached = false;
 };
 
+/**
+ * Whether the free body rule (F6) is actually in effect.
+ *
+ * The free view is defined against a camera that orbits the player: the body
+ * turns onto its own heading and *leaves the camera pointed where it was*. A
+ * tripod has no such camera — it stands off in the world, framing a shot — so
+ * while F7 owns the camera the body goes back to following the player's look,
+ * exactly like the welded views, and the walk keys mean what they mean there.
+ *
+ * The view MODE is deliberately left alone, so putting the tripod away returns
+ * the player to the free view they came from.
+ */
+export const freeBodyActive = (): boolean =>
+    viewRig.mode === 'free' && detachedCamera.stage === 'off';
+
+/** F7 while the shot is being framed: the walk keys fly the tripod, not the body. */
+export const framingDetachedShot = (): boolean => detachedCamera.stage === 'placing';
+
 /** Flight speed of the camera while it is being placed (blocks/s), and its sprint. */
 export const DETACHED_FLY_SPEED = 9;
 export const DETACHED_FLY_SPRINT = 26;

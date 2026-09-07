@@ -1,6 +1,6 @@
 
 import { gameEvents } from '../events/GameEvents';
-import { viewRig } from './viewRig';
+import { freeBodyActive, framingDetachedShot } from './viewRig';
 import {
     canDirectionSprint, isDoubleTap, isSprinting,
     sprintDriveHeld as sprintDriveHeldRule, type Direction,
@@ -76,11 +76,20 @@ export const lookBridge = {
 
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC']);
 
-/** Whether every walk direction can sprint, rather than forward alone (F6). */
-const omniSprint = (): boolean => viewRig.mode === 'free';
+/**
+ * Whether every walk direction can sprint, rather than forward alone. That is
+ * the free view's rule, and it lapses while a tripod owns the camera (F7),
+ * where the body is welded to the player's look again.
+ */
+const omniSprint = (): boolean => freeBodyActive();
 
-/** The keys that can start and sustain a sprint in the current view. */
-const sprintDriveHeld = (): boolean => sprintDriveHeldRule(inputState, omniSprint());
+/**
+ * The keys that can start and sustain a sprint in the current view. While the
+ * F7 shot is being framed they drive the tripod rather than the body, so they
+ * must not bank a sprint for the body to cash in once the camera is bolted down.
+ */
+const sprintDriveHeld = (): boolean =>
+    !framingDetachedShot() && sprintDriveHeldRule(inputState, omniSprint());
 
 /**
  * A walk key going down. Only forward starts a sprint in the welded views; in
@@ -88,7 +97,7 @@ const sprintDriveHeld = (): boolean => sprintDriveHeldRule(inputState, omniSprin
  * follow whichever direction is actually driving the run.
  */
 const pressDirection = (dir: Direction, now: number): void => {
-    const canSprint = canDirectionSprint(dir, omniSprint());
+    const canSprint = !framingDetachedShot() && canDirectionSprint(dir, omniSprint());
     if (canSprint && !inputState[dir]) { // Edge trigger
         if (isDoubleTap(dir, lastTapDirection, lastTapTime, now, DOUBLE_TAP_WINDOW_MS)) {
             doubleTapSprintActive = true;

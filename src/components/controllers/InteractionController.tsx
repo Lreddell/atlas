@@ -37,7 +37,7 @@ import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/
 import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
-import { aimRay, viewRig, detachedCamera } from '../../systems/player/viewRig';
+import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
 import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
 import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
@@ -904,7 +904,13 @@ export const InteractionController = ({
                  // Geometry is in [0,1] block-local space, so sit at the block's min corner.
                  highlightMeshRef.current.scale.set(1, 1, 1);
                  highlightMeshRef.current.position.set(bx, by, bz);
-                 highlightMeshRef.current.visible = !hideHighlights && !viewRig.detached;
+                 // A bolted-down tripod (F7) still plays: the aim casts out of the
+                 // eye, so the outline is the only thing telling the player what
+                 // they are about to mine or place against, and it matters MORE
+                 // there than in first person because the crosshair no longer
+                 // covers the aim. Only the framing stage hides it, where the walk
+                 // keys fly the camera and the body cannot reach anything anyway.
+                 highlightMeshRef.current.visible = !hideHighlights && !framingDetachedShot();
             } else {
                  highlightMeshRef.current.visible = false;
             }

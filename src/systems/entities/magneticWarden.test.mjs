@@ -25,6 +25,7 @@ const entityRenderer = read('src/components/EntityRenderer.tsx');
 const player = read('src/components/Player.tsx');
 const input = read('src/systems/player/playerInput.ts');
 const movement = read('src/systems/player/playerMovement.ts');
+const rig = read('src/systems/player/viewRig.ts');
 
 test('magnetic_warden is a brain-driven boss body: no contact damage, no legacy phase config', () => {
     assert.match(entity, /magnetic_warden:\s*{[\s\S]*?isBoss:\s*true/);
@@ -242,7 +243,9 @@ test('the free third person sprints in every direction, and the sprint jump foll
     // what is asserted here is that the input actually asks it, with the free
     // view as the thing that widens the sprint beyond forward.
     assert.match(input, /from '\.\/sprintRule'/);
-    assert.match(input, /const omniSprint = \(\): boolean => viewRig\.mode === 'free';/);
+    // The free view is what widens the sprint (and the tripod suspends it: see
+    // the F7 test below).
+    assert.match(input, /const omniSprint = \(\): boolean => freeBodyActive\(\);/);
     assert.match(input, /sprintDriveHeldRule\(inputState, omniSprint\(\)\)/);
     assert.match(input, /const sprinting = isSprinting\(/);
     assert.match(input, /omniSprint: omni/);
@@ -265,6 +268,28 @@ test('the free third person sprints in every direction, and the sprint jump foll
     assert.match(movement, /\} else \{[\s\S]*?newVel\.x -= Math\.sin\(cameraYaw\) \* SPRINT_JUMP_BOOST;/);
     // Speed itself is direction-agnostic: once the sprint is on, any heading gets it.
     assert.match(movement, /if \(intent\.sprint\) targetSpeed \*= SPRINT_MULTIPLIER;/);
+});
+
+test('the tripod suspends the free view without losing it, and still shows the block outline', () => {
+    // One predicate decides whether the free body rule is live, and every reader
+    // asks it rather than testing the mode directly, so F7 cannot half-apply.
+    assert.match(rig, /export const freeBodyActive = \(\): boolean =>\s*viewRig\.mode === 'free' && detachedCamera\.stage === 'off';/);
+    assert.match(player, /if \(freeBodyActive\(\) && !isDead\)/);
+    assert.match(input, /const omniSprint = \(\): boolean => freeBodyActive\(\);/);
+    assert.doesNotMatch(player, /viewRig\.mode === 'free'/);
+    assert.doesNotMatch(input, /viewRig\.mode === 'free'/);
+    // F6 is inert while the tripod is up; the mode is left alone so releasing the
+    // tripod returns the player to the view they came from.
+    assert.match(app, /if \(e\.code === 'F6' && detachedCamera\.stage !== 'off'\) return;/);
+    assert.match(app, /e\.code === 'F7'[\s\S]*?detachedCamera\.stage = nextDetachedStage\(detachedCamera\.stage\)/);
+    // Sprint survives the tripod: only the framing stage, where the walk keys fly
+    // the camera, refuses to bank one for the body.
+    assert.match(input, /!framingDetachedShot\(\) && sprintDriveHeldRule\(inputState, omniSprint\(\)\)/);
+    assert.match(input, /const canSprint = !framingDetachedShot\(\) && canDirectionSprint\(dir, omniSprint\(\)\)/);
+    // The outline is back for a bolted-down tripod: the aim casts out of the eye
+    // there, so it is the only thing showing what is targeted.
+    assert.match(interaction, /highlightMeshRef\.current\.visible = !hideHighlights && !framingDetachedShot\(\);/);
+    assert.doesNotMatch(interaction, /visible = !hideHighlights && !viewRig\.detached/);
     // The other camera consumers read the eye too.
     assert.match(read('src/components/CameraControls.tsx'), /viewRig\.third/);
     assert.match(read('src/components/ResonantVaultController.tsx'), /viewRig\.third \? viewRig\.eye : camera\.position/);

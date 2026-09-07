@@ -35,7 +35,7 @@ import {
 } from '../systems/player/playerMotion';
 import {
     aimRay, smoothThirdPersonCamera, playerPose, viewRig, isThirdPerson, playerEyePosition,
-    detachedCamera, detachedFlyStep, walkYaw, easeAngle,
+    detachedCamera, detachedFlyStep, walkYaw, easeAngle, freeBodyActive,
     FREE_BODY_TURN_RATE, FREE_BODY_AIM_TURN_RATE,
     DETACHED_FLY_SPEED, DETACHED_FLY_SPRINT, DETACHED_MAX_PITCH,
 } from '../systems/player/viewRig';
@@ -1291,7 +1291,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         const lookYaw = Math.atan2(-_viewDir.x, -_viewDir.z);
         playerPose.lookYaw = lookYaw;
         playerPose.pitch = Math.asin(Math.max(-1, Math.min(1, _viewDir.y)));
-        if (viewRig.mode === 'free' && !isDead) {
+        if (freeBodyActive() && !isDead) {
             // The free view unbolts the body from the camera: it turns onto
             // whichever of the eight walk directions the keys ask for and holds
             // that facing while the camera keeps orbiting. An action pulls it back

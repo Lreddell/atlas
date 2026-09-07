@@ -2086,6 +2086,11 @@ const App: React.FC = () => {
         if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             // F5 is the over-the-shoulder view (the body faces the camera); F6 is
             // the free one (the body keeps its own facing while the camera orbits).
+            // F6 is inert while a tripod owns the camera: the free view is defined
+            // against a camera that orbits the player, and F7 has none. The mode
+            // the player came from is untouched, so putting the tripod away hands
+            // the free view back.
+            if (e.code === 'F6' && detachedCamera.stage !== 'off') return;
             const view: ViewMode = e.code === 'F6' ? 'free' : 'third';
             const next: ViewMode = viewRig.mode === view ? 'first' : view;
             viewRig.mode = next;

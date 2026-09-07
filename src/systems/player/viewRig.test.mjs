@@ -5,6 +5,7 @@ import {
     THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera, smoothThirdPersonCamera,
     playerModelOpacity, firstPersonHandOpacity, isThirdPerson, angleDelta, easeAngle, walkYaw,
     detachedFlyStep, nextDetachedStage, DETACHED_FLY_SPEED, playerEyePosition,
+    viewRig, detachedCamera, freeBodyActive, framingDetachedShot, releaseDetachedCamera,
 } from './viewRig.ts';
 
 const clear = () => null;
@@ -191,4 +192,52 @@ test('F7 cycles place, park, release', () => {
     assert.equal(nextDetachedStage('off'), 'placing');
     assert.equal(nextDetachedStage('placing'), 'locked');
     assert.equal(nextDetachedStage('locked'), 'off');
+});
+
+test('the free body rule lapses while a tripod owns the camera, and comes back after', () => {
+    const restore = { mode: viewRig.mode, stage: detachedCamera.stage };
+    try {
+        viewRig.mode = 'free';
+        detachedCamera.stage = 'off';
+        assert.equal(freeBodyActive(), true);
+
+        // Both F7 stages suspend it: the free view needs a camera that orbits the
+        // player, and a tripod is not one.
+        for (const stage of ['placing', 'locked']) {
+            detachedCamera.stage = stage;
+            assert.equal(freeBodyActive(), false, `${stage} must weld the body`);
+            // The mode itself is never touched, so the view survives the tripod.
+            assert.equal(viewRig.mode, 'free');
+        }
+
+        // Putting the tripod away hands the free view straight back.
+        releaseDetachedCamera();
+        assert.equal(detachedCamera.stage, 'off');
+        assert.equal(freeBodyActive(), true);
+
+        // The welded views are never free, tripod or not.
+        for (const mode of ['first', 'third']) {
+            viewRig.mode = mode;
+            assert.equal(freeBodyActive(), false);
+        }
+    } finally {
+        viewRig.mode = restore.mode;
+        detachedCamera.stage = restore.stage;
+        viewRig.detached = false;
+    }
+});
+
+test('only the framing stage counts as framing the shot', () => {
+    const restore = detachedCamera.stage;
+    try {
+        detachedCamera.stage = 'placing';
+        assert.equal(framingDetachedShot(), true);
+        // A bolted-down tripod is being played through, not framed.
+        detachedCamera.stage = 'locked';
+        assert.equal(framingDetachedShot(), false);
+        detachedCamera.stage = 'off';
+        assert.equal(framingDetachedShot(), false);
+    } finally {
+        detachedCamera.stage = restore;
+    }
 });
