@@ -24,6 +24,7 @@ const wardenRenderer = read('src/components/MagneticWardenRenderer.tsx');
 const entityRenderer = read('src/components/EntityRenderer.tsx');
 const player = read('src/components/Player.tsx');
 const input = read('src/systems/player/playerInput.ts');
+const movement = read('src/systems/player/playerMovement.ts');
 
 test('magnetic_warden is a brain-driven boss body: no contact damage, no legacy phase config', () => {
     assert.match(entity, /magnetic_warden:\s*{[\s\S]*?isBoss:\s*true/);
@@ -234,6 +235,36 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     // A roll absorbs the landing outright, and drives harder in the air.
     assert.match(player, /rollAbsorbsLanding\(motion\.current\)/);
     assert.match(player, /rollVelocity\(m, !wasGrounded\)/);
+});
+
+test('the free third person sprints in every direction, and the sprint jump follows the run', () => {
+    // The rule itself lives in the pure module (systems/player/sprintRule.test.mjs);
+    // what is asserted here is that the input actually asks it, with the free
+    // view as the thing that widens the sprint beyond forward.
+    assert.match(input, /from '\.\/sprintRule'/);
+    assert.match(input, /const omniSprint = \(\): boolean => viewRig\.mode === 'free';/);
+    assert.match(input, /sprintDriveHeldRule\(inputState, omniSprint\(\)\)/);
+    assert.match(input, /const sprinting = isSprinting\(/);
+    assert.match(input, /omniSprint: omni/);
+    // Every walk key runs through the shared press/release, so the double tap and
+    // the Ctrl latch follow whichever direction is driving the run.
+    for (const dir of ['forward', 'backward', 'left', 'right']) {
+        assert.match(input, new RegExp(`pressDirection\\('${dir}', now\\)`));
+        assert.match(input, new RegExp(`releaseDirection\\('${dir}'\\)`));
+    }
+    assert.match(input, /if \(canSprint && inputState\.sprint\) inputState\.sprintLatch = true;/);
+    assert.match(input, /if \(sprintDriveHeld\(\)\) return;[\s\S]*?doubleTapSprintActive = false;/);
+    assert.match(input, /if \(sprintDriveHeld\(\)\) inputState\.sprintLatch = true;/);
+    // The old forward-only gate and its W-specific tap clock are gone.
+    assert.doesNotMatch(input, /lastForwardPressTime/);
+    assert.doesNotMatch(input, /&& inputState\.forward && !inputState\.sneak/);
+    // The sprint-jump boost goes where the run is going, not where the camera
+    // points, or sprinting sideways in the free view would shove the player off
+    // their line. The welded views keep the camera-forward boost they were tuned on.
+    assert.match(movement, /if \(intent\.omniSprint && _inputVec\.lengthSq\(\) > 0\) \{[\s\S]*?newVel\.x \+= _inputVec\.x \* SPRINT_JUMP_BOOST;/);
+    assert.match(movement, /\} else \{[\s\S]*?newVel\.x -= Math\.sin\(cameraYaw\) \* SPRINT_JUMP_BOOST;/);
+    // Speed itself is direction-agnostic: once the sprint is on, any heading gets it.
+    assert.match(movement, /if \(intent\.sprint\) targetSpeed \*= SPRINT_MULTIPLIER;/);
     // The other camera consumers read the eye too.
     assert.match(read('src/components/CameraControls.tsx'), /viewRig\.third/);
     assert.match(read('src/components/ResonantVaultController.tsx'), /viewRig\.third \? viewRig\.eye : camera\.position/);
