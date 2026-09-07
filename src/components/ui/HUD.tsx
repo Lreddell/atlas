@@ -6,7 +6,7 @@ import { BLOCKS } from '../../data/blocks';
 import { MAX_BREATH } from '../../systems/player/playerConstants';
 import { totalDefense, type Equipment } from '../../systems/registry/equipment';
 import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
-import { CombatFeedback } from './CombatFeedback';
+import { CombatFeedback, CombatOverlay } from './CombatFeedback';
 import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
 
 interface HUDProps {
@@ -253,7 +253,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Selected item name. Lifted clear of whatever else is stacked in the
                 bottom centre: the hotbar always, plus the hearts and (when worn)
                 the armor pips in survival, so the label never lands on them. */}
-            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-[145] flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}>
+            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-40 flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}>
                 <CombatFeedback magnetic={magnetic} />
                 <div className="h-7 max-w-full">
                     {inventory[selectedSlot] && <div className={`truncate rounded bg-black/55 px-3 py-1 text-center text-sm font-bold text-white transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
@@ -261,6 +261,11 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                     </div>}
                 </div>
             </div>}
+
+            {/* The kit's screen-centre readouts (dodge dial, tower prompt, flashes).
+                A sibling of the hotbar rather than a portal, so the pause menu and
+                the inventory cover and blur it exactly as they do the rest. */}
+            {gameMode !== 'spectator' && <CombatOverlay />}
 
             {/* Hotbar */}
             {gameMode !== 'spectator' && (

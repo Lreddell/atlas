@@ -360,6 +360,33 @@ test('the HUD reads the forms, the crystal shield, the slam and the tower flip w
     assert.match(compass, /bossCompassState/);
 });
 
+test('the kit readouts live in the HUD layer, not above it', () => {
+    // Every part of the kit readout is ordinary HUD furniture: the pause menu
+    // (z-50, backdrop-blurred) and the inventory must cover and blur the stamina
+    // bar, the polarity block and the dodge dial exactly as they do the hotbar,
+    // the hearts and the armor pips. That means the HUD's own z-40, and no
+    // portal -- a portal escapes the app's stacking context entirely and floats
+    // over the menus no matter what z-index it carries.
+    const hud = read('src/components/ui/HUD.tsx');
+    const feedback = read('src/components/ui/CombatFeedback.tsx');
+    assert.doesNotMatch(feedback, /createPortal|react-dom/);
+    assert.doesNotMatch(feedback, /z-\[1\d\d\]/);
+    assert.doesNotMatch(hud, /z-\[1\d\d\]/);
+    // The polarity block carries no z-index of its own either: it takes the
+    // HUD column's, so it cannot climb out on its own if it is ever moved.
+    assert.doesNotMatch(read('src/components/ui/PolarityIndicator.tsx'), /z-\[1\d\d\]/);
+    assert.match(feedback, /className="pointer-events-none absolute inset-0 z-40 select-none"/);
+    // The centre-screen half is a sibling of the hotbar inside the HUD, and the
+    // bottom stack sits in the same layer as the vitals.
+    assert.match(hud, /\{gameMode !== 'spectator' && <CombatOverlay \/>\}/);
+    assert.match(hud, /<CombatFeedback magnetic=\{magnetic\} \/>/);
+    assert.match(hud, /absolute left-1\/2 z-40 flex w-\[320px\]/);
+    // The rest of the HUD it has to match.
+    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-20 left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/]) {
+        assert.match(hud, layer);
+    }
+});
+
 test('the Warden dies on camera: a defeat cinematic that hands the view back', () => {
     const defeat = read('src/systems/boss/wardenDefeat.ts');
     assert.match(defeat, /gameEvents\.emit\('cinematic:start', \{ source: 'magnetic_warden' \}\)/);

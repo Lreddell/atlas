@@ -56,7 +56,7 @@ export const PolarityIndicator: React.FC = () => {
         : 'assets/textures/blocks/negative_magnet.png';
 
     return (
-        <div className="pointer-events-none z-[150] flex select-none flex-col items-center gap-1">
+        <div className="pointer-events-none flex select-none flex-col items-center gap-1">
             {surge.armed && (
                 <div className="flex w-[92px] flex-col items-center">
                     <div className="animate-pulse whitespace-nowrap font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000]">
