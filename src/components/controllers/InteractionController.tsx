@@ -190,12 +190,13 @@ export const InteractionController = ({
     const highlightSigRef = useRef<string>('');
 
     // Interaction State
-    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number } | null>(null);
+    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number, type: BlockType } | null>(null);
     // Sealed-region denial dwell: the toast fires only after LMB is held on the
     // same non-editable block for a beat (see the useFrame mining branch).
     const deniedDwellRef = useRef<{ x: number, y: number, z: number, heldFor: number, notified: boolean } | null>(null);
     const isLeftMouseDown = useRef(false);
     const isRightMouseDown = useRef(false);
+    // Seconds, preserving the original delays at 60 fps on every refresh rate.
     const interactionCooldown = useRef(0);
     const weaponCooldown = useRef(0);
     const attackHeld = useRef(false);
@@ -218,6 +219,14 @@ export const InteractionController = ({
     useEffect(() => () => { highlightGeoRef.current?.dispose(); }, []);
 
     useEffect(() => {
+        // A different item starts a fresh bite/mining action. Stack count changes
+        // after a bite do not interrupt continuous eating of the same food.
+        if (selectedSlotRef.current !== selectedSlot
+            || inventoryRef.current[selectedSlotRef.current]?.type !== inventory[selectedSlot]?.type) {
+            eatingTimer.current = 0;
+            inputState.eating = false;
+            breakingRef.current = null;
+        }
         inventoryRef.current = inventory;
         selectedSlotRef.current = selectedSlot;
     }, [inventory, selectedSlot]);
@@ -227,7 +236,7 @@ export const InteractionController = ({
         const justClosed = !openContainer && prevOpen.current;
         
         if (justLocked || justClosed) {
-             interactionCooldown.current = 10;
+             interactionCooldown.current = 10 / 60;
              isLeftMouseDown.current = false;
              isRightMouseDown.current = false;
              eatingTimer.current = 0;
@@ -251,10 +260,20 @@ export const InteractionController = ({
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             eatingTimer.current = 0;
+            inputState.eating = false;
+            playerInteraction.leftHeld = false;
+            playerInteraction.placementElapsed = Infinity;
+            playerMining.active = false;
+            attackHeld.current = false;
+            attackBuffer.current = 0;
+            cancelAttack(playerAttack);
+            breakingRef.current = null;
+            deniedDwellRef.current = null;
+            setBreakingVisual(null);
         };
         window.addEventListener('blur', onBlur);
         return () => window.removeEventListener('blur', onBlur);
-    }, []);
+    }, [setBreakingVisual]);
 
     const handlePickBlock = useCallback(() => {
         if (isDead) return;
@@ -356,7 +375,7 @@ export const InteractionController = ({
                 gameMode,
             });
             if (handled) {
-                interactionCooldown.current = 2;
+                interactionCooldown.current = 2 / 60;
                 return;
             }
         }
@@ -748,7 +767,7 @@ export const InteractionController = ({
         }
         if (held) damageHeldItem(selectedSlot, profile?.durabilityCost ?? (isSword(held.type) ? 1 : 2));
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
-        if (!profile) interactionCooldown.current = 6;
+        if (!profile) interactionCooldown.current = 6 / 60;
 
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
@@ -854,7 +873,7 @@ export const InteractionController = ({
         if (attackBusy(playerAttack) && getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null)) isLeftMouseDown.current = false;
 
         if (interactionCooldown.current > 0) {
-            interactionCooldown.current--;
+            interactionCooldown.current = Math.max(0, interactionCooldown.current - combatDt);
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             inputState.eating = false;
@@ -928,8 +947,8 @@ export const InteractionController = ({
                 // always charge the tool that actually did the mining (no switching
                 // to an empty slot on the last frame to mine for free).
                 if (!breakingRef.current || breakingRef.current.x !== bx || breakingRef.current.y !== by || breakingRef.current.z !== bz
-                    || breakingRef.current.slot !== selectedSlotRef.current) {
-                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0, slot: selectedSlotRef.current };
+                    || breakingRef.current.slot !== selectedSlotRef.current || breakingRef.current.type !== targetType) {
+                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0, slot: selectedSlotRef.current, type: targetType };
                 }
                 
                 // Play Hit Sound Throttled
@@ -966,7 +985,7 @@ export const InteractionController = ({
                     const penalty = canHarvest ? 1.5 : 5.0;
                     const breakingSpeed = speedMultiplier / targetDef.hardness / penalty;
 
-                    breakingRef.current.progress += delta * breakingSpeed;
+                    breakingRef.current.progress += combatDt * breakingSpeed;
                 }
 
                 let noDrop = false;
@@ -1105,7 +1124,7 @@ export const InteractionController = ({
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
 
                 if (canEat) {
-                    eatingTimer.current += delta * 20;
+                    eatingTimer.current += combatDt * 20;
                     // Drive the eat animation only while a bite is actively charging
                     // (timer >= 0). During the brief post-bite pause (timer < 0) the
                     // hand lowers, then the next bite charges, repeating while held.
@@ -1129,6 +1148,7 @@ export const InteractionController = ({
                     inputState.eating = false;
                 }
             } else {
+                eatingTimer.current = 0;
                 inputState.eating = false;
                 if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
                     performInteraction(true);

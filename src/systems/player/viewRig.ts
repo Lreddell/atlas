@@ -15,6 +15,23 @@ export interface RigVec3 {
     z: number;
 }
 
+/** One physical eye position for camera placement, breath and fluid effects.
+ * The magnetic body is stored as an upright collision box, whose centre stands
+ * contactDistance from the wall. Its eyes extend along the surface normal.
+ */
+export function playerEyePosition(
+    feet: RigVec3, eyeHeight: number, bodyHeight: number,
+    wall: { active: boolean; normal: RigVec3; contactDistance: number },
+): RigVec3 {
+    if (!wall.active) return { x: feet.x, y: feet.y + eyeHeight, z: feet.z };
+    const standoff = eyeHeight - wall.contactDistance;
+    return {
+        x: feet.x + wall.normal.x * standoff,
+        y: feet.y + bodyHeight * 0.5 + wall.normal.y * standoff,
+        z: feet.z + wall.normal.z * standoff,
+    };
+}
+
 export type ViewMode = 'first' | 'third' | 'free';
 
 /**

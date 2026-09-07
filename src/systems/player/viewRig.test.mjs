@@ -4,11 +4,24 @@ import test from 'node:test';
 import {
     THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera, smoothThirdPersonCamera,
     playerModelOpacity, firstPersonHandOpacity, isThirdPerson, angleDelta, easeAngle, walkYaw,
-    detachedFlyStep, nextDetachedStage, DETACHED_FLY_SPEED,
+    detachedFlyStep, nextDetachedStage, DETACHED_FLY_SPEED, playerEyePosition,
 } from './viewRig.ts';
 
 const clear = () => null;
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
+
+test('eye fluid sampling follows standing, crouching and magnetic wall poses', () => {
+    const feet = { x: 10.5, y: 64.6, z: 20.5 };
+    const wall = { active: false, normal: { x: 1, y: 0, z: 0 }, contactDistance: 0.3 };
+    const standing = playerEyePosition(feet, 1.62, 1.8, wall);
+    const crouching = playerEyePosition(feet, 1.27, 1.5, wall);
+    assert.equal(Math.floor(standing.y), 66);
+    assert.equal(Math.floor(crouching.y), 65); // submerged when crouched beneath this surface
+    const climbing = playerEyePosition(feet, 1.62, 1.8, { ...wall, active: true });
+    near(climbing.x, 11.82);
+    near(climbing.y, 65.5);
+    near(climbing.z, feet.z);
+});
 
 test('the camera basis follows the three.js YXZ camera convention', () => {
     const { forward, right, up } = lookBasis(0, 0);

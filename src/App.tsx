@@ -3220,7 +3220,7 @@ const App: React.FC = () => {
 
                 <InteractionController
                     hideHighlights={hudHidden || isCapturingPanorama || cinematicMode}
-                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
+                    isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}

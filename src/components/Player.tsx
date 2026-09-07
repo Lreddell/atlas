@@ -34,7 +34,7 @@ import {
     type DodgeContext, type MotionState, type MotionVec3,
 } from '../systems/player/playerMotion';
 import {
-    aimRay, smoothThirdPersonCamera, playerPose, viewRig, isThirdPerson,
+    aimRay, smoothThirdPersonCamera, playerPose, viewRig, isThirdPerson, playerEyePosition,
     detachedCamera, detachedFlyStep, walkYaw, easeAngle,
     FREE_BODY_TURN_RATE, FREE_BODY_AIM_TURN_RATE,
     DETACHED_FLY_SPEED, DETACHED_FLY_SPRINT, DETACHED_MAX_PITCH,
@@ -695,25 +695,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         intent.dodge = false;
     }
 
-    // Camera setup mode (F7, first press): the movement keys fly the detached
-    // camera into place instead of the body, so the shot can be framed from
-    // anywhere. The body stands still until the camera is parked.
-    if (detachedCamera.stage === 'placing') {
-        const step = detachedFlyStep(
-            detachedCamera.yaw, detachedCamera.pitch,
-            (intent.forward ? 1 : 0) - (intent.backward ? 1 : 0),
-            (intent.right ? 1 : 0) - (intent.left ? 1 : 0),
-            (intent.jump ? 1 : 0) - (intent.sneak ? 1 : 0),
-            inputState.sprint ? DETACHED_FLY_SPRINT : DETACHED_FLY_SPEED, dt,
-        );
-        detachedCamera.x += step.x; detachedCamera.y += step.y; detachedCamera.z += step.z;
-        intent.forward = false; intent.backward = false;
-        intent.left = false; intent.right = false;
-        intent.jump = false; intent.sneak = false; intent.sprint = false;
-        intent.flyToggle = false; intent.dodge = false;
-        consumeDodgePress();
-    }
-
     // The detached camera parks the render camera away from the body, so the mouse
     // has to drive something else: the tripod itself while the shot is being framed,
     // and the player's own look once it is bolted down. The camera Euler holds the
@@ -733,6 +714,26 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         lookBridge.dYaw = 0; lookBridge.dPitch = 0;
     }
     wasParked.current = parked;
+
+    // Camera setup mode (F7, first press): the movement keys fly the detached
+    // camera into place instead of the body, so the shot can be framed from
+    // anywhere. The body stands still until the camera is parked.
+    if (detachedCamera.stage === 'placing') {
+        const step = detachedFlyStep(
+            detachedCamera.yaw, detachedCamera.pitch,
+            (intent.forward ? 1 : 0) - (intent.backward ? 1 : 0),
+            (intent.right ? 1 : 0) - (intent.left ? 1 : 0),
+            (intent.jump ? 1 : 0) - (intent.sneak ? 1 : 0),
+            inputState.sprint ? DETACHED_FLY_SPRINT : DETACHED_FLY_SPEED, dt,
+        );
+        detachedCamera.x += step.x; detachedCamera.y += step.y; detachedCamera.z += step.z;
+        intent.forward = false; intent.backward = false;
+        intent.left = false; intent.right = false;
+        intent.jump = false; intent.sneak = false; intent.sprint = false;
+        intent.flyToggle = false; intent.dodge = false;
+        consumeDodgePress();
+    }
+
     if (parked) {
         lookBridge.active = true;
         if (detachedCamera.stage === 'placing') {
@@ -1060,7 +1061,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
         // Hazards / breath read the resolved feet & head blocks (both paths).
         const feetBlock = worldManager.getBlock(Math.floor(pos.current.x), Math.floor(pos.current.y), Math.floor(pos.current.z), false);
-        const headBlock = worldManager.getBlock(Math.floor(pos.current.x), Math.floor(pos.current.y + 1.5), Math.floor(pos.current.z), false);
+        const physicalEye = playerEyePosition(pos.current, currentEyeHeight.current, height, adhesion.current);
+        const headBlock = worldManager.getBlock(Math.floor(physicalEye.x), Math.floor(physicalEye.y), Math.floor(physicalEye.z), false);
 
         const bx = Math.floor(pos.current.x);
         const by = Math.floor(pos.current.y);
@@ -1153,8 +1155,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         }
     }
 
-    const blockHeadUI = worldManager.getBlock(Math.floor(pos.current.x), Math.floor(pos.current.y + 1.5), Math.floor(pos.current.z), false);
-    setHeadBlock(blockHeadUI);
     setBreath(breathRef.current);
     setIsOnFire(fireTicks.current > 0);
 
@@ -1207,24 +1207,18 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     }
     // Whatever branch owned the look this frame, remember it: releasing the tripod
     // has to hand back the look the player actually has, not the shot's.
-    if (parked) { parkedLook.current.yaw = camera.rotation.y; parkedLook.current.pitch = camera.rotation.x; }
-
-    // The eye: where the player looks from, in both views.
-    let eyeX: number, eyeY: number, eyeZ: number;
-    if (aCam.active) {
-        // Stand the eye off the wall by the normal eye height (like walking
-        // around normally) instead of sitting at the surface: push the body
-        // centre out along the surface normal so the camera is ~one block out.
-        const half = (intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT) * 0.5;
-        const standoff = currentEyeHeight.current - aCam.contactDistance;
-        eyeX = renderPos.current.x + aCam.normal.x * standoff;
-        eyeY = renderPos.current.y + half + aCam.normal.y * standoff;
-        eyeZ = renderPos.current.z + aCam.normal.z * standoff;
-    } else {
-        eyeX = renderPos.current.x;
-        eyeY = renderPos.current.y + currentEyeHeight.current;
-        eyeZ = renderPos.current.z;
+    if (parked) {
+        parkedLook.current.yaw = camera.rotation.y; parkedLook.current.pitch = camera.rotation.x;
+        // Finishing a wall unroll must not hand mouse input to the parked shot.
+        lookBridge.active = true;
     }
+
+    // Camera placement and breathing use the same eye definition in every pose.
+    const eye = playerEyePosition(renderPos.current, currentEyeHeight.current,
+        intent.sneak ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT, aCam);
+    const { x: eyeX, y: eyeY, z: eyeZ } = eye;
+    const blockHeadUI = worldManager.getBlock(Math.floor(eyeX), Math.floor(eyeY), Math.floor(eyeZ), false);
+    setHeadBlock(blockHeadUI);
     viewRig.eye.x = eyeX; viewRig.eye.y = eyeY; viewRig.eye.z = eyeZ;
     camera.getWorldDirection(_viewDir);
     viewRig.dir.x = _viewDir.x; viewRig.dir.y = _viewDir.y; viewRig.dir.z = _viewDir.z;
