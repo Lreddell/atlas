@@ -1,20 +1,20 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { playerPose, viewRig } from '../systems/player/viewRig';
+import { playerPose, viewRig, playerModelOpacity } from '../systems/player/viewRig';
 import { motionStatus } from '../systems/player/playerMotion';
 import { gameEvents } from '../systems/events/GameEvents';
 import { BlockType } from '../types';
 import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
-import { playerAttack, playerMining, attackPose } from '../systems/combat/playerAttack';
+import { playerAttack, playerMining, playerInteraction, attackPose } from '../systems/combat/playerAttack';
 import { PlayerArmor } from './PlayerArmor';
 import type { Equipment } from '../systems/registry/equipment';
 import { BLOCKS } from '../data/blocks';
 import { inputState } from '../systems/player/playerInput';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
-import { headLookPitch, eatingPose } from '../systems/player/playerAnimation';
+import { headLookPitch, eatingPose, crouchPose, airbornePose, placementPose } from '../systems/player/playerAnimation';
 import { usePlayerSkin, type PlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
@@ -37,8 +37,7 @@ import { WALK_SPEED } from '../systems/player/playerConstants';
 // Clips: idle breathing, walk, sprint (longer stride, forward lean, pumping
 // arms), sneak, rise/fall, landing squash, dodge roll (a real somersault about
 // the axis across the roll), magnetic dash (arms forward, body flat along the
-// pull), repel leap, wall climb (chest to the wall, limbs reaching across the
-// face), attack swing, and a hurt flinch.
+// pull), repel leap, magnetic wall walking, attack/placement swings, and a hurt flinch.
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -59,6 +58,8 @@ const PIVOT_Y = 0.95;
 interface Pose {
     /** Whole-body offsets. */
     bodyY: number;
+    bodyZ: number;
+    torsoLean: number;
     bodyLean: number;      // pitch: negative leans toward model forward (-Z)
     bodyRoll: number;      // bank into a turn
     bodyTwist: number;     // yaw of the chest against the hips
@@ -73,10 +74,10 @@ interface Pose {
 }
 
 const newPose = (): Pose => ({
-    bodyY: 0, bodyLean: 0, bodyRoll: 0, bodyTwist: 0, squash: 1,
+    bodyY: 0, bodyZ: 0, torsoLean: 0, bodyLean: 0, bodyRoll: 0, bodyTwist: 0, squash: 1,
     headPitch: 0, headYaw: 0,
-    armLUpper: 0, armLLower: 0, armLOut: 0.06,
-    armRUpper: 0, armRLower: 0, armROut: -0.06,
+    armLUpper: 0, armLLower: 0, armLOut: -0.06,
+    armRUpper: 0, armRLower: 0, armROut: 0.06,
     legLUpper: 0, legLLower: 0, legLOut: 0,
     legRUpper: 0, legRLower: 0, legROut: 0,
 });
@@ -85,10 +86,10 @@ const POSE_KEYS = Object.keys(newPose()) as (keyof Pose)[];
 
 /** Reset a pose in place (no per-frame allocation in the render loop). */
 function resetPose(p: Pose): void {
-    p.bodyY = 0; p.bodyLean = 0; p.bodyRoll = 0; p.bodyTwist = 0; p.squash = 1;
+    p.bodyY = 0; p.bodyZ = 0; p.torsoLean = 0; p.bodyLean = 0; p.bodyRoll = 0; p.bodyTwist = 0; p.squash = 1;
     p.headPitch = 0; p.headYaw = 0;
-    p.armLUpper = 0; p.armLLower = 0; p.armLOut = 0.06;
-    p.armRUpper = 0; p.armRLower = 0; p.armROut = -0.06;
+    p.armLUpper = 0; p.armLLower = 0; p.armLOut = -0.06;
+    p.armRUpper = 0; p.armRLower = 0; p.armROut = 0.06;
     p.legLUpper = 0; p.legLLower = 0; p.legLOut = 0;
     p.legRUpper = 0; p.legRLower = 0; p.legROut = 0;
 }
@@ -121,7 +122,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
     const rollAxis = useRef({ along: 0, across: 0 });
     const wasRolling = useRef(false);
     const walkPhase = useRef(0);
-    const climbPhase = useRef(0);
+    const fadeMaterials = useRef(new WeakMap<THREE.Material, { opacity: number; transparent: boolean; depthWrite: boolean; alphaTest: number }>());
     const hurtUntil = useRef(0);
     const landUntil = useRef(0);
     const landStrength = useRef(0);
@@ -164,13 +165,14 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             if (armRRef.current) armRRef.current.rotation.set(-Math.sin(t * 1.5) * 0.04, 0, -0.06);
             return;
         }
-        root.visible = viewRig.showModel;
-        if (!root.visible) return;
+        const opacity = playerModelOpacity(viewRig.camera, playerPose, playerPose.up);
+        root.visible = viewRig.showModel && opacity > 0.001;
+        // Keep the pose advancing while hidden, so switching views resumes the current action.
 
         const dt = Math.min(0.1, delta);
         const t = playerPose.time;
         const pose = playerPose;
-        const speed = Math.hypot(pose.vx, pose.vz);
+        const speed = Math.hypot(pose.vx, pose.attached ? pose.vy : 0, pose.vz);
         const now = Date.now();
         const hurt = now < hurtUntil.current;
 
@@ -203,17 +205,18 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         }
 
         // --- Landing squash: remember the impact speed as the feet touch down.
-        if (!pose.grounded) fallSpeed.current = Math.max(fallSpeed.current, -pose.vy);
-        if (pose.grounded && !wasGrounded.current) {
+        if (!pose.grounded && !pose.attached && !pose.inWater) fallSpeed.current = Math.max(fallSpeed.current, -pose.vy);
+        if (pose.grounded && !pose.attached && !pose.inWater && !wasGrounded.current) {
             const impact = Math.min(1, fallSpeed.current / 18);
             if (impact > 0.12) { landUntil.current = now + 260; landStrength.current = impact; }
             fallSpeed.current = 0;
         }
-        wasGrounded.current = pose.grounded;
+        wasGrounded.current = pose.grounded || pose.attached || pose.inWater;
+        if (pose.attached || pose.inWater) { fallSpeed.current = 0; landUntil.current = 0; }
 
         const p = target.current;
         resetPose(p);
-        const action = motionStatus.action;
+        const action = pose.attached ? 'none' : motionStatus.action;
         const progress = motionStatus.progress;
         // Most joints ease; a few clips want to arrive almost immediately.
         let blendRate = 14;
@@ -245,48 +248,33 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         } else if (action === 'leap') {
             // Kicked away from a matching pole: arms up, knees drawn in.
             p.bodyLean = -0.3;
-            p.armLUpper = 2.5; p.armRUpper = 2.5;
-            p.armLOut = 0.7; p.armROut = -0.7;
+            p.armLUpper = 0.6; p.armRUpper = 0.45;
+            p.armLOut = -0.35; p.armROut = 0.35;
             p.legLUpper = 1.0; p.legRUpper = 0.5;
             p.legLLower = -1.2; p.legRLower = -0.7;
             blendRate = 20;
-        } else if (pose.attached) {
-            // Wall climb: chest to the face, opposite hand and foot reaching.
-            climbPhase.current += speed * dt * 2.6;
-            const reach = Math.sin(climbPhase.current) * Math.min(1, speed / 2.5);
-            p.bodyY = 0.02;
-            p.bodyLean = -0.12;
-            p.headPitch = -0.28;
-            p.armLUpper = 2.5 - reach * 0.55; p.armRUpper = 2.5 + reach * 0.55;
-            p.armLLower = 0.45; p.armRLower = 0.45;
-            p.armLOut = 0.55; p.armROut = -0.55;
-            p.legLUpper = 0.55 + reach * 0.45; p.legRUpper = 0.55 - reach * 0.45;
-            p.legLLower = -0.85; p.legRLower = -0.85;
-            p.legLOut = 0.28; p.legROut = -0.28;
-        } else if (!pose.grounded) {
-            const rising = pose.vy > 1.5;
-            if (rising) {
-                p.bodyLean = -0.12;
-                p.armLUpper = 2.2; p.armRUpper = 2.2;
-                p.armLLower = 0.5; p.armRLower = 0.5;
-                p.armLOut = 0.3; p.armROut = -0.3;
-                p.legLUpper = 0.85; p.legRUpper = 0.25;
-                p.legLLower = -1.1; p.legRLower = -0.35;
-            } else {
-                // Falling: arms out for balance, legs reaching for the ground.
-                const drop = Math.min(1, -pose.vy / 16);
-                p.bodyLean = 0.1 + 0.12 * drop;
-                p.armLUpper = 1.1 + 0.5 * drop; p.armRUpper = 1.1 + 0.5 * drop;
-                p.armLOut = 0.9 + 0.3 * drop; p.armROut = -0.9 - 0.3 * drop;
-                p.armLLower = 0.35; p.armRLower = 0.35;
-                p.legLUpper = -0.35 * drop; p.legRUpper = 0.3 * drop;
-                p.legLLower = -0.35; p.legRLower = -0.2;
-            }
+        } else if (pose.inWater && !pose.grounded) {
+            // Tread/kick in water rather than hanging in the jump pose.
+            const stroke = Math.sin(t * 3);
+            p.bodyLean = -0.2;
+            p.armLUpper = 0.35 + stroke * 0.15; p.armRUpper = 0.35 - stroke * 0.15;
+            p.armLLower = 0.3; p.armRLower = 0.3;
+            p.armLOut = -0.3; p.armROut = 0.3;
+            p.legLUpper = stroke * 0.22; p.legRUpper = -stroke * 0.22;
+            p.legLLower = -0.2; p.legRLower = -0.2;
+        } else if (!pose.grounded && !pose.attached) {
+            const air = airbornePose(pose.vy);
+            p.armLUpper = air.shoulder; p.armRUpper = air.shoulder + 0.12;
+            p.armLLower = air.elbow; p.armRLower = air.elbow;
+            p.armLOut = -air.outward; p.armROut = air.outward;
+            p.legLUpper = air.hip; p.legRUpper = air.hip * 0.4;
+            p.legLLower = air.knee; p.legRLower = air.knee * 0.5;
         } else {
-            // Grounded locomotion. One phase drives legs, arms and the body bob.
+            // Ground and magnetic-wall walking share a gait in the body's local plane.
+            // Boots stand on the wall: an overhead climbing/jump pose contradicts that orientation.
             const stride = Math.min(1.4, speed / WALK_SPEED);
-            const along = speed > 0.1 ? (pose.vx * _forward.x + pose.vz * _forward.z) / speed : 0;
-            const across = speed > 0.1 ? (pose.vx * _right.x + pose.vz * _right.z) / speed : 0;
+            const along = speed > 0.1 ? (pose.vx * _forward.x + pose.vy * _forward.y + pose.vz * _forward.z) / speed : 0;
+            const across = speed > 0.1 ? (pose.vx * _right.x + pose.vy * _right.y + pose.vz * _right.z) / speed : 0;
             walkPhase.current += speed * dt * (pose.sprint ? 2.6 : 2.2) * (along < -0.2 ? -1 : 1);
             const swing = Math.sin(walkPhase.current);
             const lift = Math.cos(walkPhase.current);
@@ -308,13 +296,19 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             p.bodyRoll = -across * stride * 0.06;
 
             if (pose.sneak) {
-                p.bodyY -= 0.28;
-                p.bodyLean = -0.42;
-                p.squash = 0.9;
-                p.headPitch = 0.2;
-                p.legLLower -= 0.5; p.legRLower -= 0.5;
-                p.legLOut = 0.16; p.legROut = -0.16;
-                p.armLOut = 0.2; p.armROut = -0.2;
+                const crouch = crouchPose();
+                p.bodyY = crouch.bodyY; p.bodyZ = crouch.bodyZ;
+                p.bodyLean = 0; p.torsoLean = crouch.torsoLean;
+                p.squash = 1;
+                p.legLUpper = crouch.hip + p.legLUpper * 0.4;
+                p.legRUpper = crouch.hip + p.legRUpper * 0.4;
+                p.legLLower = crouch.knee + p.legLLower * 0.3;
+                p.legRLower = crouch.knee + p.legRLower * 0.3;
+                p.legLOut = 0; p.legROut = 0;
+                p.armLUpper = crouch.shoulder + p.armLUpper * 0.3;
+                p.armRUpper = crouch.shoulder + p.armRUpper * 0.3;
+                p.armLLower = crouch.elbow; p.armRLower = crouch.elbow;
+                p.armLOut = -0.07; p.armROut = 0.07;
             }
 
             if (speed < 0.25 && !pose.sneak) {
@@ -324,7 +318,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                 p.bodyRoll = Math.sin(t * 0.6) * 0.03;
                 p.armLUpper = breathe * 0.05; p.armRUpper = -breathe * 0.05;
                 p.armLLower = 0.12; p.armRLower = 0.12;
-                p.armLOut = 0.08; p.armROut = -0.08;
+                p.armLOut = -0.08; p.armROut = 0.08;
             }
         }
 
@@ -341,7 +335,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         }
 
         // The head tracks the look pitch in every clip that has not claimed it.
-        p.headPitch += action === 'roll' ? -pose.pitch * 0.55 : headLookPitch(pose.pitch, p.bodyLean);
+        p.headPitch += action === 'roll' ? -pose.pitch * 0.55 : headLookPitch(pose.pitch, p.bodyLean + p.torsoLean);
 
         // A hit knocks the chest back for a beat.
         if (hurt) {
@@ -353,20 +347,35 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
 
         // Carry the selected item in a relaxed forward grip. Combat takes priority
         // over locomotion in the upper body; evade poses remain untouched.
-        if (action === 'none' && !pose.attached) {
-            if (itemType !== null) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
+        if (action === 'none') {
+            if (itemType !== null && !pose.sneak) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
             const attack = attackPose(playerAttack);
-            if (attack.weight && getPlayerWeaponProfile(itemType)) {
-                p.armRUpper = attack.shoulder;
+            if (attack.weight && getPlayerWeaponProfile(itemType) && playerAttack.kind === 'crossbow') {
+                const recoil = Math.sin(Math.max(0, (playerAttack.elapsed / playerAttack.duration - 0.5) * 2) * Math.PI);
+                p.armRUpper = 1.25 - p.torsoLean - recoil * 0.12;
+                p.armRLower = 0.15 + recoil * 0.15;
+                p.armROut = -0.05;
+                p.armLUpper = 1.1 - p.torsoLean;
+                p.armLLower = 0.65;
+                p.armLOut = 0.1;
+                blendRate = 24;
+            } else if (attack.weight && getPlayerWeaponProfile(itemType)) {
+                p.armRUpper = attack.shoulder - p.torsoLean;
                 p.armRLower = attack.elbow;
                 p.armROut = -0.15 - attack.sweep * 0.5;
                 p.bodyTwist += attack.twist;
                 p.armLUpper = 0.3 + attack.shoulder * 0.25;
                 p.armLLower = 0.5;
                 blendRate = 32;
-            } else if (playerMining.active) {
-                const arc = 0.5 + Math.sin(playerMining.elapsed * 12) * 0.5;
-                p.armRUpper = 0.45 + arc * 1.25;
+            } else if (placementPose(playerInteraction.placementElapsed).weight > 0) {
+                const place = placementPose(playerInteraction.placementElapsed);
+                p.armRUpper = place.shoulder - p.torsoLean;
+                p.armRLower = place.elbow;
+                p.armROut = -0.08;
+                blendRate = 24;
+            } else if (playerMining.active || (playerInteraction.leftHeld && !getPlayerWeaponProfile(itemType))) {
+                const arc = 0.5 + Math.sin((playerMining.active ? playerMining.elapsed : t) * 12) * 0.5;
+                p.armRUpper = 0.45 + arc * 1.25 - p.torsoLean;
                 p.armRLower = 0.25 + arc * 0.4;
                 p.bodyTwist += arc * 0.12;
             }
@@ -374,7 +383,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
 
         if (action === 'none' && inputState.eating && itemType !== null && BLOCKS[itemType]?.nutrition) {
             const eat = eatingPose(t);
-            p.armRUpper = eat.shoulder;
+            p.armRUpper = eat.shoulder - p.torsoLean;
             p.armRLower = eat.elbow;
             p.armROut = eat.inward;
             p.headPitch += eat.head;
@@ -387,7 +396,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         for (const key of POSE_KEYS) l[key] += (p[key] - l[key]) * k;
 
         pivot.position.set(0, PIVOT_Y, 0);
-        body.position.set(0, -PIVOT_Y + l.bodyY, 0);
+        body.position.set(0, -PIVOT_Y + l.bodyY, l.bodyZ);
         body.scale.set(1, Math.max(0.35, l.squash), 1);
 
         if (action === 'roll') {
@@ -414,7 +423,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         }
         wasRolling.current = action === 'roll';
 
-        torso.rotation.set(0, l.bodyTwist, 0);
+        torso.rotation.set(l.torsoLean, l.bodyTwist, 0);
         head.rotation.set(l.headPitch, l.headYaw, 0);
         if (armLRef.current) armLRef.current.rotation.set(l.armLUpper, 0, l.armLOut);
         if (armRRef.current) armRRef.current.rotation.set(l.armRUpper, 0, l.armROut);
@@ -424,6 +433,27 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         if (legRRef.current) legRRef.current.rotation.set(l.legRUpper, 0, l.legROut);
         if (legLLowerRef.current) legLLowerRef.current.rotation.x = l.legLLower;
         if (legRLowerRef.current) legRLowerRef.current.rotation.x = l.legRLower;
+        root.traverse(object => {
+            if (!(object instanceof THREE.Mesh)) return;
+            const list = Array.isArray(object.material) ? object.material : [object.material];
+            for (const material of list) {
+                let original = fadeMaterials.current.get(material);
+                if (!original) {
+                    original = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite, alphaTest: material.alphaTest };
+                    fadeMaterials.current.set(material, original);
+                }
+                const fading = opacity < 0.999;
+                if (material.alphaHash !== fading) {
+                    material.alphaHash = fading;
+                    material.transparent = fading ? false : original.transparent;
+                    material.depthWrite = fading || original.depthWrite;
+                    material.needsUpdate = true;
+                }
+                const baseOpacity = material === materials.bootGlow ? (pose.polarity === 0 ? 0 : 0.7 + 0.3 * Math.sin(t * 6)) : original.opacity;
+                material.opacity = baseOpacity * opacity;
+                material.alphaTest = original.alphaTest * opacity;
+            }
+        });
     });
 
     // Geometry faces -Z (three.js forward): eyes and jacket front at negative z.

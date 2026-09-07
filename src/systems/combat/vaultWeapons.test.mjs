@@ -67,10 +67,10 @@ test('interaction and held rendering use profiles, ammo, physical bolts, and dis
   assert.match(interaction, /distance: hit\.dist/);
   assert.match(interaction, /resolved\.technique === 'titan_crush'/);
   assert.ok(interaction.indexOf('targetType === BlockType.CHEST') < interaction.indexOf('heldForUse?.type === BlockType.VAULT_CROSSBOW'));
-  assert.match(held, /atlas:weapon-used/);
-  assert.match(held, /kind === 'spear'/);
-  assert.match(held, /kind === 'crossbow'/);
-  assert.match(held, /kind === 'maul' \|\| kind === 'hammer'/);
+  assert.match(held, /attackPose\(playerAttack\)/);
+  assert.match(held, /playerAttack\.kind === 'crossbow'/);
+  assert.match(held, /playerAttack\.elapsed \/ playerAttack\.duration/);
+  assert.doesNotMatch(held, /weaponAnimation|atlas:weapon-used/);
   assert.match(runtime, /useTuningFork/);
   assert.match(runtime, /input\.heldItem !== BlockType\.ECHO_TUNING_FORK/);
   assert.match(effects, /vaultProjectileSystem\.getRenderState/);

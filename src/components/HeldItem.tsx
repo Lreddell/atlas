@@ -7,7 +7,9 @@ import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
 import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
-import { playerAttack, attackBusy, attackPose } from '../systems/combat/playerAttack';
+import { playerAttack, playerMining, playerInteraction, attackBusy, attackPose } from '../systems/combat/playerAttack';
+import { viewRig, firstPersonHandOpacity } from '../systems/player/viewRig';
+import { placementPose } from '../systems/player/playerAnimation';
 import { inputState } from '../systems/player/playerInput';
 import { globalSunlightValue } from './chunkLightingState';
 import { usePlayerSkin } from '../systems/player/playerSkins';
@@ -20,14 +22,6 @@ interface HeldItemProps {
     inventory: (ItemStack | null)[];
     isLocked: boolean;
     brightness: number;
-}
-
-type HeldWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer';
-
-interface HeldWeaponAnimation {
-    kind: HeldWeaponKind;
-    startedAt: number;
-    duration: number;
 }
 
 const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
@@ -86,27 +80,12 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const itemType = itemStack ? itemStack.type : null;
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
 
-    const animState = useRef({ swingPhase: 0, swingStartTime: 0 });
-    const pendingPlacementSwing = useRef(false);
-    const keysPressed = useRef(new Set<string>());
-    const isLeftMouseDown = useRef(false);
     const moveSway = useRef(0);
-    const isLockedRef = useRef(isLocked);
-    const weaponAnimation = useRef<HeldWeaponAnimation | null>(null);
+    const alphaTests = useRef(new WeakMap<THREE.Material, number>());
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
     }, []);
-
-    useEffect(() => {
-        isLockedRef.current = isLocked;
-        if (!isLocked) {
-            isLeftMouseDown.current = false;
-            weaponAnimation.current = null;
-        }
-    }, [isLocked]);
-
-    useEffect(() => { weaponAnimation.current = null; }, [itemType]);
 
     // Ensure camera is part of the scene graph so its children (the hand) are rendered
     useEffect(() => {
@@ -145,58 +124,6 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
         return mat;
     }, [skin.palette.skin]);
 
-    useEffect(() => {
-        const onKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.code);
-        const onKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.code);
-        const onPlacement = () => {
-            pendingPlacementSwing.current = true;
-        };
-        const onWeaponUsed = (event: Event) => {
-            if (!isLockedRef.current) return;
-            const kind = (event as CustomEvent<{ kind?: HeldWeaponKind }>).detail?.kind;
-            if (kind !== 'spear' && kind !== 'crossbow' && kind !== 'maul' && kind !== 'hammer') return;
-            weaponAnimation.current = {
-                kind,
-                startedAt: -1,
-                duration: kind === 'spear' ? 0.34 : kind === 'crossbow' ? 0.5 : 0.7,
-            };
-            // The successful-use animation owns the hand until its authored motion
-            // finishes. This prevents the generic mining arc from obscuring it.
-            animState.current.swingPhase = 0;
-            isLeftMouseDown.current = false;
-        };
-        
-        const onMouseDown = (e: MouseEvent) => {
-            if (!isLockedRef.current) {
-                isLeftMouseDown.current = false;
-                return;
-            }
-            // Left-click drives the continuous mine/attack swing. Right-click no
-            // longer animates here, placement swings come from the
-            // 'atlas:block-placed' event and eating from inputState.eating.
-            if (e.button === 0) isLeftMouseDown.current = true;
-        };
-        const onMouseUp = (e: MouseEvent) => {
-            if (e.button === 0) isLeftMouseDown.current = false;
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        window.addEventListener('keyup', onKeyUp);
-        window.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('mouseup', onMouseUp);
-        window.addEventListener('atlas:block-placed', onPlacement as EventListener);
-        window.addEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
-        
-        return () => {
-            window.removeEventListener('keydown', onKeyDown);
-            window.removeEventListener('keyup', onKeyUp);
-            window.removeEventListener('mousedown', onMouseDown);
-            window.removeEventListener('mouseup', onMouseUp);
-            window.removeEventListener('atlas:block-placed', onPlacement as EventListener);
-            window.removeEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
-        };
-    }, []);
-
     const geometry = useMemo(() => createHeldItemGeometry(itemType), [itemType]);
     useEffect(() => () => { geometry?.dispose(); }, [geometry]);
     useEffect(() => () => { itemMaterial?.dispose(); }, [itemMaterial]);
@@ -204,6 +131,17 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
     useFrame((state, delta) => {
         if (groupRef.current) {
+            const opacity = firstPersonHandOpacity(viewRig.camera, viewRig.eye);
+            groupRef.current.visible = opacity > 0.001;
+            groupRef.current.traverse(object => {
+                if (!(object instanceof THREE.Mesh)) return;
+                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                for (const material of materials) {
+                    if (!alphaTests.current.has(material)) alphaTests.current.set(material, material.alphaTest);
+                    material.opacity = opacity;
+                    material.alphaTest = alphaTests.current.get(material)! * opacity;
+                }
+            });
             const light = worldManager.getLight(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z));
             const uSky = light.sky / 15.0;
             const uBlock = light.block / 15.0;
@@ -226,49 +164,19 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             // Since we are a child of the camera, we do not copy position/quaternion.
             // We render in local space relative to the camera.
 
-            const isMoving = isLocked && (
-                keysPressed.current.has('KeyW') || keysPressed.current.has('KeyS') || 
-                keysPressed.current.has('KeyA') || keysPressed.current.has('KeyD')
-            );
-            
+            const isMoving = isLocked && (inputState.forward || inputState.backward || inputState.left || inputState.right);
+
             const targetSway = isMoving ? 1 : 0;
             moveSway.current = THREE.MathUtils.lerp(moveSway.current, targetSway, 1 - Math.exp(-10 * delta));
 
+            // Viewmodel motion uses render time, never the 20 Hz physics clock.
             const time = state.clock.elapsedTime;
             const bobX = Math.sin(time * 10) * 0.02 * moveSway.current;
             const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
 
-            // Continuous swing comes from left-click (mining/attacking) or an active
-            // bite (eating). Right-click placement/use does NOT auto-swing, a swing
-            // only fires when something actually happens (the 'atlas:block-placed'
-            // event below), so a failed/no-op right-click no longer animates.
-            const isAction = (isLeftMouseDown.current || inputState.eating) && isLocked;
-            const SWING_DURATION = 0.25;
-
-            if (pendingPlacementSwing.current && animState.current.swingPhase === 0) {
-                animState.current.swingStartTime = time;
-                animState.current.swingPhase = Number.EPSILON;
-                pendingPlacementSwing.current = false;
-            }
-
-            if (isAction && animState.current.swingPhase === 0) {
-                animState.current.swingStartTime = time;
-                animState.current.swingPhase = Number.EPSILON;
-            }
-
-            if (animState.current.swingPhase !== 0) {
-                const elapsed = time - animState.current.swingStartTime;
-                if (elapsed > 0) {
-                    const progress = elapsed / SWING_DURATION;
-                    if (progress >= 1.0) {
-                        animState.current.swingPhase = 0;
-                    } else {
-                        animState.current.swingPhase = progress * Math.PI;
-                    }
-                }
-            }
-
-            const swingVal = Math.sin(animState.current.swingPhase);
+            const genericAction = isLocked && (playerMining.active || inputState.eating || (playerInteraction.leftHeld && !getPlayerWeaponProfile(itemType)));
+            const actionTime = playerMining.active ? playerMining.elapsed : time;
+            const swingVal = genericAction ? Math.sin((actionTime % 0.25) / 0.25 * Math.PI) : placementPose(playerInteraction.placementElapsed).weight;
             const swingRot = swingVal * -0.8;
             const swingPos = swingVal * -0.2;
             
@@ -291,41 +199,16 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 groupRef.current.rotation.set(0.2 - pose.shoulder * 0.55, -0.2 + pose.twist, pose.sweep);
                 return;
             }
-            const activeWeapon = weaponAnimation.current;
-            if (activeWeapon) {
-                if (activeWeapon.startedAt < 0) activeWeapon.startedAt = time;
-                const progress = Math.min(1, Math.max(0, (time - activeWeapon.startedAt) / activeWeapon.duration));
-                if (progress >= 1) {
-                    weaponAnimation.current = null;
-                } else {
-                    const arc = Math.sin(progress * Math.PI);
-                    const settle = Math.sin(Math.min(1, progress * 1.6) * Math.PI);
-                    const { kind } = activeWeapon;
-                    if (kind === 'spear') {
-                        // A short brace followed by a long, level thrust makes the
-                        // spear read as reach rather than another mining swing.
-                        const thrust = Math.sin(Math.min(1, progress * 1.35) * Math.PI);
-                        groupRef.current.position.set(0.46 + bobX, -0.46 + bobY, -0.74 - thrust * 0.42);
-                        groupRef.current.rotation.set(0.08 - thrust * 0.13, -0.18, 0.04);
-                    } else if (kind === 'crossbow') {
-                        // Hold the sightline steady, then let the stock recoil into
-                        // the hand. The longer settle reinforces the reload cadence.
-                        groupRef.current.position.set(0.42 + bobX, -0.45 + bobY - arc * 0.06, -0.82 + arc * 0.17);
-                        groupRef.current.rotation.set(0.12 + arc * 0.19, -0.13, -0.02);
-                    } else if (kind === 'maul' || kind === 'hammer') {
-                        // Heavy weapons rise high and commit through a broad downward
-                        // arc, distinct from both the spear jab and ordinary tools.
-                        const windup = Math.sin(Math.min(1, progress * 1.9) * Math.PI / 2);
-                        groupRef.current.position.set(0.52 + bobX - arc * 0.13, -0.48 + bobY + windup * 0.13 - arc * 0.23, -0.78);
-                        groupRef.current.rotation.set(0.22 - settle * 1.2, -0.24 - arc * 0.2, arc * 0.5);
-                    }
-                }
+            if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind === 'crossbow' && !playerAttack.cancelled) {
+                const recoil = Math.sin(Math.max(0, (playerAttack.elapsed / playerAttack.duration - 0.5) * 2) * Math.PI);
+                groupRef.current.position.set(0.42 + bobX, -0.45 + bobY - recoil * 0.06, -0.82 + recoil * 0.17);
+                groupRef.current.rotation.set(0.12 + recoil * 0.19, -0.13, -0.02);
             }
         }
     });
 
     return createPortal(
-        <group ref={groupRef}>
+        <group ref={groupRef} visible={false}>
              {!itemType && skin.model !== 'atlas' && <group position={[0, -0.2, 0.2]} rotation={[Math.PI / 2 + 0.5, 0, -0.2]}>
                  <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightArm" firstPerson />
              </group>}

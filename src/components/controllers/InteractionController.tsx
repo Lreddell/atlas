@@ -39,7 +39,7 @@ import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSyste
 import { particleFx } from '../../systems/fx/particleFx';
 import { aimRay, viewRig } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
-import { playerAttack, playerMining, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
+import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
 import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
 
 // Scratch vectors for the aim origin/direction (used every frame)
@@ -50,7 +50,7 @@ const _boltDirection = new THREE.Vector3();
 const MELEE_REACH = 3.2;
 
 const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
-    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist);
+    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist, type => type !== BlockType.WATER && type !== BlockType.LAVA);
     return hit ? hit.distance : null;
 };
 
@@ -325,6 +325,7 @@ export const InteractionController = ({
         }
 
         const emitPlacementAnimation = () => {
+            playerInteraction.placementElapsed = 0;
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('atlas:block-placed'));
             }
@@ -774,6 +775,7 @@ export const InteractionController = ({
 
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
+                playerInteraction.leftHeld = true;
                 // Attacking an entity takes priority over mining a block.
                 attackHeld.current = getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null) !== null;
                 attackBuffer.current = attackHeld.current ? 0.15 : 0;
@@ -786,6 +788,7 @@ export const InteractionController = ({
         };
         const onUp = (e: MouseEvent) => {
             if(e.button === 0) {
+                playerInteraction.leftHeld = false;
                 attackHeld.current = false;
                 isLeftMouseDown.current = false;
                 breakingRef.current = null;
@@ -809,7 +812,10 @@ export const InteractionController = ({
 
     useFrame((_, delta) => {
         playerMining.active = false;
+        if (isLocked && Number.isFinite(playerInteraction.placementElapsed)) playerInteraction.placementElapsed = Math.min(1, playerInteraction.placementElapsed + Math.min(delta, 0.1));
         if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
+            playerInteraction.leftHeld = false;
+            playerInteraction.placementElapsed = Infinity;
             attackHeld.current = false;
             attackBuffer.current = 0;
             cancelAttack(playerAttack);

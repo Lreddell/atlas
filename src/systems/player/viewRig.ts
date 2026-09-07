@@ -37,7 +37,7 @@ export const THIRD_PERSON_RIG: ThirdPersonRig = {
     shoulder: 0.6,
     // Lifted enough that the body sits below the crosshair instead of across it,
     // so the character never covers what you are aiming at.
-    height: 0.85,
+    height: 0.7,
     margin: 0.35,
     minDistance: 0.6,
     // Once a wall has pulled the arm in this close the body would fill the
@@ -95,6 +95,43 @@ export function placeThirdPersonCamera(
     if (hit !== null) arm = Math.max(0, Math.min(rig.distance, hit - rig.margin));
     const camera: RigVec3 = { x: pivot.x + back.x * arm, y: pivot.y + back.y * arm, z: pivot.z + back.z * arm };
     return { camera, pivot, armLength: arm, showModel: arm >= rig.hideModelBelow };
+}
+
+/** Radial spring state, local to one player. Reset when leaving third person. */
+export interface CameraSpring { distance: number; offset: number }
+export function smoothThirdPersonCamera(
+    eye: RigVec3, dir: RigVec3, right: RigVec3, up: RigVec3,
+    sweep: RigSweep, spring: CameraSpring, dt: number, extend = true,
+): RigPlacement {
+    const k = 1 - Math.exp(-9 * Math.max(0, Math.min(dt, 0.1)));
+    spring.offset += ((extend ? 1 : 0) - spring.offset) * k;
+    if (!extend && spring.offset < 0.002) spring.offset = 0;
+    const rig = { ...THIRD_PERSON_RIG, shoulder: THIRD_PERSON_RIG.shoulder * spring.offset, height: THIRD_PERSON_RIG.height * spring.offset };
+    const safe = placeThirdPersonCamera(eye, dir, right, up, sweep, rig);
+    // Never ease through geometry. Recover the distance smoothly when space opens.
+    spring.distance = Math.min(safe.armLength, spring.distance + ((extend ? safe.armLength : 0) - spring.distance) * k);
+    if (!extend && spring.distance < 0.01) spring.distance = 0;
+    return { ...safe, armLength: spring.distance, showModel: spring.distance >= THIRD_PERSON_RIG.hideModelBelow, camera: {
+        x: safe.pivot.x - dir.x * spring.distance,
+        y: safe.pivot.y - dir.y * spring.distance,
+        z: safe.pivot.z - dir.z * spring.distance,
+    } };
+}
+
+/** The viewmodel fades only in the final stretch to/from the eye. */
+export function firstPersonHandOpacity(camera: RigVec3, eye: RigVec3): number {
+    const distance = Math.hypot(camera.x - eye.x, camera.y - eye.y, camera.z - eye.z);
+    const t = Math.max(0, Math.min(1, (distance - 0.05) / 0.6));
+    return 1 - t * t * (3 - 2 * t);
+}
+
+/** Fade near the body's capsule, including when the body stands on a wall. */
+export function playerModelOpacity(camera: RigVec3, feet: RigVec3, up: RigVec3): number {
+    const x = camera.x - feet.x, y = camera.y - feet.y, z = camera.z - feet.z;
+    const along = Math.max(0.25, Math.min(1.8, x * up.x + y * up.y + z * up.z));
+    const distance = Math.hypot(x - up.x * along, y - up.y * along, z - up.z * along);
+    const t = Math.max(0, Math.min(1, (distance - 0.45) / 0.85));
+    return t * t * (3 - 2 * t);
 }
 
 /**
@@ -173,6 +210,7 @@ export interface PlayerPose {
     vy: number;
     vz: number;
     grounded: boolean;
+    inWater: boolean;
     sneak: boolean;
     sprint: boolean;
     /** Latched to a magnet wall: the body's up is the wall normal. */
@@ -192,6 +230,7 @@ export const playerPose: PlayerPose = {
     yaw: 0, pitch: 0,
     vx: 0, vy: 0, vz: 0,
     grounded: false,
+    inWater: false,
     sneak: false,
     sprint: false,
     attached: false,

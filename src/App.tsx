@@ -332,7 +332,7 @@ const App: React.FC = () => {
   // First / third person (F5). The Warden fight switches to third person on its
   // own and hands the previous view back when it ends; the held item hides
   // behind the camera in third person (the body model carries the pose instead).
-  const [viewMode, setViewMode] = useState<ViewMode>(viewRig.mode);
+  const [, setViewMode] = useState<ViewMode>(viewRig.mode);
   const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
@@ -3308,7 +3308,7 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && viewMode !== 'third' && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>

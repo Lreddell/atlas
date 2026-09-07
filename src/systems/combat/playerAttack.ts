@@ -12,6 +12,8 @@ export interface AttackState {
 }
 export const createAttackState = (): AttackState => ({ elapsed: 0, duration: 0, strikeAt: 0, struck: true, cancelled: false, combo: -1, idle: 0, kind: 'unarmed' });
 export const playerAttack = createAttackState();
+/** Presentation state is owned by interaction, so changing camera never loses a held action. */
+export const playerInteraction = { leftHeld: false, placementElapsed: Infinity };
 export const playerMining = { active: false, elapsed: 0 };
 export function attackBusy(s: AttackState): boolean { return s.elapsed < s.duration; }
 export function beginAttack(s: AttackState, kind: string, duration: number): boolean {

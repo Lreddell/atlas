@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { headLookPitch, eatingPose } from './playerAnimation.ts';
+import { headLookPitch, eatingPose, crouchPose, airbornePose, placementPose } from './playerAnimation.ts';
 import { lookBasis } from './viewRig.ts';
 
 test('the face looks up and down with the camera, including a forward-leaning sprint', () => {
@@ -25,4 +25,23 @@ test('eating raises the right hand toward the mouth with small, bounded bite mot
         assert.ok(p.inward < 0, 'bring the right hand inward');
         assert.deepEqual(eatingPose(t), p, 'simulation time holds the pose while paused');
     }
+});
+
+test('crouching bends at the waist while the articulated legs keep the feet planted', () => {
+    const p = crouchPose();
+    const footY = 0.75 + p.bodyY - 0.375 * Math.cos(p.hip) - 0.375 * Math.cos(p.hip + p.knee);
+    const footZ = p.bodyZ - 0.375 * Math.sin(p.hip) - 0.375 * Math.sin(p.hip + p.knee);
+    assert.ok(Math.abs(footY) < 0.02 && Math.abs(footZ) < 0.02);
+    assert.ok(p.torsoLean < -0.3 && p.knee < 0 && p.hip > 0);
+    assert.ok(Math.abs(p.shoulder + p.torsoLean) < 0.1, 'arms hang down from the bent torso');
+});
+test('airborne arms stay below the shoulders and successful placement has a short bounded push', () => {
+    for (const vy of [-40, -3, 0, 3, 10]) {
+        const p = airbornePose(vy);
+        assert.ok(Math.abs(p.shoulder) < 0.5 && p.elbow < 0.4 && p.outward > 0);
+    }
+    assert.equal(placementPose(Infinity).weight, 0);
+    assert.equal(placementPose(0).weight, 0);
+    assert.equal(placementPose(0.125).weight, 1);
+    assert.equal(placementPose(0.25).weight, 0);
 });

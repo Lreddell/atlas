@@ -4,6 +4,7 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { Vector3, MathUtils, PerspectiveCamera, Quaternion, Matrix4, Euler } from 'three';
 import { CHUNK_SIZE } from '../constants';
 import { worldManager } from '../systems/WorldManager';
+import { BLOCKS } from '../data/blocks';
 import { BlockType, type GameMode } from '../types';
 import {
     onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge, consumeDodgePress, dodgePressAge,
@@ -31,7 +32,7 @@ import {
     DASH_RANGE, DASH_SPEED, LEAP_SPEED, LEAP_UP,
     type DodgeContext, type MotionState, type MotionVec3,
 } from '../systems/player/playerMotion';
-import { aimRay, placeThirdPersonCamera, playerPose, viewRig } from '../systems/player/viewRig';
+import { aimRay, smoothThirdPersonCamera, playerPose, viewRig } from '../systems/player/viewRig';
 import { voxelRaycast } from '../systems/world/voxelRaycast';
 import { gameEvents } from '../systems/events/GameEvents';
 import { particleFx, polarityFxColor } from '../systems/fx/particleFx';
@@ -74,9 +75,14 @@ const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
 /** A voxel sweep for the spring arm and the aim: distance to the first solid, or null. */
 const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
-    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist);
+    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist, type => type !== BlockType.WATER && type !== BlockType.LAVA);
     return hit ? hit.distance : null;
 };
+
+/** Camera collision ignores fluid and decorative cells; aiming keeps its existing targets. */
+const cameraBlocks = (type: BlockType) => type !== BlockType.WATER && type !== BlockType.LAVA && !BLOCKS[type]?.noCollision;
+const sweepCamera = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null =>
+    voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist, cameraBlocks)?.distance ?? null;
 
 /** World-space view direction for the attached camera given its look yaw/pitch. */
 function wallViewDir(a: AdhesionState, out: Vector3): Vector3 {
@@ -170,6 +176,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const prevPos = useRef(position.clone());
   const renderPos = useRef(position.clone());
   const currentEyeHeight = useRef(EYE_HEIGHT_STANDING);
+  const cameraSpring = useRef({ distance: 0, offset: 0 });
 
   // Magnetic wall adhesion (Phase 10): explicit state + edge-detection for jump
   // and polarity-flip detach, plus the camera "unroll" easing back to world-up.
@@ -1108,22 +1115,23 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
     // Third person: the camera hangs on a voxel-aware spring arm behind and over
     // the shoulder of the eye; first person puts it at the eye.
-    if (viewRig.mode === 'third' && !bossSummon.isActive()) {
+    if ((viewRig.mode === 'third' || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0) && !bossSummon.isActive()) {
         _camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
         _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-        const placement = placeThirdPersonCamera(
+        const placement = smoothThirdPersonCamera(
             viewRig.eye,
             viewRig.dir,
             { x: _camRight.x, y: _camRight.y, z: _camRight.z },
             { x: _camUp.x, y: _camUp.y, z: _camUp.z },
-            sweepVoxels,
+            sweepCamera, cameraSpring.current, dt, viewRig.mode === 'third',
         );
         camera.position.set(placement.camera.x, placement.camera.y, placement.camera.z);
-        viewRig.third = true;
+        viewRig.third = viewRig.mode === 'third' || cameraSpring.current.distance > 0 || cameraSpring.current.offset > 0;
         viewRig.armLength = placement.armLength;
-        viewRig.showModel = placement.showModel && !isDead;
+        viewRig.showModel = viewRig.third && !isDead; // The model fades by camera proximity instead of popping off.
     } else {
         camera.position.set(eyeX, eyeY, eyeZ);
+        cameraSpring.current.distance = 0; cameraSpring.current.offset = 0;
         viewRig.third = false;
         viewRig.armLength = 0;
         viewRig.showModel = false;
@@ -1139,9 +1147,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     // The body, for the third-person model.
     playerPose.x = renderPos.current.x; playerPose.y = renderPos.current.y; playerPose.z = renderPos.current.z;
     if (aCam.active) {
+        // Put the boots on the magnetic surface, matching the eye's wall standoff.
+        playerPose.x = eyeX - aCam.localUp.x * currentEyeHeight.current;
+        playerPose.y = eyeY - aCam.localUp.y * currentEyeHeight.current;
+        playerPose.z = eyeZ - aCam.localUp.z * currentEyeHeight.current;
         const look = wallViewDir(aCam, _wallView);
         playerPose.yaw = Math.atan2(-look.x, -look.z);
-        playerPose.pitch = Math.asin(Math.max(-1, Math.min(1, look.y)));
+        playerPose.pitch = aCam.lookPitch;
         playerPose.up.x = aCam.localUp.x; playerPose.up.y = aCam.localUp.y; playerPose.up.z = aCam.localUp.z;
         const basis = computeLocalBasis(aCam.normal, { x: look.x, y: look.y, z: look.z });
         playerPose.wallForward.x = basis.forward.x; playerPose.wallForward.y = basis.forward.y; playerPose.wallForward.z = basis.forward.z;
@@ -1153,6 +1165,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     }
     playerPose.vx = vel.current.x; playerPose.vy = vel.current.y; playerPose.vz = vel.current.z;
     playerPose.grounded = grounded.current;
+    playerPose.inWater = blockHeadUI === BlockType.WATER || worldManager.getBlock(Math.floor(pos.current.x), Math.floor(pos.current.y + 0.2), Math.floor(pos.current.z), false) === BlockType.WATER;
     playerPose.sneak = intent.sneak;
     playerPose.sprint = intent.sprint;
     playerPose.attached = aCam.active;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera } from './viewRig.ts';
+import { THIRD_PERSON_RIG, aimRay, lookBasis, placeThirdPersonCamera, smoothThirdPersonCamera, playerModelOpacity, firstPersonHandOpacity } from './viewRig.ts';
 
 const clear = () => null;
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
@@ -71,4 +71,53 @@ test('the aim ray starts at the eye and converges on the crosshair point', () =>
     assert.ok(far.dir.z < -0.99);
     // First person: unchanged.
     assert.deepEqual(aimRay(eye, eye, dir, () => 3), { origin: eye, dir });
+});
+
+test('third person zooms out from the player and recovers smoothly without crossing a wall', () => {
+    const { forward, right, up } = lookBasis(0, 0);
+    const eye = { x: 0, y: 1.62, z: 0 };
+    const spring = { distance: 0, offset: 0 };
+    let view = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60);
+    assert.ok(view.armLength > 0 && view.armLength < 1);
+    for (let i = 0; i < 90; i++) view = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60);
+    assert.ok(view.armLength > 4.99);
+    const blocked = (ox, oy, oz, dx, dy, dz) => dz > 0.9 ? 0.7 : null;
+    view = smoothThirdPersonCamera(eye, forward, right, up, blocked, spring, 1 / 60);
+    assert.ok(view.armLength <= 0.7 - THIRD_PERSON_RIG.margin);
+    const released = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60);
+    assert.ok(released.armLength > view.armLength && released.armLength < 1.5);
+});
+test('model fades continuously near the body and uses wall-relative height', () => {
+    const feet = { x: 0, y: 0, z: 0 }, up = { x: 0, y: 1, z: 0 };
+    assert.equal(playerModelOpacity({ x: 0, y: 1.5, z: 0 }, feet, up), 0);
+    let previous = 0;
+    for (let z = 0; z < 2; z += 0.05) {
+        const opacity = playerModelOpacity({ x: 0, y: 1.5, z }, feet, up);
+        assert.ok(opacity >= previous && opacity >= 0 && opacity <= 1);
+        previous = opacity;
+    }
+    assert.equal(previous, 1);
+    near(playerModelOpacity({ x: 0, y: 1.5, z: 0.8 }, feet, up),
+        playerModelOpacity({ x: 1.5, y: 0, z: 0.8 }, feet, { x: 1, y: 0, z: 0 }));
+});
+
+test('returning to first person eases to the exact eye, and reversing mid-transition remains continuous', () => {
+    const { forward, right, up } = lookBasis(0, 0);
+    const eye = { x: 0, y: 1.62, z: 0 };
+    const spring = { distance: 5, offset: 1 };
+    const returning = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60, false);
+    assert.ok(returning.armLength > 4 && returning.armLength < 5);
+    const reversed = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60, true);
+    assert.ok(reversed.armLength > returning.armLength && reversed.armLength < 5);
+    let hand = 0, view;
+    for (let i = 0; i < 100; i++) {
+        view = smoothThirdPersonCamera(eye, forward, right, up, clear, spring, 1 / 60, false);
+        const opacity = firstPersonHandOpacity(view.camera, eye);
+        assert.ok(opacity >= hand);
+        hand = opacity;
+    }
+    assert.deepEqual(view.camera, eye);
+    assert.equal(hand, 1);
+    assert.equal(spring.distance, 0);
+    assert.equal(spring.offset, 0);
 });

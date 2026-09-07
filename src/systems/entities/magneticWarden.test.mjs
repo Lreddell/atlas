@@ -170,7 +170,7 @@ test('App attaches the encounter to the summoned boss and feeds it the player po
     }
     // The fight frames itself in third person and hands the view back; the held item hides behind the camera.
     assert.match(app, /preFightViewRef\.current = viewRig\.mode;[\s\S]*?viewRig\.mode = 'third';/);
-    assert.match(app, /viewMode !== 'third' && <HeldItem/);
+    assert.match(app, /!cinematicMode && <HeldItem/);
     assert.match(app, /<BossCompass \/>/);
     // The old shield/parry/strip/Flux plumbing is gone from App.
     assert.doesNotMatch(app, /onShieldCrystalBroken|climbMagnetsActiveRef|boss:parry|stripArenaClimbMagnets|flux:|boss:tether/);
@@ -228,7 +228,7 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     assert.match(player, /findAdhesionCandidate\(magnetPolarityAt, solidAt, center, inputState\.magneticPolarity, undefined, attractiveAt\)/);
     // The rig: the eye is published for every consumer, the camera hangs on the spring arm in third person.
     assert.match(player, /viewRig\.eye\.x = eyeX;/);
-    assert.match(player, /placeThirdPersonCamera\(/);
+    assert.match(player, /smoothThirdPersonCamera\(/);
     assert.match(player, /playerPosRef\.current\.set\(viewRig\.eye\.x, viewRig\.eye\.y - eyeHeight, viewRig\.eye\.z\)/);
     assert.match(player, /writeMotionStatus\(motion\.current, prompt\)/);
     // A roll absorbs the landing outright, and drives harder in the air.
@@ -267,7 +267,7 @@ test('the Warden renders its three-form body, the tower shield, and every telegr
     assert.doesNotMatch(wardenRenderer, /tether|snap\.flux|snap\.stunned/);
     // The player body is a procedurally animated voxel model shown only in third person.
     const model = read('src/components/PlayerModel.tsx');
-    assert.match(model, /root\.visible = viewRig\.showModel;/);
+    assert.match(model, /root\.visible = viewRig\.showModel && opacity > 0\.001;/);
     for (const pose of ["action === 'roll'", "action === 'dash'", 'pose.attached', 'pose.sprint', 'pose.sneak']) {
         assert.ok(model.includes(pose), `player model animates ${pose}`);
     }
@@ -535,7 +535,7 @@ test('the summon cutscene orbits, charges an energy ball, then spawns the boss a
     assert.doesNotMatch(app, /aggroGraceSeconds/);
     assert.match(app, /isPaused=\{worldPaused \|\| cinematicMode\}/);
     assert.match(app, /disableMouseLook=\{isCapturingPanorama \|\| cinematicMode\}/);
-    assert.match(app, /!cinematicMode && viewMode !== 'third' && <HeldItem/);
+    assert.match(app, /!cinematicMode && <HeldItem/);
 });
 
 test('combat and cutscene use the glowing FX particle system (not block debris)', () => {
