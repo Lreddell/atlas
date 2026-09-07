@@ -250,7 +250,7 @@ test('the summon cutscene consumes its crystals into the Warden and leaves the t
 test('the Warden renders its three-form body, the tower shield, and every telegraph from the snapshot', () => {
     assert.match(entityRenderer, /'magnetic_warden',\r?\n\]\)/);
     assert.match(entityRenderer, /<MagneticWardenRenderer \/>/);
-    assert.match(app, /<PlayerModel itemType=\{inventory\[selectedSlot\]\?\.type \?\? null\} \/>/);
+    assert.match(app, /<PlayerModel itemType=\{inventory\[selectedSlot\]\?\.type \?\? null\} equipment=\{equipment\} \/>/);
     assert.match(entityRenderer, /<BossCompassTracker \/>/);
     assert.match(entityRenderer, /p\.kind === 'spiral' \? 0\.62 : 1/);
     assert.match(entityRenderer, /s\.kind === 'slam' \? SLAM_RING/);
@@ -285,8 +285,9 @@ test('the HUD reads the forms, the crystal shield, the slam and the tower flip w
     // The polarity block sits bottom-right, clear of the hotbar's item name and
     // the hearts (both bottom-centre) and the armor readout (bottom-left).
     const indicator = read('src/components/ui/PolarityIndicator.tsx');
-    assert.match(indicator, /bottom-4 right-4/);
-    assert.match(indicator, /SLAM READY/);
+    assert.doesNotMatch(indicator, /bottom-4 right-4/);
+    assert.match(read('src/components/ui/HUD.tsx'), /<CombatFeedback magnetic=\{magnetic\} \/>/);
+    assert.match(indicator, /Magnet slam ready/);
     assert.doesNotMatch(indicator, /flux:changed|FLUX READY/);
     // The dodge has NO on-screen prompt: it is always available, and its
     // cooldown is a ring on the crosshair instead of another box of text.
@@ -295,10 +296,10 @@ test('the HUD reads the forms, the crystal shield, the slam and the tower flip w
     assert.match(feedback, /strokeDashoffset/);
     assert.match(feedback, /motionStatus\.cooldown/);
     assert.match(feedback, /motionStatus\.refusedAt/);
-    assert.match(feedback, /TOWER FLIPPING · press R to hold on/);
+    assert.match(feedback, /Tower flipping: press R to hold on/);
     assert.match(feedback, /climbSurfaces\.attachedZone/);
-    assert.match(feedback, /DODGED/);
-    assert.match(app, /<CombatFeedback \/>/);
+    assert.match(feedback, /Attack dodged/);
+    assert.match(feedback, /<PolarityIndicator \/>/);
     const compass = read('src/components/ui/BossCompass.tsx');
     assert.match(compass, /bossCompassState/);
 });

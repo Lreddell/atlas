@@ -20,7 +20,7 @@ const { getVaultWeaponProfile, isEchoArtifact, resolveVaultMeleeHit } = await im
 const Item = Object.freeze({ SPEAR: 182, CROSSBOW: 183, MAUL: 185, FORK: 186, HAMMER: 187 });
 
 test('vault weapons have distinct conventional tradeoffs', () => {
-  assert.deepEqual(getVaultWeaponProfile(Item.SPEAR), { kind: 'spear', damage: 6, reach: 5.4, cooldownSeconds: 0.58, stagger: 0.35, durabilityCost: 1 });
+  assert.deepEqual(getVaultWeaponProfile(Item.SPEAR), { kind: 'spear', damage: 6, reach: 5.4, cooldownSeconds: 0.625, stagger: 0.35, durabilityCost: 1 });
   assert.deepEqual(getVaultWeaponProfile(Item.CROSSBOW), { kind: 'crossbow', damage: 7, reach: 64, cooldownSeconds: 1.15, stagger: 0.25, durabilityCost: 1 });
   assert.deepEqual(getVaultWeaponProfile(Item.MAUL), { kind: 'maul', damage: 9, reach: 4.2, cooldownSeconds: 1.05, stagger: 1, durabilityCost: 1 });
   assert.deepEqual(getVaultWeaponProfile(Item.HAMMER), { kind: 'hammer', damage: 11, reach: 4.4, cooldownSeconds: 1.1, stagger: 1.25, durabilityCost: 1 });

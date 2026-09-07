@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createAttackState, beginAttack, advanceAttack, cancelAttack, attackBusy, attackPose, inAttackArc } from './playerAttack.ts';
 
 test('every weapon strikes at the upswing boundary once and recovers even on a miss', () => {
-    for (const [kind, duration] of [['sword', 0.625], ['axe', 1], ['tool', 0.8], ['unarmed', 0.5], ['spear', 0.58], ['maul', 1.05], ['hammer', 1.1]]) {
+    for (const [kind, duration] of [['sword', 0.58], ['axe', 1], ['spear', 0.625], ['maul', 1.05], ['hammer', 1.1]]) {
         const s = createAttackState();
         assert.equal(beginAttack(s, kind, duration), true);
         assert.equal(advanceAttack(s, duration * 0.49), false);

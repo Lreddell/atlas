@@ -9,7 +9,12 @@ import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { playerAttack, playerMining, attackPose } from '../systems/combat/playerAttack';
-import { headLookPitch } from '../systems/player/playerAnimation';
+import { PlayerArmor } from './PlayerArmor';
+import type { Equipment } from '../systems/registry/equipment';
+import { BLOCKS } from '../data/blocks';
+import { inputState } from '../systems/player/playerInput';
+import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
+import { headLookPitch, eatingPose } from '../systems/player/playerAnimation';
 import { WALK_SPEED } from '../systems/player/playerConstants';
 
 // The player's own body, drawn only in third person: a blocky explorer with
@@ -91,7 +96,7 @@ function resetPose(p: Pose): void {
     p.legRUpper = 0; p.legRLower = 0; p.legROut = 0;
 }
 
-export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType }) => {
+export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equipment }> = ({ itemType, equipment }) => {
     const heldGeometry = useMemo(() => createHeldItemGeometry(itemType), [itemType]);
     const heldMaterial = useMemo(() => new THREE.MeshLambertMaterial({ map: textureAtlasManager.getTexture(), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), []);
     useEffect(() => () => heldGeometry?.dispose(), [heldGeometry]);
@@ -341,7 +346,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType
         if (action === 'none' && !pose.attached) {
             if (itemType !== null) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
             const attack = attackPose(playerAttack);
-            if (attack.weight) {
+            if (attack.weight && getPlayerWeaponProfile(itemType)) {
                 p.armRUpper = attack.shoulder;
                 p.armRLower = attack.elbow;
                 p.armROut = -0.15 - attack.sweep * 0.5;
@@ -355,6 +360,15 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType
                 p.armRLower = 0.25 + arc * 0.4;
                 p.bodyTwist += arc * 0.12;
             }
+        }
+
+        if (action === 'none' && inputState.eating && itemType !== null && BLOCKS[itemType]?.nutrition) {
+            const eat = eatingPose(t);
+            p.armRUpper = eat.shoulder;
+            p.armRLower = eat.elbow;
+            p.armROut = eat.inward;
+            p.headPitch += eat.head;
+            blendRate = 20;
         }
 
         // --- Blend the live pose toward the target and write it to the rig.
@@ -407,29 +421,38 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType
         <group ref={rootRef} visible={false}>
             <group ref={pivotRef}>
                 <group ref={bodyRef}>
+                    <PlayerArmor item={equipment.leggings} part="hips" />
                     {/* Hips + legs (each: thigh pivoting at the hip, shin at the knee) */}
                     <mesh position={[0, 0.76, 0]} material={materials.jacketDark} castShadow><boxGeometry args={[0.5, 0.16, 0.26]} /></mesh>
                     <group ref={legLRef} position={[-0.13, 0.74, 0]}>
+                        <PlayerArmor item={equipment.leggings} part="thigh" />
                         <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.34, 0.22]} /></mesh>
                         <group ref={legLLowerRef} position={[0, -0.34, 0]}>
+                            <PlayerArmor item={equipment.leggings} part="shin" />
+                            <PlayerArmor item={equipment.boots} part="boot" />
                             <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.2, 0.34, 0.2]} /></mesh>
                             <mesh position={[0, -0.4, -0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.18, 0.28]} /></mesh>
-                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.26, 0.05, 0.3]} /></mesh>
+                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.285, 0.05, 0.355]} /></mesh>
                         </group>
                     </group>
                     <group ref={legRRef} position={[0.13, 0.74, 0]}>
+                        <PlayerArmor item={equipment.leggings} part="thigh" />
                         <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.22, 0.34, 0.22]} /></mesh>
                         <group ref={legRLowerRef} position={[0, -0.34, 0]}>
+                            <PlayerArmor item={equipment.leggings} part="shin" />
+                            <PlayerArmor item={equipment.boots} part="boot" />
                             <mesh position={[0, -0.17, 0]} material={materials.trousers} castShadow><boxGeometry args={[0.2, 0.34, 0.2]} /></mesh>
                             <mesh position={[0, -0.4, -0.02]} material={materials.boot} castShadow><boxGeometry args={[0.24, 0.18, 0.28]} /></mesh>
-                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.26, 0.05, 0.3]} /></mesh>
+                            <mesh position={[0, -0.34, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.285, 0.05, 0.355]} /></mesh>
                         </group>
                     </group>
                     {/* Chest (twists against the hips), head and arms */}
                     <group ref={torsoRef} position={[0, 0.76, 0]}>
+                        <PlayerArmor item={equipment.chestplate} part="chest" />
                         <mesh position={[0, 0.37, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.5, 0.74, 0.26]} /></mesh>
                         <mesh position={[0, 0.6, -0.14]} material={materials.jacketDark} castShadow><boxGeometry args={[0.44, 0.28, 0.02]} /></mesh>
                         <group ref={headRef} position={[0, 0.74, 0]}>
+                            <PlayerArmor item={equipment.helmet} part="helmet" />
                             <mesh position={[0, 0.25, 0]} material={materials.skin} castShadow><boxGeometry args={[0.5, 0.5, 0.5]} /></mesh>
                             <mesh position={[0, 0.44, 0.02]} material={materials.hair}><boxGeometry args={[0.52, 0.14, 0.52]} /></mesh>
                             <mesh position={[0, 0.3, 0.26]} material={materials.hair}><boxGeometry args={[0.52, 0.22, 0.04]} /></mesh>
@@ -437,6 +460,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType
                             <mesh position={[0.11, 0.27, -0.26]} material={materials.eye}><boxGeometry args={[0.07, 0.07, 0.02]} /></mesh>
                         </group>
                         <group ref={armLRef} position={[-0.36, 0.66, 0]}>
+                            <PlayerArmor item={equipment.chestplate} part="shoulder" />
                             <mesh position={[0, -0.18, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.2, 0.36, 0.2]} /></mesh>
                             <group ref={armLLowerRef} position={[0, -0.36, 0]}>
                                 <mesh position={[0, -0.17, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.19, 0.34, 0.19]} /></mesh>
@@ -444,6 +468,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null }> = ({ itemType
                             </group>
                         </group>
                         <group ref={armRRef} position={[0.36, 0.66, 0]}>
+                            <PlayerArmor item={equipment.chestplate} part="shoulder" />
                             <mesh position={[0, -0.18, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.2, 0.36, 0.2]} /></mesh>
                             <group ref={armRLowerRef} position={[0, -0.36, 0]}>
                                 <mesh position={[0, -0.17, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.19, 0.34, 0.19]} /></mesh>

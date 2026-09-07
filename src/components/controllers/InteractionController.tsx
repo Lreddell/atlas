@@ -34,7 +34,7 @@ import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 import { findFirstBlockedEdit } from '../../systems/world/regionEditPolicy';
 import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/ResonantVaultRuntime';
-import { getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
+import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
 import { aimRay, viewRig } from '../../systems/player/viewRig';
@@ -650,7 +650,7 @@ export const InteractionController = ({
     // items retain the original short-range path; the crossbow fires only on use.
     const tryMeleeAttack = useCallback((): boolean => {
         const held = inventory[selectedSlot];
-        const profile = held ? getVaultWeaponProfile(held.type) : null;
+        const profile = getPlayerWeaponProfile(held?.type ?? null);
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
         aimFromCamera(camera);
         if (profile?.kind === 'crossbow') return true;
@@ -662,7 +662,7 @@ export const InteractionController = ({
         const angle = profile?.kind === 'spear' || playerAttack.combo === 2 ? 30 : 120;
         // Sweep the visible bodies in the authored arc. Each ray still respects
         // voxels, foreground entities and encounter-specific crystal hit zones.
-        for (const entity of entityManager.getEntities()) {
+        for (const entity of profile ? entityManager.getEntities() : []) {
             if (entity.hp <= 0 || hits.has(entity.id)) continue;
             const dx = entity.pos.x - _camPos.x;
             const dy = entity.pos.y + entity.height * 0.5 - _camPos.y;
@@ -738,24 +738,26 @@ export const InteractionController = ({
         }
         if (held) damageHeldItem(selectedSlot, profile?.durabilityCost ?? (isSword(held.type) ? 1 : 2));
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
+        if (!profile) interactionCooldown.current = 6;
 
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
     const requestAttack = useCallback((): boolean => {
         const held = inventory[selectedSlot];
-        const profile = held ? getVaultWeaponProfile(held.type) : null;
-        if (profile?.kind === 'crossbow') return true;
-        const sword = held ? isSword(held.type) : false;
-        aimFromCamera(camera);
-        const hit = entityManager.raycastEntity(_camPos, _camDir, profile?.reach ?? MELEE_REACH);
-        const block = castFromCamera(camera, Math.max(profile?.reach ?? MELEE_REACH, gameMode === 'creative' ? 5.2 : 4.5));
-        // Swords and vault melee weapons swing through air; tools retain mining.
-        if (!sword && !profile && block && (!hit || !isEntityHitVisible(hit.dist, block.distance))) return false;
+        const profile = getPlayerWeaponProfile(held?.type ?? null);
+        if (!profile) return false;
+        if (profile.kind === 'crossbow') return true;
+        // Axes remain usable as tools: a visible block keeps the mining path.
+        if (profile.kind === 'axe') {
+            aimFromCamera(camera);
+            const target = entityManager.raycastEntity(_camPos, _camDir, profile.reach);
+            const block = castFromCamera(camera, gameMode === 'creative' ? 5.2 : 4.5);
+            if (block && (!target || !isEntityHitVisible(target.dist, block.distance))) return false;
+        }
         if (attackBusy(playerAttack) || weaponCooldown.current > 0 || motionStatus.action !== 'none') return true;
-        const name = held ? BlockType[held.type] : '';
-        const kind = profile?.kind ?? (sword ? 'sword' : name?.endsWith('_AXE') ? 'axe' : held ? 'tool' : 'unarmed');
-        const duration = profile?.cooldownSeconds ?? (kind === 'sword' ? 0.625 : kind === 'axe' ? 1 : kind === 'tool' ? 0.8 : 0.5);
+        const kind = profile.kind;
+        const duration = profile.cooldownSeconds;
         if (beginAttack(playerAttack, kind, duration)) {
             attackBuffer.current = 0;
             attackItem.current = { slot: selectedSlot, type: held?.type ?? null };
@@ -763,7 +765,7 @@ export const InteractionController = ({
             setBreakingVisual(null);
         }
         return true;
-    }, [camera, inventory, selectedSlot, setBreakingVisual, gameMode]);
+    }, [inventory, selectedSlot, setBreakingVisual, camera, gameMode]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
@@ -773,9 +775,9 @@ export const InteractionController = ({
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
                 // Attacking an entity takes priority over mining a block.
-                attackHeld.current = true;
-                attackBuffer.current = 0.15;
-                if (!requestAttack()) isLeftMouseDown.current = true;
+                attackHeld.current = getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null) !== null;
+                attackBuffer.current = attackHeld.current ? 0.15 : 0;
+                if (!requestAttack() && !tryMeleeAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -803,7 +805,7 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, requestAttack]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, requestAttack, tryMeleeAttack, inventory, selectedSlot]);
 
     useFrame((_, delta) => {
         playerMining.active = false;
@@ -833,7 +835,7 @@ export const InteractionController = ({
             setBreakingVisual(null);
         }
         attackBuffer.current = Math.max(0, attackBuffer.current - combatDt);
-        if (attackBusy(playerAttack)) isLeftMouseDown.current = false;
+        if (attackBusy(playerAttack) && getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null)) isLeftMouseDown.current = false;
 
         if (interactionCooldown.current > 0) {
             interactionCooldown.current--;

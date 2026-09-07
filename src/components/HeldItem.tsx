@@ -6,6 +6,7 @@ import { ItemStack } from '../types';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
 import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
+import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
 import { playerAttack, attackBusy, attackPose } from '../systems/combat/playerAttack';
 import { inputState } from '../systems/player/playerInput';
 import { globalSunlightValue } from './chunkLightingState';
@@ -99,6 +100,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             weaponAnimation.current = null;
         }
     }, [isLocked]);
+
+    useEffect(() => { weaponAnimation.current = null; }, [itemType]);
 
     // Ensure camera is part of the scene graph so its children (the hand) are rendered
     useEffect(() => {
@@ -277,7 +280,7 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                  groupRef.current.rotateZ(0.2);
             }
 
-            if (attackBusy(playerAttack) && playerAttack.kind !== 'crossbow') {
+            if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind !== 'crossbow') {
                 const pose = attackPose(playerAttack);
                 groupRef.current.position.set(0.45 + bobX + pose.sweep * 0.20, -0.48 + bobY + pose.shoulder * 0.10, -0.8 - pose.thrust * 0.3);
                 groupRef.current.rotation.set(0.2 - pose.shoulder * 0.55, -0.2 + pose.twist, pose.sweep);

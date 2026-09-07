@@ -18,10 +18,8 @@ import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
-import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { BossCompass } from './components/ui/BossCompass';
-import { CombatFeedback } from './components/ui/CombatFeedback';
 import { motionStatus } from './systems/player/playerMotion';
 import { viewRig, type ViewMode } from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
@@ -3158,12 +3156,10 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
+                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
                     <BossBar />
                     <CinematicOverlay />
                     {!showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
-                    {!showDeathScreen && !cinematicMode && !openContainer && gameMode !== 'spectator' && <CombatFeedback />}
-                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
                     {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
                             Sneak (Shift) to hop out of the boat
@@ -3269,7 +3265,7 @@ const App: React.FC = () => {
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
-                {gameMode !== 'spectator' && !isDead && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} />}
+                {gameMode !== 'spectator' && !isDead && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}
                     <BossCinematic />
                     <BellTitanCinematic />
                     <WardenDefeatCinematic />

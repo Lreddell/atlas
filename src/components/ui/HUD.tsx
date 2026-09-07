@@ -6,7 +6,7 @@ import { BLOCKS } from '../../data/blocks';
 import { MAX_BREATH } from '../../systems/player/playerConstants';
 import { totalDefense, type Equipment } from '../../systems/registry/equipment';
 import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
-import { summarizeItemStats } from '../../systems/registry/itemTooltips';
+import { CombatFeedback } from './CombatFeedback';
 import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
 
 interface HUDProps {
@@ -20,6 +20,7 @@ interface HUDProps {
     headBlockType?: BlockType;
     lastDamageTime?: number;
     equipment?: Equipment;
+    magnetic?: boolean;
 }
 
 // A single armor pip (chestplate silhouette). fill: 0 | 0.5 | 1.
@@ -127,10 +128,17 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
     );
 };
 
-export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment }) => {
+export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment, magnetic = false }) => {
     const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
     const [isFlashing, setIsFlashing] = useState(false);
     const [hungerShake, setHungerShake] = useState<number[]>(Array(10).fill(0));
+    const [showItemName, setShowItemName] = useState(true);
+    const selectedType = inventory[selectedSlot]?.type;
+    useEffect(() => {
+        setShowItemName(true);
+        const timer = window.setTimeout(() => setShowItemName(false), 2500);
+        return () => window.clearTimeout(timer);
+    }, [selectedSlot, selectedType]);
 
     useEffect(() => {
         if (lastDamageTime > 0) {
@@ -245,22 +253,14 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Selected item name. Lifted clear of whatever else is stacked in the
                 bottom centre: the hotbar always, plus the hearts and (when worn)
                 the armor pips in survival, so the label never lands on them. */}
-            {gameMode !== 'spectator' && inventory[selectedSlot] && (
-                <div
-                    className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center bg-black/40 px-3 py-1 rounded pointer-events-none transition-opacity duration-200 z-40"
-                    style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}
-                >
-                    <div className="text-white font-bold text-shadow-md text-base">
+            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-[145] flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}>
+                <CombatFeedback magnetic={magnetic} />
+                <div className="h-7 max-w-full">
+                    {inventory[selectedSlot] && <div className={`truncate rounded bg-black/55 px-3 py-1 text-center text-sm text-white transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
                         {BLOCKS[inventory[selectedSlot]!.type].name}
-                    </div>
-                    {(() => {
-                        const summary = summarizeItemStats(inventory[selectedSlot]!);
-                        return summary
-                            ? <div className="text-[11px] text-gray-300 text-shadow-sm font-pixel">{summary}</div>
-                            : null;
-                    })()}
+                    </div>}
                 </div>
-            )}
+            </div>}
 
             {/* Hotbar */}
             {gameMode !== 'spectator' && (

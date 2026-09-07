@@ -1,129 +1,79 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { gameEvents } from '../../systems/events/GameEvents';
-import { motionStatus } from '../../systems/player/playerMotion';
+import { motionStatus, ROLL_STAMINA_COST } from '../../systems/player/playerMotion';
 import { climbSurfaces } from '../../systems/player/climbSurfaces';
+import { inputState } from '../../systems/player/playerInput';
+import { PolarityIndicator } from './PolarityIndicator';
 
-// Centre-screen combat feedback, drawn around the crosshair where the player is
-// already looking:
-//
-//   - a cooldown ring that sweeps closed as the dodge recharges, so "why did
-//     nothing happen?" is answered without a permanent prompt on the HUD;
-//   - a red flash when a press could not be answered;
-//   - a brief DODGED flash when an invulnerability window ate a hit;
-//   - the tower flip warning while clinging to one of the Warden's towers,
-//     which is the one piece of text urgent enough to sit in the player's eyeline.
-//
-// The kit publishes plain mutable state, so this polls at HUD rate rather than
-// re-rendering the scene.
+const CIRCUMFERENCE = 2 * Math.PI * 17;
 
-const RING_RADIUS = 17;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
-
-interface FeedbackView {
-    cooldown: number;
-    stamina: number;
-    refusedAt: number;
-    dodgedAt: number;
-    shockedAt: number;
-    flux: { remaining: number; total: number } | null;
-}
-
-export const CombatFeedback: React.FC = () => {
-    const [view, setView] = useState<FeedbackView>({ stamina: 100, cooldown: 0, refusedAt: 0, dodgedAt: 0, shockedAt: 0, flux: null });
-
+/** Contextual gauges share the HUD's layout with the item name and vitals. */
+export const CombatFeedback: React.FC<{ magnetic?: boolean }> = ({ magnetic = false }) => {
+    const [view, setView] = useState(() => ({ ...motionStatus, dodged: false, shocked: false, refused: false, flux: 0, aligned: false }));
     useEffect(() => {
-        let dodgedAt = 0;
-        let shockedAt = 0;
-        const offDodged = gameEvents.on('player:dodged', () => { dodgedAt = Date.now(); });
-        const offShocked = gameEvents.on('player:shocked', () => { shockedAt = Date.now(); });
-
+        let dodgedAt = 0, shockedAt = 0;
+        const offDodge = gameEvents.on('player:dodged', () => { dodgedAt = Date.now(); });
+        const offShock = gameEvents.on('player:shocked', () => { shockedAt = Date.now(); });
         let last = '';
         const poll = window.setInterval(() => {
             const zone = climbSurfaces.attachedZone ? climbSurfaces.get(climbSurfaces.attachedZone) : null;
-            const now = climbSurfaces.clock;
-            const open = zone !== null && now >= zone.opensAt && now < zone.until;
-            const next: FeedbackView = {
-                stamina: motionStatus.stamina,
+            const open = zone && !zone.retiring && climbSurfaces.clock >= zone.opensAt && climbSurfaces.clock < zone.until;
+            const now = Date.now();
+            const next = { ...motionStatus, stamina: Math.floor(motionStatus.stamina * 10) / 10,
                 cooldown: Math.round(motionStatus.cooldown * 40) / 40,
-                refusedAt: Date.now() - motionStatus.refusedAt < 400 ? motionStatus.refusedAt : 0,
-                dodgedAt: Date.now() - dodgedAt < 650 ? dodgedAt : 0,
-                shockedAt: Date.now() - shockedAt < 1400 ? shockedAt : 0,
-                flux: open && zone
-                    ? { remaining: Math.round((zone.until - now) * 20) / 20, total: Math.max(0.001, zone.until - zone.opensAt) }
-                    : null,
-            };
-            const key = `${next.stamina}|${next.cooldown}|${next.refusedAt}|${next.dodgedAt}|${next.shockedAt}|${next.flux ? next.flux.remaining : 'x'}`;
-            if (key === last) return;
-            last = key;
-            setView(next);
+                recoverySeconds: Math.max(0, Math.ceil((motionStatus.recoverySeconds - 1e-6) * 10) / 10),
+                refused: now - motionStatus.refusedAt < 500, dodged: now - dodgedAt < 500, shocked: now - shockedAt < 1200,
+                flux: open ? Math.max(0, Math.min(1, (zone.until - climbSurfaces.clock) / Math.max(0.001, zone.until - zone.opensAt))) : 0,
+                aligned: !!open && inputState.magneticPolarity !== 0 && Math.sign(inputState.magneticPolarity) !== Math.sign(zone.polarity) };
+            const key = JSON.stringify(next);
+            if (key !== last) { last = key; setView(next); }
         }, 40);
-
-        return () => { offDodged(); offShocked(); window.clearInterval(poll); };
+        return () => { offDodge(); offShock(); window.clearInterval(poll); };
     }, []);
 
-    const now = Date.now();
-    const refused = now - view.refusedAt < 400;
-    const dodged = now - view.dodgedAt < 650;
-    const shocked = now - view.shockedAt < 1400;
-    const cooling = view.cooldown > 0.001;
-    const fluxFraction = view.flux ? Math.max(0, Math.min(1, view.flux.remaining / view.flux.total)) : 0;
+    const low = view.stamina < ROLL_STAMINA_COST;
+    const active = view.stamina < 100 || view.cooldown > 0 || view.refused;
+    const move = view.action !== 'none' ? view.action : view.prompt;
+    const label = move === 'dash' ? 'Magnetic dash' : move === 'leap' ? 'Repel leap' : 'Dodge roll';
+    const status = view.ready ? 'Ready' : view.recoverySeconds > 0 ? `${view.recoverySeconds.toFixed(1)} seconds recovery` : low ? 'Not enough stamina' : 'Unavailable';
+    const iconColor = view.ready ? '#b9d99e' : view.recoverySeconds <= 0 ? '#e4ae55' : '#e4e5df';
 
-    return (
-        <div className="pointer-events-none absolute inset-0 z-[145] select-none">
-            {view.stamina < 100 && (
-                <div className="absolute bottom-[148px] left-1/2 w-[180px] -translate-x-1/2" role="meter" aria-label="Roll stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)}>
-                    <div className="mb-1 text-center font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000]">STAMINA</div>
-                    <div className="h-2 border border-black bg-black/60"><div className="h-full transition-[width] duration-75" style={{ width: `${view.stamina}%`, background: view.stamina < 30 ? '#e9a45d' : '#8fd9b1' }} /></div>
-                </div>
-            )}
-            {/* Dodge cooldown ring around the crosshair. Hidden once ready, so a
-                clean screen means "the kit will answer". */}
-            {(cooling || refused) && (
-                <svg
-                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-                    width="44" height="44" viewBox="0 0 44 44"
-                >
-                    <circle
-                        cx="22" cy="22" r={RING_RADIUS}
-                        fill="none" stroke="rgba(0,0,0,0.45)" strokeWidth="4"
-                    />
-                    <circle
-                        cx="22" cy="22" r={RING_RADIUS}
-                        fill="none"
-                        stroke={refused ? '#ff5252' : '#b388ff'}
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeDasharray={RING_CIRCUMFERENCE}
-                        strokeDashoffset={RING_CIRCUMFERENCE * (refused ? 0 : view.cooldown)}
-                        transform="rotate(-90 22 22)"
-                        opacity={refused ? 0.95 : 0.8}
-                    />
+    return <div className="pointer-events-none flex w-full flex-col items-center gap-2 select-none">
+        {active && <div className={`flex ${view.stamina < 100 ? 'w-[280px]' : 'w-[100px]'} max-w-full items-center gap-3 rounded border px-3 py-2 shadow-lg ${view.refused ? 'border-amber-400/80 bg-black/80' : 'border-white/20 bg-black/70'}`}>
+            <div className="relative h-10 w-10 shrink-0" role="img" aria-label={`${label}: ${status}`}>
+                <svg viewBox="0 0 40 40" className="h-10 w-10" aria-hidden="true">
+                    <circle cx="20" cy="20" r="17" fill="none" stroke="#ffffff30" strokeWidth="2" />
+                    <circle cx="20" cy="20" r="17" fill="none" stroke={iconColor} strokeWidth="2"
+                        strokeDasharray={CIRCUMFERENCE} strokeDashoffset={CIRCUMFERENCE * view.cooldown} transform="rotate(-90 20 20)" />
+                    <g fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        {move === 'dash' || move === 'leap' ? <path d="m13 14 7 6-7 6m8-12 7 6-7 6M8 20h12" /> : <><circle cx="22" cy="13" r="2" /><path d="m20 18-6 3 2 6h7l4-5-5-3-3 6m-9-9 3-3M9 22H6" /></>}
+                    </g>
                 </svg>
-            )}
-
-            {/* The tower is flipping: the climber has this long to answer with R. */}
-            {view.flux && (
-                <div className="absolute left-1/2 top-[34%] w-[260px] -translate-x-1/2 text-center">
-                    <div className="animate-pulse whitespace-nowrap font-pixel text-sm text-[#ffd166] [text-shadow:2px_2px_0_#000]">
-                        TOWER FLIPPING · press R to hold on
+                <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">C</kbd>
+            </div>
+            <div className="min-w-0 flex-1">
+                {view.stamina < 100 && <div role="meter" aria-label="Stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)} aria-valuetext={`${Math.floor(view.stamina / ROLL_STAMINA_COST)} rolls available`}>
+                    <div className="relative h-3 overflow-hidden rounded-sm border border-white/25 bg-black/80">
+                        <div className="h-full transition-[width] duration-75 motion-reduce:transition-none" style={{ width: `${view.stamina}%`, background: low ? '#e4ae55' : '#83bd63', boxShadow: 'inset 0 2px 0 #ffffff30' }} />
+                        {[30, 60, 90].map(at => <span key={at} className="absolute inset-y-0 w-px bg-black/70" style={{ left: `${at}%` }} />)}
                     </div>
-                    <div className="mx-auto mt-1 h-[6px] w-[180px] border-2 border-black/80 bg-[#2b2338]">
-                        <div className="h-full bg-[#ffd166] transition-[width] duration-75" style={{ width: `${fluxFraction * 100}%` }} />
-                    </div>
+                </div>}
+                <div className="mt-1 flex h-3 items-center justify-between text-[10px] tabular-nums text-white/70" aria-hidden="true">
+                    <span>{low ? '△' : view.ready ? '✓' : view.recoverySeconds > 0 ? '↻' : '×'}</span>
+                    <span>{view.recoverySeconds > 0 ? `${view.recoverySeconds.toFixed(1)}s` : view.ready ? '✓' : '×'}</span>
                 </div>
-            )}
-
-            {shocked && !view.flux && (
-                <div className="absolute left-1/2 top-[34%] -translate-x-1/2 whitespace-nowrap font-pixel text-sm text-[#ff8a80] [text-shadow:2px_2px_0_#000]">
-                    SHOCKED OFF · wrong polarity
-                </div>
-            )}
-
-            {dodged && (
-                <div className="absolute left-1/2 top-[56%] -translate-x-1/2 whitespace-nowrap font-pixel text-xs text-[#a5ffb8] [text-shadow:1px_1px_0_#000]">
-                    DODGED
-                </div>
-            )}
-        </div>
-    );
+            </div>
+        </div>}
+        {magnetic && <PolarityIndicator />}
+        {createPortal(<div className="pointer-events-none fixed inset-0 z-[145] select-none">
+            {view.flux > 0 && <div className={`absolute left-1/2 top-[34%] flex -translate-x-1/2 items-center gap-2 rounded border bg-black/80 px-3 py-2 ${view.aligned ? 'border-green-300/50 text-green-200' : 'border-amber-300/60 text-amber-200'}`} role="status" aria-label={view.aligned ? 'Polarity aligned: hold on' : 'Tower flipping: press R to hold on'}>
+                <span aria-hidden="true" className="text-xl">{view.aligned ? '✓' : '↔'}</span>
+                {!view.aligned && <kbd className="rounded border border-current px-1.5 font-sans text-sm">R</kbd>}
+                <div className="h-1 w-16 bg-white/15"><div className="h-full bg-current" style={{ width: `${view.flux * 100}%` }} /></div>
+            </div>}
+            {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 rounded bg-black/75 px-2 text-xl text-amber-200" role="status" aria-label="Shocked off: wrong polarity">⚡</div>}
+            {view.dodged && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-lg text-white drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack dodged">✓</div>}
+        </div>, document.body)}
+    </div>;
 };

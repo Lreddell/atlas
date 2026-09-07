@@ -414,6 +414,7 @@ export interface MotionStatus {
     progress: number;
     /** Remaining cooldown of the move the kit would use now, 0..1 (the crosshair ring). */
     cooldown: number;
+    recoverySeconds: number;
     /** True while the kit is ready to answer a press. */
     ready: boolean;
     /** ms timestamp of the last press the kit had to refuse (the crosshair flash). */
@@ -430,6 +431,7 @@ export const motionStatus: MotionStatus = {
     surgeFraction: 0,
     progress: 0,
     cooldown: 0,
+    recoverySeconds: 0,
     ready: true,
     refusedAt: 0,
     prompt: 'roll',
@@ -462,8 +464,9 @@ export function writeMotionStatus(state: MotionState, prompt: DodgeResolution['k
             : [state.cooldowns.roll, ROLL_COOLDOWN];
     const actionRemaining = state.action === 'none' ? 0 : Math.max(0, state.duration - state.time);
     const total = Math.max(span, state.duration);
+    target.recoverySeconds = Math.max(remaining, actionRemaining);
     target.cooldown = total > 0 ? Math.max(0, Math.min(1, Math.max(remaining, actionRemaining) / total)) : 0;
-    target.ready = state.action === 'none' && remaining <= 0 && (prompt === 'dash' || prompt === 'leap' || state.stamina >= ROLL_STAMINA_COST);
+    target.ready = state.action === 'none' && prompt !== 'none' && remaining <= 0 && (prompt === 'dash' || prompt === 'leap' || state.stamina >= ROLL_STAMINA_COST);
     target.prompt = prompt;
     return target;
 }

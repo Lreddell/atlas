@@ -1,4 +1,5 @@
 import { BlockType } from '../../types';
+import { isSword } from '../registry/itemStats';
 
 export type VaultWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer';
 
@@ -30,7 +31,7 @@ export interface VaultWeaponHit {
 }
 
 const PROFILES = new Map<BlockType, VaultWeaponProfile>([
-    [BlockType.VAULTSTEEL_SPEAR, { kind: 'spear', damage: 6, reach: 5.4, cooldownSeconds: 0.58, stagger: 0.35, durabilityCost: 1 }],
+    [BlockType.VAULTSTEEL_SPEAR, { kind: 'spear', damage: 6, reach: 5.4, cooldownSeconds: 0.625, stagger: 0.35, durabilityCost: 1 }],
     [BlockType.VAULT_CROSSBOW, { kind: 'crossbow', damage: 7, reach: 64, cooldownSeconds: 1.15, stagger: 0.25, durabilityCost: 1 }],
     [BlockType.BELLBREAKER_MAUL, { kind: 'maul', damage: 9, reach: 4.2, cooldownSeconds: 1.05, stagger: 1, durabilityCost: 1 }],
     [BlockType.TITAN_HAMMER, { kind: 'hammer', damage: 11, reach: 4.4, cooldownSeconds: 1.1, stagger: 1.25, durabilityCost: 1 }],
@@ -38,6 +39,22 @@ const PROFILES = new Map<BlockType, VaultWeaponProfile>([
 
 export function getVaultWeaponProfile(type: BlockType): VaultWeaponProfile | null {
     return PROFILES.get(type) ?? null;
+}
+
+export interface PlayerWeaponProfile extends Omit<VaultWeaponProfile, 'kind' | 'damage'> {
+    kind: VaultWeaponKind | 'sword' | 'axe';
+}
+
+/** Explicit weapon families: ordinary items and mining tools keep legacy use. */
+export function getPlayerWeaponProfile(type: BlockType | null): PlayerWeaponProfile | null {
+    if (type === null) return null;
+    const vault = getVaultWeaponProfile(type);
+    if (vault) return vault;
+    if (isSword(type)) return { kind: 'sword', reach: 3.2, cooldownSeconds: 0.58, stagger: 0, durabilityCost: 1 };
+    if ([BlockType.WOOD_AXE, BlockType.STONE_AXE, BlockType.COPPER_AXE, BlockType.IRON_AXE, BlockType.GOLD_AXE, BlockType.DIAMOND_AXE].includes(type)) {
+        return { kind: 'axe', reach: 3.2, cooldownSeconds: 1, stagger: 0, durabilityCost: 2 };
+    }
+    return null;
 }
 
 export function isEchoArtifact(type: BlockType): boolean {
