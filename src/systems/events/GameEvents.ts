@@ -68,6 +68,18 @@ export interface GameEventMap {
     'player:shocked': { x: number; y: number; z: number };
     /** The player took damage (any source). */
     'player:damaged': { amount: number };
+    /**
+     * Health settled on a new value, from ANY path: damage after armor, fall,
+     * fire, drowning, starvation, regeneration, healing, a loaded save, a
+     * respawn. The single input the low-health state reads — `player:damaged`
+     * is the wrong signal for it, since armor changes the number that lands and
+     * healing never fires it at all.
+     */
+    'player:health-changed': { health: number; maxHealth: number };
+    /** The low-health state opened or closed (8 HP in, 10 HP out, of 20). */
+    'player:low-health': { active: boolean; severity: number };
+    /** One heartbeat: drives the authored cue AND the vignette pulse together. */
+    'player:heartbeat': { severity: number; health: number };
     'view:changed': { mode: 'first' | 'third' | 'free' };
     'entity:died': { entityId: number; type: string; x: number; y: number; z: number; yaw: number };
     'combat:start': Record<string, never>;

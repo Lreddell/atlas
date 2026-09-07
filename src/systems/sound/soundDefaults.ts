@@ -13,6 +13,10 @@ export const DEFAULT_SOUND_MANIFEST: SoundManifest = {
     // Player
     "entity.player.hurt": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0 },
     "entity.player.death": { category: "player", sounds: ["random/classic_hurt"], volume: 1.0, pitch: 0.6 },
+    // One lub-dub, fired per beat by lowHealthState (see the README beside the
+    // file). Authored: `fallback: false` keeps it silent rather than substituting
+    // a synthesised thump, which would not read as a heartbeat.
+    "entity.player.heartbeat": { category: "player", sounds: ["player/heartbeat"], volume: 0.85, fallback: false },
     // The F kit (see public/assets/rvx/sounds/magnetic_warden/README.txt for the slot list).
     "entity.player.roll": { category: "player", sounds: ["step/sand1", "step/sand2"], volume: 0.55, pitch: [0.8, 0.95] },
     "entity.player.dash": { category: "player", sounds: ["magnetic_warden/deflect"], volume: 0.6, pitch: 1.5 },

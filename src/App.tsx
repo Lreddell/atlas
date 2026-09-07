@@ -20,6 +20,10 @@ import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityVignette } from './components/ui/PolarityVignette';
+import { LowHealthVignette } from './components/ui/LowHealthVignette';
+import { MotionBlurPass } from './components/MotionBlurPass';
+import { lowHealthState } from './systems/player/lowHealthState';
+import { resetMotionBlurHistory } from './systems/render/motionBlur';
 import { BossCompass } from './components/ui/BossCompass';
 import { motionStatus } from './systems/player/playerMotion';
 import {
@@ -157,6 +161,7 @@ const SETTINGS_ANTIALIASING_KEY = 'atlas.settings.antialiasing';
 const SETTINGS_MAX_FPS_KEY = 'atlas.settings.maxFps';
 const SETTINGS_VSYNC_KEY = 'atlas.settings.vsync';
 const SETTINGS_CHUNK_FADE_ENABLED_KEY = 'atlas.settings.chunkFadeEnabled';
+const SETTINGS_MOTION_BLUR_KEY = 'atlas.settings.motionBlur';
 
 const readNumberSetting = (key: string, fallback: number, min?: number, max?: number) => {
     if (typeof window === 'undefined') return fallback;
@@ -353,6 +358,8 @@ const App: React.FC = () => {
     const [mipmapsEnabled, setMipmapsEnabled] = useState(() => readBooleanSetting(SETTINGS_MIPMAPS_ENABLED_KEY, true));
     const [antialiasing, setAntialiasing] = useState(() => readBooleanSetting(SETTINGS_ANTIALIASING_KEY, true));
     const [chunkFadeEnabled, setChunkFadeEnabled] = useState(() => readBooleanSetting(SETTINGS_CHUNK_FADE_ENABLED_KEY, true));
+    // Off by default, for a saved value that predates the setting and for a fresh install alike.
+    const [motionBlurEnabled, setMotionBlurEnabled] = useState(() => readBooleanSetting(SETTINGS_MOTION_BLUR_KEY, false));
   
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
@@ -2104,6 +2111,7 @@ const App: React.FC = () => {
         e.preventDefault();
         if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             detachedCamera.stage = nextDetachedStage(detachedCamera.stage);
+            resetMotionBlurHistory('detached-camera');
         }
         return;
     }
@@ -2345,6 +2353,59 @@ const App: React.FC = () => {
       if (typeof window === 'undefined') return;
       window.localStorage.setItem(SETTINGS_CHUNK_FADE_ENABLED_KEY, String(chunkFadeEnabled));
   }, [chunkFadeEnabled]);
+
+  useEffect(() => {
+      if (typeof window === 'undefined') return;
+      window.localStorage.setItem(SETTINGS_MOTION_BLUR_KEY, String(motionBlurEnabled));
+  }, [motionBlurEnabled]);
+
+  // --- Low health ---------------------------------------------------------
+  // The ONE input to the low-health state: whatever `health` settled on, from any
+  // path (post-armor damage, fall, fire, drowning, starvation, regen, healing, a
+  // loaded save, a respawn). Driven by the state transition, never polled.
+  // Spectator/creative cannot be hurt, so they never enter it.
+  useEffect(() => {
+      if (appState !== 'game' || gameMode !== 'survival') {
+          lowHealthState.reset();
+          return;
+      }
+      lowHealthState.setHealth(health, 20);
+  }, [health, appState, gameMode]);
+
+  // Presentation is muted while something else owns the screen; the state itself
+  // stays correct underneath, so gameplay resumes exactly where it left off.
+  useEffect(() => {
+      lowHealthState.setSuppression({
+          dead: isDead || showDeathScreen,
+          paused: isPaused || isSleeping,
+          cinematic: cinematicMode || isCapturingPanorama,
+          inactive: appState !== 'game',
+      });
+  }, [isDead, showDeathScreen, isPaused, isSleeping, cinematicMode, isCapturingPanorama, appState]);
+
+  // The low-health music modifier, composed with night and the boss frenzy.
+  useEffect(() => {
+      lowHealthState.setActiveListener((active) => musicController.setLowHealth(active));
+      return () => lowHealthState.setActiveListener(null);
+  }, []);
+
+  // --- Motion blur history ------------------------------------------------
+  // Reprojection compares this frame's camera against the last one, so every
+  // discontinuity has to be declared or the first frame after it streaks. The
+  // pass also carries a distance/angle guard for anything that slips through.
+  useEffect(() => {
+      const offView = gameEvents.on('view:changed', () => resetMotionBlurHistory('view-mode'));
+      const offStart = gameEvents.on('cinematic:start', () => resetMotionBlurHistory('cinematic'));
+      const offEnd = gameEvents.on('cinematic:end', () => resetMotionBlurHistory('cinematic'));
+      // Teleports reset from Player's own teleport handle, which every
+      // instantaneous move already goes through.
+      return () => { offView(); offStart(); offEnd(); };
+  }, []);
+  useEffect(() => { resetMotionBlurHistory('fov'); }, [fov]);
+  useEffect(() => { resetMotionBlurHistory('cinematic'); }, [cinematicMode]);
+  useEffect(() => { resetMotionBlurHistory('panorama'); }, [isCapturingPanorama]);
+  useEffect(() => { resetMotionBlurHistory('resume'); }, [isPaused]);
+  useEffect(() => { resetMotionBlurHistory('world-load'); }, [appState, respawnKey]);
 
   useEffect(() => {
       let disposed = false;
@@ -3059,7 +3120,7 @@ const App: React.FC = () => {
               shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled}
               cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled}
               antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)}
-              chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled}
+              chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} motionBlurEnabled={motionBlurEnabled} setMotionBlurEnabled={setMotionBlurEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
               onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
@@ -3112,8 +3173,11 @@ const App: React.FC = () => {
                             Sneak (Shift) to hop out of the boat
                         </div>
                     )}
+                    {/* Low health sits UNDER the polarity rim (z-20 vs z-30) so a red
+                        damage pulse can never be mistaken for positive polarity. */}
+                    {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
                     {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
-                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
+                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} motionBlurEnabled={motionBlurEnabled} setMotionBlurEnabled={setMotionBlurEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
@@ -3201,6 +3265,10 @@ const App: React.FC = () => {
             >
                 {!isNativeLoop && <FPSLimiter limit={effectiveMaxFps} />}
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
+                {/* Scene-only motion blur. Unmounted when off, which restores R3F's
+                    own render path and costs nothing; never mounted during a
+                    panorama capture. */}
+                {motionBlurEnabled && !isCapturingPanorama && <MotionBlurPass />}
                 {/* Streamer runs logic loop for loading */}
                 <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}

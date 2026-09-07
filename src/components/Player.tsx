@@ -41,6 +41,7 @@ import {
 } from '../systems/player/viewRig';
 import { attackBusy, playerAttack, playerInteraction, playerMining } from '../systems/combat/playerAttack';
 import { voxelRaycast } from '../systems/world/voxelRaycast';
+import { resetMotionBlurHistory } from '../systems/render/motionBlur';
 import { gameEvents } from '../systems/events/GameEvents';
 import { particleFx, polarityFxColor } from '../systems/fx/particleFx';
 import {
@@ -224,6 +225,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
 
   useImperativeHandle(ref, () => ({
       teleport: (newPos: Vector3) => {
+          // Every instantaneous move funnels through here (/tp, /spawn, unstuck,
+          // the arena placements), so this one reset covers them all: reprojecting
+          // across a teleport would streak the whole frame.
+          resetMotionBlurHistory('teleport');
           pos.current.copy(newPos);
           lastClearPos.current.copy(newPos);
           adhesion.current = createAdhesionState();

@@ -395,6 +395,39 @@ test('the kit readouts live in the HUD layer, not above it', () => {
     for (const f of ['BossBar', 'BossCompass', 'PolarityVignette', 'ResonantObjectiveHUD']) {
         assert.doesNotMatch(read(`src/components/ui/${f}.tsx`), /z-\[\d\d\d\]|fixed inset-0/);
     }
+    // Low health is the one overlay deliberately BELOW the others: polarity has
+    // to stay readable through it (red is positive, blue is negative), so a red
+    // damage rim must never sit on top of a blue polarity rim.
+    assert.match(read('src/components/ui/LowHealthVignette.tsx'), /absolute inset-0 z-20/);
+    assert.match(app, /<LowHealthVignette \/>\}\n\s*\{[^\n]*<PolarityVignette \/>\}/);
+});
+
+test('low health drives one state, and motion blur is scene-only and off by default', () => {
+    // The state reads settled HEALTH, not the damage event: armor changes what
+    // actually lands, and healing/regen/loading a save never fire a damage event
+    // at all. One effect, one input.
+    assert.match(app, /lowHealthState\.setHealth\(health, 20\)/);
+    assert.doesNotMatch(app, /player:damaged[\s\S]{0,200}lowHealth/);
+    const state = read('src/systems/player/lowHealthState.ts');
+    // One scheduler feeds both the cue and the pulse, so they cannot drift.
+    assert.match(state, /gameEvents\.emit\('player:heartbeat'/);
+    assert.match(state, /soundManager\.play\('entity\.player\.heartbeat'\)/);
+    assert.match(read('src/components/ui/LowHealthVignette.tsx'), /gameEvents\.on\('player:heartbeat'/);
+    // Authored cue: a missing file is silent, never a synthesised stand-in.
+    assert.match(read('src/systems/sound/soundDefaults.ts'), /"entity\.player\.heartbeat":[^\n]*fallback: false/);
+
+    // Motion blur: off unless the player turned it on, and unmounted when off so
+    // the disabled path is R3F's own renderer with no extra targets.
+    assert.match(app, /readBooleanSetting\(SETTINGS_MOTION_BLUR_KEY, false\)/);
+    assert.match(app, /\{motionBlurEnabled && !isCapturingPanorama && <MotionBlurPass \/>\}/);
+    // Scene only: the pass renders the scene into its own target inside the
+    // canvas. Nothing here may reach the DOM overlays.
+    const pass = read('src/components/MotionBlurPass.tsx');
+    assert.match(pass, /gl\.setRenderTarget\(target\)/);
+    assert.doesNotMatch(pass, /document\.|filter:\s*blur|backdrop/);
+    // One shared toggle feeds both the main-menu and in-game Video Settings.
+    assert.equal((app.match(/motionBlurEnabled=\{motionBlurEnabled\}/g) ?? []).length, 2);
+    assert.match(read('src/components/ui/PauseMenu.tsx'), /label="Motion Blur"/);
 });
 
 test('the Warden dies on camera: a defeat cinematic that hands the view back', () => {
@@ -535,8 +568,18 @@ test('boss music loops immediately and the Storm speeds it up +100 cents', () =>
     const mc = read('src/systems/sound/MusicController.ts');
     assert.match(mc, /BOSS_MAGNETIC[\s\S]*?nextPlayTime = 0/);
     assert.match(mc, /context === 'BOSS_MAGNETIC'\) return 0/);
-    assert.match(mc, /FRENZY_PLAYBACK_RATE = 2 \*\* \(1 \/ 12\)/);
     assert.match(mc, /setBossFrenzy/);
+    // The +100 cents now comes from the shared semitone resolver rather than a
+    // local constant, so it composes with night and low health instead of
+    // overriding them (see systems/sound/musicRate.test.mjs for the table).
+    assert.match(mc, /resolveMusicPlaybackRate\(this\.currentModifiers\(\)\)/);
+    assert.match(read('src/systems/sound/musicRate.ts'), /BOSS_FRENZY_SEMITONES = 1/);
+    assert.doesNotMatch(mc, /FRENZY_PLAYBACK_RATE|NIGHT_PLAYBACK_RATE/);
+    // Every music source moves together: the streaming decks AND the decoded
+    // authored loops (boss, Resonant), including ones created mid-modifier.
+    const sm = read('src/systems/sound/SoundManager.ts');
+    assert.match(sm, /for \(const voice of this\.decodedMusicVoices\)[\s\S]{0,400}playbackRate/);
+    assert.match(sm, /source\.playbackRate\.setValueAtTime\(this\.musicPlaybackRate, startTime\)/);
 });
 
 test('death or wandering off despawns the boss (bar clears, re-summon at altar)', () => {

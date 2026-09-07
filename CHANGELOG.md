@@ -81,6 +81,35 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   around the crosshair, and the polarity indicator moved to the bottom-right
   corner so nothing overlaps the hotbar's item name or the hearts.
 
+### Low health
+- Dropping to four hearts opens a low-health state: a heartbeat that quickens as
+  you weaken (about 72 BPM at 8 HP up to 114 at 1), a crimson screen-edge pulse
+  beating on the same timing, and the music pitched a semitone up. It clears once
+  you heal back to five hearts, so regeneration around the threshold does not
+  start and stop it every tick.
+- The red pulse renders *under* the polarity rim, so a Warden fight stays readable:
+  blue still means negative polarity even while you are bleeding.
+- Music modifiers now stack in semitone space instead of overriding each other. A
+  night track is -1, the Warden's final phase +1, low health +1, so the Storm at
+  low health during the day is a full +2 and at night lands on +1 — where before
+  the fight simply cancelled the night treatment. Both the streaming decks and the
+  decoded authored loops follow the composed rate.
+- The heartbeat is an authored cue (`entity.player.heartbeat`); see
+  `public/assets/rvx/sounds/player/README.txt` for the slot. Without the file the
+  cue is silent and everything else still works.
+
+### Video
+- Motion Blur, off by default, in Video Settings from both the main menu and the
+  pause menu. It is a scene-only camera-reprojection pass: the 3D world blurs
+  along its actual screen-space motion, a still camera produces an identical
+  image, and the HUD — crosshair, hearts, hotbar, boss bar, menus, both vignettes
+  — is never touched, because the effect lives entirely inside the WebGL canvas.
+- Restrained on purpose: a 120-degree shutter rather than the cinematic 180, at
+  0.35 strength, capped at 1.8% of screen width and normalised to 60 FPS so a low
+  frame rate does not turn into long trails. Camera cuts (view changes, teleports,
+  respawn, cinematics, the detached camera, FOV changes, panorama capture) reset
+  the reprojection history, so none of them streak.
+
 ## [v1.2.0-alpha]: 2026-08-01
 
 ### Highlights

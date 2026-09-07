@@ -29,6 +29,8 @@ interface PauseMenuProps {
     setAntialiasing: (val: boolean) => void;
     chunkFadeEnabled: boolean;
     setChunkFadeEnabled: (val: boolean) => void;
+    motionBlurEnabled: boolean;
+    setMotionBlurEnabled: (val: boolean) => void;
     maxFps: number;
     setMaxFps: (val: number) => void;
     vsync: boolean;
@@ -120,7 +122,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     onResume, onQuitToTitle, renderDistance, setRenderDistance, fov, setFov, 
     shadowsEnabled, setShadowsEnabled,
     cloudsEnabled, setCloudsEnabled,
-    mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing, 
+    mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing,
+    motionBlurEnabled, setMotionBlurEnabled, 
     chunkFadeEnabled, setChunkFadeEnabled,
     maxFps, setMaxFps, vsync, setVsync,
     brightness, setBrightness,
@@ -279,6 +282,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Clouds" value={cloudsEnabled} onChange={setCloudsEnabled} width="w-64" />
                 <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
                 <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
+                {/* Scene only: the 3D world blurs, the HUD never does. Off by default. */}
+                <MCToggle label="Motion Blur" value={motionBlurEnabled} onChange={setMotionBlurEnabled} width="w-64" />
                 <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
                 
                 {/* Custom Environment */}
