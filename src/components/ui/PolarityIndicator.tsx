@@ -1,33 +1,87 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { gameEvents } from '../../systems/events/GameEvents';
 import { inputState } from '../../systems/player/playerInput';
 import { getPolaritySoundEvent } from '../../systems/player/polarityFeedback';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { motionStatus } from '../../systems/player/playerMotion';
 
-/** Centered magnetic ability: sign is redundant with color, R is the only copy. */
+// The player's current polarity: the magnet block icon, its label, and (during
+// the Warden fight) the armed Magnet Slam. The centered HUD stacks it above
+// the hotbar's item-name label, clear of the hearts and armor readout.
+//
+// The dodge key deliberately has no prompt here: rolling is always available,
+// and its cooldown is shown on the crosshair (see CombatFeedback) rather than
+// as another box of text.
+
 export const PolarityIndicator: React.FC = () => {
-    const [view, setView] = useState({ positive: inputState.magneticPolarity > 0, surge: false, fraction: 0 });
+    const [positive, setPositive] = useState(inputState.magneticPolarity > 0);
+    const [switching, setSwitching] = useState(false);
+    const [surge, setSurge] = useState({ armed: false, fraction: 0 });
+    const resetTimerRef = useRef<number | null>(null);
+
     useEffect(() => {
-        const off = gameEvents.on('ability:changed', ({ abilityId, active }) => {
-            if (abilityId === 'polarity') soundManager.play(getPolaritySoundEvent(active));
+        setPositive(inputState.magneticPolarity > 0);
+        const unsubscribe = gameEvents.on('ability:changed', ({ abilityId, active }) => {
+            if (abilityId !== 'polarity') return;
+
+            setPositive(active);
+            setSwitching(true);
+            soundManager.play(getPolaritySoundEvent(active));
+
+            if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+            resetTimerRef.current = window.setTimeout(() => {
+                setSwitching(false);
+                resetTimerRef.current = null;
+            }, 180);
         });
+
+        let last = '';
         const poll = window.setInterval(() => {
-            const next = { positive: inputState.magneticPolarity > 0, surge: motionStatus.surge, fraction: Math.round(motionStatus.surgeFraction * 40) / 40 };
-            setView(old => old.positive === next.positive && old.surge === next.surge && old.fraction === next.fraction ? old : next);
-        }, 40);
-        return () => { off(); window.clearInterval(poll); };
+            const next = { armed: motionStatus.surge, fraction: Math.round(motionStatus.surgeFraction * 20) / 20 };
+            const key = `${next.armed}|${next.fraction}`;
+            if (key === last) return;
+            last = key;
+            setSurge(next);
+        }, 60);
+
+        return () => {
+            unsubscribe();
+            window.clearInterval(poll);
+            if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+        };
     }, []);
-    const color = view.positive ? '#ef7770' : '#79b9ee';
-    return <div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-black/75 shadow-lg" role="img"
-        aria-label={`${view.positive ? 'Positive' : 'Negative'} polarity. R to switch.${view.surge ? ' Magnet slam ready.' : ''}`}>
-        <svg viewBox="0 0 48 48" className="absolute inset-0 h-full w-full" aria-hidden="true">
-            {view.surge && <circle cx="24" cy="24" r="22" fill="none" stroke="#e5c477" strokeWidth="2" strokeDasharray={Math.PI * 44} strokeDashoffset={Math.PI * 44 * (1 - view.fraction)} transform="rotate(-90 24 24)" />}
-            <path d="M15 15v12a9 9 0 0 0 18 0V15h-6v12a3 3 0 0 1-6 0V15Z" fill={color} />
-            <path d="M15 18h6m6 0h6" stroke="#fff" strokeWidth="2" />
-            <path d={view.positive ? 'M21 10h6m-3-3v6' : 'M21 10h6'} stroke={color} strokeWidth="2" />
-        </svg>
-        <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">R</kbd>
-        {view.surge && <svg viewBox="0 0 16 16" className="absolute -left-2 -top-1 h-5 w-5 rounded bg-black/80 text-[#e5c477]" aria-hidden="true"><path d="m3 13 9-10 1 1-9 10m-2-5 5 5M9 2h5v5" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
-    </div>;
+
+    const texturePath = positive
+        ? 'assets/textures/blocks/positive_magnet.png'
+        : 'assets/textures/blocks/negative_magnet.png';
+
+    return (
+        <div className="pointer-events-none z-[150] flex select-none flex-col items-center gap-1">
+            {surge.armed && (
+                <div className="flex w-[92px] flex-col items-center">
+                    <div className="animate-pulse whitespace-nowrap font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000]">
+                        SLAM READY
+                    </div>
+                    <div className="mt-[2px] h-[4px] w-full border border-black/80 bg-[#2b2338]">
+                        <div className="h-full bg-white" style={{ width: `${surge.fraction * 100}%` }} />
+                    </div>
+                </div>
+            )}
+            <div
+                className={`h-12 w-12 border-4 border-[#1a1a1a] bg-[#777] p-1 shadow-[inset_2px_2px_0_#d8d8d8,inset_-2px_-2px_0_#3a3a3a,2px_2px_0_#000] transition-[transform,filter,box-shadow] duration-150 ${
+                    switching ? 'scale-125 brightness-150' : 'scale-100 brightness-100'
+                } ${surge.armed ? 'shadow-[0_0_14px_4px_rgba(255,255,255,0.75)]' : ''}`}
+            >
+                <img
+                    src={texturePath}
+                    alt=""
+                    className="h-full w-full"
+                    style={{ imageRendering: 'pixelated' }}
+                />
+            </div>
+            <div className="whitespace-nowrap font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000,-1px_-1px_0_#000]">
+                {positive ? 'Positive (R)' : 'Negative (R)'}
+            </div>
+        </div>
+    );
 };

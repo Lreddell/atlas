@@ -287,7 +287,7 @@ test('the HUD reads the forms, the crystal shield, the slam and the tower flip w
     const indicator = read('src/components/ui/PolarityIndicator.tsx');
     assert.doesNotMatch(indicator, /bottom-4 right-4/);
     assert.match(read('src/components/ui/HUD.tsx'), /<CombatFeedback magnetic=\{magnetic\} \/>/);
-    assert.match(indicator, /Magnet slam ready/);
+    assert.match(indicator, /SLAM READY/);
     assert.doesNotMatch(indicator, /flux:changed|FLUX READY/);
     // The dodge has NO on-screen prompt: it is always available, and its
     // cooldown is a ring on the crosshair instead of another box of text.

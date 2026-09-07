@@ -256,7 +256,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {gameMode !== 'spectator' && <div className="absolute left-1/2 z-[145] flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? (equipment && totalDefense(equipment) > 0 ? 168 : 136) : 92 }}>
                 <CombatFeedback magnetic={magnetic} />
                 <div className="h-7 max-w-full">
-                    {inventory[selectedSlot] && <div className={`truncate rounded bg-black/55 px-3 py-1 text-center text-sm text-white transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
+                    {inventory[selectedSlot] && <div className={`truncate rounded bg-black/55 px-3 py-1 text-center text-sm font-bold text-white transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
                         {BLOCKS[inventory[selectedSlot]!.type].name}
                     </div>}
                 </div>
