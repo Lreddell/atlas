@@ -15,6 +15,9 @@ import { BLOCKS } from '../data/blocks';
 import { inputState } from '../systems/player/playerInput';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
 import { headLookPitch, eatingPose } from '../systems/player/playerAnimation';
+import { usePlayerSkin, type PlayerSkin } from '../systems/player/playerSkins';
+import { MinecraftSkinPart } from './MinecraftSkinPart';
+import { useSkinTexture } from '../hooks/useSkinTexture';
 import { WALK_SPEED } from '../systems/player/playerConstants';
 
 // The player's own body, drawn only in third person: a blocky explorer with
@@ -37,12 +40,6 @@ import { WALK_SPEED } from '../systems/player/playerConstants';
 // pull), repel leap, wall climb (chest to the wall, limbs reaching across the
 // face), attack swing, and a hurt flinch.
 
-const SKIN = 0xe0ac8c;
-const HAIR = 0x4a2f1f;
-const JACKET = 0x3b5b8f;
-const JACKET_DARK = 0x2c4470;
-const TROUSERS = 0x2b2b35;
-const BOOT = 0x1b1b22;
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
 
@@ -96,9 +93,12 @@ function resetPose(p: Pose): void {
     p.legRUpper = 0; p.legRLower = 0; p.legROut = 0;
 }
 
-export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equipment }> = ({ itemType, equipment }) => {
+export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equipment; skin?: PlayerSkin; preview?: boolean }> = ({ itemType, equipment, skin: previewSkin, preview = false }) => {
+    const equippedSkin = usePlayerSkin();
+    const skin = previewSkin ?? equippedSkin;
+    const skinTexture = useSkinTexture(skin);
     const heldGeometry = useMemo(() => createHeldItemGeometry(itemType), [itemType]);
-    const heldMaterial = useMemo(() => new THREE.MeshLambertMaterial({ map: textureAtlasManager.getTexture(), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), []);
+    const heldMaterial = useMemo(() => new THREE.MeshLambertMaterial({ map: preview ? null : textureAtlasManager.getTexture(), transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }), [preview]);
     useEffect(() => () => heldGeometry?.dispose(), [heldGeometry]);
     useEffect(() => () => heldMaterial.dispose(), [heldMaterial]);
     const rootRef = useRef<THREE.Group>(null);
@@ -129,31 +129,41 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
     const fallSpeed = useRef(0);
 
     const materials = useMemo(() => ({
-        skin: new THREE.MeshLambertMaterial({ color: SKIN }),
-        hair: new THREE.MeshLambertMaterial({ color: HAIR }),
-        jacket: new THREE.MeshLambertMaterial({ color: JACKET }),
-        jacketDark: new THREE.MeshLambertMaterial({ color: JACKET_DARK }),
-        trousers: new THREE.MeshLambertMaterial({ color: TROUSERS }),
-        boot: new THREE.MeshLambertMaterial({ color: BOOT }),
+        skin: new THREE.MeshLambertMaterial({ color: skin.palette.skin }),
+        hair: new THREE.MeshLambertMaterial({ color: skin.palette.hair }),
+        jacket: new THREE.MeshLambertMaterial({ color: skin.palette.jacket }),
+        jacketDark: new THREE.MeshLambertMaterial({ color: skin.palette.jacketDark }),
+        trousers: new THREE.MeshLambertMaterial({ color: skin.palette.trousers }),
+        boot: new THREE.MeshLambertMaterial({ color: skin.palette.boot }),
         // Only a thin band on the boot carries the polarity glow, so the feet
         // read as charged trim rather than two solid blocks of colour.
         bootGlow: new THREE.MeshBasicMaterial({ color: POLARITY_RED, transparent: true, opacity: 0 }),
         eye: new THREE.MeshBasicMaterial({ color: 0x1a1a1a }),
-    }), []);
+    }), [skin.palette]);
     useEffect(() => () => { for (const m of Object.values(materials)) m.dispose(); }, [materials]);
 
     useEffect(() => {
+        if (preview) return;
         const offDamaged = gameEvents.on('player:damaged', () => { hurtUntil.current = Date.now() + 260; });
         return offDamaged;
-    }, []);
+    }, [preview]);
 
-    useFrame((_, delta) => {
+    useFrame(({ clock }, delta) => {
         const root = rootRef.current;
         const pivot = pivotRef.current;
         const body = bodyRef.current;
         const torso = torsoRef.current;
         const head = headRef.current;
         if (!root || !pivot || !body || !torso || !head) return;
+        if (preview) {
+            const t = clock.elapsedTime;
+            root.visible = true;
+            body.position.y = Math.sin(t * 1.5) * 0.012;
+            head.rotation.y = Math.sin(t * 0.7) * 0.08;
+            if (armLRef.current) armLRef.current.rotation.set(Math.sin(t * 1.5) * 0.04, 0, 0.06);
+            if (armRRef.current) armRRef.current.rotation.set(-Math.sin(t * 1.5) * 0.04, 0, -0.06);
+            return;
+        }
         root.visible = viewRig.showModel;
         if (!root.visible) return;
 
@@ -421,6 +431,57 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         <group ref={rootRef} visible={false}>
             <group ref={pivotRef}>
                 <group ref={bodyRef}>
+                    {skin.model !== 'atlas' ? <>
+                    <PlayerArmor item={equipment.leggings} part="hips" />
+                    <group ref={legLRef} position={[-0.125, 0.75, 0]}>
+                        <MinecraftSkinPart skin={skin} texture={skinTexture} part="leftLeg" half="upper" position={[0, -0.1875, 0]} />
+                        <group scale={[1.1, 1, 1.1]}><PlayerArmor item={equipment.leggings} part="thigh" /></group>
+                        <group ref={legLLowerRef} position={[0, -0.375, 0]}>
+                            <MinecraftSkinPart skin={skin} texture={skinTexture} part="leftLeg" half="lower" position={[0, -0.1875, 0]} />
+                            <group scale={[1.2, 1, 1.2]}><PlayerArmor item={equipment.leggings} part="shin" /></group>
+                            <group position={[0, 0.1, 0]}><PlayerArmor item={equipment.boots} part="boot" /></group>
+                            <mesh position={[0, -0.25, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.285, 0.05, 0.355]} /></mesh>
+                        </group>
+                    </group>
+                    <group ref={legRRef} position={[0.125, 0.75, 0]}>
+                        <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightLeg" half="upper" position={[0, -0.1875, 0]} />
+                        <group scale={[1.1, 1, 1.1]}><PlayerArmor item={equipment.leggings} part="thigh" /></group>
+                        <group ref={legRLowerRef} position={[0, -0.375, 0]}>
+                            <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightLeg" half="lower" position={[0, -0.1875, 0]} />
+                            <group scale={[1.2, 1, 1.2]}><PlayerArmor item={equipment.leggings} part="shin" /></group>
+                            <group position={[0, 0.1, 0]}><PlayerArmor item={equipment.boots} part="boot" /></group>
+                            <mesh position={[0, -0.25, -0.02]} material={materials.bootGlow}><boxGeometry args={[0.285, 0.05, 0.355]} /></mesh>
+                        </group>
+                    </group>
+                    <group ref={torsoRef} position={[0, 0.75, 0]}>
+                        <MinecraftSkinPart skin={skin} texture={skinTexture} part="body" position={[0, 0.375, 0]} />
+                        <PlayerArmor item={equipment.chestplate} part="chest" />
+                        <group ref={headRef} position={[0, 0.75, 0]}>
+                            <MinecraftSkinPart skin={skin} texture={skinTexture} part="head" position={[0, 0.25, 0]} />
+                            <PlayerArmor item={equipment.helmet} part="helmet" />
+                        </group>
+                        <group ref={armLRef} position={[-1 * (skin.model === 'slim' ? 0.34375 : 0.375), 0.75, 0]}>
+                            <MinecraftSkinPart skin={skin} texture={skinTexture} part="leftArm" half="upper" position={[0, -0.1875, 0]} />
+                            <group scale={[1.1, 1, 1.1]}><PlayerArmor item={equipment.chestplate} part="shoulder" /></group>
+                            <group ref={armLLowerRef} position={[0, -0.375, 0]}>
+                                <MinecraftSkinPart skin={skin} texture={skinTexture} part="leftArm" half="lower" position={[0, -0.1875, 0]} />
+                            </group>
+                        </group>
+                        <group ref={armRRef} position={[1 * (skin.model === 'slim' ? 0.34375 : 0.375), 0.75, 0]}>
+                            <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightArm" half="upper" position={[0, -0.1875, 0]} />
+                            <group scale={[1.1, 1, 1.1]}><PlayerArmor item={equipment.chestplate} part="shoulder" /></group>
+                            <group ref={armRLowerRef} position={[0, -0.375, 0]}>
+                                <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightArm" half="lower" position={[0, -0.1875, 0]} />
+                                {heldGeometry && itemType !== null && <group position={[0, -0.38, -0.06]}>
+                                    <mesh geometry={heldGeometry} material={heldMaterial} castShadow
+                                        position={isSpriteRenderedType(itemType) ? [0, 0.16, -0.14] : [0, -0.02, -0.18]}
+                                        rotation={isSpriteRenderedType(itemType) ? [0, Math.PI / 2, -Math.PI / 4] : [0, 0, 0]}
+                                        scale={isSpriteRenderedType(itemType) ? 1.5 : 0.8} />
+                                </group>}
+                            </group>
+                        </group>
+                    </group>
+                    </> : <>
                     <PlayerArmor item={equipment.leggings} part="hips" />
                     {/* Hips + legs (each: thigh pivoting at the hip, shin at the knee) */}
                     <mesh position={[0, 0.76, 0]} material={materials.jacketDark} castShadow><boxGeometry args={[0.5, 0.16, 0.26]} /></mesh>
@@ -451,7 +512,16 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                         <PlayerArmor item={equipment.chestplate} part="chest" />
                         <mesh position={[0, 0.37, 0]} material={materials.jacket} castShadow><boxGeometry args={[0.5, 0.74, 0.26]} /></mesh>
                         <mesh position={[0, 0.6, -0.14]} material={materials.jacketDark} castShadow><boxGeometry args={[0.44, 0.28, 0.02]} /></mesh>
+                        {skin.detail === 'scarf' && <group>
+                            <mesh position={[0, 0.69, 0]} material={materials.jacketDark}><boxGeometry args={[0.54, 0.12, 0.3]} /></mesh>
+                            <mesh position={[0.12, 0.46, -0.16]} material={materials.jacketDark}><boxGeometry args={[0.13, 0.38, 0.04]} /></mesh>
+                        </group>}
+                        {skin.detail === 'vest' && [-1, 1].map(side => <mesh key={side} position={[side * 0.17, 0.3, -0.15]} material={materials.jacketDark}><boxGeometry args={[0.14, 0.38, 0.04]} /></mesh>)}
                         <group ref={headRef} position={[0, 0.74, 0]}>
+                            {skin.detail === 'goggles' && <group>
+                                <mesh position={[0, 0.32, -0.27]} material={materials.jacketDark}><boxGeometry args={[0.48, 0.14, 0.04]} /></mesh>
+                                {[-1, 1].map(side => <mesh key={side} position={[side * 0.12, 0.32, -0.3]}><boxGeometry args={[0.15, 0.08, 0.02]} /><meshLambertMaterial color="#a9d1d0" /></mesh>)}
+                            </group>}
                             <PlayerArmor item={equipment.helmet} part="helmet" />
                             <mesh position={[0, 0.25, 0]} material={materials.skin} castShadow><boxGeometry args={[0.5, 0.5, 0.5]} /></mesh>
                             <mesh position={[0, 0.44, 0.02]} material={materials.hair}><boxGeometry args={[0.52, 0.14, 0.52]} /></mesh>
@@ -482,6 +552,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                             </group>
                         </group>
                     </group>
+                    </>}
                 </group>
             </group>
         </group>

@@ -10,6 +10,9 @@ import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
 import { playerAttack, attackBusy, attackPose } from '../systems/combat/playerAttack';
 import { inputState } from '../systems/player/playerInput';
 import { globalSunlightValue } from './chunkLightingState';
+import { usePlayerSkin } from '../systems/player/playerSkins';
+import { MinecraftSkinPart } from './MinecraftSkinPart';
+import { useSkinTexture } from '../hooks/useSkinTexture';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 
 interface HeldItemProps {
@@ -75,6 +78,8 @@ const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
 };
 
 export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked, brightness }) => {
+    const skin = usePlayerSkin();
+    const skinTexture = useSkinTexture(skin);
     const { camera, scene } = useThree();
     const groupRef = useRef<THREE.Group>(null);
     const itemStack = inventory[selectedSlot];
@@ -131,14 +136,14 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
     const handMaterial = useMemo(() => {
         const mat = new THREE.MeshLambertMaterial({ 
-            color: "#eebb99",
+            color: skin.palette.skin,
             depthTest: false,
             depthWrite: false,
             transparent: true 
         });
         setupEntityMaterial(mat);
         return mat;
-    }, []);
+    }, [skin.palette.skin]);
 
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.code);
@@ -321,7 +326,10 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
     return createPortal(
         <group ref={groupRef}>
-             {!itemType && (
+             {!itemType && skin.model !== 'atlas' && <group position={[0, -0.2, 0.2]} rotation={[Math.PI / 2 + 0.5, 0, -0.2]}>
+                 <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightArm" firstPerson />
+             </group>}
+             {!itemType && skin.model === 'atlas' && (
                  <mesh position={[0, -0.2, 0.2]} rotation={[0.5, 0, -0.2]} renderOrder={999}>
                      <boxGeometry args={[0.2, 0.2, 0.8]} />
                      {handMaterial && <primitive object={handMaterial} attach="material" />}
