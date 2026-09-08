@@ -32,10 +32,9 @@ test('entering the menu resets frenzy and both deck rates to 1.0', () => {
     // did to the decks. The menu switch uses a zero-length fade, so the reset
     // can never cause an audible mid-fade pitch snap.
     const enteringMenuBlock = mc.slice(mc.indexOf('} else if (enteringMenu) {'), mc.indexOf('} else if (leavingMenuForWorld)'));
-    // EVERY modifier clears, not just the fight: a near-death or a night track
-    // must not leak its pitch into the menu or the next world either.
+    // EVERY modifier clears, not just the fight: a night track must not leak its
+    // pitch into the menu or the next world either.
     assert.match(enteringMenuBlock, /this\.bossFrenzy = false;/);
-    assert.match(enteringMenuBlock, /this\.lowHealth = false;/);
     assert.match(enteringMenuBlock, /this\.currentTrackNight = false;/);
     assert.match(enteringMenuBlock, /soundManager\.setMusicPlaybackRate\(1\.0, 0\);/);
     // Night slowdown + frenzy never apply to MENU tracks at start either.

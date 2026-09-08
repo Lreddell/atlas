@@ -83,17 +83,17 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 
 ### Low health
 - Dropping to four hearts opens a low-health state: a heartbeat that quickens as
-  you weaken (about 72 BPM at 8 HP up to 114 at 1), a crimson screen-edge pulse
-  beating on the same timing, and the music pitched a semitone up. It clears once
-  you heal back to five hearts, so regeneration around the threshold does not
-  start and stop it every tick.
+  you weaken (about 72 BPM at 8 HP up to 114 at 1) and a heavy crimson
+  screen-edge pulse beating on the same timing. It clears once you heal back to
+  five hearts, so regeneration around the threshold does not start and stop it
+  every tick.
 - The red pulse renders *under* the polarity rim, so a Warden fight stays readable:
   blue still means negative polarity even while you are bleeding.
-- Music modifiers now stack in semitone space instead of overriding each other. A
-  night track is -1, the Warden's final phase +1, low health +1, so the Storm at
-  low health during the day is a full +2 and at night lands on +1 — where before
-  the fight simply cancelled the night treatment. Both the streaming decks and the
-  decoded authored loops follow the composed rate.
+- Music modifiers now compose in semitone space instead of overriding each other.
+  A night track is -1 and the Warden's final phase +1, so the Storm at night lands
+  back on the authored pitch rather than cancelling the night treatment outright.
+  Both the streaming decks and the decoded authored loops follow the composed rate
+  — the authored loops were previously stuck at 1.0 while everything else shifted.
 - The heartbeat is an authored cue (`entity.player.heartbeat`); see
   `public/assets/rvx/sounds/player/README.txt` for the slot. Without the file the
   cue is silent and everything else still works.

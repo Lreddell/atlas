@@ -1,6 +1,6 @@
 // One resolver for the music playback rate.
 //
-// Three features independently want the music faster or slower, and they must
+// Two features independently want the music faster or slower, and they must
 // compose rather than fight: before this, the boss frenzy simply overrode the
 // night slowdown, so a night track in the final phase sounded the same as a day
 // track in the final phase.
@@ -14,22 +14,18 @@ export interface MusicRateModifiers {
     night: boolean;
     /** The Warden's final phase. */
     bossFrenzy: boolean;
-    /** The player is in the low-health state. */
-    lowHealth: boolean;
 }
 
-export const NO_MUSIC_MODIFIERS: MusicRateModifiers = { night: false, bossFrenzy: false, lowHealth: false };
+export const NO_MUSIC_MODIFIERS: MusicRateModifiers = { night: false, bossFrenzy: false };
 
 /** Semitone contribution of each modifier. */
 export const NIGHT_SEMITONES = -1;
 export const BOSS_FRENZY_SEMITONES = 1;
-export const LOW_HEALTH_SEMITONES = 1;
 
 /** The sum of the active modifiers, in semitones. */
 export function composeSemitones(mods: MusicRateModifiers): number {
     return (mods.night ? NIGHT_SEMITONES : 0)
-        + (mods.bossFrenzy ? BOSS_FRENZY_SEMITONES : 0)
-        + (mods.lowHealth ? LOW_HEALTH_SEMITONES : 0);
+        + (mods.bossFrenzy ? BOSS_FRENZY_SEMITONES : 0);
 }
 
 /**

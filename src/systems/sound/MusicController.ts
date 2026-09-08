@@ -19,11 +19,10 @@ const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
 // Subtle "night" effect: a track started at night plays a little slower, and with
 // pitch-preservation disabled (in SoundManager) that also drops its pitch slightly.
 //
-// Night (-1), the Warden's final phase (+1) and low health (+1) all want the music
-// moved, and they COMPOSE in semitone space rather than overriding one another
-// (see musicRate.ts). A night track entering the frenzy therefore lands back on
-// the authored pitch, and a night track in the frenzy at low health ends up a
-// semitone up rather than capped.
+// Night (-1) and the Warden's final phase (+1) both want the music moved, and they
+// COMPOSE in semitone space rather than overriding one another (see musicRate.ts).
+// A night track entering the frenzy therefore lands back on the authored pitch,
+// where before the fight simply cancelled the night treatment outright.
 
 // --- Music tags ---
 //
@@ -146,8 +145,6 @@ class MusicController {
     private isNight: boolean = false;
     // Boss frenzy: the music speeds up + pitches up +100 cents, mid-song.
     private bossFrenzy: boolean = false;
-    // Low health: the same +100 cents again, stacking with the other two.
-    private lowHealth: boolean = false;
     /**
      * Whether the track CURRENTLY PLAYING carries the night slowdown. Night is
      * decided once, when a track starts (so a song playing as night falls keeps
@@ -301,7 +298,7 @@ class MusicController {
 
     /** The modifiers currently in force, for the shared resolver. */
     private currentModifiers(): MusicRateModifiers {
-        return { night: this.currentTrackNight, bossFrenzy: this.bossFrenzy, lowHealth: this.lowHealth };
+        return { night: this.currentTrackNight, bossFrenzy: this.bossFrenzy };
     }
 
     /**
@@ -314,7 +311,7 @@ class MusicController {
     }
 
     /**
-     * Boss frenzy music: +100 cents MID-SONG, composed with night and low health,
+     * Boss frenzy music: +100 cents MID-SONG, composed with the night slowdown,
      * and persisting across track loops while on.
      */
     public setBossFrenzy(active: boolean) {
@@ -331,25 +328,6 @@ class MusicController {
         // track is fading out and sounds like a glitch. Leave the fading track at its
         // raised pitch; whatever plays next (death music, world music) starts fresh
         // via playNextTrack(), so nothing else is left pitched.
-        //
-        // The exception is low health: that is still true of the player, so its
-        // contribution has to survive the frenzy ending rather than being dropped
-        // along with it.
-        if (this.lowHealth) this.applyMusicRate();
-    }
-
-    /**
-     * Low-health music: +100 cents while the player is under the threshold,
-     * stacking with the frenzy (so both together is +2 semitones, not +1).
-     *
-     * Applied live in both directions — unlike the frenzy, this ends because the
-     * player HEALED, which is a moment worth hearing resolve rather than leaving
-     * pitched until the next track.
-     */
-    public setLowHealth(active: boolean) {
-        if (this.lowHealth === active) return;
-        this.lowHealth = active;
-        this.applyMusicRate();
     }
 
     public setNightSlowdownEnabled(enabled: boolean) {
@@ -615,7 +593,6 @@ class MusicController {
             // Safe here (no audible pitch snap) because the menu switch stops the
             // old track with a zero-length fade anyway.
             this.bossFrenzy = false;
-            this.lowHealth = false;
             this.currentTrackNight = false;
             soundManager.setMusicPlaybackRate(1.0, 0);
         } else if (leavingMenuForWorld) {

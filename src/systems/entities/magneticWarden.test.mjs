@@ -415,6 +415,9 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     assert.match(read('src/components/ui/LowHealthVignette.tsx'), /gameEvents\.on\('player:heartbeat'/);
     // Authored cue: a missing file is silent, never a synthesised stand-in.
     assert.match(read('src/systems/sound/soundDefaults.ts'), /"entity\.player\.heartbeat":[^\n]*fallback: false/);
+    // Low health is presentation only: it does not touch the music rate.
+    assert.doesNotMatch(state, /musicController|PlaybackRate/);
+    assert.doesNotMatch(read('src/systems/sound/musicRate.ts'), /lowHealth/i);
 
     // Motion blur: off unless the player turned it on, and unmounted when off so
     // the disabled path is R3F's own renderer with no extra targets.
@@ -570,8 +573,8 @@ test('boss music loops immediately and the Storm speeds it up +100 cents', () =>
     assert.match(mc, /context === 'BOSS_MAGNETIC'\) return 0/);
     assert.match(mc, /setBossFrenzy/);
     // The +100 cents now comes from the shared semitone resolver rather than a
-    // local constant, so it composes with night and low health instead of
-    // overriding them (see systems/sound/musicRate.test.mjs for the table).
+    // local constant, so it composes with the night slowdown instead of
+    // overriding it (see systems/sound/musicRate.test.mjs for the table).
     assert.match(mc, /resolveMusicPlaybackRate\(this\.currentModifiers\(\)\)/);
     assert.match(read('src/systems/sound/musicRate.ts'), /BOSS_FRENZY_SEMITONES = 1/);
     assert.doesNotMatch(mc, /FRENZY_PLAYBACK_RATE|NIGHT_PLAYBACK_RATE/);

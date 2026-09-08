@@ -2383,12 +2383,6 @@ const App: React.FC = () => {
       });
   }, [isDead, showDeathScreen, isPaused, isSleeping, cinematicMode, isCapturingPanorama, appState]);
 
-  // The low-health music modifier, composed with night and the boss frenzy.
-  useEffect(() => {
-      lowHealthState.setActiveListener((active) => musicController.setLowHealth(active));
-      return () => lowHealthState.setActiveListener(null);
-  }, []);
-
   // --- Motion blur history ------------------------------------------------
   // Reprojection compares this frame's camera against the last one, so every
   // discontinuity has to be declared or the first frame after it streaks. The

@@ -37,12 +37,6 @@ class LowHealthState {
     private timer: number | null = null;
     /** Bumped on every stop, so a beat already in flight cannot fire after it. */
     private generation = 0;
-    private onActiveChanged: ((active: boolean) => void) | null = null;
-
-    /** Called when the state flips, so music can add or drop its modifier. */
-    public setActiveListener(fn: ((active: boolean) => void) | null): void {
-        this.onActiveChanged = fn;
-    }
 
     public isActive(): boolean { return this.active; }
     public getHealth(): number { return this.health; }
@@ -87,10 +81,7 @@ class LowHealthState {
         this.health = DEFAULT_MAX_HEALTH;
         this.maxHealth = DEFAULT_MAX_HEALTH;
         this.suppression = { ...NONE };
-        if (wasActive) {
-            this.onActiveChanged?.(false);
-            gameEvents.emit('player:low-health', { active: false, severity: 0 });
-        }
+        if (wasActive) gameEvents.emit('player:low-health', { active: false, severity: 0 });
     }
 
     /** Recompute the state, then start or stop the scheduler to match. */
@@ -98,8 +89,6 @@ class LowHealthState {
         const next = resolveLowHealth(this.active, this.health, this.maxHealth);
         if (next !== this.active) {
             this.active = next;
-            // Music first: death should never begin with a leaked +1 semitone.
-            this.onActiveChanged?.(next);
             gameEvents.emit('player:low-health', { active: next, severity: this.getSeverity() });
         }
         if (this.active && !this.isSuppressed()) this.startBeating();

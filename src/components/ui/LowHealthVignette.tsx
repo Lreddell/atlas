@@ -18,12 +18,16 @@ import { lowHealthState } from '../../systems/player/lowHealthState';
 // either colour above it. The fire overlay and the water/lava head tint also sit
 // at z-30, so they read over this too.
 
+// The rim is deliberately heavy: at four hearts the player should feel hunted,
+// not gently reminded. The blur radius still carries the falloff, so the middle
+// of the screen stays readable however dark the edge gets.
+
 /** The resting rim, before any beat: wider and darker as health falls. */
-const restingSpread = (severity: number) => 34 + severity * 30;
-const restingAlpha = (severity: number) => 0.16 + severity * 0.16;
+const restingSpread = (severity: number) => 62 + severity * 58;
+const restingAlpha = (severity: number) => 0.30 + severity * 0.24;
 /** How much a beat adds on top, at its peak. */
-const pulseSpread = (severity: number) => 40 + severity * 46;
-const pulseAlpha = (severity: number) => 0.16 + severity * 0.2;
+const pulseSpread = (severity: number) => 74 + severity * 86;
+const pulseAlpha = (severity: number) => 0.26 + severity * 0.28;
 
 /** A beat's visual decay. Short attack, longer falloff: a thump, not a blink. */
 const PULSE_DECAY_MS = 460;
@@ -70,7 +74,7 @@ export const LowHealthVignette: React.FC = () => {
                 const pulse = t * t * t;
                 const spread = restingSpread(s) + pulseSpread(s) * pulse;
                 const alpha = restingAlpha(s) + pulseAlpha(s) * pulse;
-                rim.style.boxShadow = `inset 0 0 ${140 + spread * 1.4}px ${spread}px rgba(122, 8, 12, ${alpha.toFixed(3)})`;
+                rim.style.boxShadow = `inset 0 0 ${170 + spread * 1.5}px ${spread}px rgba(134, 9, 13, ${alpha.toFixed(3)})`;
             }
             raf = window.requestAnimationFrame(draw);
         };
@@ -84,7 +88,7 @@ export const LowHealthVignette: React.FC = () => {
             ref={rimRef}
             className="pointer-events-none absolute inset-0 z-20"
             aria-hidden="true"
-            style={{ boxShadow: `inset 0 0 140px ${restingSpread(severity)}px rgba(122, 8, 12, ${restingAlpha(severity)})` }}
+            style={{ boxShadow: `inset 0 0 ${170 + restingSpread(severity) * 1.5}px ${restingSpread(severity)}px rgba(134, 9, 13, ${restingAlpha(severity)})` }}
         />
     );
 };
