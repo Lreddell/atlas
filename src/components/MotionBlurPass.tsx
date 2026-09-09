@@ -32,9 +32,24 @@ void main() {
 }
 `;
 
+// COLOUR PIPELINE — the reason this pass does its own tone mapping and encoding.
+//
+// three applies tone mapping and the sRGB output encode ONLY when the render
+// destination is the canvas: `toneMapping` is forced to NoToneMapping and
+// `outputColorSpace` to LinearSRGBColorSpace for any ordinary render target
+// (WebGLRenderer, r160). So the scene arrives in the offscreen target as raw
+// linear, un-tone-mapped values, and blitting those straight to the canvas
+// displays linear as though it were sRGB — which darkens the whole world
+// (linear 0.5 should present as sRGB ~0.735).
+//
+// So the pass finishes the job the renderer skipped: gather in linear (which is
+// also where blurring is physically correct), then tone map and encode on the
+// way out. Both use three's own chunks rather than hardcoded ACES, so this
+// tracks whatever the renderer is configured with. three injects the matching
+// `*_pars_fragment` declarations into every non-raw ShaderMaterial, and sets
+// `toneMappingExposure` on every program refresh, so only the two statements
+// inside main() are needed here.
 const FRAGMENT = /* glsl */`
-precision highp float;
-
 varying vec2 vUv;
 
 uniform sampler2D tColor;
@@ -47,20 +62,16 @@ uniform float uMaxPixels;              // hard ceiling on the gather length
 
 const int SAMPLES = ${MOTION_BLUR_SAMPLES};
 
-void main() {
+/** The blurred scene colour, still linear. */
+vec4 gatherAlongMotion(float depth) {
     vec4 color = texture2D(tColor, vUv);
-    float depth = texture2D(tDepth, vUv).x;
-
-    // The far plane is sky: it has no surface to have moved, and reprojecting it
-    // produces enormous vectors that would smear the horizon on every turn.
-    if (depth >= 1.0) { gl_FragColor = color; return; }
 
     vec4 clip = vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
     vec4 world = uInverseViewProjection * clip;
     world /= world.w;
 
     vec4 previousClip = uPreviousViewProjection * world;
-    if (previousClip.w <= 0.0) { gl_FragColor = color; return; }
+    if (previousClip.w <= 0.0) return color;
     vec2 previousUv = (previousClip.xy / previousClip.w) * 0.5 + 0.5;
 
     vec2 velocity = (vUv - previousUv) * uScale;
@@ -68,7 +79,7 @@ void main() {
     // Clamp in PIXELS, so the ceiling means the same thing at every resolution.
     vec2 pixels = velocity * uResolution;
     float length_ = length(pixels);
-    if (length_ < ${MOTION_BLUR_MIN_PIXELS.toFixed(3)}) { gl_FragColor = color; return; }
+    if (length_ < ${MOTION_BLUR_MIN_PIXELS.toFixed(3)}) return color;
     if (length_ > uMaxPixels) velocity *= uMaxPixels / length_;
 
     // Gather centred on the pixel: a one-sided trail drags the image toward its
@@ -82,7 +93,29 @@ void main() {
         sum += texture2D(tColor, uv);
         weight += 1.0;
     }
-    gl_FragColor = sum / weight;
+    return sum / weight;
+}
+
+void main() {
+    float depth = texture2D(tDepth, vUv).x;
+
+    // Nothing wrote depth here, so this pixel came from the background layers —
+    // the sky dome, the stars, the aurora. Those are hand-written ShaderMaterials
+    // that emit a final colour directly, without three's tone mapping or encode
+    // chunks, so they are ALREADY display-referred and must pass through
+    // untouched; running them through the transfer below is what turned the sky
+    // noticeably brighter. They are also at the far plane, with no surface that
+    // could have moved, so there is nothing to blur either.
+    if (depth >= 1.0) {
+        gl_FragColor = texture2D(tColor, vUv);
+        return;
+    }
+
+    // Everything else came from a three-managed material, which wrote linear
+    // light into the target and still owes a tone map and an encode.
+    gl_FragColor = gatherAlongMotion(depth);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
 }
 `;
 
@@ -95,7 +128,11 @@ export const MotionBlurPass: React.FC = () => {
         const rt = new THREE.WebGLRenderTarget(1, 1, {
             minFilter: THREE.LinearFilter,
             magFilter: THREE.LinearFilter,
-            type: THREE.UnsignedByteType,
+            // Half float, because the target now holds PRE-tone-mapping linear
+            // light, which runs past 1.0 wherever the sun catches something. Eight
+            // bits would clip those highlights and, worse, band the shadows: linear
+            // spends most of its 8-bit range on brights the eye barely separates.
+            type: THREE.HalfFloatType,
         });
         rt.depthTexture = new THREE.DepthTexture(1, 1);
         rt.depthTexture.type = THREE.UnsignedIntType;

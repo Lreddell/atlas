@@ -428,6 +428,21 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     const pass = read('src/components/MotionBlurPass.tsx');
     assert.match(pass, /gl\.setRenderTarget\(target\)/);
     assert.doesNotMatch(pass, /document\.|filter:\s*blur|backdrop/);
+    // three applies tone mapping and the sRGB encode only when rendering to the
+    // CANVAS, so a pass that renders the scene through a target owes both on the
+    // way out -- without them the whole world goes dark. The target has to be
+    // float, because what it now holds is pre-tone-mapping linear light.
+    assert.match(pass, /#include <tonemapping_fragment>/);
+    assert.match(pass, /#include <colorspace_fragment>/);
+    assert.match(pass, /type: THREE\.HalfFloatType/);
+    // ...but the background layers (sky, stars, aurora) are hand-written shaders
+    // that emit a final colour with no chunks of their own, so they are already
+    // display-referred and pass through untouched. Running them through the
+    // transfer as well is what turned the sky brighter.
+    assert.match(pass, /if \(depth >= 1\.0\) \{\s*gl_FragColor = texture2D\(tColor, vUv\);\s*return;/);
+    for (const f of ['world/DayNightCycle']) {
+        assert.doesNotMatch(read(`src/components/${f}.tsx`), /tonemapping_fragment|colorspace_fragment/);
+    }
     // One shared toggle feeds both the main-menu and in-game Video Settings.
     assert.equal((app.match(/motionBlurEnabled=\{motionBlurEnabled\}/g) ?? []).length, 2);
     assert.match(read('src/components/ui/PauseMenu.tsx'), /label="Motion Blur"/);
