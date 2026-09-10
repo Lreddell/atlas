@@ -1,5 +1,10 @@
 
 import { gameEvents } from '../events/GameEvents';
+import { freeBodyActive, framingDetachedShot } from './viewRig';
+import {
+    canDirectionSprint, isDoubleTap, isSprinting,
+    sprintDriveHeld as sprintDriveHeldRule, type Direction,
+} from './sprintRule';
 
 export interface PlayerInputState {
     forward: boolean;
@@ -17,13 +22,23 @@ export interface PlayerInputState {
     polarityPowerOn: boolean;
     /** True while a bite is actively charging (drives the held-item eat animation). */
     eating: boolean;
+    /**
+     * Timestamp (ms) of the last dodge press (C), or 0. Kept as a timestamp
+     * rather than a boolean so a press that lands between physics substeps is
+     * still honoured a few frames later (the input buffer every action game
+     * needs: at 60 fps only every third frame runs a 20 Hz substep, so a
+     * one-frame flag loses two presses out of three).
+     */
+    dodgePressedAt: number;
 }
 
-// Internal state for double-tap detection
-let lastForwardPressTime = 0;
+// Internal state for double-tap detection. The direction is remembered with the
+// time so a double tap always means the SAME key twice, never W then A.
+let lastTapDirection: Direction | null = null;
+let lastTapTime = 0;
 let lastJumpPressTime = 0;
 let doubleTapSprintActive = false;
-const DOUBLE_TAP_WINDOW_MS = 400; 
+const DOUBLE_TAP_WINDOW_MS = 400;
 
 export const inputState: PlayerInputState = {
     forward: false,
@@ -38,7 +53,15 @@ export const inputState: PlayerInputState = {
     magneticPolarity: 1,
     polarityPowerOn: true,
     eating: false,
+    dodgePressedAt: 0,
 };
+
+/**
+ * How long a dodge press stays queued once the physics has had a chance to
+ * answer it. The window is checked AFTER a frame's substeps run, never before,
+ * so a slow frame can never expire a press it was never offered.
+ */
+export const DODGE_BUFFER_MS = 260;
 
 // Bridge between the mouse-look handler (CameraControls) and the wall-adhesion
 // camera (Player). While `active`, the pointer-lock handler stops driving the
@@ -51,7 +74,53 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight']);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC']);
+
+/**
+ * Whether every walk direction can sprint, rather than forward alone. That is
+ * the free view's rule, and it lapses while a tripod owns the camera (F7),
+ * where the body is welded to the player's look again.
+ */
+const omniSprint = (): boolean => freeBodyActive();
+
+/**
+ * The keys that can start and sustain a sprint in the current view. While the
+ * F7 shot is being framed they drive the tripod rather than the body, so they
+ * must not bank a sprint for the body to cash in once the camera is bolted down.
+ */
+const sprintDriveHeld = (): boolean =>
+    !framingDetachedShot() && sprintDriveHeldRule(inputState, omniSprint());
+
+/**
+ * A walk key going down. Only forward starts a sprint in the welded views; in
+ * the free view any of the four can, so the double-tap and the Ctrl latch both
+ * follow whichever direction is actually driving the run.
+ */
+const pressDirection = (dir: Direction, now: number): void => {
+    const canSprint = !framingDetachedShot() && canDirectionSprint(dir, omniSprint());
+    if (canSprint && !inputState[dir]) { // Edge trigger
+        if (isDoubleTap(dir, lastTapDirection, lastTapTime, now, DOUBLE_TAP_WINDOW_MS)) {
+            doubleTapSprintActive = true;
+        }
+        lastTapDirection = dir;
+        lastTapTime = now;
+    }
+    inputState[dir] = true;
+    // If CTRL is held when the key is pressed, latch sprint
+    if (canSprint && inputState.sprint) inputState.sprintLatch = true;
+};
+
+/**
+ * A walk key going up. The sprint only ends once nothing is driving it any
+ * more, so in the free view you can switch headings mid-run without dropping
+ * out of the sprint.
+ */
+const releaseDirection = (dir: Direction): void => {
+    inputState[dir] = false;
+    if (sprintDriveHeld()) return;
+    doubleTapSprintActive = false;
+    inputState.sprintLatch = false; // Reset latch on stop
+};
 
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
     // Intercept game keys to prevent browser/OS shortcuts
@@ -63,29 +132,21 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
     const now = Date.now();
 
     switch (code) {
-        case 'KeyW': 
+        case 'KeyW':
         case 'ArrowUp':
-            if (!inputState.forward) { // Edge trigger
-                if (now - lastForwardPressTime < DOUBLE_TAP_WINDOW_MS) {
-                    doubleTapSprintActive = true;
-                }
-                lastForwardPressTime = now;
-            }
-            inputState.forward = true; 
-            // If CTRL is held when W is pressed, latch sprint
-            if (inputState.sprint) inputState.sprintLatch = true;
+            pressDirection('forward', now);
             break;
-        case 'KeyS': 
+        case 'KeyS':
         case 'ArrowDown':
-            inputState.backward = true; 
+            pressDirection('backward', now);
             break;
-        case 'KeyA': 
+        case 'KeyA':
         case 'ArrowLeft':
-            inputState.left = true; 
+            pressDirection('left', now);
             break;
-        case 'KeyD': 
+        case 'KeyD':
         case 'ArrowRight':
-            inputState.right = true; 
+            pressDirection('right', now);
             break;
         case 'Space': 
             if (!inputState.jump) {
@@ -106,8 +167,8 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
         case 'ControlRight':
             if (e && e.repeat) break;
             inputState.sprint = true;
-            // If W is already held when CTRL is pressed, latch sprint
-            if (inputState.forward) inputState.sprintLatch = true;
+            // If a direction is already held when CTRL is pressed, latch sprint
+            if (sprintDriveHeld()) inputState.sprintLatch = true;
             break;
         case 'KeyR':
             if (e && e.repeat) break;
@@ -126,28 +187,35 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             inputState.polarityPowerOn = !inputState.polarityPowerOn;
             gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
             break;
+        case 'KeyC':
+            // The kit button: resolved by the player physics into a roll, a
+            // magnetic dash, a repel leap, or a launch off the wall. C sits
+            // under the left hand without leaving WASD, and is the only such
+            // key Atlas had free (Q drops, E opens, R flips, Shift/Ctrl/Space
+            // are sneak/sprint/jump).
+            if (e && e.repeat) break;
+            inputState.dodgePressedAt = now;
+            break;
     }
 };
 
 export const onKeyUp = (code: string) => {
     switch (code) {
-        case 'KeyW': 
+        case 'KeyW':
         case 'ArrowUp':
-            inputState.forward = false; 
-            doubleTapSprintActive = false; // Stop sprinting if forward is released
-            inputState.sprintLatch = false; // Reset latch on stop
+            releaseDirection('forward');
             break;
-        case 'KeyS': 
+        case 'KeyS':
         case 'ArrowDown':
-            inputState.backward = false; 
+            releaseDirection('backward');
             break;
-        case 'KeyA': 
+        case 'KeyA':
         case 'ArrowLeft':
-            inputState.left = false; 
+            releaseDirection('left');
             break;
-        case 'KeyD': 
+        case 'KeyD':
         case 'ArrowRight':
-            inputState.right = false; 
+            releaseDirection('right');
             break;
         case 'Space': 
             inputState.jump = false; 
@@ -165,23 +233,46 @@ export const onKeyUp = (code: string) => {
 };
 
 export const getMovementIntent = () => {
-    // Sprint is active if (CTRL Held OR double-tap is active OR Latch is active) AND moving forward AND NOT sneaking
-    const isSprinting = (inputState.sprint || inputState.sprintLatch || doubleTapSprintActive) && inputState.forward && !inputState.sneak;
-    
-    // Copy the trigger and reset it immediately
+    // Sprint is active if (CTRL Held OR double-tap is active OR Latch is active)
+    // AND a direction that can drive a sprint is held AND NOT sneaking. That
+    // direction is forward in the welded views and any of the four in the free
+    // one, where the body runs forwards along whichever heading it turned onto.
+    const omni = omniSprint();
+    const sprinting = isSprinting(
+        { sprint: inputState.sprint, sprintLatch: inputState.sprintLatch, doubleTap: doubleTapSprintActive },
+        inputState, omni, inputState.sneak,
+    );
+
+
+    // Copy the triggers and reset them immediately. The dodge is NOT cleared
+    // here: it stays queued (for DODGE_BUFFER_MS) until a physics substep
+    // actually consumes it, so a press never falls between substeps.
     const flyToggle = inputState.flyToggleTrigger;
     inputState.flyToggleTrigger = false;
+    const dodge = inputState.dodgePressedAt > 0;
 
     return {
         ...inputState,
-        sprint: isSprinting,
+        sprint: sprinting,
+        /** The sprint may be running onto a heading other than camera-forward. */
+        omniSprint: omni,
         flyToggle,
-        cancelDoubleTap: () => { 
-            doubleTapSprintActive = false; 
+        dodge,
+        cancelDoubleTap: () => {
+            doubleTapSprintActive = false;
             inputState.sprintLatch = false;
         }
     };
 };
+
+/** The physics consumed the queued dodge (or it expired): clear the buffer. */
+export const consumeDodgePress = (): void => {
+    inputState.dodgePressedAt = 0;
+};
+
+/** How long the queued dodge press has been waiting (ms); 0 when none is queued. */
+export const dodgePressAge = (): number =>
+    (inputState.dodgePressedAt > 0 ? Date.now() - inputState.dodgePressedAt : 0);
 
 export const resetInputState = () => {
     inputState.forward = false;
@@ -196,7 +287,9 @@ export const resetInputState = () => {
     inputState.magneticPolarity = 1;
     inputState.polarityPowerOn = true;
     inputState.eating = false;
+    inputState.dodgePressedAt = 0;
     doubleTapSprintActive = false;
-    lastForwardPressTime = 0;
+    lastTapDirection = null;
+    lastTapTime = 0;
     lastJumpPressTime = 0;
 };

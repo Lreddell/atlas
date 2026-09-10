@@ -219,7 +219,10 @@
         height: 20px;
         transform: translate(-50%, -50%);
         pointer-events: none;
-        z-index: 50;
+        /* The HUD's layer. At 50 it tied with the pause menu and only lost on
+           DOM order; this keeps it behind menus for the same reason the hotbar
+           and hearts are. Matches the z-40 class on the element. */
+        z-index: 40;
       }
       #atlas-static-fallback {
         box-sizing: border-box;

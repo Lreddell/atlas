@@ -8,6 +8,7 @@
 import type { ItemStack } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { getItemStats, getMaxDurability } from './itemStats';
+import { getPlayerWeaponProfile } from '../combat/vaultWeapons';
 import { getResonantHotbarSummary, getResonantPurpose } from '../../data/resonantGuide';
 
 export interface TooltipLine {
@@ -45,6 +46,11 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
     // Combat: melee attack damage (half-hearts, same value damageEntity uses).
     if (stats?.attack !== undefined) {
         lines.push({ text: `Attack: ${stats.attack}`, tone: 'stat' });
+    }
+    const weapon = getPlayerWeaponProfile(stack.type);
+    if (weapon) {
+        lines.push({ text: `Attack speed: ${(1 / weapon.cooldownSeconds).toFixed(2)} /s`, tone: 'stat' });
+        lines.push({ text: `${weapon.kind === 'crossbow' ? 'Projectile range' : 'Reach'}: ${weapon.reach.toFixed(1)} blocks`, tone: 'stat' });
     }
 
     // Mining: tool class and mining power (the raw registry

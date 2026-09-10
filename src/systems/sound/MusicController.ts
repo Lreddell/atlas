@@ -1,5 +1,6 @@
 
 import { soundManager } from './SoundManager';
+import { resolveMusicPlaybackRate, type MusicRateModifiers } from './musicRate';
 import { gameEvents } from '../events/GameEvents';
 import { MAGNETIC_WARDEN_BOSS_ID } from '../world/magneticFields';
 import {
@@ -17,9 +18,11 @@ const MUSIC_NIGHT_SLOWDOWN_KEY = 'atlas.music.nightSlowdown';
 
 // Subtle "night" effect: a track started at night plays a little slower, and with
 // pitch-preservation disabled (in SoundManager) that also drops its pitch slightly.
-// -1 semitone
-const NIGHT_PLAYBACK_RATE = 2 ** (-1 / 12); // 0.9438743126816935 (−100 cents)
-const FRENZY_PLAYBACK_RATE = 2 ** (1 / 12);  // 1.0594630943592953  (+100 cents, the exact opposite of night)
+//
+// Night (-1) and the Warden's final phase (+1) both want the music moved, and they
+// COMPOSE in semitone space rather than overriding one another (see musicRate.ts).
+// A night track entering the frenzy therefore lands back on the authored pitch,
+// where before the fight simply cancelled the night treatment outright.
 
 // --- Music tags ---
 //
@@ -142,12 +145,18 @@ class MusicController {
     private isNight: boolean = false;
     // Boss frenzy: the music speeds up + pitches up +100 cents, mid-song.
     private bossFrenzy: boolean = false;
+    /**
+     * Whether the track CURRENTLY PLAYING carries the night slowdown. Night is
+     * decided once, when a track starts (so a song playing as night falls keeps
+     * its rate), and the other modifiers compose against that decision rather
+     * than re-reading the clock mid-song.
+     */
+    private currentTrackNight: boolean = false;
 
-    // Boss-music override. The dedicated boss track plays only while the Magnetic
-    // Warden is alive AND the player is actively in combat (aggro'd). So it stops
-    // when the boss dies, when the player dies, or when the player leaves / loses
-    // aggro, but survives a brief loss of line-of-sight and resumes on re-engage.
+    // Once engaged, keep Warden music through brief combat/line-of-sight loss.
+    // The encounter's day/night pitch is captured at spawn and survives loops.
     private bossAlive: boolean = false;
+    private bossNight: boolean = false;
     private inCombat: boolean = false;
 
     // Resonant Vault music state is event-driven so it remains independent of
@@ -161,9 +170,12 @@ class MusicController {
     constructor() {
         // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
         gameEvents.on('boss:spawned', ({ bossId }) => {
-            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = true;
+            if (bossId === MAGNETIC_WARDEN_BOSS_ID) {
+                this.bossAlive = true;
+                this.bossNight = this.nightSlowdownEnabled && this.isNight;
+            }
         });
-        gameEvents.on('boss:defeated', () => { this.bossAlive = false; });
+        gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = false; });
         gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
         gameEvents.on('combat:start', () => { this.inCombat = true; });
         gameEvents.on('combat:stop', () => { this.inCombat = false; });
@@ -286,9 +298,23 @@ class MusicController {
         return this.nightSlowdownEnabled;
     }
 
+    /** The modifiers currently in force, for the shared resolver. */
+    private currentModifiers(): MusicRateModifiers {
+        return { night: this.currentTrackNight, bossFrenzy: this.bossFrenzy };
+    }
+
     /**
-     * Boss frenzy music: speeds up + pitches up +100 cents MID-SONG (the exact
-     * opposite of the night slowdown), and persists across track loops while on.
+     * Recompute the one true playback rate and push it to every music source.
+     * Every modifier goes through here; nothing calls setMusicPlaybackRate
+     * directly, so no two features can disagree about the current rate.
+     */
+    private applyMusicRate(rampSeconds?: number) {
+        soundManager.setMusicPlaybackRate(resolveMusicPlaybackRate(this.currentModifiers()), rampSeconds);
+    }
+
+    /**
+     * Boss frenzy music: +100 cents MID-SONG, composed with the night slowdown,
+     * and persisting across track loops while on.
      */
     public setBossFrenzy(active: boolean) {
         if (this.bossFrenzy === active) return;
@@ -296,13 +322,14 @@ class MusicController {
         if (active) {
             // Turning ON: apply live so the track currently playing speeds up + pitches
             // up mid-song. Future tracks pick it up via playNextTrack().
-            soundManager.setMusicPlaybackRate(FRENZY_PLAYBACK_RATE);
+            this.applyMusicRate();
+            return;
         }
         // Turning OFF (boss defeated / player died / fight cleared): do NOT snap the
         // playing track's rate back down, that pitch drop is clearly audible while the
         // track is fading out and sounds like a glitch. Leave the fading track at its
-        // raised pitch; whatever plays next (death music, world music) starts fresh at
-        // 1.0 via playNextTrack(), so nothing else is left pitched.
+        // raised pitch; whatever plays next (death music, world music) starts fresh
+        // via playNextTrack(), so nothing else is left pitched.
     }
 
     public setNightSlowdownEnabled(enabled: boolean) {
@@ -403,7 +430,7 @@ class MusicController {
             targetContext = 'VAULT_COMBAT';
         } else if (this.vaultActive) {
             targetContext = 'VAULT';
-        } else if (this.bossAlive && this.inCombat && gameMode !== 'creative') {
+        } else if (this.bossAlive && (this.inCombat || this.currentContext === 'BOSS_MAGNETIC') && gameMode !== 'creative') {
             // Magnetic Warden fight overrides biome/ambient music while engaged.
             targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
@@ -562,11 +589,14 @@ class MusicController {
         } else if (enteringMenu) {
             fadeOut = 0;
             silence = 0;
-            // Menu music is always as-authored: clear any lingering fight state and
-            // snap both decks back to 1.0. Safe here (no audible pitch snap) because
-            // the menu switch stops the old track with a zero-length fade anyway.
+            // Menu music is always as-authored: clear EVERY modifier and snap both
+            // backends back to 1.0, so nothing from the world just left (a fight, a
+            // near-death, a night track) leaks into the menu or the next world.
+            // Safe here (no audible pitch snap) because the menu switch stops the
+            // old track with a zero-length fade anyway.
             this.bossFrenzy = false;
-            soundManager.setMusicPlaybackRate(1.0);
+            this.currentTrackNight = false;
+            soundManager.setMusicPlaybackRate(1.0, 0);
         } else if (leavingMenuForWorld) {
             fadeOut = FAST_FADE_OUT;
             silence = FAST_SILENCE;
@@ -697,8 +727,13 @@ class MusicController {
             && this.currentContext !== 'DEATH'
             && this.currentContext !== 'BLOODMOON'
             && !RESONANT_MUSIC_CONTEXTS.has(this.currentContext);
-        // Frenzy overrides night: the fight track always drives UP +100 cents.
-        const playbackRate = this.bossFrenzy ? FRENZY_PLAYBACK_RATE : (useNightRate ? NIGHT_PLAYBACK_RATE : 1.0);
+        // Remember the decision for this track: the frenzy and low-health modifiers
+        // compose against it for as long as the track plays.
+        this.currentTrackNight = this.currentContext === 'BOSS_MAGNETIC' ? this.bossNight : useNightRate;
+        const playbackRate = resolveMusicPlaybackRate(this.currentModifiers());
+        // Keep the shared rate in step, so a decoded loop starting on this track
+        // and a later live change agree about where the rate is coming from.
+        soundManager.setMusicPlaybackRate(playbackRate, 0);
 
         // Try to play
         // We pass a callback for when it finishes

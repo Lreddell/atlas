@@ -6,7 +6,7 @@
     "assets/rvx/sounds/music/boss_bell_titan/bell_titan.ogg"
   ],
   "boss_magnetic_warden": [
-    "assets/rvx/sounds/music/boss_magnetic_warden/magboss.ogg"
+    "assets/rvx/sounds/music/boss_magnetic_warden/sunscar_ambient.ogg"
   ],
   "caves": [
     "assets/rvx/sounds/music/caves/Expedition_-_Rhino_X.ogg",
@@ -24,6 +24,9 @@
   ],
   "magnetic_fields": [
     "assets/rvx/sounds/music/magnetic_fields/magnetite.ogg"
+  ],
+  "meadow": [
+    "assets/rvx/sounds/music/meadow/claude.ogg"
   ],
   "menu": [
     "assets/rvx/sounds/music/menu/atlas.ogg",
@@ -48,5 +51,8 @@
   ],
   "resonant_vault": [
     "assets/rvx/sounds/music/resonant_vault/echoes_below.ogg"
+  ],
+  "tmp": [
+    "assets/rvx/sounds/music/tmp/magboss.ogg"
   ]
 }

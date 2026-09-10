@@ -199,8 +199,17 @@ export function simulateStep(
         if (intent.jump && wasGrounded && !boat) {
             newVel.y = JUMP_VELOCITY;
             if (intent.sprint) {
-                 newVel.x -= Math.sin(cameraYaw) * SPRINT_JUMP_BOOST;
-                 newVel.z -= Math.cos(cameraYaw) * SPRINT_JUMP_BOOST;
+                // The boost has to go where the run is going. In the welded views
+                // that is always camera-forward, because only forward sprints; the
+                // free view can sprint onto any of the eight headings, so follow
+                // the input there or the jump shoves the player off their line.
+                if (intent.omniSprint && _inputVec.lengthSq() > 0) {
+                    newVel.x += _inputVec.x * SPRINT_JUMP_BOOST;
+                    newVel.z += _inputVec.z * SPRINT_JUMP_BOOST;
+                } else {
+                    newVel.x -= Math.sin(cameraYaw) * SPRINT_JUMP_BOOST;
+                    newVel.z -= Math.cos(cameraYaw) * SPRINT_JUMP_BOOST;
+                }
             }
         }
     }

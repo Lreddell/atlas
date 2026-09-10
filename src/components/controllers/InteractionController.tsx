@@ -34,17 +34,61 @@ import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
 import { findFirstBlockedEdit } from '../../systems/world/regionEditPolicy';
 import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/ResonantVaultRuntime';
-import { getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
+import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
+import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../systems/player/viewRig';
+import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
+import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
+import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
 
-// Scratch vectors for camera origin/direction (used every frame)
+// Scratch vectors for the aim origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _boltOrigin = new THREE.Vector3();
 const _boltDirection = new THREE.Vector3();
 const MELEE_REACH = 3.2;
-const DEFLECT_REACH = 5.5;
+
+const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
+    const hit = voxelRaycast(ox, oy, oz, dx, dy, dz, maxDist, type => type !== BlockType.WATER && type !== BlockType.LAVA);
+    return hit ? hit.distance : null;
+};
+
+/**
+ * The aim ray into _camPos/_camDir: from the player's EYE toward the point
+ * under the crosshair. In first person that is the camera ray itself; in third
+ * person the camera hangs behind the body, so the ray converges on what the
+ * crosshair covers instead of starting from behind the player.
+ */
+function aimFromCamera(camera: THREE.Camera): void {
+    camera.getWorldPosition(_camPos);
+    camera.getWorldDirection(_camDir);
+    if (viewRig.detached) {
+        // The camera is parked somewhere else entirely (F7), so the crosshair no
+        // longer covers what the player is aiming at. Aim straight out of the eye
+        // along their own look, exactly as first person does.
+        _camPos.set(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z);
+        _camDir.set(viewRig.dir.x, viewRig.dir.y, viewRig.dir.z);
+        return;
+    }
+    if (!viewRig.third) return;
+    const ray = aimRay(
+        { x: _camPos.x, y: _camPos.y, z: _camPos.z },
+        viewRig.eye,
+        { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+        sweepVoxels,
+        64,
+    );
+    _camPos.set(ray.origin.x, ray.origin.y, ray.origin.z);
+    _camDir.set(ray.dir.x, ray.dir.y, ray.dir.z);
+}
+
+/** The player's eye position (the first-person camera spot in either view). */
+function eyePosition(camera: THREE.Camera): THREE.Vector3 {
+    return viewRig.third
+        ? new THREE.Vector3(viewRig.eye.x, viewRig.eye.y, viewRig.eye.z)
+        : camera.position.clone();
+}
 // Brief pause (in eat-timer ticks; ~0.3s) after a bite before the next one charges,
 // so holding right-click eats repeatedly with a clear gap between bites.
 const EAT_PAUSE_TICKS = 6;
@@ -106,12 +150,12 @@ function canPlayerEdit(x: number, y: number, z: number, edit: VaultPlayerEdit): 
 }
 
 function castFromCamera(camera: THREE.Camera, maxDist: number) {
-    camera.getWorldPosition(_camPos);
-    camera.getWorldDirection(_camDir);
+    aimFromCamera(camera);
     return voxelRaycast(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, maxDist);
 }
 
 interface InteractionControllerProps {
+    hideHighlights?: boolean;
     isLocked: boolean;
     selectedSlot: number;
     inventory: (ItemStack | null)[];
@@ -135,7 +179,7 @@ interface InteractionControllerProps {
 }
 
 export const InteractionController = ({ 
-    isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
+    hideHighlights = false, isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
     setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onPlaceBoat, onEnterBoat
 }: InteractionControllerProps) => {
     const { camera } = useThree();
@@ -146,14 +190,19 @@ export const InteractionController = ({
     const highlightSigRef = useRef<string>('');
 
     // Interaction State
-    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number } | null>(null);
+    const breakingRef = useRef<{ x: number, y: number, z: number, progress: number, slot: number, type: BlockType } | null>(null);
     // Sealed-region denial dwell: the toast fires only after LMB is held on the
     // same non-editable block for a beat (see the useFrame mining branch).
     const deniedDwellRef = useRef<{ x: number, y: number, z: number, heldFor: number, notified: boolean } | null>(null);
     const isLeftMouseDown = useRef(false);
     const isRightMouseDown = useRef(false);
+    // Seconds, preserving the original delays at 60 fps on every refresh rate.
     const interactionCooldown = useRef(0);
     const weaponCooldown = useRef(0);
+    const attackHeld = useRef(false);
+    const attackBuffer = useRef(0);
+    const attackItem = useRef<{ slot: number; type: BlockType | null } | null>(null);
+    useEffect(() => { Object.assign(playerAttack, createAttackState()); return () => { Object.assign(playerAttack, createAttackState()); }; }, []);
     const eatingTimer = useRef(0);
     const lastPlacementTime = useRef(0);
     const lastBreakTime = useRef(0);
@@ -170,6 +219,14 @@ export const InteractionController = ({
     useEffect(() => () => { highlightGeoRef.current?.dispose(); }, []);
 
     useEffect(() => {
+        // A different item starts a fresh bite/mining action. Stack count changes
+        // after a bite do not interrupt continuous eating of the same food.
+        if (selectedSlotRef.current !== selectedSlot
+            || inventoryRef.current[selectedSlotRef.current]?.type !== inventory[selectedSlot]?.type) {
+            eatingTimer.current = 0;
+            inputState.eating = false;
+            breakingRef.current = null;
+        }
         inventoryRef.current = inventory;
         selectedSlotRef.current = selectedSlot;
     }, [inventory, selectedSlot]);
@@ -179,7 +236,7 @@ export const InteractionController = ({
         const justClosed = !openContainer && prevOpen.current;
         
         if (justLocked || justClosed) {
-             interactionCooldown.current = 10;
+             interactionCooldown.current = 10 / 60;
              isLeftMouseDown.current = false;
              isRightMouseDown.current = false;
              eatingTimer.current = 0;
@@ -203,10 +260,20 @@ export const InteractionController = ({
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             eatingTimer.current = 0;
+            inputState.eating = false;
+            playerInteraction.leftHeld = false;
+            playerInteraction.placementElapsed = Infinity;
+            playerMining.active = false;
+            attackHeld.current = false;
+            attackBuffer.current = 0;
+            cancelAttack(playerAttack);
+            breakingRef.current = null;
+            deniedDwellRef.current = null;
+            setBreakingVisual(null);
         };
         window.addEventListener('blur', onBlur);
         return () => window.removeEventListener('blur', onBlur);
-    }, []);
+    }, [setBreakingVisual]);
 
     const handlePickBlock = useCallback(() => {
         if (isDead) return;
@@ -271,8 +338,7 @@ export const InteractionController = ({
         // Right-clicking a boat entity within reach boards it (entities take
         // priority over the block behind them, same as melee).
         if (!isContinuous && onEnterBoat) {
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const eHit = entityManager.raycastEntity(_camPos, _camDir, 4.0);
             if (eHit) {
                 const entity = entityManager.getEntity(eHit.id);
@@ -287,6 +353,7 @@ export const InteractionController = ({
         }
 
         const emitPlacementAnimation = () => {
+            playerInteraction.placementElapsed = 0;
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('atlas:block-placed'));
             }
@@ -296,8 +363,7 @@ export const InteractionController = ({
         const hit = castFromCamera(camera, reach);
         const heldForUse = inventoryRef.current[selectedSlotRef.current];
         if (!isContinuous && heldForUse?.type === BlockType.ECHO_TUNING_FORK) {
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const targetType = hit ? worldManager.tryGetBlock(hit.bx, hit.by, hit.bz) : null;
             const handled = resonantVaultRuntime.useTuningFork({
                 origin: { x: _camPos.x, y: _camPos.y, z: _camPos.z },
@@ -309,7 +375,7 @@ export const InteractionController = ({
                 gameMode,
             });
             if (handled) {
-                interactionCooldown.current = 2;
+                interactionCooldown.current = 2 / 60;
                 return;
             }
         }
@@ -405,7 +471,7 @@ export const InteractionController = ({
                             const isSneaking = inputState.sneak;
                             const eyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
                             const bodyHeight = isSneaking ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
-                            const feet = camera.position.clone();
+                            const feet = eyePosition(camera);
                             feet.y -= eyeHeight;
                             const halfWidth = PLAYER_WIDTH / 2;
                             const playerAABB = new THREE.Box3(
@@ -476,8 +542,8 @@ export const InteractionController = ({
                 const currentEyeHeight = isSneaking ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
                 const currentPlayerHeight = isSneaking ? PLAYER_HEIGHT_SNEAK : PLAYER_HEIGHT;
 
-                const playerFeetPos = camera.position.clone();
-                playerFeetPos.y -= currentEyeHeight; 
+                const playerFeetPos = eyePosition(camera);
+                playerFeetPos.y -= currentEyeHeight;
                 
                 const playerHalfWidth = PLAYER_WIDTH / 2;
                 
@@ -590,10 +656,9 @@ export const InteractionController = ({
 
         if (!isContinuous && heldForUse?.type === BlockType.VAULT_CROSSBOW) {
             const profile = getVaultWeaponProfile(heldForUse.type);
-            if (!profile || weaponCooldown.current > 0) return;
+            if (!profile || weaponCooldown.current > 0 || attackBusy(playerAttack) || motionStatus.action !== 'none') return;
             if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
-            camera.getWorldPosition(_camPos);
-            camera.getWorldDirection(_camDir);
+            aimFromCamera(camera);
             const projectileId = vaultProjectileSystem.fire(
                 { x: _camPos.x + _camDir.x * 0.25, y: _camPos.y + _camDir.y * 0.25, z: _camPos.z + _camDir.z * 0.25 },
                 { x: _camDir.x, y: _camDir.y, z: _camDir.z },
@@ -603,6 +668,9 @@ export const InteractionController = ({
             if (projectileId === null) return;
             damageHeldItem(selectedSlotRef.current, profile.durabilityCost);
             weaponCooldown.current = profile.cooldownSeconds;
+            beginAttack(playerAttack, 'crossbow', profile.cooldownSeconds);
+            playerAttack.struck = true;
+            attackItem.current = null;
             window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
         }
     }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
@@ -611,101 +679,136 @@ export const InteractionController = ({
     // items retain the original short-range path; the crossbow fires only on use.
     const tryMeleeAttack = useCallback((): boolean => {
         const held = inventory[selectedSlot];
-        const profile = held ? getVaultWeaponProfile(held.type) : null;
+        const profile = getPlayerWeaponProfile(held?.type ?? null);
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
-        camera.getWorldPosition(_camPos);
-        camera.getWorldDirection(_camDir);
-        const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
-        if (!hit) return false;
+        aimFromCamera(camera);
+        if (profile?.kind === 'crossbow') return true;
+        const hits = new Map<number, NonNullable<ReturnType<typeof entityManager.raycastEntity>>>();
+        const direct = entityManager.raycastEntity(_camPos, _camDir, reach);
         const blockHit = castFromCamera(camera, reach);
-        if (!isEntityHitVisible(hit.dist, blockHit?.distance ?? null)) return false;
-        if (profile?.kind === 'crossbow' || weaponCooldown.current > 0) return true;
-        const resolved = held ? resolveVaultMeleeHit(
-            held.type,
-            entityManager.getCombatTraits(hit.id),
-            { distance: hit.dist },
-        ) : null;
-        const damage = resolved?.damage ?? getAttackDamage(held);
-        const stagger = resolved?.stagger ?? 0;
-        const struckEntity = entityManager.getEntity(hit.id);
-        const targetKind = struckEntity?.kind;
-        const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, hit.hitZone);
-        if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
-            const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
-            particleFx.burst({
-                x: struckEntity.pos.x,
-                y: struckEntity.pos.y + struckEntity.height * 0.55,
-                z: struckEntity.pos.z,
-                color: heavy ? [0.62, 0.5, 0.31] : [0.56, 0.61, 0.57],
-                color2: [0.78, 0.7, 0.5],
-                count: heavy ? 18 : 10,
-                speed: heavy ? 4.2 : 2.8,
-                upBias: 0.8,
-                spread: 0.65,
-                size: heavy ? 0.1 : 0.065,
-                life: 0.34,
-                gravity: 4,
-                drag: 1.8,
-            });
-            soundManager.playAt(
-                resolved.technique === 'titan_crush' ? 'vault.enemy.tollkeeper_impact' : 'block.amethyst.hit',
-                { x: struckEntity.pos.x, y: struckEntity.pos.y + struckEntity.height * 0.45, z: struckEntity.pos.z },
-                { volume: heavy ? 0.82 : 0.48, pitch: resolved.technique === 'spear_sweet_spot' ? 1.42 : 0.78, fallback: false },
-            );
-            if (resolved.technique === 'titan_crush') {
-                for (const nearby of entityManager.getEntities()) {
-                    if (nearby.id === hit.id || nearby.hp <= 0 || nearby.kind === 'boat' || nearby.kind === 'bell_titan') continue;
-                    const dx = nearby.pos.x - struckEntity.pos.x;
-                    const dz = nearby.pos.z - struckEntity.pos.z;
-                    const distance = Math.hypot(dx, dz);
-                    if (distance > 2.8 || Math.abs(nearby.pos.y - struckEntity.pos.y) > 2.2) continue;
-                    entityManager.damageEntity(nearby.id, 3.5, dx / (distance || 1), dz / (distance || 1), 0.45);
+        if (direct && isEntityHitVisible(direct.dist, blockHit?.distance ?? null)) hits.set(direct.id, direct);
+        const forward = _camDir.clone();
+        const angle = profile?.kind === 'spear' || playerAttack.combo === 2 ? 30 : 120;
+        // Sweep the visible bodies in the authored arc. Each ray still respects
+        // voxels, foreground entities and encounter-specific crystal hit zones.
+        for (const entity of profile ? entityManager.getEntities() : []) {
+            if (entity.hp <= 0 || hits.has(entity.id)) continue;
+            const dx = entity.pos.x - _camPos.x;
+            const dy = entity.pos.y + entity.height * 0.5 - _camPos.y;
+            const dz = entity.pos.z - _camPos.z;
+            if (!inAttackArc(dx, dy, dz, forward.x, forward.y, forward.z, reach + entity.width * 0.5, angle)) continue;
+            _camDir.set(dx, dy, dz).normalize();
+            const hit = entityManager.raycastEntity(_camPos, _camDir, reach);
+            const wall = sweepVoxels(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, reach);
+            if (hit && isEntityHitVisible(hit.dist, wall)) hits.set(hit.id, hit);
+        }
+        if (!hits.size) return false;
+        const collateralHits = new Set<number>();
+        for (const hit of hits.values()) {
+            _camDir.copy(forward);
+            const resolved = held ? resolveVaultMeleeHit(
+                held.type,
+                entityManager.getCombatTraits(hit.id),
+                { distance: hit.dist },
+            ) : null;
+            const damage = resolved?.damage ?? getAttackDamage(held);
+            const stagger = resolved?.stagger ?? 0;
+            const struckEntity = entityManager.getEntity(hit.id);
+            const targetKind = struckEntity?.kind;
+            // A strike loaded by a magnetic dash is a Magnet Slam: the boss's
+            // encounter reads the hit zone and lands it harder (and staggers).
+            const slam = motionStatus.surge && !motionRequests.consumeSurge && struckEntity?.isBoss === true;
+            if (slam) motionRequests.consumeSurge = true;
+            const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
+            if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
+                const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
+                particleFx.burst({
+                    x: struckEntity.pos.x,
+                    y: struckEntity.pos.y + struckEntity.height * 0.55,
+                    z: struckEntity.pos.z,
+                    color: heavy ? [0.62, 0.5, 0.31] : [0.56, 0.61, 0.57],
+                    color2: [0.78, 0.7, 0.5],
+                    count: heavy ? 18 : 10,
+                    speed: heavy ? 4.2 : 2.8,
+                    upBias: 0.8,
+                    spread: 0.65,
+                    size: heavy ? 0.1 : 0.065,
+                    life: 0.34,
+                    gravity: 4,
+                    drag: 1.8,
+                });
+                soundManager.playAt(
+                    resolved.technique === 'titan_crush' ? 'vault.enemy.tollkeeper_impact' : 'block.amethyst.hit',
+                    { x: struckEntity.pos.x, y: struckEntity.pos.y + struckEntity.height * 0.45, z: struckEntity.pos.z },
+                    { volume: heavy ? 0.82 : 0.48, pitch: resolved.technique === 'spear_sweet_spot' ? 1.42 : 0.78, fallback: false },
+                );
+                if (resolved.technique === 'titan_crush') {
+                    for (const nearby of entityManager.getEntities()) {
+                        if (hits.has(nearby.id) || collateralHits.has(nearby.id) || nearby.hp <= 0 || nearby.kind === 'boat' || nearby.kind === 'bell_titan') continue;
+                        const dx = nearby.pos.x - struckEntity.pos.x;
+                        const dz = nearby.pos.z - struckEntity.pos.z;
+                        const distance = Math.hypot(dx, dz);
+                        if (distance > 2.8 || Math.abs(nearby.pos.y - struckEntity.pos.y) > 2.2) continue;
+                        entityManager.damageEntity(nearby.id, 3.5, dx / (distance || 1), dz / (distance || 1), 0.45);
+                        collateralHits.add(nearby.id);
+                    }
                 }
             }
-        }
-        // A shield absorbs the blow: a metallic "clink", no hurt cry, so it is
-        // obvious the boss is invulnerable until its crystals are gone.
-        if (result === 'blocked' && targetKind === 'magnetic_warden') {
-            soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
-        } else if (result === 'damaged' && targetKind === 'boat') {
-            // Wooden props knock, they don't cry.
-            soundManager.play('block.wood.hit', { volume: 0.8 });
-        } else if (result === 'damaged' && targetKind !== 'bell_titan') {
-            soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+            // The blow bounced (same polarity, a standing shield, or a form change):
+            // a metallic "clink", no hurt cry, so it is obvious nothing landed.
+            if (result === 'blocked' && targetKind === 'magnetic_warden') {
+                soundManager.play('entity.magnetic_warden.shielded', { volume: 0.6 });
+            } else if (result === 'damaged' && targetKind === 'boat') {
+                // Wooden props knock, they don't cry.
+                soundManager.play('block.wood.hit', { volume: 0.8 });
+            } else if (result === 'damaged' && targetKind !== 'bell_titan') {
+                soundManager.play('entity.player.hurt', { volume: 0.5, pitch: 1.4 });
+            }
         }
         if (held) damageHeldItem(selectedSlot, profile?.durabilityCost ?? (isSword(held.type) ? 1 : 2));
         if (foodStateRef.current) foodStateRef.current.foodExhaustionLevel += EXHAUSTION_COSTS.ATTACK;
-        if (profile) {
-            weaponCooldown.current = profile.cooldownSeconds;
-            window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
-        } else {
-            interactionCooldown.current = 6;
-        }
+        if (!profile) interactionCooldown.current = 6 / 60;
+
         return true;
     }, [camera, inventory, selectedSlot, foodStateRef, damageHeldItem]);
 
-    // Hit a Magnetic Warden parry bolt back at it (a purple deflectable bolt
-    // within reach of the crosshair). Takes priority over attacking/mining.
-    const tryDeflectBolt = useCallback((): boolean => {
-        camera.getWorldPosition(_camPos);
-        camera.getWorldDirection(_camDir);
-        if (!entityManager.deflectProjectile(_camPos, _camDir, DEFLECT_REACH)) return false;
-        soundManager.play('entity.magnetic_warden.deflect', { volume: 0.9 });
-        interactionCooldown.current = 5;
+    const requestAttack = useCallback((): boolean => {
+        const held = inventory[selectedSlot];
+        const profile = getPlayerWeaponProfile(held?.type ?? null);
+        if (!profile) return false;
+        if (profile.kind === 'crossbow') return true;
+        // Axes remain usable as tools: a visible block keeps the mining path.
+        if (profile.kind === 'axe') {
+            aimFromCamera(camera);
+            const target = entityManager.raycastEntity(_camPos, _camDir, profile.reach);
+            const block = castFromCamera(camera, gameMode === 'creative' ? 5.2 : 4.5);
+            if (block && (!target || !isEntityHitVisible(target.dist, block.distance))) return false;
+        }
+        if (attackBusy(playerAttack) || weaponCooldown.current > 0 || motionStatus.action !== 'none') return true;
+        const kind = profile.kind;
+        const duration = profile.cooldownSeconds;
+        if (beginAttack(playerAttack, kind, duration)) {
+            attackBuffer.current = 0;
+            attackItem.current = { slot: selectedSlot, type: held?.type ?? null };
+            breakingRef.current = null;
+            setBreakingVisual(null);
+        }
         return true;
-    }, [camera]);
+    }, [inventory, selectedSlot, setBreakingVisual, camera, gameMode]);
 
     useEffect(() => {
         const onDown = (e: MouseEvent) => {
             if(!isLocked || openContainer || gameMode === 'spectator' || isDead) return;
+            if (detachedCamera.stage === 'placing') return; // Framing the shot, not playing.
             if (interactionCooldown.current > 0) return;
 
             if (e.button === 1) handlePickBlock();
             if (e.button === 0) {
-                // Deflecting a parry bolt, then attacking an entity, both take
-                // priority over mining a block.
-                if (tryDeflectBolt()) { /* deflected */ }
-                else if (!tryMeleeAttack()) isLeftMouseDown.current = true;
+                playerInteraction.leftHeld = true;
+                // Attacking an entity takes priority over mining a block.
+                attackHeld.current = getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null) !== null;
+                attackBuffer.current = attackHeld.current ? 0.15 : 0;
+                if (!requestAttack() && !tryMeleeAttack()) isLeftMouseDown.current = true;
             }
             if (e.button === 2) {
                 isRightMouseDown.current = true;
@@ -714,6 +817,8 @@ export const InteractionController = ({
         };
         const onUp = (e: MouseEvent) => {
             if(e.button === 0) {
+                playerInteraction.leftHeld = false;
+                attackHeld.current = false;
                 isLeftMouseDown.current = false;
                 breakingRef.current = null;
                 deniedDwellRef.current = null;
@@ -732,11 +837,17 @@ export const InteractionController = ({
             window.removeEventListener('mousedown', onDown);
             window.removeEventListener('mouseup', onUp);
         };
-    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, tryMeleeAttack, tryDeflectBolt]);
+    }, [isLocked, openContainer, gameMode, isDead, handlePickBlock, performInteraction, setBreakingVisual, requestAttack, tryMeleeAttack, inventory, selectedSlot]);
 
     useFrame((_, delta) => {
-        weaponCooldown.current = Math.max(0, weaponCooldown.current - Math.min(delta, 0.1));
-        if (openContainer || !isLocked || isDead || gameMode === 'spectator') {
+        playerMining.active = false;
+        if (isLocked && Number.isFinite(playerInteraction.placementElapsed)) playerInteraction.placementElapsed = Math.min(1, playerInteraction.placementElapsed + Math.min(delta, 0.1));
+        if (openContainer || !isLocked || isDead || gameMode === 'spectator' || detachedCamera.stage === 'placing') {
+            playerInteraction.leftHeld = false;
+            playerInteraction.placementElapsed = Infinity;
+            attackHeld.current = false;
+            attackBuffer.current = 0;
+            cancelAttack(playerAttack);
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             eatingTimer.current = 0;
@@ -745,8 +856,24 @@ export const InteractionController = ({
             return;
         }
 
+        const combatDt = Math.min(delta, 0.1);
+        weaponCooldown.current = Math.max(0, weaponCooldown.current - combatDt);
+        const committed = attackItem.current;
+        if (motionStatus.action !== 'none' || (committed && (committed.slot !== selectedSlot || committed.type !== (inventory[selectedSlot]?.type ?? null)))) {
+            cancelAttack(playerAttack);
+            attackBuffer.current = 0;
+        }
+        if (advanceAttack(playerAttack, combatDt)) tryMeleeAttack();
+        if ((attackHeld.current || attackBuffer.current > 0) && requestAttack()) {
+            isLeftMouseDown.current = false;
+            breakingRef.current = null;
+            setBreakingVisual(null);
+        }
+        attackBuffer.current = Math.max(0, attackBuffer.current - combatDt);
+        if (attackBusy(playerAttack) && getPlayerWeaponProfile(inventory[selectedSlot]?.type ?? null)) isLeftMouseDown.current = false;
+
         if (interactionCooldown.current > 0) {
-            interactionCooldown.current--;
+            interactionCooldown.current = Math.max(0, interactionCooldown.current - combatDt);
             isLeftMouseDown.current = false;
             isRightMouseDown.current = false;
             inputState.eating = false;
@@ -777,7 +904,13 @@ export const InteractionController = ({
                  // Geometry is in [0,1] block-local space, so sit at the block's min corner.
                  highlightMeshRef.current.scale.set(1, 1, 1);
                  highlightMeshRef.current.position.set(bx, by, bz);
-                 highlightMeshRef.current.visible = true;
+                 // A bolted-down tripod (F7) still plays: the aim casts out of the
+                 // eye, so the outline is the only thing telling the player what
+                 // they are about to mine or place against, and it matters MORE
+                 // there than in first person because the crosshair no longer
+                 // covers the aim. Only the framing stage hides it, where the walk
+                 // keys fly the camera and the body cannot reach anything anyway.
+                 highlightMeshRef.current.visible = !hideHighlights && !framingDetachedShot();
             } else {
                  highlightMeshRef.current.visible = false;
             }
@@ -814,12 +947,14 @@ export const InteractionController = ({
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
                 // Keyed by target AND hotbar slot: switching tools mid-break resets
+                playerMining.active = true;
+                playerMining.elapsed += Math.min(delta, 0.1);
                 // progress, so the harvest check + durability cost at completion
                 // always charge the tool that actually did the mining (no switching
                 // to an empty slot on the last frame to mine for free).
                 if (!breakingRef.current || breakingRef.current.x !== bx || breakingRef.current.y !== by || breakingRef.current.z !== bz
-                    || breakingRef.current.slot !== selectedSlotRef.current) {
-                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0, slot: selectedSlotRef.current };
+                    || breakingRef.current.slot !== selectedSlotRef.current || breakingRef.current.type !== targetType) {
+                    breakingRef.current = { x: bx, y: by, z: bz, progress: 0, slot: selectedSlotRef.current, type: targetType };
                 }
                 
                 // Play Hit Sound Throttled
@@ -856,7 +991,7 @@ export const InteractionController = ({
                     const penalty = canHarvest ? 1.5 : 5.0;
                     const breakingSpeed = speedMultiplier / targetDef.hardness / penalty;
 
-                    breakingRef.current.progress += delta * breakingSpeed;
+                    breakingRef.current.progress += combatDt * breakingSpeed;
                 }
 
                 let noDrop = false;
@@ -995,7 +1130,7 @@ export const InteractionController = ({
                 const canEat = gameMode === 'creative' || (foodStateRef.current && foodStateRef.current.foodLevel < 20);
 
                 if (canEat) {
-                    eatingTimer.current += delta * 20;
+                    eatingTimer.current += combatDt * 20;
                     // Drive the eat animation only while a bite is actively charging
                     // (timer >= 0). During the brief post-bite pause (timer < 0) the
                     // hand lowers, then the next bite charges, repeating while held.
@@ -1019,6 +1154,7 @@ export const InteractionController = ({
                     inputState.eating = false;
                 }
             } else {
+                eatingTimer.current = 0;
                 inputState.eating = false;
                 if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
                     performInteraction(true);
