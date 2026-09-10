@@ -162,7 +162,7 @@ export const BossBar: React.FC = () => {
             {form && layers.total > 0 && (
                 layers.standing > 0 ? (
                     <div className="mt-[2px] font-pixel text-[10px] tracking-wider text-[#c9a3ff] [text-shadow:1px_1px_0px_#000]">
-                        SHIELDED {'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))} · break the tower crystal{layers.total > 1 ? 's' : ''}
+                        {form.form === 3 ? 'SHARDS' : 'SHIELDED'} {'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))} · {form.form === 3 ? 'optional crystal' : `break the tower crystal${layers.total > 1 ? 's' : ''}`}
                     </div>
                 ) : (
                     <div className="mt-[2px] animate-pulse font-pixel text-[10px] tracking-wider text-[#ffd166] [text-shadow:1px_1px_0px_#000]">

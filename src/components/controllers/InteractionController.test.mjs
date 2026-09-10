@@ -12,8 +12,8 @@ const code = ts.transpileModule(readFileSync(new URL('./InteractionController.ts
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 
-function controller() {
-    let cursor = 0, frame, consumed = 0;
+function controller(weapon = false) {
+    let cursor = 0, frame, consumed = 0, returns = 0;
     const hooks = [], pending = [], listeners = new Map();
     const previousWindow = globalThis.window;
     globalThis.window = {
@@ -44,7 +44,8 @@ function controller() {
         '../../systems/player/viewRig': { viewRig: { third: false }, detachedCamera },
         '../../systems/world/voxelRaycast': { voxelRaycast: () => null },
         '../../systems/combat/VaultProjectileSystem': { vaultProjectileSystem: { setDependencies() {} } },
-        '../../systems/combat/vaultWeapons': { getPlayerWeaponProfile: () => null },
+        '../../systems/combat/vaultWeapons': { getPlayerWeaponProfile: () => weapon ? { kind: 'sword', reach: 3.2, cooldownSeconds: 0.58 } : null },
+        '../../systems/entities/EntityManager': { entityManager: { returnChargedBolt: () => { returns++; return false; }, raycastEntity: () => null, getEntities: () => [] } },
         '../../systems/sound/SoundManager': { soundManager: { play() {} } },
         '../../systems/player/playerFood': { eatFood() {} },
     };
@@ -66,11 +67,34 @@ function controller() {
         render, inputState, detachedCamera,
         frame: dt => frame({}, dt),
         rightDown: () => listeners.get('mousedown')({ button: 2 }),
+        leftDown: () => listeners.get('mousedown')({ button: 0 }),
+        leftUp: () => listeners.get('mouseup')({ button: 0 }),
+        returns: () => returns,
         blur: () => listeners.get('blur')(),
         consumed: () => consumed,
         dispose: () => { hooks.forEach(hook => hook?.cleanup?.()); globalThis.window = previousWindow; },
     };
 }
+
+test('a fresh click attempts a return only at the strike frame; held attack chains never auto-return', () => {
+    const c = controller(true);
+    try {
+        for (let i = 0; i < 20; i++) c.frame(1 / 60);
+        c.leftDown();
+        assert.equal(c.returns(), 0);
+        for (let i = 0; i < 16; i++) c.frame(1 / 60);
+        assert.equal(c.returns(), 0);
+        for (let i = 0; i < 3; i++) c.frame(1 / 60);
+        assert.equal(c.returns(), 1);
+        for (let i = 0; i < 100; i++) c.frame(1 / 60);
+        assert.equal(c.returns(), 1);
+        c.leftUp();
+        for (let i = 0; i < 60; i++) c.frame(1 / 60);
+        c.leftDown();
+        for (let i = 0; i < 19; i++) c.frame(1 / 60);
+        assert.equal(c.returns(), 2);
+    } finally { c.dispose(); }
+});
 
 test('interaction lockout lasts the same time at 30, 60 and 144 fps', () => {
     for (const fps of [30, 60, 144]) {

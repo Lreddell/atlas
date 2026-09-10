@@ -10,7 +10,7 @@ import test from 'node:test';
 // systems/player/viewRig.test.mjs and the tower flux rule in
 // systems/player/climbSurfaces.test.mjs.
 const root = path.resolve(import.meta.dirname, '../../..');
-const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const entity = read('src/systems/entities/Entity.ts');
 const manager = read('src/systems/entities/EntityManager.ts');
@@ -58,7 +58,7 @@ test('the pure core owns the one rule, the three crystal-shielded forms, and the
         assert.ok(core.includes(action), `core declares ${action}`);
     }
     // The shield is layers of standing crystals: nothing decays it, only a break.
-    assert.match(core, /return state\.shieldLayers > 0;/);
+    assert.match(core, /return state\.form !== 3 && state\.shieldLayers > 0;/);
     assert.doesNotMatch(core, /FLUX_MAX|tether|burnout|bolt-absorbed/);
     assert.match(core, /export function wardenLiveTowers/);
     assert.match(core, /export function isInWardenLane/);
@@ -137,7 +137,7 @@ test('the encounter runtime registers as the brain and damage handler and owns t
     assert.match(encounter, /if \(s\.action === 'charge_active'\) \{[\s\S]*?WARDEN_TIMING\.charge\.speed/);
     assert.match(encounter, /export const MAGNET_SLAM_HIT_ZONE = 'magnet_slam'/);
     assert.match(encounter, /const slam = hitZone === MAGNET_SLAM_HIT_ZONE;/);
-    assert.match(encounter, /\{ type: 'damage', amount, playerPolarity: entityManager\.getPlayerPolarity\(\), slam \}/);
+    assert.match(encounter, /\{ type: 'damage', amount, playerPolarity: entityManager\.getPlayerPolarity\(\), slam,/);
     // Every attack on the player goes through the i-frame gate.
     assert.match(encounter, /entityManager\.tryDamagePlayer\(damage, fx, fz, 'attack'\)/);
     assert.doesNotMatch(encounter, /entityManager\.damagePlayer\(/);

@@ -17,8 +17,8 @@
 //     tower's climb faces by OPPOSING them, and when the Warden swaps polarity
 //     its towers swap with it, so a climber must flip to hold on.
 //
-// THE THREE FORMS (each opens SHIELDED by tower crystals; only breaking every
-// crystal of the form drops the shield; crystal power never decays)
+// THE THREE FORMS (I and II require crystals; III offers an optional crystal
+// that powers its shard barrier and overload volleys)
 //   I   WARDEN (100% .. 66%)  one crystal. Grounded duel: Volley / Lash / Draw+
 //                             Repel / Charge / Swap. Break the crystal: it reels.
 //   II  AEGIS  (66% .. 33%)   two crystals. A hovering core that contests the
@@ -26,7 +26,7 @@
 //                             at you, swaps its towers) and plunges rings on the
 //                             platform. Break both: it crashes, then limps low.
 //   III STORM  (33% .. 0%)    the last crystal. A grounded core behind a shard
-//                             barrier and a polarity METRONOME: every beat flips
+//                             barrier, immediately damageable, with a polarity METRONOME: every beat flips
 //                             it AND its tower, fires a ring, then a quiet recoil.
 //
 // Conventions: seconds everywhere, polarity +1 (red) / -1 (blue), player
@@ -46,6 +46,8 @@ export type WardenAction =
     | 'lash_windup' | 'lash_active' | 'lash_recovery'
     | 'draw_windup' | 'draw_active' | 'draw_recovery'
     | 'charge_windup' | 'charge_active' | 'charge_recovery'
+    | 'backswing_windup' | 'backswing_active'
+    | 'counter_windup' | 'counter_recovery'
     | 'stagger'
     | 'flinch'
     | 'shield_break'
@@ -81,13 +83,15 @@ export const WARDEN_TIMING = {
         lash_windup: 0.75, lash_active: 0.25, lash_recovery: 1.2,
         draw_windup: 0.9, draw_active: 1.5, draw_recovery: 1.4,
         charge_windup: 0.85, charge_active: 0.45, charge_recovery: 1.1,
+        backswing_windup: 0.65, backswing_active: 0.2,
+        counter_windup: 1.0, counter_recovery: 1.5,
         stagger: 0.9,
         flinch: 1.2,
         /** Long enough for the climber who broke the crystal to launch back down and land a slam. */
         shield_break: 4.5,
         shatter: 2.6,
         hover: 0,
-        plunge_windup: 0.85, plunge_drop: 0.3, plunge_recovery: 0.9,
+        plunge_windup: 1.6, plunge_drop: 0.3, plunge_recovery: 1.4,
         crash: 0.7, recover: 1.2,
         storm_rise: 2.6,
         spiral: 0, recoil: 1.4,
@@ -113,7 +117,7 @@ export const WARDEN_TIMING = {
         /** While its crystal stands it never Draws: the pull is the damage-phase gambit. */
         shieldedRoster: ['volley', 'lash', 'charge'] as readonly WardenAttack[],
         roster: ['volley', 'lash', 'draw', 'charge'] as readonly WardenAttack[],
-        climberVolleyInterval: 2.6,
+        climberVolleyInterval: 1.8,
     },
 
     form2: {
@@ -127,7 +131,7 @@ export const WARDEN_TIMING = {
          *  close enough to dash-slam from the upper half of the climb. */
         contestRadius: 21,
         contestHeight: 22,
-        volleyInterval: 2.2,
+        volleyInterval: 1.8,
         plungeInterval: 9,
         plungeFirst: 5,
         swapInterval: 10,
@@ -161,7 +165,7 @@ export const WARDEN_TIMING = {
         volley1: { count: 5, spread: 0.3, speed: 16, damage: 2, ttl: 5, homing: 1.4 },
         volley2: { count: 3, spread: 0.18, speed: 17, damage: 2, ttl: 5, homing: 1.4 },
         /** Fired at a climber or a far player: a wide, honest spread that can be sidestepped on the wall. */
-        climber: { count: 3, spread: 0.35, speed: 17, damage: 2, ttl: 5, homing: 0 },
+        climber: { count: 5, spread: 0.12, speed: 17, damage: 2, ttl: 5, homing: 0 },
         spiral: { speed: 11, damage: 1, ttl: 4, homing: 1.0 },
     },
 
@@ -172,7 +176,9 @@ export const WARDEN_TIMING = {
         plunge: { maxRadius: 24, speed: 16, damage: 8 },
         beat: { maxRadius: 24, speed: 18, damage: 6 },
     },
-    plunge: { impactRadius: 3.2, impactDamage: 12, targetClamp: 20, riseBeforeDrop: 2 },
+    plunge: { impactRadius: 3.2, impactDamage: 12, targetClamp: 20, riseBeforeDrop: 16, lockLead: 0.55 },
+    counter: { interval: 9, speed: 10, damage: 6, returnDamage: 12, exposedSeconds: 2.2 },
+    staggerResistance: 6,
     /** Ambient attract/repel field per form (the Draw overrides it). */
     field: {
         1: { range: 12, force: 20, maxDrift: 4 },
@@ -215,6 +221,14 @@ export interface WardenState {
     spiralTimer: number;
     spiralAngle: number;
     clock: number;
+    counterTimer: number;
+    exposedTimer: number;
+    staggerLock: number;
+    armorStress: number;
+    meleeSeen: { lash: boolean; charge: boolean };
+    followup: boolean;
+    volleyIndex: number;
+    volleyPattern: 'aimed' | 'sweep';
 }
 
 export type WardenInput =
@@ -225,7 +239,7 @@ export type WardenInput =
         /** An ignited, standing tower the player is climbing or approaching, or null. */
         playerTower?: number | null;
     }
-    | { type: 'damage'; amount: number; playerPolarity: number; slam?: boolean }
+    | { type: 'damage'; amount: number; playerPolarity: number; slam?: boolean; counter?: boolean; heavy?: boolean }
     | { type: 'crystal-broken'; crystal: number }
     | { type: 'configure'; crystals: number };
 
@@ -244,6 +258,7 @@ export type WardenEvent =
     /** The Warden's polarity flipped; every listed tower's climb faces flip with it. */
     | { type: 'polarity'; polarity: WardenPolarity; towers: number[] }
     | { type: 'volley'; spec: WardenBoltSpec; polarity: WardenPolarity; climber: boolean }
+    | { type: 'counter-bolt' }
     | { type: 'spiral-bolt'; angle: number; speed: number; damage: number; ttl: number; homing: number; polarity: WardenPolarity }
     | { type: 'shard-volley'; speed: number; damage: number; ttl: number; homing: number; polarity: WardenPolarity }
     | { type: 'lash'; range: number; halfAngle: number; damage: number }
@@ -298,12 +313,12 @@ export function isWardenTransitioning(state: WardenState): boolean {
 
 /** True while its tower crystals hold its shield up. */
 export function isWardenShielded(state: WardenState): boolean {
-    return state.shieldLayers > 0;
+    return state.form !== 3 && state.shieldLayers > 0;
 }
 
 /** True while hits land for the punish multiplier (reeling from a broken shield or a slam). */
 export function isWardenPunishable(state: WardenState): boolean {
-    return state.action === 'shield_break' || state.action === 'stagger';
+    return state.action === 'shield_break' || state.action === 'stagger' || state.exposedTimer > 0;
 }
 
 /** Ignited crystals still standing (their towers carry the Warden's polarity). */
@@ -413,6 +428,14 @@ export function createWardenState(overrides: Partial<WardenState> = {}): WardenS
         spiralTimer: 0,
         spiralAngle: 0,
         clock: 0,
+        counterTimer: 5,
+        exposedTimer: 0,
+        staggerLock: 0,
+        armorStress: 0,
+        meleeSeen: { lash: false, charge: false },
+        followup: false,
+        volleyIndex: 0,
+        volleyPattern: 'aimed',
         ...overrides,
     };
 }
@@ -421,6 +444,13 @@ export function createWardenState(overrides: Partial<WardenState> = {}): WardenS
 
 function enterAction(state: WardenState, action: WardenAction, events: WardenEvent[], duration?: number): WardenState {
     const resolved = duration ?? getWardenActionDuration(action);
+    if (action === 'volley_windup') {
+        // Aegis crystal 1 powers aimed fire; crystal 2 powers the wall sweep.
+        const sweep = state.form === 2 && state.shieldLayers > 0
+            ? state.crystals[2] && (!state.crystals[1] || state.volleyIndex % 2 === 1)
+            : state.volleyIndex % 2 === 1;
+        state = { ...state, volleyPattern: sweep ? 'sweep' : 'aimed', volleyIndex: state.volleyIndex + 1 };
+    }
     events.push({ type: 'action', action, durationSeconds: resolved });
     return { ...state, action, actionTime: 0, actionDuration: resolved };
 }
@@ -465,12 +495,12 @@ function igniteCrystals(state: WardenState, form: WardenForm, events: WardenEven
     if (wanted.length > 0) {
         events.push({ type: 'crystals', mode: 'ignite', crystals: wanted.slice(), polarity: state.polarity });
     }
-    events.push({ type: 'shield', fraction: wanted.length > 0 ? 1 : 0 });
+    events.push({ type: 'shield', fraction: form !== 3 && wanted.length > 0 ? 1 : 0 });
     return next;
 }
 
 function shieldFraction(state: WardenState): number {
-    return state.ignited.length > 0 ? state.shieldLayers / state.ignited.length : 0;
+    return state.form !== 3 && state.ignited.length > 0 ? state.shieldLayers / state.ignited.length : 0;
 }
 
 function resolveCrystalBroken(state: WardenState, crystal: number): WardenTransition {
@@ -484,6 +514,7 @@ function resolveCrystalBroken(state: WardenState, crystal: number): WardenTransi
     next = { ...next, shieldLayers: Math.max(0, next.shieldLayers - 1), contestTower: next.contestTower === crystal ? null : next.contestTower };
     events.push({ type: 'crystal-lost', crystal, remaining: next.shieldLayers });
     events.push({ type: 'shield', fraction: shieldFraction(next) });
+    if (next.form === 3 && next.shieldLayers === 0) events.push({ type: 'shards', active: false });
     if (isWardenTransitioning(next)) return { state: next, events };
 
     if (next.shieldLayers > 0) {
@@ -535,12 +566,17 @@ export function selectWardenAttack(state: WardenState, playerDistance: number): 
     return chosen;
 }
 
+function beginCounter(state: WardenState, events: WardenEvent[]): WardenState {
+    return enterAction({ ...state, counterTimer: WARDEN_TIMING.counter.interval }, 'counter_windup', events);
+}
+
 function beginForm1Attack(state: WardenState, events: WardenEvent[], playerDistance: number): WardenState {
     if (state.swapTimer <= 0) {
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form1.swapInterval }, 'swap_windup', events);
     }
+    if (state.counterTimer <= 0 && !isPlayerFar(playerDistance)) return beginCounter(state, events);
     // A player away on the towers can only be reached by volleys; while the
-    // shield stands the Warden keeps the pressure honest and slow.
+    // shield stands the Warden alternates marked tower patterns.
     if (isPlayerFar(playerDistance)) {
         if (state.volleyTimer > 0) return state;
         return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form1.climberVolleyInterval, lastAttack: 'volley' }, 'volley_windup', events);
@@ -550,6 +586,9 @@ function beginForm1Attack(state: WardenState, events: WardenEvent[], playerDista
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form1.swapInterval }, 'swap_windup', events);
     }
     const cooldowns = { ...state.cooldowns, [pick]: WARDEN_TIMING.form1.cooldowns[pick] };
+    if (pick === 'lash' || pick === 'charge') {
+        state = { ...state, followup: state.meleeSeen[pick], meleeSeen: { ...state.meleeSeen, [pick]: true } };
+    }
     return enterAction({ ...state, cooldowns, lastAttack: pick, attackIndex: state.attackIndex + 1 }, `${pick}_windup`, events);
 }
 
@@ -568,7 +607,7 @@ function finishForm1Action(state: WardenState, events: WardenEvent[], playerDist
             events.push({ type: 'lash', range: WARDEN_TIMING.lash.range, halfAngle: WARDEN_TIMING.lash.halfAngle, damage: WARDEN_TIMING.lash.damage });
             return next;
         }
-        case 'lash_active': return enterAction(state, 'lash_recovery', events);
+        case 'lash_active': return enterAction(state, state.followup ? 'backswing_windup' : 'lash_recovery', events);
         case 'lash_recovery': return enterAction(state, 'idle', events);
         case 'draw_windup': {
             const next = enterAction(state, 'draw_active', events);
@@ -586,7 +625,11 @@ function finishForm1Action(state: WardenState, events: WardenEvent[], playerDist
             events.push({ type: 'charge', length: WARDEN_TIMING.charge.length, halfWidth: WARDEN_TIMING.charge.halfWidth, speed: WARDEN_TIMING.charge.speed, damage: WARDEN_TIMING.charge.damage });
             return next;
         }
-        case 'charge_active': return enterAction(state, 'charge_recovery', events);
+        case 'charge_active': return enterAction(state, state.followup ? 'backswing_windup' : 'charge_recovery', events);
+        case 'backswing_windup':
+            events.push({ type: 'lash', ...WARDEN_TIMING.lash });
+            return enterAction(state, 'backswing_active', events);
+        case 'backswing_active': return enterAction({ ...state, followup: false }, 'lash_recovery', events, 1.4);
         case 'charge_recovery': return enterAction(state, 'idle', events);
         case 'swap_windup': return enterAction(flipPolarity(state, events), 'swap_recovery', events);
         case 'swap_recovery': return enterAction(state, 'idle', events);
@@ -644,6 +687,7 @@ function tickHover(state: WardenState, events: WardenEvent[], playerDistance: nu
     if (state.swapTimer <= 0) {
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form2.swapInterval }, 'swap_windup', events);
     }
+    if (!far && state.counterTimer <= 0) return beginCounter(state, events);
     // Plunges only threaten the platform: a climber is contested with volleys.
     if (!far && state.plungeTimer <= 0) {
         events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
@@ -666,14 +710,22 @@ function fireBeatRing(state: WardenState, events: WardenEvent[], double: boolean
     const wave = WARDEN_TIMING.shockwave.beat;
     events.push({ type: 'beat', polarity: next.polarity, index: next.beatIndex, double, second });
     events.push({ type: 'shockwave', polarity: next.polarity, maxRadius: wave.maxRadius, speed: wave.speed, damage: wave.damage, source: 'beat' });
-    if (!second && isWardenOverloaded(next) && !isWardenShielded(next)) {
+    if (!second && isWardenOverloaded(next) && next.shieldLayers > 0) {
         const spec = WARDEN_TIMING.form3.shardVolley;
         events.push({ type: 'shard-volley', speed: spec.speed, damage: spec.damage, ttl: spec.ttl, homing: spec.homing, polarity: next.polarity });
     }
     return next;
 }
 
+export function isWardenBeatPaused(state: WardenState): boolean {
+    return state.action.startsWith('plunge_') || state.action.startsWith('counter_')
+        || isWardenPunishable(state) || state.action === 'flinch';
+}
+
 function tickMetronome(state: WardenState, events: WardenEvent[], dt: number): WardenState {
+    // Never overlay a polarity flip onto a committed slam/counter or objective reward.
+    // The countdown resumes afterwards; it does not silently advance offscreen.
+    if (isWardenBeatPaused(state)) return state;
     let next = { ...state };
     if (next.doubleTimer > 0) {
         next.doubleTimer -= dt;
@@ -707,6 +759,14 @@ function tickMetronome(state: WardenState, events: WardenEvent[], dt: number): W
 
 function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playerDistance: number): WardenState {
     if (state.action !== 'spiral') return state;
+    // Begin special attacks only after a complete beat, with no second ring pending.
+    if (state.beatIndex > 0 && state.doubleTimer <= 0 && state.beatTimer > 1.1 && !isPlayerFar(playerDistance)) {
+        if (state.counterTimer <= 0) return beginCounter(state, events);
+        if (state.plungeTimer <= 0) {
+            events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
+            return enterAction(state, 'plunge_windup', events);
+        }
+    }
     // A far player (on the last tower) is contested with honest climber volleys
     // instead of a spiral that can never reach them.
     if (isPlayerFar(playerDistance)) {
@@ -729,6 +789,9 @@ function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playe
 
 function finishForm3Action(state: WardenState, events: WardenEvent[], playerDistance: number): WardenState {
     switch (state.action) {
+        case 'plunge_windup':
+        case 'plunge_drop': return finishForm2Action(state, events, playerDistance);
+        case 'plunge_recovery': return enterAction({ ...state, plungeTimer: WARDEN_TIMING.form2.plungeInterval }, 'spiral', events);
         case 'storm_rise': return enterAction({ ...state, beatTimer: WARDEN_TIMING.form3.beatInterval, beatTicksReported: 0, spiralTimer: 0.4 }, 'spiral', events);
         case 'recoil': return enterAction({ ...state, spiralTimer: 0.2 }, 'spiral', events);
         case 'volley_windup': {
@@ -766,6 +829,8 @@ function applyThresholds(state: WardenState, events: WardenEvent[]): WardenState
             ...state,
             hp: state.maxHp * WARDEN_FORM_THRESHOLDS[2],
             form: 2,
+            exposedTimer: 0,
+            armorStress: 0,
             plungeTimer: WARDEN_TIMING.form2.plungeFirst,
             volleyTimer: 1.5,
             swapTimer: WARDEN_TIMING.form2.swapInterval,
@@ -782,7 +847,11 @@ function applyThresholds(state: WardenState, events: WardenEvent[]): WardenState
             ...state,
             hp: state.maxHp * WARDEN_FORM_THRESHOLDS[3],
             form: 3,
+            exposedTimer: 0,
+            armorStress: 0,
             volleyTimer: 1.5,
+            plungeTimer: 6,
+            counterTimer: 4,
         };
         next = enterAction(next, 'storm_rise', events);
         events.push({ type: 'form', form: 3 });
@@ -806,23 +875,45 @@ function resolveDamage(state: WardenState, input: Extract<WardenInput, { type: '
     const events: WardenEvent[] = [];
     const relation = polarityRelation(input.playerPolarity, state.polarity);
     const reason = blockReason(state, relation);
-    if (reason) {
+    if (input.counter && reason === 'shielded') {
+        // A return interrupts a shielded boss, but cannot bypass the first two
+        // crystal objectives. Once exposed, returns also deal core damage.
+        interruptAction(state, events);
+        const next = enterAction({ ...state, staggerLock: WARDEN_TIMING.staggerResistance }, 'stagger', events, 1.2);
+        events.push({ type: 'stagger' });
+        return { state: next, events };
+    }
+    if (input.counter && reason !== 'transition' && reason !== 'dead') {
+        interruptAction(state, events);
+        state = { ...state, exposedTimer: WARDEN_TIMING.counter.exposedSeconds, staggerLock: WARDEN_TIMING.staggerResistance };
+    }
+    if (reason && !input.counter) {
         events.push({ type: 'blocked', reason, relation });
         return { state, events };
     }
+    if (reason === 'transition' || reason === 'dead') return { state, events: [{ type: 'blocked', reason, relation }] };
     const slam = input.slam === true;
     const punish = isWardenPunishable(state);
-    const multiplier = (punish ? WARDEN_TIMING.punishMultiplier : 1) * (slam ? WARDEN_SLAM_MULTIPLIER : 1);
+    const multiplier = input.counter ? 1 : (punish ? WARDEN_TIMING.punishMultiplier : 1) * (slam ? WARDEN_SLAM_MULTIPLIER : 1);
     const damage = Math.min(WARDEN_DAMAGE_CAP, clampDuration(input.amount) * multiplier);
     if (damage <= 0) return { state, events };
     events.push({ type: 'hurt', damage, relation, punish, slam });
     let next = applyThresholds({ ...state, hp: state.hp - damage }, events);
+    if (input.heavy && punish) next = { ...next, armorStress: next.armorStress + 1 };
     // A Magnet Slam that lands on a standing Warden knocks it reeling, unless it
     // is already down or mid-transition.
-    if (slam && next.form === state.form && next.action !== 'death' && !isWardenTransitioning(next)
-        && !isWardenPunishable(next) && next.action !== 'flinch') {
+    const armorBreak = input.heavy && next.armorStress >= 2 && next.staggerLock <= 0;
+    if (armorBreak && next.action === 'shield_break') {
+        // Two committed heavy strikes fracture the exposed plating and extend
+        // the objective reward once, without replacing its generous recovery.
+        next = { ...next, actionDuration: next.actionDuration + 0.6, armorStress: 0, staggerLock: WARDEN_TIMING.staggerResistance };
+    }
+    if ((input.counter || armorBreak || (slam && next.staggerLock <= 0 && !isWardenPunishable(next)))
+        && next.form === state.form && next.action !== 'death' && !isWardenTransitioning(next)
+        && next.action !== 'shield_break' && next.action !== 'flinch') {
         interruptAction(next, events);
-        next = enterAction(next, 'stagger', events);
+        next = enterAction({ ...next, armorStress: 0, staggerLock: WARDEN_TIMING.staggerResistance }, 'stagger', events,
+            input.counter ? WARDEN_TIMING.counter.exposedSeconds : armorBreak ? 1.5 : WARDEN_TIMING.actions.stagger);
         events.push({ type: 'stagger' });
     }
     return { state: next, events };
@@ -853,6 +944,9 @@ export function advanceWarden(state: WardenState, input: WardenInput): WardenTra
     let next: WardenState = {
         ...state,
         clock: state.clock + dt,
+        counterTimer: state.counterTimer - dt,
+        exposedTimer: Math.max(0, state.exposedTimer - dt),
+        staggerLock: Math.max(0, state.staggerLock - dt),
         cooldowns: {
             volley: Math.max(0, state.cooldowns.volley - dt),
             lash: Math.max(0, state.cooldowns.lash - dt),
@@ -868,7 +962,11 @@ export function advanceWarden(state: WardenState, input: WardenInput): WardenTra
     };
 
     if (next.actionDuration > 0 && next.actionTime >= next.actionDuration && next.action !== 'death') {
-        if (next.form === 1) next = finishForm1Action(next, events, input.playerDistance);
+        if (next.action === 'counter_windup') {
+            events.push({ type: 'counter-bolt' });
+            next = enterAction(next, 'counter_recovery', events);
+        } else if (next.action === 'counter_recovery') next = enterAction(next, restAction(next.form), events);
+        else if (next.form === 1) next = finishForm1Action(next, events, input.playerDistance);
         else if (next.form === 2) next = finishForm2Action(next, events, input.playerDistance);
         else next = finishForm3Action(next, events, input.playerDistance);
     }

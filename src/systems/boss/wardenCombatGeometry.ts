@@ -32,14 +32,14 @@ export function ringSweepsPlayer(previous: number, radius: number, maxRadius: nu
 export const WARDEN_SECTOR_START = -Math.PI / 2;
 
 /** The Aegis reaches the marked point before dropping; no hidden second target. */
-export function plungePosition(start: CombatPoint, target: CombatPoint, windup: number, drop: number): CombatPoint {
+export function plungePosition(start: CombatPoint, target: CombatPoint, windup: number, drop: number, rise = 2): CombatPoint {
     const ease = (t: number) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u); };
     const travel = ease(windup);
     const fall = ease(drop);
-    const apex = start.y + 2;
+    const apex = start.y + rise;
     return {
         x: start.x + (target.x - start.x) * travel,
-        y: drop > 0 ? apex + (target.y - apex) * fall : start.y + 2 * travel,
+        y: drop > 0 ? apex + (target.y - apex) * fall : start.y + rise * travel,
         z: start.z + (target.z - start.z) * travel,
     };
 }

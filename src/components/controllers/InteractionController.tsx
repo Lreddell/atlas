@@ -201,7 +201,7 @@ export const InteractionController = ({
     const weaponCooldown = useRef(0);
     const attackHeld = useRef(false);
     const attackBuffer = useRef(0);
-    const attackItem = useRef<{ slot: number; type: BlockType | null } | null>(null);
+    const attackItem = useRef<{ slot: number; type: BlockType | null; manual: boolean } | null>(null);
     useEffect(() => { Object.assign(playerAttack, createAttackState()); return () => { Object.assign(playerAttack, createAttackState()); }; }, []);
     const eatingTimer = useRef(0);
     const lastPlacementTime = useRef(0);
@@ -683,6 +683,8 @@ export const InteractionController = ({
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
         aimFromCamera(camera);
         if (profile?.kind === 'crossbow') return true;
+        const returned = !!profile && attackItem.current?.manual === true
+            && entityManager.returnChargedBolt(_camPos, _camDir, reach);
         const hits = new Map<number, NonNullable<ReturnType<typeof entityManager.raycastEntity>>>();
         const direct = entityManager.raycastEntity(_camPos, _camDir, reach);
         const blockHit = castFromCamera(camera, reach);
@@ -702,7 +704,7 @@ export const InteractionController = ({
             const wall = sweepVoxels(_camPos.x, _camPos.y, _camPos.z, _camDir.x, _camDir.y, _camDir.z, reach);
             if (hit && isEntityHitVisible(hit.dist, wall)) hits.set(hit.id, hit);
         }
-        if (!hits.size) return false;
+        if (!hits.size && !returned) return false;
         const collateralHits = new Set<number>();
         for (const hit of hits.values()) {
             _camDir.copy(forward);
@@ -788,8 +790,9 @@ export const InteractionController = ({
         const kind = profile.kind;
         const duration = profile.cooldownSeconds;
         if (beginAttack(playerAttack, kind, duration)) {
+            const manual = attackBuffer.current > 0;
             attackBuffer.current = 0;
-            attackItem.current = { slot: selectedSlot, type: held?.type ?? null };
+            attackItem.current = { slot: selectedSlot, type: held?.type ?? null, manual };
             breakingRef.current = null;
             setBreakingVisual(null);
         }

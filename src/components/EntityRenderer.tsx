@@ -108,9 +108,9 @@ export const EntityRenderer: React.FC = () => {
                 m.visible = true;
                 m.position.set(p.pos.x, p.pos.y, p.pos.z);
                 m.rotation.set(now * 0.004, now * 0.006, 0);
-                (m.material as THREE.MeshBasicMaterial).color.setHex(p.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
+                (m.material as THREE.MeshBasicMaterial).color.setHex(p.kind === 'charged' ? 0xffffff : p.polarity > 0 ? POLARITY_RED : POLARITY_BLUE);
                 // A bolt bounced off the player's boots is spent: it shrinks away.
-                m.scale.setScalar((p.kind === 'spiral' ? 0.62 : 1) * (p.bounced ? 0.5 : 1));
+                m.scale.setScalar((p.kind === 'charged' ? 1.6 + Math.sin(now * 0.02) * 0.12 : p.kind === 'spiral' ? 0.62 : 1) * (p.bounced ? 0.5 : 1));
             } else {
                 m.visible = false;
             }

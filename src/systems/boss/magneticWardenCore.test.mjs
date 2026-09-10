@@ -65,7 +65,7 @@ function arenaFight() {
 function openDuel() {
     let state = arenaFight().state;
     state = breakCrystal(state, 0).state;
-    return runUntil(state, (s) => s.action === 'idle', 5).state;
+    return { ...runUntil(state, (s) => s.action === 'idle', 5).state, counterTimer: 1000 };
 }
 
 /** Land capped opposite-polarity hits until the Warden changes form. */
@@ -105,7 +105,7 @@ function storm() {
     const crossing = batterIntoForm(limpingAegis(), 3);
     assert.equal(crossing.state.action, 'storm_rise');
     const risen = runUntil(crossing.state, (s) => s.action === 'spiral', 4);
-    return { state: risen.state, events: [...crossing.events, ...risen.events] };
+    return { state: { ...risen.state, counterTimer: 1000, plungeTimer: 1000 }, events: [...crossing.events, ...risen.events] };
 }
 
 /** The Storm with its last crystal broken (unshielded finale). */
@@ -346,7 +346,7 @@ test('a threshold crossing mid-Draw switches the field off before the transition
     assert.ok(kinds.indexOf('draw') < kinds.indexOf('form'));
 });
 
-test('crossing one third rises into the Storm shielded by the last crystal', () => {
+test('crossing one third rises into the Storm with an optional shard crystal', () => {
     const { state, events } = storm();
     assert.equal(state.form, 3);
     assert.equal(state.action, 'spiral');
@@ -354,8 +354,8 @@ test('crossing one third rises into the Storm shielded by the last crystal', () 
     assert.ok(events.some((event) => event.type === 'shards' && event.active));
     const ignite = events.find((event) => event.type === 'crystals' && event.mode === 'ignite');
     assert.deepEqual(ignite.crystals, [3]);
-    assert.equal(isWardenShielded(state), true);
-    assert.equal(hit(state, 20, -1).events[0].reason, 'shielded');
+    assert.equal(isWardenShielded(state), false);
+    assert.equal(hit(state, 20, -1).events[0].type, 'hurt');
     assert.equal(getWardenFieldProfile(state).range, WARDEN_TIMING.field[3].range);
 });
 
@@ -383,10 +383,10 @@ test('the Storm metronome flips its tower on every beat, rings, and opens a reco
     assert.ok(far.events.some((event) => event.type === 'volley' && event.climber));
 });
 
-test('breaking the last crystal opens the finale: unshielded, still on the beat, shards fly at overload', () => {
+test('breaking the optional crystal removes the barrier and overload shard volleys', () => {
     const state = openStorm();
     assert.equal(isWardenShielded(state), false);
-    // The Storm has flipped on the beat during the reel: strike with whatever opposes it now.
+    // The reward pauses the beat: normal polarity rules resume afterwards.
     assert.equal(hit(state, 10, -state.polarity).events[0].type, 'hurt');
     assert.equal(hit(state, 10, state.polarity).events[0].reason, 'repelled');
     const beat = runUntil(state, (s) => s.beatIndex > state.beatIndex, WARDEN_TIMING.form3.beatInterval + 1);
@@ -394,12 +394,12 @@ test('breaking the last crystal opens the finale: unshielded, still on the beat,
     // Overload: faster beats and a shard volley on each beat.
     const overloaded = { ...state, hp: WARDEN_MAX_HP * 0.1 };
     const fast = runUntil(overloaded, (s) => s.beatIndex > overloaded.beatIndex, WARDEN_TIMING.form3.beatInterval + 1);
-    assert.ok(fast.events.some((event) => event.type === 'shard-volley'));
+    assert.ok(!fast.events.some((event) => event.type === 'shard-volley'));
     assert.ok(Math.abs(fast.state.beatTimer - WARDEN_TIMING.form3.overloadBeatInterval) < 0.1 + 1e-9);
-    // While shielded the shards stay home.
+    // Leaving the optional crystal alive preserves the extra overload attack.
     const shielded = { ...storm().state, hp: WARDEN_MAX_HP * 0.1 };
     const held = runUntil(shielded, (s) => s.beatIndex > shielded.beatIndex, WARDEN_TIMING.form3.beatInterval + 1, FAR);
-    assert.ok(!held.events.some((event) => event.type === 'shard-volley'));
+    assert.ok(held.events.some((event) => event.type === 'shard-volley'));
 });
 
 test('every fourth beat is a double beat with a second ring of the flipped-back colour', () => {

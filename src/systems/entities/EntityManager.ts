@@ -7,7 +7,7 @@ import { gameEvents } from '../events/GameEvents';
 import { ENTITY_KINDS, type Entity, type EntityKind, type NavigationRuntimeState, type Projectile, type Shockwave } from './Entity';
 import { addTrauma } from '../player/cameraShake';
 import { particleFx, polarityFxColor, FX_CHARGED } from '../fx/particleFx';
-import { polarityRelation } from '../boss/magneticWardenCore';
+import { polarityRelation, WARDEN_TIMING } from '../boss/magneticWardenCore';
 import { ringSweepsPlayer, segmentHitsBox } from '../boss/wardenCombatGeometry';
 import type { BossFieldSource } from '../player/magneticField';
 import { BlockType, type GameMode } from '../../types';
@@ -268,6 +268,32 @@ class EntityManager {
         return projectile;
     }
 
+    /** Called once at a manually started weapon swing's strike, never every held frame. */
+    returnChargedBolt(origin: THREE.Vector3, direction: THREE.Vector3, reach: number): boolean {
+        const end = origin.clone().addScaledVector(direction, reach);
+        const bolt = this.projectiles.filter((p) => p.kind === 'charged' && !p.returned && !p.bounced
+            && p.ttl > 0 && segmentHitsBox(origin, end,
+                { x: p.pos.x - 0.45, y: p.pos.y - 0.45, z: p.pos.z - 0.45 },
+                { x: p.pos.x + 0.45, y: p.pos.y + 0.45, z: p.pos.z + 0.45 }))
+            .sort((a, b) => a.pos.distanceToSquared(origin) - b.pos.distanceToSquared(origin))[0];
+        if (!bolt) return false;
+        // The weapon cannot reach through a wall to return a bolt.
+        const distance = origin.distanceTo(bolt.pos);
+        const steps = Math.max(1, Math.ceil(distance / 0.15));
+        for (let step = 0; step <= steps; step += 1) {
+            const point = origin.clone().lerp(bolt.pos, step / steps);
+            if (isSolid(worldManager, Math.floor(point.x), Math.floor(point.y), Math.floor(point.z))) return false;
+        }
+        bolt.returned = true;
+        bolt.homing = 0;
+        bolt.vel.copy(direction).normalize().multiplyScalar(30);
+        bolt.ttl = 3.5;
+        particleFx.burst({ x: bolt.pos.x, y: bolt.pos.y, z: bolt.pos.z, color: [1, 1, 1],
+            count: 18, speed: 5, size: 0.12, life: 0.35 });
+        gameEvents.emit('bolt:repelled', { x: bolt.pos.x, y: bolt.pos.y, z: bolt.pos.z, polarity: 0 });
+        return true;
+    }
+
     spawnShockwave(spec: ShockwaveSpec): Shockwave {
         const wave: Shockwave = {
             id: this.nextShockwaveId++,
@@ -306,7 +332,11 @@ class EntityManager {
 
     /** Cancel a single encounter's lingering attacks when its armor breaks. */
     clearHazardsFrom(sourceId: number): void {
-        this.projectiles = this.projectiles.filter((p) => p.sourceId !== sourceId);
+        this.projectiles = this.projectiles.filter((p) => {
+            if (p.sourceId !== sourceId) return true;
+            p.ttl = 0; // Also invalidate references held by an in-progress projectile tick.
+            return false;
+        });
         this.shockwaves = this.shockwaves.filter((wave) => wave.sourceId !== sourceId);
     }
 
@@ -1250,7 +1280,18 @@ class EntityManager {
                 }
             }
 
-            if (targetable && pp && !p.bounced) {
+            if (p.returned) {
+                const boss = p.sourceId === undefined ? undefined : this.getEntity(p.sourceId);
+                if (!boss || boss.hp <= 0) continue;
+                const radius = boss.width * 0.5 + 0.25;
+                if (segmentHitsBox(previous, p.pos,
+                    { x: boss.pos.x - radius, y: boss.pos.y - 0.25, z: boss.pos.z - radius },
+                    { x: boss.pos.x + radius, y: boss.pos.y + boss.height + 0.25, z: boss.pos.z + radius })) {
+                    this.damageEntity(boss.id, WARDEN_TIMING.counter.returnDamage, 0, 0, 0, 'warden_return');
+                    continue;
+                }
+            }
+            if (targetable && pp && !p.bounced && !p.returned) {
                 // Hit the whole player AABB (centre ± body), not just a low point.
                 const cx = pp.x, cy = pp.y + PLAYER_HEIGHT * 0.5, cz = pp.z;
                 const dx = p.pos.x - cx, dy = p.pos.y - cy, dz = p.pos.z - cz;
@@ -1288,7 +1329,10 @@ class EntityManager {
             }
             if (!occluded) survivors.push(p);
         }
-        this.projectiles = survivors;
+        // Damage callbacks may have cleared the source's hazards during a return
+        // hit / form change. Never resurrect those projectiles from this local list.
+        const live = new Set(this.projectiles);
+        this.projectiles = survivors.filter((projectile) => live.has(projectile));
     }
 
     // Expand each ring; when a polarity ring's leading edge reaches the player,

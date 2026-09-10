@@ -128,7 +128,9 @@ export interface Projectile {
     /** Entity id of the boss that fired it. */
     sourceId?: number;
     /** Visual family: volley bolts are chunky, spiral bolts are small and fast-looking. */
-    kind?: 'volley' | 'spiral';
+    kind?: 'volley' | 'spiral' | 'charged';
+    /** Deliberately returned along the player's aim, never homing. */
+    returned?: boolean;
     /** Steering rate (1/s) toward an opposite-polarity player. */
     homing?: number;
     /** Already bounced off the player's matching polarity: harmless, fading. */
