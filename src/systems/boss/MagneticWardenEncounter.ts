@@ -113,7 +113,6 @@ export interface WardenSnapshot {
     towers: WardenTowerSnapshot[];
     contestTower: number | null;
     plungeTarget: WardenPoint | null;
-    volleyTarget: WardenPoint | null;
     volleyPattern: 'aimed' | 'sweep';
     /** Seconds until the next Storm beat, its full interval, and the colour it brings. */
     beatRemaining: number;
@@ -257,7 +256,6 @@ class MagneticWardenEncounter {
             towers: this.towerSnapshots(),
             contestTower: s.contestTower,
             plungeTarget: this.plungeTarget,
-            volleyTarget: s.form === 2 && s.action === 'volley_windup' ? this.volleyTarget : null,
             volleyPattern: this.volleySweep ? 'sweep' : 'aimed',
             beatRemaining: Math.max(0, s.beatTimer),
             beatInterval: getWardenBeatInterval(s),

@@ -77,7 +77,6 @@ export const MagneticWardenRenderer: React.FC = () => {
     const drawDiscRef = useRef<THREE.Mesh>(null);
     const drawRangeRef = useRef<THREE.Mesh>(null);
     const plungeDiscRef = useRef<THREE.Mesh>(null);
-    const volleyMarkerRef = useRef<THREE.Mesh>(null);
     const beatRingRef = useRef<THREE.Mesh>(null);
     const beatRing2Ref = useRef<THREE.Mesh>(null);
     const shieldRef = useRef<THREE.Mesh>(null);
@@ -109,7 +108,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         const entity = snap.entityId !== null ? entityManager.getEntity(snap.entityId) : undefined;
         const hideAll = () => {
             root.visible = false;
-            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, volleyMarkerRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, groundGlowRef]) {
+            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, groundGlowRef]) {
                 if (ref.current) ref.current.visible = false;
             }
             if (chargeLaneRef.current) chargeLaneRef.current.visible = false;
@@ -378,18 +377,6 @@ export const MagneticWardenRenderer: React.FC = () => {
             }
         }
         const plungeDisc = plungeDiscRef.current;
-        const volleyMarker = volleyMarkerRef.current;
-        if (volleyMarker) {
-            volleyMarker.visible = !!snap.volleyTarget;
-            if (snap.volleyTarget) {
-                volleyMarker.position.set(snap.volleyTarget.x, snap.volleyTarget.y + 1.3, snap.volleyTarget.z);
-                volleyMarker.lookAt(entity.pos.x, entity.pos.y + entity.height * 0.7, entity.pos.z);
-                volleyMarker.scale.set(snap.volleyPattern === 'sweep' ? 1.6 : 0.65, 0.65, 1);
-                const material = volleyMarker.material as THREE.MeshBasicMaterial;
-                material.color.setHex(polarityHex(snap.polarity));
-                material.opacity = 0.25 + raw * 0.55;
-            }
-        }
         if (plungeDisc) {
             const showPlunge = !!snap.plungeTarget && (action === 'plunge_windup' || action === 'plunge_drop');
             plungeDisc.visible = showPlunge;
@@ -590,10 +577,6 @@ export const MagneticWardenRenderer: React.FC = () => {
             <mesh ref={plungeDiscRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <circleGeometry args={[1, 40]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
-            <mesh ref={volleyMarkerRef} visible={false} renderOrder={3}>
-                <ringGeometry args={[0.88, 1, 32]} />
-                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
             <mesh ref={beatRingRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <ringGeometry args={[0.9, 1, 64]} />
