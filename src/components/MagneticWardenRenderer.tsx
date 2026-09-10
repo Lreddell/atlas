@@ -365,9 +365,11 @@ export const MagneticWardenRenderer: React.FC = () => {
                 plungeDisc.position.set(snap.plungeTarget.x, snap.floorY + 0.05, snap.plungeTarget.z);
                 plungeDisc.scale.setScalar(WARDEN_TIMING.plunge.impactRadius);
                 const pm = plungeDisc.material as THREE.MeshBasicMaterial;
-                pm.color.setHex(polarityHex(snap.polarity));
+                const locked = snap.form === 3 && (action === 'plunge_drop'
+                    || snap.actionDuration - snap.actionTime <= WARDEN_TIMING.form3.slam.lockLead);
+                pm.color.setHex(locked ? 0xffffff : polarityHex(snap.polarity));
                 const flash = 0.5 + 0.5 * Math.sin(t * (8 + 30 * raw));
-                pm.opacity = action === 'plunge_drop' ? 0.85 : 0.2 + 0.5 * raw * flash;
+                pm.opacity = action === 'plunge_drop' ? 0.85 : locked ? 0.75 : 0.2 + 0.5 * raw * flash;
             }
         }
         const beatRing = beatRingRef.current, beatRing2 = beatRing2Ref.current;

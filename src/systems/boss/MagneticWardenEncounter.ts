@@ -17,6 +17,7 @@
 import { worldManager } from '../WorldManager';
 import { BlockType } from '../../types';
 import { gameEvents } from '../events/GameEvents';
+import { soundManager } from '../sound/SoundManager';
 import { addTrauma } from '../player/cameraShake';
 import { PLAYER_HEIGHT } from '../player/playerConstants';
 import { climbSurfaces } from '../player/climbSurfaces';
@@ -299,6 +300,24 @@ class MagneticWardenEncounter {
     private applyMovement(entity: Entity, dt: number, player: WardenPoint | null): void {
         const s = this.state;
         const floorY = this.floorY(entity);
+        if (s.form === 3 && (s.action === 'plunge_windup' || s.action === 'plunge_drop')) {
+            const slam = WARDEN_TIMING.form3.slam;
+            const lockAt = s.actionDuration - slam.lockLead;
+            if (s.action === 'plunge_windup' && player && s.actionTime < lockAt) {
+                this.markPlunge(entity, player);
+            }
+            if (s.action === 'plunge_windup' && s.actionTime >= lockAt && s.actionTime - dt < lockAt && this.plungeTarget) {
+                soundManager.playAt('entity.magnetic_warden.shielded', this.plungeTarget, { volume: 0.9, pitch: 1.6 });
+            }
+            const progress = s.actionTime / Math.max(0.001, s.actionDuration);
+            const target = this.plungeTarget ?? { x: entity.pos.x, y: floorY, z: entity.pos.z };
+            const position = plungePosition(this.plungeStart ?? entity.pos, target,
+                s.action === 'plunge_drop' ? 1 : progress, s.action === 'plunge_drop' ? progress : 0, slam.rise);
+            entity.vel.set(0, 0, 0);
+            entity.pos.set(position.x, position.y, position.z);
+            entity.grounded = false;
+            return;
+        }
         if (s.form === 1 && s.action !== 'shatter') {
             this.moveGrounded(entity, dt, player);
             return;
@@ -555,6 +574,7 @@ class MagneticWardenEncounter {
         for (const event of events) {
             switch (event.type) {
                 case 'action':
+                    if (this.state.form === 3 && !event.action.startsWith('plunge_')) this.plungeTarget = null;
                     if (event.action === 'lash_windup') this.facingYaw = entity.yaw;
                     if (event.action === 'charge_windup') {
                         this.facingYaw = entity.yaw;
@@ -849,6 +869,14 @@ class MagneticWardenEncounter {
         if (entityManager.tryDamagePlayer(damage, dx / d, dz / d, 'attack')) {
             entityManager.impulsePlayer((dx / d) * 12, 9, (dz / d) * 12);
         }
+    }
+
+    private markPlunge(entity: Entity, player: WardenPoint): void {
+        const centre = this.centre(entity);
+        const dx = player.x - centre.x, dz = player.z - centre.z;
+        const distance = Math.hypot(dx, dz) || 1;
+        const scale = Math.min(1, WARDEN_TIMING.plunge.targetClamp / distance);
+        this.plungeTarget = { x: centre.x + dx * scale, y: this.floorY(entity), z: centre.z + dz * scale };
     }
 
     private resolvePlunge(entity: Entity, player: WardenPoint | null, targetable: boolean, phase: 'mark' | 'drop' | 'impact', impactRadius: number, impactDamage: number): void {

@@ -100,18 +100,19 @@ function limpingAegis() {
     return runUntil(state, (s) => s.action === 'hover' && !isWardenShielded(s), 10).state;
 }
 
-/** A Form III Storm fresh out of storm_rise, shielded by crystal 3. */
+/** A Form III Storm fresh out of storm_rise, shielded by all four crystals. */
 function storm() {
     const crossing = batterIntoForm(limpingAegis(), 3);
     assert.equal(crossing.state.action, 'storm_rise');
     const risen = runUntil(crossing.state, (s) => s.action === 'spiral', 4);
-    return { state: risen.state, events: [...crossing.events, ...risen.events] };
+    // Isolate existing beat tests from the new slam scheduler (tested separately).
+    return { state: { ...risen.state, plungeTimer: 1000 }, events: [...crossing.events, ...risen.events] };
 }
 
 /** The Storm with its last crystal broken (unshielded finale). */
 function openStorm() {
     let state = storm().state;
-    state = breakCrystal(state, 3).state;
+    for (const crystal of [0, 1, 2, 3]) state = breakCrystal(state, crystal).state;
     return runUntil(state, (s) => s.action === 'spiral' && !isWardenShielded(s), 6).state;
 }
 
@@ -125,7 +126,7 @@ test('the one rule: same repels, opposite attracts, no boots is neutral', () => 
 });
 
 test('every form opens shielded by its own tower crystals, and the shield never decays', () => {
-    assert.deepEqual(WARDEN_FORM_CRYSTALS, { 1: [0], 2: [1, 2], 3: [3] });
+    assert.deepEqual(WARDEN_FORM_CRYSTALS, { 1: [0], 2: [1, 2], 3: [0, 1, 2, 3] });
     const { state, events } = arenaFight();
     assert.equal(isWardenShielded(state), true);
     assert.deepEqual(state.ignited, [0]);
@@ -346,14 +347,14 @@ test('a threshold crossing mid-Draw switches the field off before the transition
     assert.ok(kinds.indexOf('draw') < kinds.indexOf('form'));
 });
 
-test('crossing one third rises into the Storm shielded by the last crystal', () => {
+test('crossing one third rises into the Storm shielded by all four crystals', () => {
     const { state, events } = storm();
     assert.equal(state.form, 3);
     assert.equal(state.action, 'spiral');
     assert.ok(events.some((event) => event.type === 'form' && event.form === 3));
     assert.ok(events.some((event) => event.type === 'shards' && event.active));
     const ignite = events.find((event) => event.type === 'crystals' && event.mode === 'ignite');
-    assert.deepEqual(ignite.crystals, [3]);
+    assert.deepEqual(ignite.crystals, [0, 1, 2, 3]);
     assert.equal(isWardenShielded(state), true);
     assert.equal(hit(state, 20, -1).events[0].reason, 'shielded');
     assert.equal(getWardenFieldProfile(state).range, WARDEN_TIMING.field[3].range);
@@ -365,9 +366,9 @@ test('the Storm metronome flips its tower on every beat, rings, and opens a reco
     const ticks = beat.events.filter((event) => event.type === 'beat-tick');
     assert.deepEqual(ticks.map((event) => event.remaining), [1.0, 0.5]);
     assert.ok(ticks.every((event) => event.nextPolarity === -1));
-    assert.deepEqual(ticks[0].towers, [3]);
+    assert.deepEqual(ticks[0].towers, [0, 1, 2, 3]);
     const polarity = beat.events.find((event) => event.type === 'polarity');
-    assert.deepEqual(polarity.towers, [3]);
+    assert.deepEqual(polarity.towers, [0, 1, 2, 3]);
     const ring = beat.events.find((event) => event.type === 'shockwave');
     assert.equal(ring.source, 'beat');
     assert.equal(ring.polarity, -1);

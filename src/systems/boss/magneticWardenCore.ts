@@ -25,7 +25,7 @@
 //                             climb (it drifts to the tower you climb, fires down
 //                             at you, swaps its towers) and plunges rings on the
 //                             platform. Break both: it crashes, then limps low.
-//   III STORM  (33% .. 0%)    the last crystal. A grounded core behind a shard
+//   III STORM  (33% .. 0%)    all four crystals relight. A grounded core behind a shard
 //                             barrier and a polarity METRONOME: every beat flips
 //                             it AND its tower, fires a ring, then a quiet recoil.
 //
@@ -62,7 +62,7 @@ export const WARDEN_MAX_HP = 300;
 export const WARDEN_FORM_THRESHOLDS: Readonly<Record<2 | 3, number>> = { 2: 2 / 3, 3: 1 / 3 };
 export const WARDEN_FORM_NAMES: Readonly<Record<WardenForm, string>> = { 1: 'Warden', 2: 'Aegis', 3: 'Storm' };
 /** Tower crystals (by tower index) that power each form's shield. */
-export const WARDEN_FORM_CRYSTALS: Readonly<Record<WardenForm, readonly number[]>> = { 1: [0], 2: [1, 2], 3: [3] };
+export const WARDEN_FORM_CRYSTALS: Readonly<Record<WardenForm, readonly number[]>> = { 1: [0], 2: [1, 2], 3: [0, 1, 2, 3] };
 /** Largest single hit the Warden accepts (stops one-shot exploits). */
 export const WARDEN_DAMAGE_CAP = 45;
 /** Damage multiplier of a Magnet Slam (a strike loaded by a magnetic dash). */
@@ -135,6 +135,7 @@ export const WARDEN_TIMING = {
     },
 
     form3: {
+        slam: { first: 5, interval: 6, overloadInterval: 4.5, windup: 1.6, drop: 0.3, recovery: 1.4, rise: 16, lockLead: 0.55 },
         beatInterval: 3.2,
         overloadBeatInterval: 2.5,
         /** HP fraction under which the metronome speeds up and the shards fly. */
@@ -674,6 +675,9 @@ function fireBeatRing(state: WardenState, events: WardenEvent[], double: boolean
 }
 
 function tickMetronome(state: WardenState, events: WardenEvent[], dt: number): WardenState {
+    // The slam begins between complete beats. Keep its landing polarity fixed
+    // until recovery ends, then resume the existing beat countdown.
+    if (state.action.startsWith('plunge_')) return state;
     let next = { ...state };
     if (next.doubleTimer > 0) {
         next.doubleTimer -= dt;
@@ -707,6 +711,11 @@ function tickMetronome(state: WardenState, events: WardenEvent[], dt: number): W
 
 function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playerDistance: number): WardenState {
     if (state.action !== 'spiral') return state;
+    if (state.beatIndex > 0 && state.doubleTimer <= 0 && state.beatTimer > 1.1
+        && state.plungeTimer <= 0 && state.contestTower === null && !isPlayerFar(playerDistance)) {
+        events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
+        return enterAction(state, 'plunge_windup', events, WARDEN_TIMING.form3.slam.windup);
+    }
     // A far player (on the last tower) is contested with honest climber volleys
     // instead of a spiral that can never reach them.
     if (isPlayerFar(playerDistance)) {
@@ -729,8 +738,27 @@ function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playe
 
 function finishForm3Action(state: WardenState, events: WardenEvent[], playerDistance: number): WardenState {
     switch (state.action) {
+        case 'plunge_windup':
+            events.push({ type: 'plunge', phase: 'drop', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
+            return enterAction(state, 'plunge_drop', events, WARDEN_TIMING.form3.slam.drop);
+        case 'plunge_drop': {
+            events.push({ type: 'plunge', phase: 'impact', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
+            events.push({ type: 'shockwave', polarity: state.polarity, ...WARDEN_TIMING.shockwave.plunge, source: 'plunge' });
+            return enterAction(state, 'plunge_recovery', events, WARDEN_TIMING.form3.slam.recovery);
+        }
+        case 'plunge_recovery':
+            return enterAction({ ...state, plungeTimer: isWardenOverloaded(state)
+                ? WARDEN_TIMING.form3.slam.overloadInterval : WARDEN_TIMING.form3.slam.interval }, 'spiral', events);
         case 'storm_rise': return enterAction({ ...state, beatTimer: WARDEN_TIMING.form3.beatInterval, beatTicksReported: 0, spiralTimer: 0.4 }, 'spiral', events);
-        case 'recoil': return enterAction({ ...state, spiralTimer: 0.2 }, 'spiral', events);
+        case 'recoil':
+            // Reserve the gap before advancing the next countdown tick. At
+            // overload the shorter beat otherwise leaves no slot for a slam.
+            if (state.doubleTimer <= 0 && state.beatTicksReported === 0 && state.plungeTimer <= 0
+                && state.contestTower === null && !isPlayerFar(playerDistance)) {
+                events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
+                return enterAction(state, 'plunge_windup', events, WARDEN_TIMING.form3.slam.windup);
+            }
+            return enterAction({ ...state, spiralTimer: 0.2 }, 'spiral', events);
         case 'volley_windup': {
             const next = enterAction(state, 'volley_active', events);
             emitVolley(next, events, isPlayerFar(playerDistance));
@@ -783,6 +811,7 @@ function applyThresholds(state: WardenState, events: WardenEvent[]): WardenState
             hp: state.maxHp * WARDEN_FORM_THRESHOLDS[3],
             form: 3,
             volleyTimer: 1.5,
+            plungeTimer: WARDEN_TIMING.form3.slam.first,
         };
         next = enterAction(next, 'storm_rise', events);
         events.push({ type: 'form', form: 3 });

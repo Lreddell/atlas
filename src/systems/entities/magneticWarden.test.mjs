@@ -10,7 +10,7 @@ import test from 'node:test';
 // systems/player/viewRig.test.mjs and the tower flux rule in
 // systems/player/climbSurfaces.test.mjs.
 const root = path.resolve(import.meta.dirname, '../../..');
-const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const entity = read('src/systems/entities/Entity.ts');
 const manager = read('src/systems/entities/EntityManager.ts');
@@ -52,7 +52,7 @@ test('the pure core owns the one rule, the three crystal-shielded forms, and the
     assert.match(core, /Same polarity repels\. Opposite attracts\./);
     assert.match(core, /WARDEN_FORM_THRESHOLDS[\s\S]*?\{ 2: 2 \/ 3, 3: 1 \/ 3 \}/);
     assert.match(core, /WARDEN_FORM_NAMES[\s\S]*?Warden[\s\S]*?Aegis[\s\S]*?Storm/);
-    assert.match(core, /WARDEN_FORM_CRYSTALS[\s\S]*?\{ 1: \[0\], 2: \[1, 2\], 3: \[3\] \}/);
+    assert.match(core, /WARDEN_FORM_CRYSTALS[\s\S]*?\{ 1: \[0\], 2: \[1, 2\], 3: \[0, 1, 2, 3\] \}/);
     assert.match(core, /export const WARDEN_SLAM_MULTIPLIER = 2\.5/);
     for (const action of ["'shatter'", "'storm_rise'", "'plunge_windup'", "'shield_break'", "'flinch'", "'charge_windup'", "'recoil'", "'draw_active'", "'lash_windup'", "'swap_windup'"]) {
         assert.ok(core.includes(action), `core declares ${action}`);
