@@ -11,6 +11,7 @@ import {
     advanceWarden,
     createWardenState,
     getWardenFieldProfile,
+    getWardenBeatInterval,
     isInWardenCone,
     isInWardenLane,
     isWardenShielded,
@@ -270,7 +271,7 @@ test('hits with the same polarity are repelled, opposite and neutral land, slams
     assert.equal(doubled.state.action, 'shield_break');
 });
 
-test('crossing two thirds shatters into the Aegis and ignites its two crystals', () => {
+test('crossing the first health threshold shatters into the Aegis and ignites its two crystals', () => {
     // Two capped hits from just above the marker: the first stays in Form I, the second crosses.
     const duel = { ...openDuel(), hp: WARDEN_MAX_HP * WARDEN_FORM_THRESHOLDS[2] + WARDEN_DAMAGE_CAP + 10 };
     const first = hit(duel, WARDEN_DAMAGE_CAP, -1);
@@ -347,7 +348,7 @@ test('a threshold crossing mid-Draw switches the field off before the transition
     assert.ok(kinds.indexOf('draw') < kinds.indexOf('form'));
 });
 
-test('crossing one third rises into the Storm shielded by all four crystals', () => {
+test('crossing the second health threshold rises into the Storm shielded by all four crystals', () => {
     const { state, events } = storm();
     assert.equal(state.form, 3);
     assert.equal(state.action, 'spiral');
@@ -393,12 +394,12 @@ test('breaking the last crystal opens the finale: unshielded, still on the beat,
     const beat = runUntil(state, (s) => s.beatIndex > state.beatIndex, WARDEN_TIMING.form3.beatInterval + 1);
     assert.deepEqual(beat.events.find((event) => event.type === 'polarity').towers, []);
     // Overload: faster beats and a shard volley on each beat.
-    const overloaded = { ...state, hp: WARDEN_MAX_HP * 0.1 };
+    const overloaded = { ...state, hp: 30 };
     const fast = runUntil(overloaded, (s) => s.beatIndex > overloaded.beatIndex, WARDEN_TIMING.form3.beatInterval + 1);
     assert.ok(fast.events.some((event) => event.type === 'shard-volley'));
     assert.ok(Math.abs(fast.state.beatTimer - WARDEN_TIMING.form3.overloadBeatInterval) < 0.1 + 1e-9);
     // While shielded the shards stay home.
-    const shielded = { ...storm().state, hp: WARDEN_MAX_HP * 0.1 };
+    const shielded = { ...storm().state, hp: 30 };
     const held = runUntil(shielded, (s) => s.beatIndex > shielded.beatIndex, WARDEN_TIMING.form3.beatInterval + 1, FAR);
     assert.ok(!held.events.some((event) => event.type === 'shard-volley'));
 });
@@ -452,4 +453,21 @@ test('nothing in the fight rolls dice, and the shared geometry helpers agree wit
     const b = run(arenaFight().state, 20, NEAR);
     assert.deepEqual(a.state, b.state);
     assert.deepEqual(a.events, b.events);
+});
+
+test('early forms each have 150 HP while Storm keeps 100 HP and overloads at 36', () => {
+    const initial = createWardenState();
+    assert.equal(initial.hp, 400);
+    const aegis = advanceWarden(createWardenState({ hp: 251, shieldLayers: 0 }),
+        { type: 'damage', amount: 45, playerPolarity: 0 }).state;
+    assert.equal(aegis.form, 2);
+    assert.equal(aegis.hp, 250);
+    assert.equal(initial.hp - aegis.hp, 150);
+    const stormState = advanceWarden(createWardenState({ form: 2, hp: 101, action: 'hover', shieldLayers: 0 }),
+        { type: 'damage', amount: 45, playerPolarity: 0 }).state;
+    assert.equal(stormState.form, 3);
+    assert.equal(stormState.hp, 100);
+    assert.equal(aegis.hp - stormState.hp, 150);
+    assert.equal(getWardenBeatInterval({ ...stormState, hp: 37 }), 3.2);
+    assert.equal(getWardenBeatInterval({ ...stormState, hp: 36 }), 2.5);
 });

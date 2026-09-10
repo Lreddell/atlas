@@ -56,7 +56,7 @@ test('Aegis uses the tracking slam timings and faster swaps without changing Sto
     const marked = run(state, 0.05).state;
     assert.equal(marked.action, 'plunge_windup');
     assert.equal(marked.actionDuration, 1.6);
-    assert.equal(WARDEN_TIMING.form2.swapInterval, 7.5);
+    assert.equal(WARDEN_TIMING.form2.swapInterval, 6.25);
     assert.equal(WARDEN_TIMING.form3.beatInterval, 3.2);
     assert.equal(WARDEN_TIMING.form3.slam.interval, 6);
 });

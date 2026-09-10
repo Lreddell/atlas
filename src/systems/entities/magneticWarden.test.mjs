@@ -50,7 +50,7 @@ test('magnetic_warden is a brain-driven boss body: no contact damage, no legacy 
 test('the pure core owns the one rule, the three crystal-shielded forms, and the slam, deterministically', () => {
     assert.match(core, /export function polarityRelation\(/);
     assert.match(core, /Same polarity repels\. Opposite attracts\./);
-    assert.match(core, /WARDEN_FORM_THRESHOLDS[\s\S]*?\{ 2: 2 \/ 3, 3: 1 \/ 3 \}/);
+    assert.match(core, /WARDEN_FORM_THRESHOLDS[\s\S]*?\{ 2: 250 \/ WARDEN_MAX_HP, 3: 100 \/ WARDEN_MAX_HP \}/);
     assert.match(core, /WARDEN_FORM_NAMES[\s\S]*?Warden[\s\S]*?Aegis[\s\S]*?Storm/);
     assert.match(core, /WARDEN_FORM_CRYSTALS[\s\S]*?\{ 1: \[0\], 2: \[1, 2\], 3: \[0, 1, 2, 3\] \}/);
     assert.match(core, /export const WARDEN_SLAM_MULTIPLIER = 2\.5/);
@@ -339,7 +339,7 @@ test('the Warden renders its three-form body, the tower shield, and every telegr
 
 test('the HUD reads the forms, the crystal shield, the slam and the tower flip warning', () => {
     const bar = read('src/components/ui/BossBar.tsx');
-    assert.match(bar, /magnetic_warden:\s*\[2 \/ 3, 1 \/ 3\]/);
+    assert.match(bar, /magnetic_warden:\s*\[WARDEN_FORM_THRESHOLDS\[2\], WARDEN_FORM_THRESHOLDS\[3\]\]/);
     assert.match(bar, /boss:form/);
     assert.match(bar, /FORM \{FORM_NUMERALS/);
     assert.match(bar, /boss:polarity/);

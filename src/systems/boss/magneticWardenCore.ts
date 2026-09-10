@@ -19,13 +19,13 @@
 //
 // THE THREE FORMS (each opens SHIELDED by tower crystals; only breaking every
 // crystal of the form drops the shield; crystal power never decays)
-//   I   WARDEN (100% .. 66%)  one crystal. Grounded duel: Volley / Lash / Draw+
+//   I   WARDEN (400 .. 250 HP)  one crystal. Grounded duel: Volley / Lash / Draw+
 //                             Repel / Charge / Swap. Break the crystal: it reels.
-//   II  AEGIS  (66% .. 33%)   two crystals. A hovering core that contests the
+//   II  AEGIS  (250 .. 100 HP)   two crystals. A hovering core that contests the
 //                             climb (it drifts to the tower you climb, fires down
 //                             at you, swaps its towers) and plunges rings on the
 //                             platform. Break both: it crashes, then limps low.
-//   III STORM  (33% .. 0%)    all four crystals relight. A grounded core behind a shard
+//   III STORM  (100 .. 0 HP)    all four crystals relight. A grounded core behind a shard
 //                             barrier and a polarity METRONOME: every beat flips
 //                             it AND its tower, fires a ring, then a quiet recoil.
 //
@@ -58,9 +58,9 @@ export type WardenAction =
     | 'spiral' | 'recoil'
     | 'death';
 
-export const WARDEN_MAX_HP = 300;
+export const WARDEN_MAX_HP = 400;
 /** HP fractions at which the Warden changes form (hits are clamped to land exactly here). */
-export const WARDEN_FORM_THRESHOLDS: Readonly<Record<2 | 3, number>> = { 2: 2 / 3, 3: 1 / 3 };
+export const WARDEN_FORM_THRESHOLDS: Readonly<Record<2 | 3, number>> = { 2: 250 / WARDEN_MAX_HP, 3: 100 / WARDEN_MAX_HP };
 export const WARDEN_FORM_NAMES: Readonly<Record<WardenForm, string>> = { 1: 'Warden', 2: 'Aegis', 3: 'Storm' };
 /** Tower crystals (by tower index) that power each form's shield. */
 export const WARDEN_FORM_CRYSTALS: Readonly<Record<WardenForm, readonly number[]>> = { 1: [0], 2: [1, 2], 3: [0, 1, 2, 3] };
@@ -76,13 +76,13 @@ export const WARDEN_SLAM_MULTIPLIER = 2.5;
 export const WARDEN_TIMING = {
     /** Fixed action lengths. Untimed actions (hover, spiral) are 0. */
     actions: {
-        idle: 0.5,
+        idle: 0.35,
         swap_windup: 1.0, swap_recovery: 0.4,
         volley_windup: 0.7, volley_active: 0.15, volley_recovery: 0.6,
-        lash_windup: 0.75, lash_active: 0.25, lash_recovery: 1.2,
-        draw_windup: 0.9, draw_active: 1.5, draw_recovery: 1.4,
-        charge_windup: 0.85, charge_active: 0.45, charge_recovery: 1.1,
-        backswing_windup: 0.65, backswing_active: 0.2, backswing_recovery: 1.4,
+        lash_windup: 0.75, lash_active: 0.25, lash_recovery: 0.95,
+        draw_windup: 0.9, draw_active: 1.5, draw_recovery: 1.15,
+        charge_windup: 0.85, charge_active: 0.45, charge_recovery: 0.85,
+        backswing_windup: 0.65, backswing_active: 0.2, backswing_recovery: 1.1,
         stagger: 0.9,
         flinch: 1.2,
         /** Long enough for the climber who broke the crystal to launch back down and land a slam. */
@@ -103,8 +103,8 @@ export const WARDEN_TIMING = {
 
     form1: {
         /** Seconds between polarity swaps (chosen as its own telegraphed action). */
-        swapInterval: 9,
-        cooldowns: { volley: 2.4, lash: 3.0, draw: 7.5, charge: 6.0 } as Record<WardenAttack, number>,
+        swapInterval: 7.5,
+        cooldowns: { volley: 2.0, lash: 2.4, draw: 6.0, charge: 4.8 } as Record<WardenAttack, number>,
         /** Distance profiles drive attack selection (ideal spacing, hard band). */
         distances: {
             lash: { ideal: 2.5, min: 0, max: 4.8 },
@@ -115,7 +115,7 @@ export const WARDEN_TIMING = {
         /** While its crystal stands it never Draws: the pull is the damage-phase gambit. */
         shieldedRoster: ['volley', 'lash', 'charge'] as readonly WardenAttack[],
         roster: ['volley', 'lash', 'draw', 'charge'] as readonly WardenAttack[],
-        climberVolleyInterval: 2.6,
+        climberVolleyInterval: 2.1,
     },
 
     form2: {
@@ -129,19 +129,21 @@ export const WARDEN_TIMING = {
          *  close enough to dash-slam from the upper half of the climb. */
         contestRadius: 21,
         contestHeight: 22,
-        volleyInterval: 1.8,
-        plungeInterval: 9,
-        plungeFirst: 5,
-        swapInterval: 7.5,
-        hoverDwell: 0.8,
+        volleyInterval: 1.5,
+        volleySpeed: 19,
+        plungeInterval: 6.5,
+        plungeFirst: 4,
+        swapInterval: 6.25,
+        hoverDwell: 0.45,
     },
 
     form3: {
+        climberVolleyInterval: 2.6,
         slam: { first: 5, interval: 6, overloadInterval: 4.5, windup: 1.6, drop: 0.3, recovery: 1.4, rise: 16, lockLead: 0.55 },
         beatInterval: 3.2,
         overloadBeatInterval: 2.5,
-        /** HP fraction under which the metronome speeds up and the shards fly. */
-        overloadHp: 0.12,
+        /** Preserve overload at the last 36 HP despite the longer earlier phases. */
+        overloadHp: 36 / WARDEN_MAX_HP,
         /** Every Nth beat is a double beat (two rings, flip twice). */
         doubleEvery: 4,
         doubleGap: 0.9,
@@ -324,7 +326,7 @@ export function getWardenActionDuration(action: WardenAction): number {
     return ACTIONS[action];
 }
 
-/** Seconds between Storm beats (faster once the Warden overloads under 12% HP). */
+/** Seconds between Storm beats (faster once the Warden reaches its last 36 HP). */
 export function getWardenBeatInterval(state: Pick<WardenState, 'hp' | 'maxHp'>): number {
     return state.hp / state.maxHp <= WARDEN_TIMING.form3.overloadHp
         ? WARDEN_TIMING.form3.overloadBeatInterval
@@ -467,7 +469,7 @@ function emitVolley(state: WardenState, events: WardenEvent[], climber: boolean)
     const spec = climber
         ? WARDEN_TIMING.bolts.climber
         : state.form === 1 ? WARDEN_TIMING.bolts.volley1 : WARDEN_TIMING.bolts.volley2;
-    events.push({ type: 'volley', spec, polarity: state.polarity, climber });
+    events.push({ type: 'volley', spec: state.form === 2 ? { ...spec, speed: WARDEN_TIMING.form2.volleySpeed } : spec, polarity: state.polarity, climber });
 }
 
 /** A far player is on the towers or crossing the moat: only climber volleys reach them. */
@@ -752,7 +754,7 @@ function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playe
     // instead of a spiral that can never reach them.
     if (usesRangedPressure(state, playerDistance)) {
         if (state.volleyTimer > 0) return state;
-        return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form1.climberVolleyInterval }, 'volley_windup', events);
+        return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form3.climberVolleyInterval }, 'volley_windup', events);
     }
     let timer = state.spiralTimer - dt;
     let angle = state.spiralAngle;

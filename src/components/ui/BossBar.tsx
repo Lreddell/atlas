@@ -1,6 +1,7 @@
 import React, { useEffect, useReducer } from 'react';
 import { gameEvents } from '../../systems/events/GameEvents';
 import { reduceBossBarState } from './bossBarState';
+import { WARDEN_FORM_THRESHOLDS } from '../../systems/boss/magneticWardenCore';
 import { soundManager } from '../../systems/sound/SoundManager';
 
 // Reusable boss / objective health bar. Driven entirely by the game event bus
@@ -10,9 +11,9 @@ import { soundManager } from '../../systems/sound/SoundManager';
 // Phase thresholds (fraction of max HP) where the boss escalates. The bar draws a
 // segment marker at each so players can read upcoming phase changes, modular:
 // extend this list (or, later, feed it per-boss from boss:spawned) for any number
-// of phases. Magnetic Warden: the Aegis at two thirds, the Storm at one third.
+// of phases. Magnetic Warden: the Aegis at 250 HP, the Storm at 100 HP.
 const PHASE_MARKERS: Readonly<Record<string, readonly number[]>> = {
-    magnetic_warden: [2 / 3, 1 / 3],
+    magnetic_warden: [WARDEN_FORM_THRESHOLDS[2], WARDEN_FORM_THRESHOLDS[3]],
     bell_titan: [0.67, 0.34],
 };
 
@@ -145,7 +146,7 @@ export const BossBar: React.FC = () => {
                     />
                 )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
-                    threshold, the Aegis at two thirds, the Storm at one third. */}
+                    threshold, the Aegis at 250 HP, the Storm at 100 HP. */}
                 {(PHASE_MARKERS[boss.bossId] ?? []).map((at) => <PhaseMarker key={at} at={at} />)}
                 {/* White flash when a phase threshold is crossed. */}
                 <div
