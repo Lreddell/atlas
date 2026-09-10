@@ -1247,12 +1247,12 @@ const App: React.FC = () => {
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
-          if (phase >= 3) musicController.setBossFrenzy(true);
+          if (bossId === 'magnetic_warden' && phase >= 3) musicController.setBossFrenzy(true);
       });
       // Reset the frenzy music whenever a fight begins or ends.
-      const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
-      const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
-      const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
+      const offSpawnFrenzy = gameEvents.on('boss:spawned', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
+      const offDefeatFrenzy = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
+      const offClearFrenzy = gameEvents.on('boss:cleared', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
       // Breaking a tower crystal: the encounter drops the shield layer it powers
       // (it listens itself); here only the shatter cue.
       const offCrystal = gameEvents.on('crystal:broken', () => {

@@ -98,6 +98,7 @@ export interface WardenSnapshot {
     form: WardenForm;
     formName: string;
     action: WardenAction;
+    backswingFromCharge: boolean;
     actionTime: number;
     actionDuration: number;
     polarity: WardenPolarity;
@@ -111,6 +112,8 @@ export interface WardenSnapshot {
     towers: WardenTowerSnapshot[];
     contestTower: number | null;
     plungeTarget: WardenPoint | null;
+    volleyTarget: WardenPoint | null;
+    volleyPattern: 'aimed' | 'sweep';
     /** Seconds until the next Storm beat, its full interval, and the colour it brings. */
     beatRemaining: number;
     beatInterval: number;
@@ -162,6 +165,8 @@ class MagneticWardenEncounter {
     private shardCooldown = 0;
     private facingYaw = 0;
     private plungeStart: WardenPoint | null = null;
+    private volleyTarget: WardenPoint | null = null;
+    private volleySweep = false;
     private chargeOrigin: WardenPoint | null = null;
     private previousPosition: WardenPoint = { x: 0, y: 0, z: 0 };
     private chargeHit = false;
@@ -236,6 +241,7 @@ class MagneticWardenEncounter {
             form: s.form,
             formName: WARDEN_FORM_NAMES[s.form],
             action: s.action,
+            backswingFromCharge: s.lastAttack === 'charge',
             actionTime: s.actionTime,
             actionDuration: s.actionDuration > 0 ? s.actionDuration : getWardenActionDuration(s.action),
             polarity: s.polarity,
@@ -248,6 +254,8 @@ class MagneticWardenEncounter {
             towers: this.towerSnapshots(),
             contestTower: s.contestTower,
             plungeTarget: this.plungeTarget,
+            volleyTarget: s.form === 2 && s.action === 'volley_windup' ? this.volleyTarget : null,
+            volleyPattern: this.volleySweep ? 'sweep' : 'aimed',
             beatRemaining: Math.max(0, s.beatTimer),
             beatInterval: getWardenBeatInterval(s),
             nextPolarity: s.polarity > 0 ? -1 : 1,
@@ -300,7 +308,7 @@ class MagneticWardenEncounter {
     private applyMovement(entity: Entity, dt: number, player: WardenPoint | null): void {
         const s = this.state;
         const floorY = this.floorY(entity);
-        if (s.form === 3 && (s.action === 'plunge_windup' || s.action === 'plunge_drop')) {
+        if (s.form >= 2 && (s.action === 'plunge_windup' || s.action === 'plunge_drop')) {
             const slam = WARDEN_TIMING.form3.slam;
             const lockAt = s.actionDuration - slam.lockLead;
             if (s.action === 'plunge_windup' && player && s.actionTime < lockAt) {
@@ -375,7 +383,7 @@ class MagneticWardenEncounter {
                 entityManager.haltEntity(entity, dt);
                 // Locked-in windups turn slowly (the telegraph shows where the
                 // blow lands); the Charge tracks for the first half, then commits.
-                if (s.action === 'lash_windup' && s.actionTime / s.actionDuration < 0.55) {
+                if ((s.action === 'lash_windup' || s.action === 'backswing_windup') && s.actionTime / s.actionDuration < 0.55) {
                     const delta = wrapAngle(want - entity.yaw);
                     entity.yaw += Math.max(-LASH_TRACK_RATE * dt, Math.min(LASH_TRACK_RATE * dt, delta));
                 } else if (s.action === 'charge_windup') {
@@ -385,7 +393,7 @@ class MagneticWardenEncounter {
                         entity.yaw += Math.max(-CHARGE_TRACK_RATE * dt, Math.min(CHARGE_TRACK_RATE * dt, delta));
                     }
                 } else if (s.action !== 'stagger' && s.action !== 'lash_windup' && s.action !== 'lash_active' && s.action !== 'lash_recovery' && s.action !== 'charge_recovery'
-                    && s.action !== 'shield_break' && s.action !== 'flinch') {
+                    && s.action !== 'shield_break' && s.action !== 'flinch' && !s.action.startsWith('backswing_')) {
                     entity.yaw = want;
                 }
             }
@@ -574,7 +582,22 @@ class MagneticWardenEncounter {
         for (const event of events) {
             switch (event.type) {
                 case 'action':
-                    if (this.state.form === 3 && !event.action.startsWith('plunge_')) this.plungeTarget = null;
+                    if (!event.action.startsWith('plunge_')) this.plungeTarget = null;
+                    if (event.action === 'volley_windup' && this.state.form === 2 && player) {
+                        this.volleyTarget = { ...player };
+                        const dx = player.x - entity.pos.x, dz = player.z - entity.pos.z;
+                        const distance = Math.hypot(dx, dz) || 1;
+                        this.volleySweep = this.state.volleyPattern === 'sweep'
+                            && (this.state.contestTower !== null || distance > WARDEN_TIMING.farDistance);
+                        if (this.volleySweep) {
+                            const side = this.state.volleyIndex % 4 < 2 ? 1 : -1;
+                            this.volleyTarget.x += dz / distance * 2.6 * side;
+                            this.volleyTarget.z -= dx / distance * 2.6 * side;
+                        }
+                    }
+                    if (event.action === 'backswing_windup') {
+                        soundManager.playAt('entity.magnetic_warden.charge_windup', entity.pos, { volume: 0.8, pitch: 0.8 });
+                    }
                     if (event.action === 'lash_windup') this.facingYaw = entity.yaw;
                     if (event.action === 'charge_windup') {
                         this.facingYaw = entity.yaw;
@@ -609,7 +632,7 @@ class MagneticWardenEncounter {
                     gameEvents.emit('boss:polarity', { bossId, entityId, polarity: event.polarity });
                     break;
                 case 'volley':
-                    if (player) this.fireVolley(entity, player, event.spec, event.polarity, event.climber);
+                    if (player) this.fireVolley(entity, this.state.form === 2 ? this.volleyTarget ?? player : player, event.spec, event.polarity, event.climber);
                     break;
                 case 'spiral-bolt':
                     this.fireSpiralBolt(entity, event);
@@ -780,12 +803,15 @@ class MagneticWardenEncounter {
     // --- Attacks -------------------------------------------------------------
 
     private fireVolley(entity: Entity, player: WardenPoint, spec: WardenBoltSpec, polarity: WardenPolarity, climber: boolean): void {
+        if (climber && this.state.form === 2) {
+            spec = { ...spec, count: 5, spread: this.volleySweep ? 0.035 : 0.12, homing: 0 };
+        }
         const ox = entity.pos.x, oy = entity.pos.y + entity.height * 0.7, oz = entity.pos.z;
         const dx = player.x - ox, dy = (player.y + PLAYER_HEIGHT * 0.9) - oy, dz = player.z - oz;
         const d = Math.hypot(dx, dy, dz) || 1;
         // A climber volley leads the shot a touch so the spread lands on the wall
         // around them rather than behind.
-        const lead = climber ? 0.15 : 0;
+        const lead = climber && this.state.form !== 2 ? 0.15 : 0;
         for (let index = 0; index < spec.count; index += 1) {
             const t = spec.count === 1 ? 0 : (index / (spec.count - 1)) * 2 - 1;
             const spread = t * spec.spread;

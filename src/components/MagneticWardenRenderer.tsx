@@ -77,6 +77,7 @@ export const MagneticWardenRenderer: React.FC = () => {
     const drawDiscRef = useRef<THREE.Mesh>(null);
     const drawRangeRef = useRef<THREE.Mesh>(null);
     const plungeDiscRef = useRef<THREE.Mesh>(null);
+    const volleyMarkerRef = useRef<THREE.Mesh>(null);
     const beatRingRef = useRef<THREE.Mesh>(null);
     const beatRing2Ref = useRef<THREE.Mesh>(null);
     const shieldRef = useRef<THREE.Mesh>(null);
@@ -108,7 +109,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         const entity = snap.entityId !== null ? entityManager.getEntity(snap.entityId) : undefined;
         const hideAll = () => {
             root.visible = false;
-            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, groundGlowRef]) {
+            for (const ref of [sectorRef, drawDiscRef, drawRangeRef, plungeDiscRef, volleyMarkerRef, beatRingRef, beatRing2Ref, shieldRef, auraRef, groundGlowRef]) {
                 if (ref.current) ref.current.visible = false;
             }
             if (chargeLaneRef.current) chargeLaneRef.current.visible = false;
@@ -180,6 +181,12 @@ export const MagneticWardenRenderer: React.FC = () => {
                     body.rotation.y = -0.45 * p;
                 } else if (action === 'lash_active') {
                     body.rotation.y = -0.45 + 1.2 * ease(Math.min(1, raw * 1.4));
+                } else if (action === 'backswing_windup') {
+                    body.rotation.y = snap.backswingFromCharge ? 0.6 * p : 0.75 - 0.15 * p;
+                } else if (action === 'backswing_active') {
+                    body.rotation.y = 0.6 - 1.05 * p;
+                } else if (action === 'backswing_recovery') {
+                    body.rotation.y = -0.45 * (1 - p);
                 } else if (action === 'lash_recovery') {
                     body.rotation.y = 0.75 * (1 - p);
                 } else if (action === 'charge_windup') {
@@ -195,8 +202,15 @@ export const MagneticWardenRenderer: React.FC = () => {
                 const left = leftArmRef.current, right = rightArmRef.current;
                 if (left && right) {
                     const sway = Math.sin(t * 1.3) * 0.06;
-                    let l = sway, r = -sway;
+                    let l = sway, r = -sway, z = 0;
                     if (action === 'volley_windup') r = -1.7 * p;
+                    else if (action === 'backswing_windup') {
+                        l = snap.backswingFromCharge ? 0.9 * (1 - p) : sway;
+                        r = (snap.backswingFromCharge ? 0.9 : -sway) * (1 - p) - 0.9 * p;
+                        z = -0.55 * p;
+                    }
+                    else if (action === 'backswing_active') { r = -0.9 * (1 - p); z = -0.55 + 1.1 * p; }
+                    else if (action === 'backswing_recovery') z = 0.55 * (1 - p);
                     else if (action === 'volley_active') r = -1.9;
                     else if (action === 'volley_recovery') r = -1.6 * (1 - p);
                     else if (action === 'draw_windup') { l = -1.25 * p; r = -1.25 * p; }
@@ -208,6 +222,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                     else if (action === 'shield_break') { l = 0.8; r = 0.8; }
                     left.rotation.x = l;
                     right.rotation.x = r;
+                    right.rotation.z = z;
                 }
             }
         }
@@ -222,6 +237,9 @@ export const MagneticWardenRenderer: React.FC = () => {
                 let radius = 1.5, spin = t * 0.9, offset = 0, y = 2.35, alpha = 1;
                 if (action === 'lash_windup') { offset = -1.3 * p; radius = 1.9; }
                 else if (action === 'lash_active') { offset = -1.3 + 3.4 * ease(Math.min(1, raw * 1.3)); radius = 2.1; }
+                else if (action === 'backswing_windup') { offset = snap.backswingFromCharge ? 1.9 * p : 2.1 - 0.2 * p; radius = 2.1; }
+                else if (action === 'backswing_active') { offset = 1.9 - 3.2 * p; radius = 2.1; }
+                else if (action === 'backswing_recovery') { offset = -1.3 * (1 - p); }
                 else if (action === 'lash_recovery') { offset = 2.1 * (1 - p); }
                 else if (action === 'draw_windup') { radius = 1.5 - 0.65 * p; spin = t * (0.9 + 5 * p); }
                 else if (action === 'draw_active') { radius = 0.8; spin = t * 7; }
@@ -270,8 +288,10 @@ export const MagneticWardenRenderer: React.FC = () => {
                 else if (reeling || action === 'crash') spread = -0.6;
                 else if (action === 'recover') spread = -0.6 + 1.0 * p;
                 spread += Math.sin(t * 2.2) * 0.05;
-                if (leftWingRef.current) leftWingRef.current.rotation.z = spread;
-                if (rightWingRef.current) rightWingRef.current.rotation.z = -spread;
+                const aimedPowered = snap.towers.some(tower => tower.index === 1 && tower.standing && tower.ignited);
+                const sweepPowered = snap.towers.some(tower => tower.index === 2 && tower.standing && tower.ignited);
+                if (leftWingRef.current) leftWingRef.current.rotation.z = aimedPowered ? spread : -0.65;
+                if (rightWingRef.current) rightWingRef.current.rotation.z = sweepPowered ? -spread : 0.65;
             }
         }
 
@@ -300,14 +320,14 @@ export const MagneticWardenRenderer: React.FC = () => {
         // --- Telegraphs.
         const sector = sectorRef.current;
         if (sector) {
-            sector.visible = action === 'lash_windup' || action === 'lash_active';
+            sector.visible = action === 'lash_windup' || action === 'lash_active' || action === 'backswing_windup' || action === 'backswing_active';
             if (sector.visible) {
                 sector.position.set(entity.pos.x, snap.floorY + 0.05, entity.pos.z);
                 sector.rotation.set(-Math.PI / 2, 0, entity.yaw);
                 sector.scale.setScalar(WARDEN_TIMING.lash.range);
                 const sm = sector.material as THREE.MeshBasicMaterial;
-                sm.color.setHex(polarityHex(snap.polarity));
-                sm.opacity = action === 'lash_active' ? 0.7 : 0.18 + 0.4 * raw + 0.05 * Math.sin(t * 14);
+                sm.color.setHex(0xffffff);
+                sm.opacity = action.endsWith('_active') ? 0.7 : 0.18 + 0.4 * raw + 0.05 * Math.sin(t * 14);
             }
         }
         const lane = chargeLaneRef.current, laneMesh = chargeLaneMeshRef.current, tip = chargeTipRef.current;
@@ -322,7 +342,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 lane.rotation.set(0, c.yaw + Math.PI, 0);
                 laneMesh.scale.set(c.halfWidth * 2, c.length, 1);
                 const lm = laneMesh.material as THREE.MeshBasicMaterial;
-                lm.color.setHex(polarityHex(snap.polarity));
+                lm.color.setHex(0xffffff);
                 const flash = 0.5 + 0.5 * Math.sin(t * (6 + 24 * c.progress));
                 lm.opacity = c.phase === 'lunge' ? 0.55 : 0.12 + 0.35 * c.progress * flash;
                 // A bright end cap creeps out to the lane's end as the windup fills.
@@ -358,6 +378,18 @@ export const MagneticWardenRenderer: React.FC = () => {
             }
         }
         const plungeDisc = plungeDiscRef.current;
+        const volleyMarker = volleyMarkerRef.current;
+        if (volleyMarker) {
+            volleyMarker.visible = !!snap.volleyTarget;
+            if (snap.volleyTarget) {
+                volleyMarker.position.set(snap.volleyTarget.x, snap.volleyTarget.y + 1.3, snap.volleyTarget.z);
+                volleyMarker.lookAt(entity.pos.x, entity.pos.y + entity.height * 0.7, entity.pos.z);
+                volleyMarker.scale.set(snap.volleyPattern === 'sweep' ? 1.6 : 0.65, 0.65, 1);
+                const material = volleyMarker.material as THREE.MeshBasicMaterial;
+                material.color.setHex(polarityHex(snap.polarity));
+                material.opacity = 0.25 + raw * 0.55;
+            }
+        }
         if (plungeDisc) {
             const showPlunge = !!snap.plungeTarget && (action === 'plunge_windup' || action === 'plunge_drop');
             plungeDisc.visible = showPlunge;
@@ -365,8 +397,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 plungeDisc.position.set(snap.plungeTarget.x, snap.floorY + 0.05, snap.plungeTarget.z);
                 plungeDisc.scale.setScalar(WARDEN_TIMING.plunge.impactRadius);
                 const pm = plungeDisc.material as THREE.MeshBasicMaterial;
-                const locked = snap.form === 3 && (action === 'plunge_drop'
-                    || snap.actionDuration - snap.actionTime <= WARDEN_TIMING.form3.slam.lockLead);
+                const locked = action === 'plunge_drop' || snap.actionDuration - snap.actionTime <= WARDEN_TIMING.form3.slam.lockLead;
                 pm.color.setHex(locked ? 0xffffff : polarityHex(snap.polarity));
                 const flash = 0.5 + 0.5 * Math.sin(t * (8 + 30 * raw));
                 pm.opacity = action === 'plunge_drop' ? 0.85 : locked ? 0.75 : 0.2 + 0.5 * raw * flash;
@@ -441,7 +472,15 @@ export const MagneticWardenRenderer: React.FC = () => {
                     const c = tower.crystal;
                     const flicker = tower.flux ? (Math.sin(t * 28) > 0 ? 1 : -1) : 1;
                     (beam.material as THREE.MeshBasicMaterial).color.setHex(tower.flux ? polarityHex(tower.flux.polarity * flicker) : CHARGED);
-                    drawBeam(beam, c.x + 0.5, c.y + 0.5, c.z + 0.5, cx, cy, cz, tower.flux ? 0.7 : 0.5 + 0.12 * Math.sin(t * 7 + index), tower.flux ? 0.75 : 0.42 + 0.12 * Math.sin(t * 9 + index));
+                    // The Aegis crystals feed separate wings; the active volley
+                    // pulses its source beam so the route choice is visible.
+                    const wing = snap.form === 2 ? (index === 1 ? -1 : 1) * 1.8 : 0;
+                    const firing = action === 'volley_windup' && snap.form === 2
+                        && index === (snap.volleyPattern === 'aimed' ? 1 : 2);
+                    drawBeam(beam, c.x + 0.5, c.y + 0.5, c.z + 0.5,
+                        cx + Math.cos(entity.yaw) * wing, cy, cz - Math.sin(entity.yaw) * wing,
+                        firing ? 0.8 : tower.flux ? 0.7 : 0.5 + 0.12 * Math.sin(t * 7 + index),
+                        firing ? 0.9 : tower.flux ? 0.75 : 0.42 + 0.12 * Math.sin(t * 9 + index));
                 }
             }
             if (column) {
@@ -551,6 +590,10 @@ export const MagneticWardenRenderer: React.FC = () => {
             <mesh ref={plungeDiscRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <circleGeometry args={[1, 40]} />
                 <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            <mesh ref={volleyMarkerRef} visible={false} renderOrder={3}>
+                <ringGeometry args={[0.88, 1, 32]} />
+                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
             <mesh ref={beatRingRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <ringGeometry args={[0.9, 1, 64]} />

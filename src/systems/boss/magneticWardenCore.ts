@@ -46,6 +46,7 @@ export type WardenAction =
     | 'lash_windup' | 'lash_active' | 'lash_recovery'
     | 'draw_windup' | 'draw_active' | 'draw_recovery'
     | 'charge_windup' | 'charge_active' | 'charge_recovery'
+    | 'backswing_windup' | 'backswing_active' | 'backswing_recovery'
     | 'stagger'
     | 'flinch'
     | 'shield_break'
@@ -81,6 +82,7 @@ export const WARDEN_TIMING = {
         lash_windup: 0.75, lash_active: 0.25, lash_recovery: 1.2,
         draw_windup: 0.9, draw_active: 1.5, draw_recovery: 1.4,
         charge_windup: 0.85, charge_active: 0.45, charge_recovery: 1.1,
+        backswing_windup: 0.65, backswing_active: 0.2, backswing_recovery: 1.4,
         stagger: 0.9,
         flinch: 1.2,
         /** Long enough for the climber who broke the crystal to launch back down and land a slam. */
@@ -127,10 +129,10 @@ export const WARDEN_TIMING = {
          *  close enough to dash-slam from the upper half of the climb. */
         contestRadius: 21,
         contestHeight: 22,
-        volleyInterval: 2.2,
+        volleyInterval: 1.8,
         plungeInterval: 9,
         plungeFirst: 5,
-        swapInterval: 10,
+        swapInterval: 7.5,
         hoverDwell: 0.8,
     },
 
@@ -216,6 +218,10 @@ export interface WardenState {
     spiralTimer: number;
     spiralAngle: number;
     clock: number;
+    meleeSeen: { lash: boolean; charge: boolean };
+    followup: boolean;
+    volleyIndex: number;
+    volleyPattern: 'aimed' | 'sweep';
 }
 
 export type WardenInput =
@@ -414,6 +420,10 @@ export function createWardenState(overrides: Partial<WardenState> = {}): WardenS
         spiralTimer: 0,
         spiralAngle: 0,
         clock: 0,
+        meleeSeen: { lash: false, charge: false },
+        followup: false,
+        volleyIndex: 0,
+        volleyPattern: 'aimed',
         ...overrides,
     };
 }
@@ -422,6 +432,12 @@ export function createWardenState(overrides: Partial<WardenState> = {}): WardenS
 
 function enterAction(state: WardenState, action: WardenAction, events: WardenEvent[], duration?: number): WardenState {
     const resolved = duration ?? getWardenActionDuration(action);
+    if (action === 'volley_windup' && state.form === 2) {
+        const sweep = state.shieldLayers > 0
+            ? state.crystals[2] && (!state.crystals[1] || state.volleyIndex % 2 === 1)
+            : state.volleyIndex % 2 === 1;
+        state = { ...state, volleyPattern: sweep ? 'sweep' : 'aimed', volleyIndex: state.volleyIndex + 1 };
+    }
     events.push({ type: 'action', action, durationSeconds: resolved });
     return { ...state, action, actionTime: 0, actionDuration: resolved };
 }
@@ -551,6 +567,9 @@ function beginForm1Attack(state: WardenState, events: WardenEvent[], playerDista
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form1.swapInterval }, 'swap_windup', events);
     }
     const cooldowns = { ...state.cooldowns, [pick]: WARDEN_TIMING.form1.cooldowns[pick] };
+    if (pick === 'lash' || pick === 'charge') {
+        state = { ...state, followup: state.meleeSeen[pick], meleeSeen: { ...state.meleeSeen, [pick]: true } };
+    }
     return enterAction({ ...state, cooldowns, lastAttack: pick, attackIndex: state.attackIndex + 1 }, `${pick}_windup`, events);
 }
 
@@ -569,7 +588,7 @@ function finishForm1Action(state: WardenState, events: WardenEvent[], playerDist
             events.push({ type: 'lash', range: WARDEN_TIMING.lash.range, halfAngle: WARDEN_TIMING.lash.halfAngle, damage: WARDEN_TIMING.lash.damage });
             return next;
         }
-        case 'lash_active': return enterAction(state, 'lash_recovery', events);
+        case 'lash_active': return enterAction(state, state.followup ? 'backswing_windup' : 'lash_recovery', events);
         case 'lash_recovery': return enterAction(state, 'idle', events);
         case 'draw_windup': {
             const next = enterAction(state, 'draw_active', events);
@@ -587,7 +606,12 @@ function finishForm1Action(state: WardenState, events: WardenEvent[], playerDist
             events.push({ type: 'charge', length: WARDEN_TIMING.charge.length, halfWidth: WARDEN_TIMING.charge.halfWidth, speed: WARDEN_TIMING.charge.speed, damage: WARDEN_TIMING.charge.damage });
             return next;
         }
-        case 'charge_active': return enterAction(state, 'charge_recovery', events);
+        case 'charge_active': return enterAction(state, state.followup ? 'backswing_windup' : 'charge_recovery', events);
+        case 'backswing_windup':
+            events.push({ type: 'lash', ...WARDEN_TIMING.lash });
+            return enterAction(state, 'backswing_active', events);
+        case 'backswing_active': return enterAction(state, 'backswing_recovery', events);
+        case 'backswing_recovery': return enterAction({ ...state, followup: false }, 'idle', events);
         case 'charge_recovery': return enterAction(state, 'idle', events);
         case 'swap_windup': return enterAction(flipPolarity(state, events), 'swap_recovery', events);
         case 'swap_recovery': return enterAction(state, 'idle', events);
@@ -614,13 +638,13 @@ function finishForm2Action(state: WardenState, events: WardenEvent[], playerDist
         case 'volley_recovery': return enterAction({ ...state, hoverDwell: dwell }, 'hover', events);
         case 'plunge_windup': {
             events.push({ type: 'plunge', phase: 'drop', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
-            return enterAction(state, 'plunge_drop', events);
+            return enterAction(state, 'plunge_drop', events, WARDEN_TIMING.form3.slam.drop);
         }
         case 'plunge_drop': {
             const wave = WARDEN_TIMING.shockwave.plunge;
             events.push({ type: 'plunge', phase: 'impact', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
             events.push({ type: 'shockwave', polarity: state.polarity, maxRadius: wave.maxRadius, speed: wave.speed, damage: wave.damage, source: 'plunge' });
-            return enterAction(state, 'plunge_recovery', events);
+            return enterAction(state, 'plunge_recovery', events, WARDEN_TIMING.form3.slam.recovery);
         }
         case 'plunge_recovery':
             return enterAction({ ...state, plungeTimer: WARDEN_TIMING.form2.plungeInterval, hoverDwell: dwell }, 'hover', events);
@@ -648,7 +672,7 @@ function tickHover(state: WardenState, events: WardenEvent[], playerDistance: nu
     // Plunges only threaten the platform: a climber is contested with volleys.
     if (!far && state.plungeTimer <= 0) {
         events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
-        return enterAction(state, 'plunge_windup', events);
+        return enterAction(state, 'plunge_windup', events, WARDEN_TIMING.form3.slam.windup);
     }
     if (state.volleyTimer <= 0) {
         return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form2.volleyInterval }, 'volley_windup', events);

@@ -26,8 +26,8 @@ function harness() {
     return { encounter: exports.magneticWardenEncounter, clears, sounds, damage };
 }
 
-test('Storm tracks early, then preserves the visible landing point through the entire drop', () => {
-    for (const form of [3]) {
+test('Aegis and Storm track early, then preserve the visible landing point through the entire drop', () => {
+    for (const form of [2, 3]) {
         const { encounter, sounds, damage } = harness();
         const entity = { id: 1, pos: new THREE.Vector3(0, 0, 0), vel: new THREE.Vector3(), home: { x: 0, y: 0, z: 0 } };
         encounter.state = core.createWardenState({ form, action: 'plunge_windup', actionDuration: 1.6 });
@@ -68,7 +68,7 @@ test('all four Storm crystals must fall before the shield drops', () => {
     assert.equal(state.actionDuration, 4.5);
 });
 
-test('Storm completes damaging slams between full beats and keeps the existing Aegis timing', () => {
+test('Storm completes damaging slams between full beats', () => {
     let state = core.createWardenState({ form: 3, hp: 100, action: 'spiral', actionDuration: 0,
         plungeTimer: 0, crystals: [true, true, true, true], ignited: [0, 1, 2, 3], shieldLayers: 4 });
     const events = [];
@@ -83,9 +83,6 @@ test('Storm completes damaging slams between full beats and keeps the existing A
     assert.ok(impacts.every(e => e.impactDamage === 12 && e.impactRadius === 3.2));
     assert.equal(events.filter(e => e.type === 'shockwave' && e.source === 'plunge').length, impacts.length);
     assert.ok(events.some(e => e.type === 'beat' && e.second));
-    assert.equal(core.WARDEN_TIMING.actions.plunge_windup, 0.85);
-    assert.equal(core.WARDEN_TIMING.actions.plunge_drop, 0.3);
-    assert.equal(core.WARDEN_TIMING.actions.plunge_recovery, 0.9);
 });
 
 test('the faster overload beats still leave room for repeated slams', () => {
@@ -99,4 +96,16 @@ test('the faster overload beats still leave room for repeated slams', () => {
         }
         assert.ok(impacts >= 3, `overload must keep slamming at dt=${dt}`);
     }
+});
+
+test('first-phase physical cleaves hit inside the cone and cannot be answered by polarity', () => {
+    const { encounter, damage } = harness();
+    const entity = { id: 1, pos: new THREE.Vector3(), yaw: 0 };
+    for (const polarity of [-1, 1]) {
+        encounter.state = core.createWardenState({ polarity });
+        encounter.resolveLash(entity, { x: 0, y: 0, z: 3 }, true, 8, 4.5, Math.PI / 3);
+    }
+    assert.deepEqual(damage, [8, 8]);
+    encounter.resolveLash(entity, { x: 0, y: 0, z: -3 }, true, 8, 4.5, Math.PI / 3);
+    assert.deepEqual(damage, [8, 8]);
 });

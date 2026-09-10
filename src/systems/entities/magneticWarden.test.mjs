@@ -183,7 +183,7 @@ test('App attaches the encounter to the summoned boss and feeds it the player po
     // The old shield/parry/strip/Flux plumbing is gone from App.
     assert.doesNotMatch(app, /onShieldCrystalBroken|climbMagnetsActiveRef|boss:parry|stripArenaClimbMagnets|flux:|boss:tether/);
     // The Storm still drives the music frenzy, and defeat still cleanses the region.
-    assert.match(app, /if \(phase >= 3\) musicController\.setBossFrenzy\(true\)/);
+    assert.match(app, /if \(bossId === 'magnetic_warden' && phase >= 3\) musicController\.setBossFrenzy\(true\)/);
     assert.match(app, /boss:defeated[\s\S]*?region\?\.bossId === bossId[\s\S]*?cleanseRegion\(region\.id\)/);
 });
 

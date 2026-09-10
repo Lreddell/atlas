@@ -153,11 +153,10 @@ class MusicController {
      */
     private currentTrackNight: boolean = false;
 
-    // Boss-music override. The dedicated boss track plays only while the Magnetic
-    // Warden is alive AND the player is actively in combat (aggro'd). So it stops
-    // when the boss dies, when the player dies, or when the player leaves / loses
-    // aggro, but survives a brief loss of line-of-sight and resumes on re-engage.
+    // Once engaged, keep Warden music through brief combat/line-of-sight loss.
+    // The encounter's day/night pitch is captured at spawn and survives loops.
     private bossAlive: boolean = false;
+    private bossNight: boolean = false;
     private inCombat: boolean = false;
 
     // Resonant Vault music state is event-driven so it remains independent of
@@ -171,10 +170,13 @@ class MusicController {
     constructor() {
         // Boss-fight music hooks (safe without a window; emit is a no-op otherwise).
         gameEvents.on('boss:spawned', ({ bossId }) => {
-            if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = true;
+            if (bossId === MAGNETIC_WARDEN_BOSS_ID) {
+                this.bossAlive = true;
+                this.bossNight = this.nightSlowdownEnabled && this.isNight;
+            }
         });
-        gameEvents.on('boss:defeated', () => { this.bossAlive = false; });
-        gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
+        gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = false; });
+        gameEvents.on('boss:cleared', ({ bossId }) => { if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = false; });
         gameEvents.on('combat:start', () => { this.inCombat = true; });
         gameEvents.on('combat:stop', () => { this.inCombat = false; });
 
@@ -428,7 +430,7 @@ class MusicController {
             targetContext = 'VAULT_COMBAT';
         } else if (this.vaultActive) {
             targetContext = 'VAULT';
-        } else if (this.bossAlive && this.inCombat && gameMode !== 'creative') {
+        } else if (this.bossAlive && (this.inCombat || this.currentContext === 'BOSS_MAGNETIC') && gameMode !== 'creative') {
             // Magnetic Warden fight overrides biome/ambient music while engaged.
             targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
@@ -727,7 +729,7 @@ class MusicController {
             && !RESONANT_MUSIC_CONTEXTS.has(this.currentContext);
         // Remember the decision for this track: the frenzy and low-health modifiers
         // compose against it for as long as the track plays.
-        this.currentTrackNight = useNightRate;
+        this.currentTrackNight = this.currentContext === 'BOSS_MAGNETIC' ? this.bossNight : useNightRate;
         const playbackRate = resolveMusicPlaybackRate(this.currentModifiers());
         // Keep the shared rate in step, so a decoded loop starting on this track
         // and a later live change agree about where the rate is coming from.
