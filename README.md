@@ -66,9 +66,11 @@ npm run electron:dev
   magnetic dash onto an opposite magnet face or into an opposed Warden (arming a
   Magnet Slam), a repel leap away from a matched Warden, or a launch off a wall
   you are clinging to. Its cooldown shows as a ring on the crosshair.
-- Press `F5` to switch between first and third person, any time you are in a
-  world. The Magnetic Warden fight switches to third person on its own and hands
-  your view back afterwards.
+- Press `F5` for free third person, any time you are in a world: the body keeps
+  its own heading and runs whichever way you point while the camera orbits
+  around you. `F6` is the over-the-shoulder view, where the body turns with the
+  camera. Every boss fight switches to the free view on its own and hands your
+  view back afterwards.
 - In the Magnetic Warden fight, same polarity repels and opposite attracts: match
   its colour to bounce its bolts, oppose it to strike. Every form is shielded by
   its tower crystals until you climb the towers and break them; the lit towers

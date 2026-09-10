@@ -79,7 +79,7 @@ export type MotionBlurResetReason =
     | 'world-load'       // entering or reloading a world
     | 'respawn'
     | 'teleport'         // /tp, setspawn, unstuck, any instantaneous move
-    | 'view-mode'        // F5 / F6
+    | 'view-mode'        // F5 (free) / F6 (welded)
     | 'detached-camera'  // F7 place / lock / release
     | 'cinematic'        // an authored cutscene taking or handing back the camera
     | 'fov'              // a large FOV change invalidates the old projection

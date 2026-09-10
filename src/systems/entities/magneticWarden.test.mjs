@@ -170,8 +170,14 @@ test('App attaches the encounter to the summoned boss and feeds it the player po
     for (const ev of ['boss:action', 'boss:charge', 'boss:beat-tick', 'boss:beat', 'boss:crystals', 'boss:crystal-lost', 'boss:shield-broken', 'boss:towers', 'bolt:repelled', 'player:dodge', 'player:dodged', 'player:surge', 'player:slam', 'player:shocked', 'view:changed']) {
         assert.ok(app.includes(`gameEvents.on('${ev}'`), `App handles ${ev}`);
     }
-    // The fight frames itself in third person and hands the view back; the held item hides behind the camera.
-    assert.match(app, /preFightViewRef\.current = viewRig\.mode;[\s\S]*?viewRig\.mode = 'third';/);
+    // EVERY boss fight opens in the free view and hands the previous one back —
+    // keyed off the event rather than a named boss, so a fight added later
+    // inherits it instead of needing a second place to remember.
+    assert.match(app, /gameEvents\.on\('boss:spawned', \(\) => \{[\s\S]*?preFightViewRef\.current = viewRig\.mode;[\s\S]*?viewRig\.mode = 'free';/);
+    assert.match(app, /if \(viewRig\.mode === 'free'\) return;/);
+    assert.match(app, /gameEvents\.on\('boss:defeated', restoreView\)/);
+    assert.doesNotMatch(app, /bossId !== 'magnetic_warden' \|\| /);
+    assert.match(app, /!cinematicMode && <HeldItem/);
     assert.match(app, /!cinematicMode && <HeldItem/);
     assert.match(app, /<BossCompass \/>/);
     // The old shield/parry/strip/Flux plumbing is gone from App.
@@ -208,9 +214,11 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     assert.match(input, /export const dodgePressAge/);
     assert.match(player, /if \(dodgePending && dodgePressAge\(\) > DODGE_BUFFER_MS\) consumeDodgePress\(\)/);
     assert.doesNotMatch(input, /dodgeTrigger|viewToggleTrigger/);
-    // F5 lives in App's global handler so it works with or without pointer lock
-    // (and so the browser never reloads the page instead of switching views).
-    assert.match(app, /e\.code === 'F5'[\s\S]*?viewRig\.mode = next/);
+    // F5/F6 live in App's global handler so they work with or without pointer
+    // lock (and so the browser never reloads the page instead of switching views).
+    assert.match(app, /e\.code === 'F5' \|\| e\.code === 'F6'[\s\S]*?viewRig\.mode = next/);
+    // F5 is the FREE view (the body keeps its own heading); F6 is the welded one.
+    assert.match(app, /const view: ViewMode = e\.code === 'F5' \? 'free' : 'third';/);
     assert.doesNotMatch(input, /'F5'/);
     // The kit resolves inside the fixed loop and owns the body during a roll or dash.
     assert.match(player, /if \(dodgePending && pressKit\(intent, height\)\)/);
@@ -278,9 +286,9 @@ test('the tripod suspends the free view without losing it, and still shows the b
     assert.match(input, /const omniSprint = \(\): boolean => freeBodyActive\(\);/);
     assert.doesNotMatch(player, /viewRig\.mode === 'free'/);
     assert.doesNotMatch(input, /viewRig\.mode === 'free'/);
-    // F6 is inert while the tripod is up; the mode is left alone so releasing the
-    // tripod returns the player to the view they came from.
-    assert.match(app, /if \(e\.code === 'F6' && detachedCamera\.stage !== 'off'\) return;/);
+    // The FREE view (F5) is inert while the tripod is up; the mode is left alone
+    // so releasing the tripod returns the player to the view they came from.
+    assert.match(app, /if \(e\.code === 'F5' && detachedCamera\.stage !== 'off'\) return;/);
     assert.match(app, /e\.code === 'F7'[\s\S]*?detachedCamera\.stage = nextDetachedStage\(detachedCamera\.stage\)/);
     // Sprint survives the tripod: only the framing stage, where the walk keys fly
     // the camera, refuses to bank one for the body.
@@ -505,7 +513,8 @@ test('player-facing text teaches the one rule, the crystal shields, the towers a
     assert.match(tutorial, /break every crystal of that form/);
     assert.match(tutorial, /flux window/);
     assert.match(tutorial, /Magnet Slam/);
-    assert.match(tutorial, /F5: Toggle first \/ third person/);
+    assert.match(tutorial, /F5: Free third person/);
+    assert.match(tutorial, /F6: Over-the-shoulder third person/);
     assert.match(tutorial, /C: Dodge roll/);
     assert.doesNotMatch(tutorial, /Flux Burst|tethered/);
     const tips = read('src/components/ui/LoadingScreen.tsx');
@@ -518,13 +527,13 @@ test('player-facing text teaches the one rule, the crystal shields, the towers a
     assert.match(modal, /tower crystals/);
     const readme = read('README.md');
     assert.match(readme, /Press `C` to dodge roll/);
-    assert.match(readme, /Press `F5`/);
+    assert.match(readme, /Press `F5` for free third person/);
     assert.doesNotMatch(readme, /Flux/);
     const changelog = read('CHANGELOG.md');
     assert.match(changelog, /## \[Unreleased\]/);
     assert.match(changelog, /three forms/i);
     assert.match(changelog, /Magnet Slam/);
-    assert.match(changelog, /Third person \(F5/);
+    assert.match(changelog, /`F5` is the free view/);
     assert.match(changelog, /defeat cinematic/);
 });
 

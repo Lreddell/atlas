@@ -27,7 +27,7 @@ import { resetMotionBlurHistory } from './systems/render/motionBlur';
 import { BossCompass } from './components/ui/BossCompass';
 import { motionStatus } from './systems/player/playerMotion';
 import {
-    viewRig, isThirdPerson, detachedCamera, nextDetachedStage, releaseDetachedCamera, type ViewMode,
+    viewRig, detachedCamera, nextDetachedStage, releaseDetachedCamera, type ViewMode,
 } from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
@@ -321,7 +321,7 @@ const App: React.FC = () => {
   // The player's current magnetic mode, readable from fixed-step entity ticks
   // (the polarity rule needs to know whether the player controls a polarity).
   const magneticModeRef = useRef<MagneticMode>('none');
-  // First / third person (F5) and the free third person (F6). The Warden fight
+  // First person, the free third person (F5) and the welded one (F6). A boss fight
   // switches to third person on its own when neither is already on, and hands the
   // previous view back when it ends; the held item hides behind the camera in
   // third person (the body model carries the pose instead).
@@ -1220,13 +1220,19 @@ const App: React.FC = () => {
           soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
       });
       const offShocked = gameEvents.on('player:shocked', () => soundManager.play('entity.player.shocked'));
-      // The view (F5), and the fight's own third-person framing.
+      // The view (F5 / F6), and the framing every boss fight opens in.
       const offView = gameEvents.on('view:changed', ({ mode }) => setViewMode(mode));
-      const offSpawnView = gameEvents.on('boss:spawned', ({ bossId }) => {
-          if (bossId !== 'magnetic_warden' || isThirdPerson(viewRig.mode)) return;
+      // The free view is the house style for boss fights: it keeps the body's own
+      // heading while the camera orbits, which is what lets you read a telegraph
+      // coming from behind you while still running somewhere else. Applied to
+      // EVERY boss rather than a named one, so a fight added later inherits it
+      // without a second place to remember. Whatever the player was in is put
+      // back when the fight ends.
+      const offSpawnView = gameEvents.on('boss:spawned', () => {
+          if (viewRig.mode === 'free') return;
           preFightViewRef.current = viewRig.mode;
-          viewRig.mode = 'third';
-          gameEvents.emit('view:changed', { mode: 'third' });
+          viewRig.mode = 'free';
+          gameEvents.emit('view:changed', { mode: 'free' });
       });
       const restoreView = () => {
           const previous = preFightViewRef.current;
@@ -1235,7 +1241,7 @@ const App: React.FC = () => {
           viewRig.mode = previous;
           gameEvents.emit('view:changed', { mode: previous });
       };
-      const offDefeatView = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') restoreView(); });
+      const offDefeatView = gameEvents.on('boss:defeated', restoreView);
       const offClearView = gameEvents.on('boss:cleared', restoreView);
       // Form changes (Aegis at 2/3, Storm at 1/3): an enrage cue. At the Storm
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
@@ -2091,14 +2097,17 @@ const App: React.FC = () => {
     if (e.code === 'F5' || e.code === 'F6') {
         e.preventDefault();
         if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
-            // F5 is the over-the-shoulder view (the body faces the camera); F6 is
-            // the free one (the body keeps its own facing while the camera orbits).
-            // F6 is inert while a tripod owns the camera: the free view is defined
+            // F5 is the free view (the body keeps its own facing while the camera
+            // orbits) — the primary third person, and what a boss fight puts you
+            // in. F6 is the welded over-the-shoulder one, where the body turns
+            // with the camera.
+            //
+            // F5 is inert while a tripod owns the camera: the free view is defined
             // against a camera that orbits the player, and F7 has none. The mode
             // the player came from is untouched, so putting the tripod away hands
             // the free view back.
-            if (e.code === 'F6' && detachedCamera.stage !== 'off') return;
-            const view: ViewMode = e.code === 'F6' ? 'free' : 'third';
+            if (e.code === 'F5' && detachedCamera.stage !== 'off') return;
+            const view: ViewMode = e.code === 'F5' ? 'free' : 'third';
             const next: ViewMode = viewRig.mode === view ? 'first' : view;
             viewRig.mode = next;
             gameEvents.emit('view:changed', { mode: next });

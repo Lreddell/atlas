@@ -34,16 +34,19 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   rolled through. Presses are buffered across physics substeps, so a roll never
   silently vanishes because the press landed between ticks. Its cooldown shows
   as a ring on the crosshair, which flashes red when a press cannot be answered.
-- Third person (F5, anywhere in a world): an over-the-shoulder camera on a
-  voxel-aware spring arm, with a fully rebuilt player body: jointed arms and
-  legs with real elbows and knees, a chest that twists against the hips, damped
+- Third person, anywhere in a world, in two flavours on a voxel-aware spring arm.
+  `F5` is the free view: the body keeps its own heading and runs whichever way
+  you point while the camera orbits, so you can watch a telegraph coming from
+  behind while still running clear of it, and every direction sprints. `F6` welds
+  the body to the camera, over the shoulder. Both come with a fully rebuilt
+  player body: jointed arms and legs with real elbows and knees, a chest that
+  twists against the hips, damped
   blending so poses never snap, and clips for idle, walk, sprint, sneak, rise,
   fall, landing squash, the dodge roll (a true somersault about the axis across
   the roll), the magnetic dash, the repel leap, the wall climb and the attack
   swing. Every aim ray still starts from the eye toward the crosshair, so
-  blocks, melee and the crossbow behave identically in both views. The Warden
-  fight switches to third person on its own and hands the previous view back
-  when it ends.
+  blocks, melee and the crossbow behave identically in both views. Every boss
+  fight opens in the free view and hands the previous view back when it ends.
 - A defeat cinematic for the Warden: the camera cuts in low as it buckles, orbits
   out while its core cracks apart, and rises over the arena through the white
   blow-out as the towers go dark. Space skips it.

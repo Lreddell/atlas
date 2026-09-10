@@ -51,7 +51,7 @@ const LOADING_TIPS = [
     "Roll (C) as you land and the fall costs nothing. You can roll in mid-air too, which is how you get back to the platform after a launch.",
     "Dash into an exposed, opposed Warden to arm a Magnet Slam: the next strike lands harder and staggers it.",
     "Launch off a tower from high up and aim for its landing pool: water breaks the fall.",
-    "Press F5 for third person; the Warden fight switches to it on its own so you can see the towers and the lunges.",
+    "Press F5 for free third person, where the body runs its own way while the camera orbits; every boss fight starts in it. F6 is the over-the-shoulder view.",
     "Polarity Boots use R to flip polarity. Matching polarity repels and opposite polarity attracts.",
     "Upgraded Polarity Boots use N to switch magnetic power on or off.",
     "Iron armor is ferromagnetic. Without active magnetic protection, nearby magnets can pull you around.",

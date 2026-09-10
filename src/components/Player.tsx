@@ -186,7 +186,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
   const renderPos = useRef(position.clone());
   const currentEyeHeight = useRef(EYE_HEIGHT_STANDING);
   const cameraSpring = useRef({ distance: 0, offset: 0 });
-  // Free third person (F6): the body's own facing, which the camera no longer drags around.
+  // Free third person (F5): the body's own facing, which the camera no longer drags around.
   const bodyYaw = useRef(0);
   // The detached camera (F7): the player's look while the render camera is parked
   // somewhere else, plus the edge detection that hands the look back on release.
@@ -766,7 +766,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     if (gameMode === 'spectator') isFlying.current = true;
     if (gameMode === 'survival' && isFlying.current) isFlying.current = false;
 
-    // (F5 toggles the view through App's global key handler, so it works whether
+    // (F5/F6 toggle the view through App's global key handler, so they work whether
     // or not the pointer is locked; the rig below just applies viewRig.mode.)
 
     // The melee controller spent an armed Magnet Slam.

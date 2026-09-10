@@ -2,7 +2,7 @@
 //
 // The welded views (first person, and the over-the-shoulder third person) keep
 // the body facing the camera, so only W is running: A/D strafe and S backpedals,
-// and both are deliberately slower than a sprint. The free third person (F6)
+// and both are deliberately slower than a sprint. The free third person (F5)
 // unbolts the body from the camera — WASD picks one of eight headings around the
 // camera and the body turns onto that heading and runs *forwards* along it — so
 // there is no strafe or backpedal to hold back, and every direction sprints.

@@ -195,7 +195,7 @@ export function lookBasis(yaw: number, pitch: number): { forward: RigVec3; right
     return { forward, right, up };
 }
 
-// --- Free third person (F6) -------------------------------------------------
+// --- Free third person (F5) -------------------------------------------------
 // The 'free' view unbolts the body from the camera. The camera still orbits the
 // eye on the same spring arm, but a full 360 deg of it is usable because the
 // body no longer spins to match: WASD picks one of eight headings around the
@@ -350,7 +350,7 @@ export const releaseDetachedCamera = (): void => {
 };
 
 /**
- * Whether the free body rule (F6) is actually in effect.
+ * Whether the free body rule (F5) is actually in effect.
  *
  * The free view is defined against a camera that orbits the player: the body
  * turns onto its own heading and *leaves the camera pointed where it was*. A
