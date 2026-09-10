@@ -11,10 +11,16 @@ const code = ts.transpileModule(readFileSync(new URL('./MagneticWardenEncounter.
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 function harness() {
-    const clears = [], sounds = [], damage = [];
+    const clears = [], sounds = [], damage = [], projectiles = [];
     const modules = {
+        '../world/magneticArena': { ARENA_CENTRAL_RADIUS: 24, ARENA_PILLAR_COUNT: 4, ARENA_PILLAR_HALF: 3,
+            arenaPillarCenter: (x, z, i) => ({ x: x + Math.round(Math.cos(Math.PI / 4 + i * Math.PI / 2) * 35),
+                z: z + Math.round(Math.sin(Math.PI / 4 + i * Math.PI / 2) * 35) }) },
         './magneticWardenCore': core, './wardenCombatGeometry': geometry,
-        '../entities/EntityManager': { entityManager: { registerBrain() {}, registerDamageHandler() {}, clearHazardsFrom: id => clears.push(id), tryDamagePlayer: amount => { damage.push(amount); return true; }, impulsePlayer() {} } },
+        '../entities/EntityManager': { entityManager: { registerBrain() {}, registerDamageHandler() {}, clearHazardsFrom: id => clears.push(id), tryDamagePlayer: amount => { damage.push(amount); return true; }, impulsePlayer() {},
+            spawnProjectile: p => projectiles.push(p), haltEntity: e => { e.vel.x = 0; e.vel.z = 0; },
+            applyGravity() {}, leashEntity() {}, moveEntity: (e, dt) => e.pos.addScaledVector(e.vel, dt),
+        } },
         '../events/GameEvents': { gameEvents: { on() {}, emit() {} } },
         '../player/playerConstants': { PLAYER_HEIGHT: 1.8 },
         '../player/cameraShake': { addTrauma() {} },
@@ -23,7 +29,7 @@ function harness() {
     };
     const exports = {};
     new Function('require', 'exports', code)(name => modules[name] ?? {}, exports);
-    return { encounter: exports.magneticWardenEncounter, clears, sounds, damage };
+    return { encounter: exports.magneticWardenEncounter, clears, sounds, damage, projectiles };
 }
 
 test('Aegis and Storm track early, then preserve the visible landing point through the entire drop', () => {
@@ -108,4 +114,39 @@ test('first-phase physical cleaves hit inside the cone and cannot be answered by
     assert.deepEqual(damage, [8, 8]);
     encounter.resolveLash(entity, { x: 0, y: 0, z: -3 }, true, 8, 4.5, Math.PI / 3);
     assert.deepEqual(damage, [8, 8]);
+});
+
+ test('grounded forms leave the pools and hold dry firing positions while pressuring towers', () => {
+    for (const form of [1, 3]) {
+        const { encounter } = harness();
+        encounter.arena = { centerX: 0, centerZ: 0, baseY: 0, crystals: [] };
+        encounter.state = core.createWardenState({ form, playerTower: 0, action: 'volley_windup' });
+        const entity = { pos: new THREE.Vector3(14.5, 1, 14.5), vel: new THREE.Vector3(), grounded: true, knockbackSeconds: 0 };
+        for (let i = 0; i < 160; i++) assert.equal(encounter.positionForRanged(entity, 0.05, { x: 25, y: 20, z: 25 }), true);
+        assert.ok(Math.hypot(entity.pos.x - 0.5, entity.pos.z - 0.5) < 14.2);
+        assert.ok(entity.pos.distanceTo(new THREE.Vector3(14.5, 1, 14.5)) > 5);
+        const recovery = encounter.edgeBelowCrystal(entity, 0);
+        assert.ok(Math.hypot(recovery.x - 0.5, recovery.z - 0.5) <= 14.01);
+        encounter.state.playerTower = null;
+        assert.equal(encounter.positionForRanged(entity, 0.05, { x: 8, y: 1, z: 8 }), false);
+    }
+});
+
+test('unlit and broken towers still register as occupied', () => {
+    const { encounter } = harness();
+    encounter.arena = { centerX: 0, centerZ: 0, baseY: 0, crystals: [] };
+    encounter.state = core.createWardenState({ crystals: [false, false, false, false], ignited: [] });
+    for (const [i, x, z] of [[0, 25, 25], [1, -25, 25], [2, -25, -25], [3, 25, -25]]) {
+        assert.equal(encounter.towerNearPlayer({ x, y: 25, z }), i);
+    }
+    assert.equal(encounter.towerNearPlayer({ x: 0, y: 1, z: 0 }), null);
+});
+
+test('aimed volleys live long enough to cross the whole arena', () => {
+    const { encounter, projectiles } = harness();
+    encounter.state = core.createWardenState();
+    encounter.fireVolley({ id: 1, pos: new THREE.Vector3(-14, 1, 0), height: 2.8 },
+        { x: 72, y: 14, z: 24 }, core.WARDEN_TIMING.bolts.climber, 1, true);
+    assert.equal(projectiles.length, 3);
+    assert.ok(projectiles.every(p => p.ttl * core.WARDEN_TIMING.bolts.climber.speed > 90));
 });

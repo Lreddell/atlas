@@ -1252,7 +1252,7 @@ const App: React.FC = () => {
       // Reset the frenzy music whenever a fight begins or ends.
       const offSpawnFrenzy = gameEvents.on('boss:spawned', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
       const offDefeatFrenzy = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
-      const offClearFrenzy = gameEvents.on('boss:cleared', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
+      const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
       // Breaking a tower crystal: the encounter drops the shield layer it powers
       // (it listens itself); here only the shatter cue.
       const offCrystal = gameEvents.on('crystal:broken', () => {

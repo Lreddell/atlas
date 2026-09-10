@@ -60,3 +60,22 @@ test('Aegis uses the tracking slam timings and faster swaps without changing Sto
     assert.equal(WARDEN_TIMING.form3.beatInterval, 3.2);
     assert.equal(WARDEN_TIMING.form3.slam.interval, 6);
 });
+
+ test('every form pressures nearby climbers, including spent and unlit towers, with volleys', () => {
+    for (const form of [1, 2, 3]) {
+        for (const live of [false, true]) {
+            let state = createWardenState({ form, action: form === 1 ? 'idle' : form === 2 ? 'hover' : 'spiral',
+                actionDuration: form === 1 ? 0.5 : 0, actionTime: 0.5, plungeTimer: 0,
+                crystals: [live, false, false, false], ignited: live ? [0] : [], shieldLayers: live ? 1 : 0 });
+            const events = [];
+            for (let i = 0; i < 600; i++) {
+                const result = advanceWarden(state, { type: 'tick', dt: 0.05, playerDistance: 3, playerTower: 0 });
+                state = result.state; events.push(...result.events);
+            }
+            assert.ok(events.filter(e => e.type === 'volley' && e.climber).length >= 3, `form ${form}, live ${live}`);
+            assert.ok(!events.some(e => ['lash', 'charge', 'plunge', 'spiral-bolt'].includes(e.type)));
+            assert.equal(state.contestTower, live ? 0 : null);
+            assert.equal(state.playerTower, 0);
+        }
+    }
+});

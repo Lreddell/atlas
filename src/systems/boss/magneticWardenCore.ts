@@ -210,6 +210,8 @@ export interface WardenState {
     shieldLayers: number;
     /** The ignited tower the player is climbing or crossing to, if any. */
     contestTower: number | null;
+    /** Any tower occupied by the player, including spent or unlit towers. */
+    playerTower: number | null;
     beatTimer: number;
     beatIndex: number;
     beatTicksReported: number;
@@ -229,7 +231,7 @@ export type WardenInput =
         type: 'tick';
         dt: number;
         playerDistance: number;
-        /** An ignited, standing tower the player is climbing or approaching, or null. */
+        /** Any tower the player is climbing or approaching, or null. */
         playerTower?: number | null;
     }
     | { type: 'damage'; amount: number; playerPolarity: number; slam?: boolean }
@@ -413,6 +415,7 @@ export function createWardenState(overrides: Partial<WardenState> = {}): WardenS
         ignited: [],
         shieldLayers: 0,
         contestTower: null,
+        playerTower: null,
         beatTimer: WARDEN_TIMING.form3.beatInterval,
         beatIndex: 0,
         beatTicksReported: 0,
@@ -552,13 +555,18 @@ export function selectWardenAttack(state: WardenState, playerDistance: number): 
     return chosen;
 }
 
+/** Tower height matters even when the boss is horizontally close to the wall. */
+export function usesRangedPressure(state: WardenState, playerDistance: number): boolean {
+    return state.playerTower !== null || isPlayerFar(playerDistance);
+}
+
 function beginForm1Attack(state: WardenState, events: WardenEvent[], playerDistance: number): WardenState {
     if (state.swapTimer <= 0) {
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form1.swapInterval }, 'swap_windup', events);
     }
     // A player away on the towers can only be reached by volleys; while the
     // shield stands the Warden keeps the pressure honest and slow.
-    if (isPlayerFar(playerDistance)) {
+    if (usesRangedPressure(state, playerDistance)) {
         if (state.volleyTimer > 0) return state;
         return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form1.climberVolleyInterval, lastAttack: 'volley' }, 'volley_windup', events);
     }
@@ -578,7 +586,7 @@ function finishForm1Action(state: WardenState, events: WardenEvent[], playerDist
         case 'idle': return beginForm1Attack(state, events, playerDistance);
         case 'volley_windup': {
             const next = enterAction(state, 'volley_active', events);
-            emitVolley(next, events, isPlayerFar(playerDistance));
+            emitVolley(next, events, usesRangedPressure(state, playerDistance));
             return next;
         }
         case 'volley_active': return enterAction(state, 'volley_recovery', events);
@@ -631,7 +639,7 @@ function finishForm2Action(state: WardenState, events: WardenEvent[], playerDist
         case 'shatter': return enterAction({ ...state, hoverDwell: dwell }, 'hover', events);
         case 'volley_windup': {
             const next = enterAction(state, 'volley_active', events);
-            emitVolley(next, events, state.contestTower !== null || isPlayerFar(playerDistance));
+            emitVolley(next, events, state.contestTower !== null || usesRangedPressure(state, playerDistance));
             return next;
         }
         case 'volley_active': return enterAction(state, 'volley_recovery', events);
@@ -665,7 +673,7 @@ function finishForm2Action(state: WardenState, events: WardenEvent[], playerDist
 
 function tickHover(state: WardenState, events: WardenEvent[], playerDistance: number): WardenState {
     if (state.hoverDwell > 0) return state;
-    const far = state.contestTower !== null || isPlayerFar(playerDistance);
+    const far = state.contestTower !== null || usesRangedPressure(state, playerDistance);
     if (state.swapTimer <= 0) {
         return enterAction({ ...state, swapTimer: WARDEN_TIMING.form2.swapInterval }, 'swap_windup', events);
     }
@@ -736,13 +744,13 @@ function tickMetronome(state: WardenState, events: WardenEvent[], dt: number): W
 function tickSpiral(state: WardenState, events: WardenEvent[], dt: number, playerDistance: number): WardenState {
     if (state.action !== 'spiral') return state;
     if (state.beatIndex > 0 && state.doubleTimer <= 0 && state.beatTimer > 1.1
-        && state.plungeTimer <= 0 && state.contestTower === null && !isPlayerFar(playerDistance)) {
+        && state.plungeTimer <= 0 && state.contestTower === null && !usesRangedPressure(state, playerDistance)) {
         events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
         return enterAction(state, 'plunge_windup', events, WARDEN_TIMING.form3.slam.windup);
     }
     // A far player (on the last tower) is contested with honest climber volleys
     // instead of a spiral that can never reach them.
-    if (isPlayerFar(playerDistance)) {
+    if (usesRangedPressure(state, playerDistance)) {
         if (state.volleyTimer > 0) return state;
         return enterAction({ ...state, volleyTimer: WARDEN_TIMING.form1.climberVolleyInterval }, 'volley_windup', events);
     }
@@ -778,14 +786,14 @@ function finishForm3Action(state: WardenState, events: WardenEvent[], playerDist
             // Reserve the gap before advancing the next countdown tick. At
             // overload the shorter beat otherwise leaves no slot for a slam.
             if (state.doubleTimer <= 0 && state.beatTicksReported === 0 && state.plungeTimer <= 0
-                && state.contestTower === null && !isPlayerFar(playerDistance)) {
+                && state.contestTower === null && !usesRangedPressure(state, playerDistance)) {
                 events.push({ type: 'plunge', phase: 'mark', impactRadius: WARDEN_TIMING.plunge.impactRadius, impactDamage: WARDEN_TIMING.plunge.impactDamage });
                 return enterAction(state, 'plunge_windup', events, WARDEN_TIMING.form3.slam.windup);
             }
             return enterAction({ ...state, spiralTimer: 0.2 }, 'spiral', events);
         case 'volley_windup': {
             const next = enterAction(state, 'volley_active', events);
-            emitVolley(next, events, isPlayerFar(playerDistance));
+            emitVolley(next, events, usesRangedPressure(state, playerDistance));
             return next;
         }
         case 'volley_active': return enterAction(state, 'volley_recovery', events);
@@ -918,6 +926,7 @@ export function advanceWarden(state: WardenState, input: WardenInput): WardenTra
         hoverDwell: Math.max(0, state.hoverDwell - dt),
         actionTime: state.actionTime + dt,
         contestTower,
+        playerTower,
     };
 
     if (next.actionDuration > 0 && next.actionTime >= next.actionDuration && next.action !== 'death') {

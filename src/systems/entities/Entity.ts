@@ -238,9 +238,8 @@ export const ENTITY_KINDS: Record<string, EntityKind> = {
         width: 1.8,
         height: 2.8,
         speed: 2.6,
-        // Large enough to stay engaged with a player on the arena pillars across
-        // the lava moat (forget range is 1.5×, covering the whole arena).
-        aggroRange: 40,
+        // The encounter brain holds aggro across the entire arena, without sight checks.
+        aggroRange: 96,
         // Its body never hurts by touch: every hit comes from a telegraphed attack.
         contactDamage: 0,
         attackCooldown: 1.0,

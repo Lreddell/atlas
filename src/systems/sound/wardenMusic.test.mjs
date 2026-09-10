@@ -53,11 +53,21 @@ test('lost aggro and unrelated boss events cannot end ongoing Warden music', () 
     music.currentContext = 'BOSS_MAGNETIC'; music.isPlaying = true;
     emit('combat:stop');
     emit('boss:defeated', { bossId: 'bell_titan' });
-    emit('boss:cleared', { bossId: 'bell_titan' });
     music.update(false, 'survival', 'plains', false, true, 1000, true);
     assert.equal(music.pendingContext, 'BOSS_MAGNETIC');
     assert.equal(music.currentContext, 'BOSS_MAGNETIC');
     emit('boss:defeated', { bossId: 'magnetic_warden' });
     music.update(false, 'survival', 'plains', false, true, 1000, true);
+    assert.equal(music.currentContext, 'BLOODMOON');
+});
+
+ test('global boss cleanup ends Warden music when leaving the arena', () => {
+    const { music, emit } = harness();
+    emit('boss:spawned', { bossId: 'magnetic_warden' });
+    music.currentContext = 'BOSS_MAGNETIC'; music.isPlaying = true;
+    emit('combat:stop');
+    emit('boss:cleared');
+    music.update(false, 'survival', 'plains', false, true, 1000, true);
+    assert.equal(music.bossAlive, false);
     assert.equal(music.currentContext, 'BLOODMOON');
 });

@@ -50,6 +50,7 @@ import {
     isWardenPunishable,
     isWardenShielded,
     isWardenTransitioning,
+    usesRangedPressure,
     wardenActionPhase,
     wardenLiveTowers,
     wardenShardOffsets,
@@ -143,8 +144,10 @@ const LASH_TRACK_RATE = 2.2;
 const CHARGE_TRACK_RATE = 3.0;
 /** Fraction of the Charge windup during which it still tracks the player. */
 const CHARGE_TRACK_FRACTION = 0.55;
-/** A reeling Warden staggers toward the pool facing the tower that felled it. */
+/** A reeling Warden staggers onto dry ground facing the tower that felled it. */
 const REEL_STUMBLE_SPEED = 5;
+/** Pools begin near radius 17; leave clearance for the Warden's whole body. */
+const DRY_FIRING_RADIUS = 14;
 /** A retired tower keeps its climb faces until the climber is this far from it. */
 const TOWER_RETIRE_CLEARANCE = ARENA_PILLAR_HALF + 6;
 /** How far from a tower a player counts as climbing / crossing to it. */
@@ -326,6 +329,7 @@ class MagneticWardenEncounter {
             entity.grounded = false;
             return;
         }
+        if (player && this.positionForRanged(entity, dt, player)) return;
         if (s.form === 1 && s.action !== 'shatter') {
             this.moveGrounded(entity, dt, player);
             return;
@@ -356,6 +360,31 @@ class MagneticWardenEncounter {
         this.moveStorm(entity, dt, player);
     }
 
+    /** Hold the dry platform rather than pursuing a climber into a landing pool. */
+    private positionForRanged(entity: Entity, dt: number, player: WardenPoint): boolean {
+        const s = this.state;
+        if (!this.arena || s.form === 2 || entity.knockbackSeconds > 0
+            || !usesRangedPressure(s, Math.hypot(player.x - entity.pos.x, player.z - entity.pos.z))
+            || !(s.action === 'idle' || s.action === 'spiral' || s.action.startsWith('volley_') || s.action.startsWith('swap_'))) return false;
+        const centre = this.centre(entity);
+        const px = player.x - centre.x, pz = player.z - centre.z;
+        const length = Math.hypot(px, pz) || 1;
+        const dx = centre.x + px / length * DRY_FIRING_RADIUS - entity.pos.x;
+        const dz = centre.z + pz / length * DRY_FIRING_RADIUS - entity.pos.z;
+        const distance = Math.hypot(dx, dz);
+        const speed = Math.min(s.form === 3 ? WARDEN_TIMING.form3.approachSpeed : 2.6, distance / Math.max(dt, 0.001));
+        if (distance > 0.15) {
+            entity.vel.x = dx / distance * speed;
+            entity.vel.z = dz / distance * speed;
+        } else entityManager.haltEntity(entity, dt);
+        entity.yaw = Math.atan2(player.x - entity.pos.x, player.z - entity.pos.z);
+        this.facingYaw = entity.yaw;
+        entityManager.applyGravity(entity, dt);
+        entityManager.moveEntity(entity, dt, entity.grounded);
+        entityManager.leashEntity(entity);
+        return true;
+    }
+
     private moveGrounded(entity: Entity, dt: number, player: WardenPoint | null): void {
         const s = this.state;
         const knockedBack = entity.knockbackSeconds > 0;
@@ -376,7 +405,7 @@ class MagneticWardenEncounter {
                 if (!entityManager.steerEntity(entity, player, dt)) entityManager.haltEntity(entity, dt);
                 entity.yaw = want;
             } else if (s.action === 'shield_break' && this.crashTarget) {
-                // Reeling: it staggers toward the pool below the felled tower, into
+                // Reeling: it staggers toward the felled tower on dry ground, into
                 // the climber's reach.
                 this.stumbleToward(entity, this.crashTarget, dt);
             } else {
@@ -421,7 +450,7 @@ class MagneticWardenEncounter {
         // Shielded it hovers out of reach (higher still when it contests a
         // climb); with its crystals gone it limps low enough to strike.
         const shielded = isWardenShielded(s) || (s.action === 'recover' && isWardenShielded(s));
-        const contest = s.contestTower !== null && shielded ? this.contestPoint(entity, s.contestTower) : null;
+        const contest = s.playerTower !== null ? this.contestPoint(entity, s.playerTower) : null;
         const hoverY = floorY + (contest
             ? WARDEN_TIMING.form2.contestHeight
             : shielded ? WARDEN_TIMING.form2.hoverHeight : WARDEN_TIMING.form2.limpHeight);
@@ -470,7 +499,7 @@ class MagneticWardenEncounter {
             }
             case 'crash': {
                 // Yanked out of the air by its broken shield: down, and across to
-                // the pool below the tower that felled it, arriving as the crash
+                // dry ground facing the tower that felled it, arriving as the crash
                 // ends so the climber can drop straight onto it.
                 easeY(floorY, CRASH_DROP_SPEED);
                 if (this.crashTarget) {
@@ -588,7 +617,7 @@ class MagneticWardenEncounter {
                         const dx = player.x - entity.pos.x, dz = player.z - entity.pos.z;
                         const distance = Math.hypot(dx, dz) || 1;
                         this.volleySweep = this.state.volleyPattern === 'sweep'
-                            && (this.state.contestTower !== null || distance > WARDEN_TIMING.farDistance);
+                            && usesRangedPressure(this.state, distance);
                         if (this.volleySweep) {
                             const side = this.state.volleyIndex % 4 < 2 ? 1 : -1;
                             this.volleyTarget.x += dz / distance * 2.6 * side;
@@ -821,7 +850,7 @@ class MagneticWardenEncounter {
                 vx: (dx * ca - dz * sa) / d * spec.speed,
                 vy: (dy / d + lead * t) * spec.speed,
                 vz: (dx * sa + dz * ca) / d * spec.speed,
-                ttl: spec.ttl,
+                ttl: Math.max(spec.ttl, d / spec.speed + 1),
                 damage: spec.damage,
                 polarity,
                 sourceId: entity.id,
@@ -1157,14 +1186,14 @@ class MagneticWardenEncounter {
         return { x: c.x + 0.5, z: c.z + 0.5 };
     }
 
-    /** The platform-edge point (inside the leash) on the line from the centre to a tower: its landing pool. */
+    /** Dry recovery point facing the broken tower, clear of its landing pool. */
     private edgeBelowCrystal(entity: Entity, crystal: number): { x: number; z: number } | null {
         const tower = this.towerCentre(crystal);
         if (!tower) return null;
         const centre = this.centre(entity);
         const dx = tower.x - centre.x, dz = tower.z - centre.z;
         const d = Math.hypot(dx, dz) || 1;
-        const reach = WARDEN_TIMING.plunge.targetClamp;
+        const reach = DRY_FIRING_RADIUS;
         return { x: centre.x + (dx / d) * reach, z: centre.z + (dz / d) * reach };
     }
 
@@ -1178,14 +1207,14 @@ class MagneticWardenEncounter {
         return { x: centre.x + (dx / d) * WARDEN_TIMING.form2.contestRadius, z: centre.z + (dz / d) * WARDEN_TIMING.form2.contestRadius };
     }
 
-    /** The ignited, standing tower the player is on or crossing to, if any. */
+    /** Any tower the player occupies; a spent crystal must not create a hiding spot. */
     private towerNearPlayer(player: WardenPoint): number | null {
         if (!this.arena) return null;
         const centre = { x: this.arena.centerX + 0.5, z: this.arena.centerZ + 0.5 };
         const fromCentre = Math.hypot(player.x - centre.x, player.z - centre.z);
         let best: number | null = null;
         let bestDistance = Infinity;
-        for (const index of wardenLiveTowers(this.state)) {
+        for (let index = 0; index < ARENA_PILLAR_COUNT; index++) {
             const t = this.towerCentre(index);
             if (!t) continue;
             const distance = Math.hypot(player.x - t.x, player.z - t.z);

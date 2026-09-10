@@ -176,7 +176,7 @@ class MusicController {
             }
         });
         gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = false; });
-        gameEvents.on('boss:cleared', ({ bossId }) => { if (bossId === MAGNETIC_WARDEN_BOSS_ID) this.bossAlive = false; });
+        gameEvents.on('boss:cleared', () => { this.bossAlive = false; });
         gameEvents.on('combat:start', () => { this.inCombat = true; });
         gameEvents.on('combat:stop', () => { this.inCombat = false; });
 
