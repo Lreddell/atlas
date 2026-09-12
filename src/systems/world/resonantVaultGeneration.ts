@@ -1,3 +1,4 @@
+import type { VoxelBuffer } from '../../engine/world/voxel';
 import '../../data/resonantDefinitions';
 import { BLOCKS } from '../../data/blocks';
 import { BlockType, type BlockDef } from '../../types';
@@ -30,7 +31,7 @@ import { getVaultEscapeRoutes, type VaultEscapeRouteDescriptor } from './resonan
 import { buildVaultHazards, getHazardFloorCells, type VaultHazardDescriptor } from './resonantVaultHazards';
 
 export interface GeneratedChunkData {
-    blocks: Uint8Array;
+    blocks: VoxelBuffer;
     light: Uint8Array;
     meta: Uint8Array;
 }

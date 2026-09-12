@@ -78,9 +78,11 @@ export function encodeChunkBody(
     light: Uint8Array,
     meta: Uint8Array,
     timestampMs: number,
+    extras: { encoding?: 'palette-v1' } = {},
 ): Uint8Array {
     const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
-    out[0] = BODY_SCHEMA_VERSION;
+    if (!(blocks instanceof Uint8Array)) throw new AcrFormatError('ACR requires encoded byte transport; use encodeStoredChunk first');
+    out[0] = extras.encoding === 'palette-v1' ? 2 : BODY_SCHEMA_VERSION;
     putU64(out, 1, timestampMs);
     putU32(out, 9, blocks.length);
     putU32(out, 13, light.length);
@@ -103,7 +105,7 @@ export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
+    if (schema !== BODY_SCHEMA_VERSION && schema !== 2) {
         throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
@@ -118,7 +120,7 @@ export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
-    return { blocks, light, meta, timestamp };
+    return { blocks, light, meta, timestamp, ...(schema === 2 ? { encoding: 'palette-v1' as const } : {}) };
 }
 
 // --- RegionFile -----------------------------------------------------------
@@ -144,7 +146,7 @@ export class RegionFile {
     /** Initialize (new file) or read + validate (existing) the header and tables. */
     async open(): Promise<void> {
         const size = await this.file.size();
-        if (size < DATA_START_OFFSET) {
+        if (size === 0) {
             await this.initEmpty();
         } else {
             await this.readHeaderAndTables(size);
@@ -245,8 +247,8 @@ export class RegionFile {
     }
 
     /** Encode a chunk body into its slot payload (length + compression + bytes). */
-    private async encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Promise<Uint8Array> {
-        const body = encodeChunkBody(blocks, light, meta, timestampMs);
+    private async encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number, extras: { encoding?: 'palette-v1' }): Promise<Uint8Array> {
+        const body = encodeChunkBody(blocks, light, meta, timestampMs, extras);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
@@ -297,9 +299,9 @@ export class RegionFile {
      * Crash-safe: a relocated chunk's old sectors stay valid until commit.
      */
     private async writePayloadSectors(
-        slot: number, blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number,
+        slot: number, blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number, extras: { encoding?: 'palette-v1' },
     ): Promise<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> {
-        const payload = await this.encodePayload(blocks, light, meta, timestampMs);
+        const payload = await this.encodePayload(blocks, light, meta, timestampMs, extras);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
@@ -331,7 +333,7 @@ export class RegionFile {
     }
 
     /** Write a single chunk (payload sectors flushed before the header commit). */
-    async writeChunk(slot: number, data: { blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }): Promise<void> {
+    async writeChunk(slot: number, data: { blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number; encoding?: 'palette-v1' }): Promise<void> {
         await this.writeChunkBatch([{ slot, ...data }]);
     }
 
@@ -340,18 +342,18 @@ export class RegionFile {
      * entries (flush), then free relocated old runs. The header flush is the
      * single commit point for the whole batch.
      */
-    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>): Promise<void> {
+    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number; encoding?: 'palette-v1' }>): Promise<void> {
         this.ensureOpen();
         if (entries.length === 0) return;
 
         // De-dupe slots (last write wins) so a batch never double-allocates a slot.
-        const bySlot = new Map<number, { slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>();
+        const bySlot = new Map<number, { slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number; encoding?: 'palette-v1' }>();
         for (const e of entries) bySlot.set(e.slot, e);
 
         const placed: Array<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> = [];
         for (const e of bySlot.values()) {
             const ts = e.timestamp ?? Date.now();
-            placed.push(await this.writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts));
+            placed.push(await this.writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts, e));
         }
         await this.file.flush(); // (1) payloads durable
 

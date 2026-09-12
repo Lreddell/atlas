@@ -46,9 +46,10 @@ function getU64(buf, off) {
     return getU32(buf, off) * 0x100000000 + getU32(buf, off + 4);
 }
 
-function encodeChunkBody(blocks, light, meta, timestampMs) {
+function encodeChunkBody(blocks, light, meta, timestampMs, extras = {}) {
     const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
-    out[0] = BODY_SCHEMA_VERSION;
+    if (!(blocks instanceof Uint8Array)) throw new AcrFormatError('ACR requires encoded byte transport; use encodeStoredChunk first');
+    out[0] = extras.encoding === 'palette-v1' ? 2 : BODY_SCHEMA_VERSION;
     putU64(out, 1, timestampMs);
     putU32(out, 9, blocks.length);
     putU32(out, 13, light.length);
@@ -67,7 +68,7 @@ function decodeChunkBody(body) {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
+    if (schema !== BODY_SCHEMA_VERSION && schema !== 2) {
         throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
     }
     const timestamp = getU64(body, 1);
@@ -82,7 +83,7 @@ function decodeChunkBody(body) {
     const blocks = body.slice(p, p + blocksLen); p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
-    return { blocks, light, meta, timestamp };
+    return { blocks, light, meta, timestamp, ...(schema === 2 ? { encoding: 'palette-v1' } : {}) };
 }
 
 class AcrFormatError extends Error {}
@@ -104,7 +105,7 @@ class RegionFile {
 
     async open() {
         const size = await this.file.size();
-        if (size < DATA_START_OFFSET) await this._initEmpty();
+        if (size === 0) await this._initEmpty();
         else await this._readHeader(size);
         this.opened = true;
     }
@@ -181,8 +182,8 @@ class RegionFile {
         return decodeChunkBody(body);
     }
 
-    async _encodePayload(blocks, light, meta, timestampMs) {
-        const body = encodeChunkBody(blocks, light, meta, timestampMs);
+    async _encodePayload(blocks, light, meta, timestampMs, extras = {}) {
+        const body = encodeChunkBody(blocks, light, meta, timestampMs, extras);
         let compType = COMPRESSION_RAW;
         let payload = body;
         if (this.compressor) {
@@ -219,8 +220,8 @@ class RegionFile {
         for (let s = offset; s < offset + count; s++) this.free[s] = true;
     }
 
-    async _writePayloadSectors(slot, blocks, light, meta, timestampMs) {
-        const payload = await this._encodePayload(blocks, light, meta, timestampMs);
+    async _writePayloadSectors(slot, blocks, light, meta, timestampMs, extras = {}) {
+        const payload = await this._encodePayload(blocks, light, meta, timestampMs, extras);
         const need = Math.max(1, sectorsFor(payload.length));
         const oldOffset = this.offsets[slot];
         const oldCount = this.counts[slot];
@@ -249,7 +250,7 @@ class RegionFile {
         const placed = [];
         for (const e of bySlot.values()) {
             const ts = (e.timestamp == null) ? Date.now() : e.timestamp;
-            placed.push(await this._writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts));
+            placed.push(await this._writePayloadSectors(e.slot, e.blocks, e.light, e.meta, ts, e));
         }
         await this.file.flush(); // payloads durable
         for (const p of placed) {

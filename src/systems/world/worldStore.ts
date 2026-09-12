@@ -1,13 +1,14 @@
+import type { VoxelBuffer } from '../../engine/world/voxel';
 
 import { WorldState, ChunkUpdateCallback } from './worldTypes';
 import { getChunkKey } from './worldCoords';
 import { CHUNK_SIZE, WORLD_HEIGHT } from '../../constants';
 
-export function getChunkData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
+export function getChunkData(state: WorldState, cx: number, cz: number): VoxelBuffer | undefined {
     return state.chunks.get(getChunkKey(cx, cz));
 }
 
-export function setChunkData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
+export function setChunkData(state: WorldState, cx: number, cz: number, data: VoxelBuffer) {
     state.chunks.set(getChunkKey(cx, cz), data);
 }
 

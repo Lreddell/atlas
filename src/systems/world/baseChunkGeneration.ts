@@ -326,7 +326,7 @@ const genLightQueueScratch = new Int32Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIG
 const genHeightmapScratch = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
 
 function generateChunkInner(cx: number, cz: number) {
-    const blocks = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
+    const blocks = new Uint16Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
     const light = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
     const meta = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
 

@@ -1,3 +1,4 @@
+import type { VoxelBuffer } from '../../engine/world/voxel';
 import { BlockType } from '../../types';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 import { isSaplingType, getTreeKindForSapling, generateTreeBlocks, isReplaceable, isValidSoil, getMinClearance } from './trees';
@@ -21,7 +22,7 @@ interface WorldAccess {
     setBlock(x: number, y: number, z: number, type: BlockType, rotation?: number): void;
     getMetadata(x: number, y: number, z: number): number;
     setMetadataAt(x: number, y: number, z: number, value: number): void;
-    getChunkData(cx: number, cz: number): Uint8Array | null;
+    getChunkData(cx: number, cz: number): VoxelBuffer | null;
     getTickCenter(): { cx: number, cz: number };
     getSeed(): number;
 }

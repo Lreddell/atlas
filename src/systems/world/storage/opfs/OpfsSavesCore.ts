@@ -182,7 +182,7 @@ export class OpfsSavesCore {
             const entry = await this.getRegion(worldId, g.rx, g.rz, true);
             if (!entry) throw new Error('Failed to open region for write');
             entry.lastUsed = Date.now();
-            await entry.rf.writeChunkBatch(g.entries.map((e) => ({ slot: e.slot, blocks: e.blocks, light: e.light, meta: e.meta, timestamp: e.timestamp })));
+            await entry.rf.writeChunkBatch(g.entries.map((e) => ({ slot: e.slot, blocks: e.blocks as Uint8Array, light: e.light, meta: e.meta, timestamp: e.timestamp, encoding: e.encoding })));
         }
     }
 

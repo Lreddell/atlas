@@ -1,3 +1,4 @@
+import type { VoxelBuffer } from '../../engine/world/voxel';
 
 import { ItemStack } from '../../types';
 
@@ -19,7 +20,7 @@ export interface ChestState {
 }
 
 export interface WorldState {
-    chunks: Map<string, Uint8Array>;
+    chunks: Map<string, VoxelBuffer>;
     lights: Map<string, Uint8Array>;
     metadata: Map<string, Uint8Array>;
     listeners: Map<string, Set<ChunkUpdateCallback>>;

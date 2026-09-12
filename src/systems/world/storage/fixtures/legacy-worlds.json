@@ -1,0 +1,307 @@
+{
+  "sourceCommit": "09df7635c41ad4299be1a8b8dfd8b0c3898f0f0a",
+  "metadata": {
+    "id": "legacy-golden",
+    "name": "Legacy golden",
+    "seed": "architecture-baseline",
+    "seedNum": 98765,
+    "created": 1,
+    "lastPlayed": 2,
+    "gameMode": "survival",
+    "time": 0,
+    "player": {
+      "position": {
+        "x": -17,
+        "y": 65,
+        "z": 16
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1
+      },
+      "inventory": [
+        {
+          "type": 3,
+          "count": 64
+        },
+        {
+          "type": 182,
+          "count": 1,
+          "instance": {
+            "durability": 7,
+            "maxDurability": 90,
+            "tags": [
+              "golden"
+            ]
+          }
+        }
+      ],
+      "equipment": {
+        "boots": {
+          "type": 196,
+          "count": 1
+        }
+      },
+      "cursorStack": {
+        "type": 170,
+        "count": 2
+      },
+      "health": 18,
+      "hunger": 17,
+      "saturation": 5,
+      "breath": 10,
+      "gameMode": "survival",
+      "selectedSlot": 1
+    },
+    "progression": {
+      "version": 1,
+      "bossesDefeated": [
+        "magnetic_warden"
+      ],
+      "regionStates": {},
+      "unlockedAbilities": [],
+      "unlockedRecipes": []
+    },
+    "boats": [
+      {
+        "x": 1,
+        "y": 62,
+        "z": 2,
+        "yaw": 0
+      }
+    ],
+    "resonantVaultReservations": {
+      "resonant:test": {
+        "layoutSignature": "v1:golden",
+        "acceptedAtVersion": 1
+      }
+    }
+  },
+  "exports": [
+    {
+      "format": "atlas-world-export",
+      "version": 1,
+      "exportedAt": 1234,
+      "meta": {
+        "name": "Legacy golden",
+        "seed": "architecture-baseline",
+        "seedNum": 98765,
+        "gameMode": "survival",
+        "time": 0,
+        "player": {
+          "position": {
+            "x": -17,
+            "y": 65,
+            "z": 16
+          },
+          "rotation": {
+            "x": 0,
+            "y": 1
+          },
+          "inventory": [
+            {
+              "type": 3,
+              "count": 64
+            },
+            {
+              "type": 182,
+              "count": 1,
+              "instance": {
+                "durability": 7,
+                "maxDurability": 90,
+                "tags": [
+                  "golden"
+                ]
+              }
+            }
+          ],
+          "equipment": {
+            "boots": {
+              "type": 196,
+              "count": 1
+            }
+          },
+          "cursorStack": {
+            "type": 170,
+            "count": 2
+          },
+          "health": 18,
+          "hunger": 17,
+          "saturation": 5,
+          "breath": 10,
+          "gameMode": "survival",
+          "selectedSlot": 1
+        },
+        "spawnPoint": null,
+        "worldSpawn": null,
+        "worldGenPresetId": null,
+        "worldGenPresetName": null,
+        "boats": [
+          {
+            "x": 1,
+            "y": 62,
+            "z": 2,
+            "yaw": 0
+          }
+        ],
+        "resonantVaultReservations": {
+          "resonant:test": {
+            "layoutSignature": "v1:golden",
+            "acceptedAtVersion": 1
+          }
+        }
+      },
+      "chunks": [
+        {
+          "cx": -2,
+          "cz": 1,
+          "blocks": "AAECAwdGTlWyvvL/",
+          "light": "Dw8PDw8PDw8PDw8P",
+          "meta": "AAAAAAAAAAAAAAAA",
+          "timestamp": 1234
+        }
+      ]
+    },
+    {
+      "format": "atlas-world-export",
+      "version": 2,
+      "exportedAt": 1234,
+      "meta": {
+        "name": "Legacy golden",
+        "seed": "architecture-baseline",
+        "seedNum": 98765,
+        "gameMode": "survival",
+        "time": 0,
+        "player": {
+          "position": {
+            "x": -17,
+            "y": 65,
+            "z": 16
+          },
+          "rotation": {
+            "x": 0,
+            "y": 1
+          },
+          "inventory": [
+            {
+              "type": 3,
+              "count": 64
+            },
+            {
+              "type": 182,
+              "count": 1,
+              "instance": {
+                "durability": 7,
+                "maxDurability": 90,
+                "tags": [
+                  "golden"
+                ]
+              }
+            }
+          ],
+          "equipment": {
+            "boots": {
+              "type": 196,
+              "count": 1
+            }
+          },
+          "cursorStack": {
+            "type": 170,
+            "count": 2
+          },
+          "health": 18,
+          "hunger": 17,
+          "saturation": 5,
+          "breath": 10,
+          "gameMode": "survival",
+          "selectedSlot": 1
+        },
+        "spawnPoint": null,
+        "worldSpawn": null,
+        "worldGenPresetId": null,
+        "worldGenPresetName": null,
+        "progression": {
+          "version": 1,
+          "bossesDefeated": [
+            "magnetic_warden"
+          ],
+          "regionStates": {},
+          "unlockedAbilities": [],
+          "unlockedRecipes": []
+        },
+        "boats": [
+          {
+            "x": 1,
+            "y": 62,
+            "z": 2,
+            "yaw": 0
+          }
+        ],
+        "resonantVaultReservations": {
+          "resonant:test": {
+            "layoutSignature": "v1:golden",
+            "acceptedAtVersion": 1
+          }
+        }
+      },
+      "chunks": [
+        {
+          "cx": -2,
+          "cz": 1,
+          "blocks": "AAECAwdGTlWyvvL/",
+          "light": "Dw8PDw8PDw8PDw8P",
+          "meta": "AAAAAAAAAAAAAAAA",
+          "timestamp": 1234
+        }
+      ]
+    }
+  ],
+  "indexedDbChunk": {
+    "cx": -2,
+    "cz": 1,
+    "blocks": [
+      0,
+      1,
+      2,
+      3,
+      7,
+      70,
+      78,
+      85,
+      178,
+      190,
+      242,
+      255
+    ],
+    "light": [
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15
+    ],
+    "meta": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "timestamp": 1234
+  },
+  "acrV1Body": "AQAAAAAAAATSAAAADAAAAAwAAAAMAAECAwdGTlWyvvL/Dw8PDw8PDw8PDw8PAAAAAAAAAAAAAAAA"
+}

@@ -103,7 +103,7 @@ class RegionStore {
             const { rx, rz, slot } = slotForChunk(c.cx, c.cz);
             const k = `${rx}.${rz}`;
             if (!groups.has(k)) groups.set(k, { rx, rz, entries: [] });
-            groups.get(k).entries.push({ slot, blocks: c.blocks, light: c.light, meta: c.meta, timestamp: c.timestamp });
+            groups.get(k).entries.push({ slot, blocks: c.blocks, light: c.light, meta: c.meta, timestamp: c.timestamp, encoding: c.encoding });
         }
         for (const g of groups.values()) {
             const entry = await this._getRegion(g.rx, g.rz, true);
@@ -132,7 +132,7 @@ class RegionStore {
                 out.push({
                     cx: rx * REGION_EDGE + localX,
                     cz: rz * REGION_EDGE + localZ,
-                    blocks: data.blocks, light: data.light, meta: data.meta, timestamp: data.timestamp,
+                    ...data,
                 });
             }
         }

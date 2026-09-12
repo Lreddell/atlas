@@ -1,0 +1,349 @@
+{
+  "format": 1,
+  "capturedAt": "2026-09-11T00:08:23.088Z",
+  "node": "v24.15.0",
+  "cpu": "AMD Ryzen 7 7700X 8-Core Processor             ",
+  "scope": "CPU deterministic generation and meshing only; not browser/GPU/frame-time evidence. Timings include warmup and are not CI thresholds.",
+  "configSha256": "21741bafd4825910bad030785e0f4ba3d4b6b71c5618845ae6ab8a611b167ff9",
+  "samples": [
+    {
+      "seed": 12345,
+      "cx": 0,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "0d029d6cf9bc4e7a32e9d1e14cf8a71c65dc61c7e2df766a931cee33f7e8e041",
+      "lightSha256": "51fe6c0c686702d57df97647e2cb04d6c59c5e13a53f416e0bae739d641fefdf",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 21,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 27.46029999999999,
+        "p95Ms": 29.96629999999999
+      },
+      "representations": {
+        "uint16": {
+          "blockBytes": 196608,
+          "compressedBytes": 2922,
+          "lookup": {
+            "medianMs": 0.523600000000016,
+            "p95Ms": 0.683400000000006
+          }
+        },
+        "palette16": {
+          "blockBytes": 196650,
+          "encode": {
+            "medianMs": 2.4210999999999956,
+            "p95Ms": 3.0557000000000016
+          },
+          "lookup": {
+            "medianMs": 0.5989999999999895,
+            "p95Ms": 0.8252999999999702
+          }
+        },
+        "packedPalette": {
+          "blockBytes": 61482,
+          "compressedBytes": 2954,
+          "encode": {
+            "medianMs": 2.015199999999993,
+            "p95Ms": 3.2874000000000194
+          },
+          "lookup": {
+            "medianMs": 0.4672999999999945,
+            "p95Ms": 0.5640999999999963
+          }
+        }
+      },
+      "mesh": {
+        "medianMs": 65.1137,
+        "p95Ms": 78.84390000000002,
+        "geometryBytes": 2068600,
+        "triangles": 20686
+      },
+      "darkCulledMesh": {
+        "medianMs": 57.56330000000003,
+        "p95Ms": 61.03490000000005,
+        "geometryBytes": 1800400,
+        "triangles": 18004
+      }
+    },
+    {
+      "seed": 12345,
+      "cx": 1,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "51c40c85639c574c08c3dd9b86daf23b8cdbd4f4a7981f54d1bb0d1568f013a5",
+      "lightSha256": "e9cbb14128a2bc7b2ba183a65ed06b78f65b9a587091c0ae0eae1fc01d6c0574",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 20,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 14.4221,
+        "p95Ms": 14.839899999999943
+      }
+    },
+    {
+      "seed": 12345,
+      "cx": -1,
+      "cz": -1,
+      "voxelCount": 98304,
+      "semanticSha256": "e680c6838144cac100bb0db55b9736964b9553c007f4718a75098aae99990584",
+      "lightSha256": "e3ab1a6bc284b07b2926e6a0b8db07fd44ac595d3dcc09b794513d0d1449a8a0",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 19,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 11.582400000000007,
+        "p95Ms": 11.984199999999987
+      }
+    },
+    {
+      "seed": 12345,
+      "cx": 8,
+      "cz": 8,
+      "voxelCount": 98304,
+      "semanticSha256": "056acc892232a9c8ccd70d6e2fcab8ad239202eae830bff0b307115fc8afc8a5",
+      "lightSha256": "f6c9c2d9841842631d741bed3d7d9a7c1d7f4c3fa0936e861f961b57ee4f1bce",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 19,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 18.635599999999954,
+        "p95Ms": 23.806299999999965
+      }
+    },
+    {
+      "seed": 1729,
+      "cx": 0,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "c38693b607dc8153dec91c66121e12a04f4698c4e15f4c5cd0602636a592c7d4",
+      "lightSha256": "5fbc27bd7e097a4cbb19e195aa0b2ef0da7585766c8f55d276f6a484220152c1",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 31,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 32.067999999999984,
+        "p95Ms": 168.60119999999995
+      },
+      "representations": {
+        "uint16": {
+          "blockBytes": 196608,
+          "compressedBytes": 5107,
+          "lookup": {
+            "medianMs": 0.2605999999998403,
+            "p95Ms": 0.8617999999999029
+          }
+        },
+        "palette16": {
+          "blockBytes": 196670,
+          "encode": {
+            "medianMs": 1.725099999999884,
+            "p95Ms": 1.960299999999961
+          },
+          "lookup": {
+            "medianMs": 0.6080999999999221,
+            "p95Ms": 1.5880999999999403
+          }
+        },
+        "packedPalette": {
+          "blockBytes": 61502,
+          "compressedBytes": 5359,
+          "encode": {
+            "medianMs": 1.9425000000001091,
+            "p95Ms": 2.664099999999962
+          },
+          "lookup": {
+            "medianMs": 0.47199999999998,
+            "p95Ms": 0.7760000000000673
+          }
+        }
+      },
+      "mesh": {
+        "medianMs": 61.93119999999999,
+        "p95Ms": 69.68110000000001,
+        "geometryBytes": 2386200,
+        "triangles": 23862
+      },
+      "darkCulledMesh": {
+        "medianMs": 54.77399999999989,
+        "p95Ms": 57.77870000000007,
+        "geometryBytes": 2139000,
+        "triangles": 21390
+      }
+    },
+    {
+      "seed": 1729,
+      "cx": 1,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "59584492e208a81712e0bb8965a4939876da6d8dfd622184a068b61773b993cf",
+      "lightSha256": "e6244c199f2e693915108d505ce4906de0f2751834b35003e03efabb8a502b14",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 23,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 16.92190000000005,
+        "p95Ms": 17.073799999999892
+      }
+    },
+    {
+      "seed": 1729,
+      "cx": -1,
+      "cz": -1,
+      "voxelCount": 98304,
+      "semanticSha256": "b6ba96432de04895619f0fd9e86e42400e9c60a0e416dd43c5edcc28065ecf2a",
+      "lightSha256": "5b8db6675469119dd8ede12f0c9dff1685f7b3053dcd2c0e5b038a4e05545082",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 29,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 15.701499999999896,
+        "p95Ms": 17.902700000000095
+      }
+    },
+    {
+      "seed": 1729,
+      "cx": 8,
+      "cz": 8,
+      "voxelCount": 98304,
+      "semanticSha256": "80df3fcb3cee8a4d225e4ae5329ab68fcdd64f75e89d5bb9dc0e2e4033c65b82",
+      "lightSha256": "76f311bd0da2cce9ed6c94ecbd72a263709ffad4557d9f6a495674e72d0d2806",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 19,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 13.479800000000068,
+        "p95Ms": 14.382400000000189
+      }
+    },
+    {
+      "seed": 334033944,
+      "cx": 0,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "c172d9b7dfbdfbf7bcbe5c2c95051382d49be20850ef175a2e20fcccb7d39600",
+      "lightSha256": "c94c7f7628f607fd12eaeb1940ad1cb43d14d27b6f31609de180bfe542a127a3",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 24,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 13.980600000000095,
+        "p95Ms": 14.233600000000024
+      },
+      "representations": {
+        "uint16": {
+          "blockBytes": 196608,
+          "compressedBytes": 3531,
+          "lookup": {
+            "medianMs": 0.25489999999990687,
+            "p95Ms": 0.2603999999998905
+          }
+        },
+        "palette16": {
+          "blockBytes": 196656,
+          "encode": {
+            "medianMs": 1.6846000000000458,
+            "p95Ms": 1.8017999999999574
+          },
+          "lookup": {
+            "medianMs": 0.5709999999999127,
+            "p95Ms": 0.7203999999999269
+          }
+        },
+        "packedPalette": {
+          "blockBytes": 61488,
+          "compressedBytes": 3560,
+          "encode": {
+            "medianMs": 1.9311999999999898,
+            "p95Ms": 2.7590000000000146
+          },
+          "lookup": {
+            "medianMs": 0.47489999999993415,
+            "p95Ms": 0.5037999999999556
+          }
+        }
+      },
+      "mesh": {
+        "medianMs": 52.98169999999982,
+        "p95Ms": 92.30450000000019,
+        "geometryBytes": 2177200,
+        "triangles": 21772
+      },
+      "darkCulledMesh": {
+        "medianMs": 45.713399999999865,
+        "p95Ms": 47.71510000000012,
+        "geometryBytes": 1744800,
+        "triangles": 17448
+      }
+    },
+    {
+      "seed": 334033944,
+      "cx": 1,
+      "cz": 0,
+      "voxelCount": 98304,
+      "semanticSha256": "fcdc6b914a7755f82ed7d036b438380869f7da2534d3a1cd8510307a92ebe0c4",
+      "lightSha256": "ebc861bc34ed3d8460b3a0b4cf38923f290cf035b4b33d0717af560c9977831d",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 19,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 11.291500000000042,
+        "p95Ms": 12.688499999999976
+      }
+    },
+    {
+      "seed": 334033944,
+      "cx": -1,
+      "cz": -1,
+      "voxelCount": 98304,
+      "semanticSha256": "271b76389a2cb3e7228f6f678b81d2ae4529b55ba926b532901cd21362344ca6",
+      "lightSha256": "db5bf2a2129a92893fc68300c32a0ff99104bebf5004f9d6d9847d4320a21180",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 25,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 13.609699999999975,
+        "p95Ms": 17.19250000000011
+      }
+    },
+    {
+      "seed": 334033944,
+      "cx": 8,
+      "cz": 8,
+      "voxelCount": 98304,
+      "semanticSha256": "2a32473d527dc616a5f2b319b139cf725e70ddc8d453ba04f0589488a72d1b83",
+      "lightSha256": "6328629a1328c6721dd5d3fa1f0b13d4edcb1f6e0cae6564bb2892128c6a2e4f",
+      "metadataSha256": "3a3ed164e42500a1c5b2d0093f0a813d27dc50d038f330cc100a7e70ece2e6e4",
+      "distinctBlocks": 16,
+      "blockBytes": 98304,
+      "lightBytes": 98304,
+      "metadataBytes": 98304,
+      "generation": {
+        "medianMs": 12.561100000000351,
+        "p95Ms": 13.112699999999677
+      }
+    }
+  ]
+}
