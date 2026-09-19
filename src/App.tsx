@@ -100,6 +100,8 @@ import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
 import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
+import { CampaignAtlasPanel } from './components/ui/CampaignAtlasPanel';
+import { useCampaignProving } from './hooks/useCampaignProving';
 import { applyRegistrySnapshot, buildRegistrySnapshotExtra } from './systems/registry/blockRegistry';
 import { generateCampaignGraph, toSnapshot } from './systems/campaign/campaignGraph';
 // Gate 0: register campaign content (dynamic blocks 256+, region metadata)
@@ -347,6 +349,9 @@ const App: React.FC = () => {
   const gameRendererRef = useRef<RootState | null>(null);
   const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
+  // Gate 0 campaign Atlas panel (region/bearing/progression/waystones).
+  // Toggled by J, /atlas, or right-clicking a proving waystone/anchor.
+  const [showCampaignAtlas, setShowCampaignAtlas] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [appNotice, setAppNotice] = useState<UiNoticeState | null>(null);
   const [pendingPanoramaDelete, setPendingPanoramaDelete] = useState<{ filePath: string; fileName: string } | null>(null);
@@ -1446,6 +1451,17 @@ const App: React.FC = () => {
       requestPointerLockBurst('resumeGame', { force: true });
   }, [requestPointerLockBurst, setOpenContainer]);
 
+  // Gate 0 campaign Atlas open/close (minimum UI surface for the foundation
+  // contracts: bearings, crests, waystones, anchors, challenge layer).
+  const openCampaignAtlas = useCallback(() => {
+      setShowCampaignAtlas(true);
+      enterUIMode();
+  }, [enterUIMode]);
+  const closeCampaignAtlas = useCallback((opts?: { deferPointerLock?: boolean }) => {
+      setShowCampaignAtlas(false);
+      resumeGame(opts);
+  }, [resumeGame]);
+
   useEffect(() => {
       if (appState !== 'game' || !isDead) {
           if (!isDead) {
@@ -1784,6 +1800,10 @@ const App: React.FC = () => {
       setMenuBackgroundMode('dirt');
   }, [menuBackgroundMode, menuPanoramaDataUrl]);
 
+  // Gate 0 proving runner (assigned once the hook below is created; the
+  // command callback is defined earlier in the file).
+  const campaignRunnerRef = useRef<((args: string[]) => boolean) | null>(null);
+
   const executeCommand = useCallback((cmd: string) => {
       const parts = cmd.trim().split(' ');
       logMsg(`> ${cmd}`, 'info');
@@ -2058,11 +2078,17 @@ const App: React.FC = () => {
               setShowMagneticFields(nextVisible);
               logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
           }
+      } else if (parts[0] === '/atlas') {
+          openCampaignAtlas();
+      } else if (parts[0] === '/campaign') {
+          const ok = campaignRunnerRef.current?.(parts.slice(1)) ?? false;
+          if (!ok) logMsg('Usage: /campaign <proving [clear]|start|fail|clear|rematch|travel|anchor <rest|refill|status>|frenzy|bloodmoon <on|off>|preview|status>', 'error');
       } else if (parts[0] === '/help') {
           // Grouped, compact command listing (autocomplete carries the details).
           logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
           logMsg('Progression: /boss /vault /region /cleanse /seal /magfields', 'info');
           logMsg('Player: /gamemode /giveitem /equip /unequip /keepinventory', 'info');
+          logMsg('Campaign: /atlas /campaign (proving|start|fail|clear|rematch|travel|anchor|frenzy|bloodmoon|preview|status)', 'info');
           logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
           logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
       } else { logMsg(`Unknown command: ${parts[0]}; try /help`, 'error'); }
@@ -2073,7 +2099,7 @@ const App: React.FC = () => {
       setCommandValue(''); 
       setShowSuggestions(false);
       resumeGame();
-  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory]);
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory, openCampaignAtlas]);
 
   const updateAutocomplete = useCallback((input: string) => {
       const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
@@ -2148,6 +2174,18 @@ const App: React.FC = () => {
             enterUIMode();
         }
         return; 
+    }
+    // Gate 0 campaign Atlas (J). Separate from the F4 texture atlas viewer.
+    if (e.code === 'KeyJ') {
+        if (showCampaignAtlas) {
+            e.preventDefault();
+            closeCampaignAtlas();
+        } else if (appState === 'game' && !isEditableTarget && !openContainer && !isPaused
+            && !showCommandInput && !isDead && !isSleeping && !showAtlasViewer && !isCapturingPanorama) {
+            e.preventDefault();
+            openCampaignAtlas();
+        }
+        return;
     }
     
     if (showCommandInput) {
@@ -2230,6 +2268,11 @@ const App: React.FC = () => {
             return;
         }
 
+        if (showCampaignAtlas) {
+            closeCampaignAtlas({ deferPointerLock: true });
+            return;
+        }
+
         if (showCommandInput) {
             if (showSuggestions) { setShowSuggestions(false); return; }
             setShowCommandInput(false); setCommandValue(''); isCommandOpenRef.current = false; resumeGame({ deferPointerLock: true }); return; 
@@ -2248,11 +2291,11 @@ const App: React.FC = () => {
         if (e.key === 'Enter') { e.preventDefault(); submitCommandInput(); } 
         return; 
     }
-    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
-    if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
-    if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
-    if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, cinematicMode, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
+    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer && !showCampaignAtlas) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
+    if (e.code.startsWith('Digit') && !isDead && !openContainer && !showCampaignAtlas) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
+    if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput && !showCampaignAtlas) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
+    if (e.code === 'KeyE' && !isDead && !showCampaignAtlas) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, showCampaignAtlas, openCampaignAtlas, closeCampaignAtlas, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, cinematicMode, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2880,6 +2923,16 @@ const App: React.FC = () => {
               await WorldStorage.saveWorldMeta(meta);
               console.log(`[Campaign] Backfilled ${played ? 'retrofit' : 'canonical'} graph for world ${meta.name}.`);
           }
+          // Preview decontamination (live): a preview world never carries
+          // foreign boss/crest state, even if its file was hand-edited.
+          if (meta.provenance === 'preview') {
+              const dropped = progression.sanitizePreviewCampaign('gate0:');
+              if (dropped.length > 0) {
+                  console.log(`[Campaign] Preview sanitize dropped ${dropped.length} foreign progression entries.`);
+                  meta.progression = progression.serialize();
+                  await WorldStorage.saveWorldMeta(meta);
+              }
+          }
           progression.setCampaignSeed(meta.seedNum, meta.campaignGraph.isRetrofit, meta.provenance ?? 'standard');
       }
       worldManager.loadTileEntities(meta.tileEntities);
@@ -2985,6 +3038,24 @@ const App: React.FC = () => {
           startingWorldRef.current = false;
       }
     }, [requestPointerLockBurst, suppressAutoPauseFor, renderDistance, setCursorStack, setInventory]);
+
+  // Gate 0 proving driver: all /campaign subcommands + Atlas panel data.
+  // Placed after handleStartGame so world switching is available to preview.
+  const campaignProving = useCampaignProving({
+      logMsg,
+      setInventory,
+      getInventory: () => inventory,
+      saveGame: (opts) => saveGame(opts),
+      startWorld: (worldId: string) => handleStartGame(worldId),
+      teleportTo: (x: number, y: number, z: number) => {
+          playerRef.current?.teleport(new THREE.Vector3(x, y, z));
+      },
+      openAtlas: () => openCampaignAtlas(),
+      activeWorldIdRef,
+  });
+  useEffect(() => {
+      campaignRunnerRef.current = (args: string[]) => campaignProving.runCommand(args);
+  }, [campaignProving]);
 
   useEffect(() => {
       if (appState !== 'game') return;
@@ -3198,6 +3269,26 @@ const App: React.FC = () => {
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
+                    {showCampaignAtlas && (
+                        <CampaignAtlasPanel
+                            data={campaignProving.getPanelData()}
+                            actions={{
+                                onBuild: () => campaignProving.build(),
+                                onStart: () => campaignProving.runCommand(['start']),
+                                onFail: () => campaignProving.runCommand(['fail']),
+                                onClear: () => campaignProving.runCommand(['clear']),
+                                onRematch: () => campaignProving.runCommand(['rematch']),
+                                onTravel: () => campaignProving.runCommand(['travel']),
+                                onAnchorRest: () => campaignProving.runCommand(['anchor', 'rest']),
+                                onAnchorRefill: () => campaignProving.runCommand(['anchor', 'refill']),
+                                onFrenzy: () => campaignProving.runCommand(['frenzy']),
+                                onBloodmoonOn: () => campaignProving.runCommand(['bloodmoon', 'on']),
+                                onBloodmoonOff: () => campaignProving.runCommand(['bloodmoon', 'off']),
+                                onStatus: () => campaignProving.runCommand(['status']),
+                            }}
+                            onClose={() => closeCampaignAtlas()}
+                        />
+                    )}
                     {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
                     <div hidden={hudHidden}><BossBar /></div>
                     <CinematicOverlay />
@@ -3327,11 +3418,15 @@ const App: React.FC = () => {
 
                 <InteractionController
                     hideHighlights={hudHidden || isCapturingPanorama || cinematicMode}
-                    isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
+                    isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode && !showCampaignAtlas} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
                     onPlaceBoat={handlePlaceBoat} onEnterBoat={handleEnterBoat}
+                    onCampaignInteract={(kind) => {
+                        logMsg(kind === 'waystone' ? 'Waystone touched: opening Atlas.' : 'Anchor touched: opening Atlas.', 'info');
+                        openCampaignAtlas();
+                    }}
                 />
 
                 <BreakingVisualMesh suspended={hudHidden || isCapturingPanorama || cinematicMode} />

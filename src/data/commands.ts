@@ -31,6 +31,8 @@ export const COMMANDS = [
     '/boss',
     '/vault',
     '/magfields',
+    '/campaign',
+    '/atlas',
 ];
 
 export const SUBCOMMANDS: Record<string, string[]> = {
@@ -57,6 +59,8 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     '/boss': ['spawn', 'kill'],
     '/vault': ['skip'],
     '/magfields': ['on', 'off', 'toggle'],
+    '/campaign': ['proving', 'start', 'fail', 'clear', 'rematch', 'travel', 'anchor', 'frenzy', 'bloodmoon', 'preview', 'status'],
+    '/atlas': [],
 };
 
 export const ARGUMENT_OPTIONS: Record<string, string[]> = {

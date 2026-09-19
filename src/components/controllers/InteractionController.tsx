@@ -37,6 +37,7 @@ import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/
 import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
+import { PROVING_WAYSTONE_NUMERIC, PROVING_ANCHOR_NUMERIC } from '../../data/campaign/gate0';
 import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
 import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
@@ -176,11 +177,13 @@ interface InteractionControllerProps {
     onPlaceBoat?: (x: number, y: number, z: number) => boolean;
     /** Right-clicked a boat entity within reach: board it. */
     onEnterBoat?: (entityId: number) => void;
+    /** Right-clicked a Gate 0 proving waystone/anchor block. */
+    onCampaignInteract?: (kind: 'waystone' | 'anchor', x: number, y: number, z: number) => void;
 }
 
 export const InteractionController = ({ 
     hideHighlights = false, isLocked, selectedSlot, inventory, consumeItem, damageHeldItem, spawnDrop, setBreakingVisual, setOpenContainer, openContainer, gameMode,
-    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onPlaceBoat, onEnterBoat
+    setInventory, isDead, foodStateRef, setIsSleeping, onSleepInBed, onPlaceBoat, onEnterBoat, onCampaignInteract
 }: InteractionControllerProps) => {
     const { camera } = useThree();
     const highlightMeshRef = useRef<THREE.LineSegments>(null);
@@ -388,6 +391,17 @@ export const InteractionController = ({
             if (targetType === null) return;
 
             if (!isContinuous && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
+                // Gate 0 proving nodes: right-click opens the campaign Atlas
+                // (travel/anchor actions live there). Shift-click still mines.
+                // Numeric compare: proving ids (>= 256) are registry-allocated,
+                // not BlockType enum members.
+                if (!isShiftHeld && onCampaignInteract
+                    && (Number(targetType) === PROVING_WAYSTONE_NUMERIC || Number(targetType) === PROVING_ANCHOR_NUMERIC)) {
+                    soundManager.play("ui.open");
+                    onCampaignInteract(Number(targetType) === PROVING_WAYSTONE_NUMERIC ? 'waystone' : 'anchor', bx, by, bz);
+                    interactionCooldown.current = 2 / 60;
+                    return;
+                }
                 const isInteractive = targetType === BlockType.CRAFTING_TABLE ||
                                       targetType === BlockType.FURNACE ||
                                       targetType === BlockType.FURNACE_ACTIVE ||
@@ -673,7 +687,7 @@ export const InteractionController = ({
             attackItem.current = null;
             window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
         }
-    }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, onCampaignInteract, setOpenContainer, setIsSleeping]);
 
     // Melee resolves reach and recovery from the selected weapon. Conventional
     // items retain the original short-range path; the crossbow fires only on use.

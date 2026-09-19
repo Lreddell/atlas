@@ -39,6 +39,15 @@ export interface ResonantVaultProgressData {
     vaults: Record<string, VaultProgressData>;
 }
 
+export interface CampaignAnchorRecord {
+    charges: number;
+    maxCharges: number;
+    refillItemId: string;
+    x: number;
+    y: number;
+    z: number;
+}
+
 export interface CampaignProgressionData {
     graphSchema?: number;
     seedNum?: number;
@@ -56,7 +65,17 @@ export interface CampaignProgressionData {
         firstClearAt?: number;
     }>;
     waystones?: Record<string, { discovered: boolean; active: boolean }>;
+    /** Expedition anchors by site id (bounded charges, persisted). */
+    anchors?: Record<string, CampaignAnchorRecord>;
+    /** Region transform fixtures applied (region -> true). */
+    transforms?: Record<string, boolean>;
     bloodMoonUnlocked?: boolean;
+    /**
+     * Gate 0 fixture eligibility: allows Blood Moon/Frenzy demonstration
+     * WITHOUT a real Bell Titan clear. Never implies bellTitanDefeated and
+     * never gates canonical content.
+     */
+    bloodMoonFixture?: boolean;
     bellTitanDefeated?: boolean;
     atlasSealOwned?: boolean;
     firstSurveyorDefeated?: boolean;
@@ -437,6 +456,101 @@ export class ProgressionStore {
     isBloodMoonUnlocked(): boolean {
         return this.campaign.bloodMoonUnlocked === true;
     }
+
+    /** Gate 0 fixture: Blood Moon/Frenzy eligibility without a Bell Titan clear. */
+    setBloodMoonFixture(on: boolean): void {
+        this.campaign = { ...this.campaign, bloodMoonFixture: on === true ? true : undefined };
+        if (!on) {
+            const next = { ...this.campaign };
+            delete next.bloodMoonFixture;
+            this.campaign = next;
+        }
+    }
+
+    isBloodMoonFixture(): boolean {
+        return this.campaign.bloodMoonFixture === true;
+    }
+
+    /** Challenge layer is demonstrable when unlocked canonically or via fixture. */
+    isBloodMoonDemonstrable(): boolean {
+        return this.campaign.bloodMoonUnlocked === true || this.campaign.bloodMoonFixture === true;
+    }
+
+    discoverWaystone(siteId: string): void {
+        const waystones = { ...(this.campaign.waystones ?? {}) };
+        const prev = waystones[siteId] ?? { discovered: false, active: false };
+        waystones[siteId] = { ...prev, discovered: true };
+        this.campaign = { ...this.campaign, waystones };
+    }
+
+    activateWaystone(siteId: string): void {
+        const waystones = { ...(this.campaign.waystones ?? {}) };
+        const prev = waystones[siteId] ?? { discovered: false, active: false };
+        waystones[siteId] = { ...prev, discovered: true, active: true };
+        this.campaign = { ...this.campaign, waystones };
+    }
+
+    getWaystones(): Record<string, { discovered: boolean; active: boolean }> {
+        return { ...(this.campaign.waystones ?? {}) };
+    }
+
+    setAnchor(siteId: string, record: CampaignAnchorRecord): void {
+        const charges = Number.isFinite(record.charges)
+            ? Math.max(0, Math.min(record.maxCharges, Math.floor(record.charges)))
+            : record.maxCharges;
+        const anchors = { ...(this.campaign.anchors ?? {}) };
+        anchors[siteId] = { ...record, charges };
+        this.campaign = { ...this.campaign, anchors };
+    }
+
+    getAnchor(siteId: string): CampaignAnchorRecord | undefined {
+        const record = this.campaign.anchors?.[siteId];
+        return record ? { ...record } : undefined;
+    }
+
+    consumeAnchorCharge(siteId: string): boolean {
+        const record = this.campaign.anchors?.[siteId];
+        if (!record || record.charges <= 0) return false;
+        this.setAnchor(siteId, { ...record, charges: record.charges - 1 });
+        return true;
+    }
+
+    refillAnchor(siteId: string, materialCount: number): number {
+        const record = this.campaign.anchors?.[siteId];
+        if (!record || materialCount <= 0) return 0;
+        const room = record.maxCharges - record.charges;
+        const consumed = Math.min(room, Math.floor(materialCount));
+        if (consumed > 0) this.setAnchor(siteId, { ...record, charges: record.charges + consumed });
+        return consumed;
+    }
+
+    setRegionTransform(region: string, applied = true): void {
+        const transforms = { ...(this.campaign.transforms ?? {}) };
+        if (applied) transforms[region] = true;
+        else delete transforms[region];
+        this.campaign = { ...this.campaign, transforms };
+    }
+
+    hasRegionTransform(region: string): boolean {
+        return this.campaign.transforms?.[region] === true;
+    }
+
+    /**
+     * Preview decontamination (live enforcement): drop any crest/keystone/
+     * relic whose id does not belong to the preview target's namespace, so a
+     * preview world can never fabricate or export foreign progression.
+     */
+    sanitizePreviewCampaign(allowedPrefix: string): string[] {
+        const dropped: string[] = [];
+        const keep = (id: string) => id.startsWith(allowedPrefix);
+        for (const key of ['crests', 'keystones', 'boundRelics'] as const) {
+            const list = this.campaign[key] ?? [];
+            const kept = list.filter(keep);
+            dropped.push(...list.filter((id) => !keep(id)));
+            if (kept.length !== list.length) this.campaign = { ...this.campaign, [key]: kept };
+        }
+        return dropped;
+    }
 }
 
 function sanitizeCampaignData(value: CampaignProgressionData | undefined): CampaignProgressionData {
@@ -459,6 +573,40 @@ function sanitizeCampaignData(value: CampaignProgressionData | undefined): Campa
             };
         }
     }
+    const waystones: CampaignProgressionData['waystones'] = {};
+    if (value.waystones && typeof value.waystones === 'object') {
+        for (const [siteId, record] of Object.entries(value.waystones)) {
+            if (!siteId || !record || typeof record !== 'object') continue;
+            waystones[siteId] = {
+                discovered: record.discovered === true,
+                active: record.active === true,
+            };
+        }
+    }
+    const anchors: CampaignProgressionData['anchors'] = {};
+    if (value.anchors && typeof value.anchors === 'object') {
+        for (const [siteId, record] of Object.entries(value.anchors)) {
+            if (!siteId || !record || typeof record !== 'object') continue;
+            const maxCharges = Number.isFinite(record.maxCharges) ? Math.max(1, Math.min(99, Math.floor(record.maxCharges))) : 5;
+            const charges = Number.isFinite(record.charges) ? Math.max(0, Math.min(maxCharges, Math.floor(record.charges))) : maxCharges;
+            const x = Number(record.x);
+            const y = Number(record.y);
+            const z = Number(record.z);
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+            anchors[siteId] = {
+                charges,
+                maxCharges,
+                refillItemId: typeof record.refillItemId === 'string' ? record.refillItemId : 'minecraft:cobblestone',
+                x, y, z,
+            };
+        }
+    }
+    const transforms: Record<string, boolean> = {};
+    if (value.transforms && typeof value.transforms === 'object') {
+        for (const [region, applied] of Object.entries(value.transforms)) {
+            if (region && applied === true) transforms[region] = true;
+        }
+    }
     return {
         ...(Number.isFinite(value.graphSchema) ? { graphSchema: 1 } : {}),
         ...(Number.isFinite(value.seedNum) ? { seedNum: value.seedNum } : {}),
@@ -469,7 +617,11 @@ function sanitizeCampaignData(value: CampaignProgressionData | undefined): Campa
         ...(asStringArray(value.keystones).length > 0 ? { keystones: asStringArray(value.keystones) } : {}),
         ...(asStringArray(value.boundRelics).length > 0 ? { boundRelics: asStringArray(value.boundRelics) } : {}),
         ...(Object.keys(encounters).length > 0 ? { encounters } : {}),
+        ...(Object.keys(waystones).length > 0 ? { waystones } : {}),
+        ...(Object.keys(anchors).length > 0 ? { anchors } : {}),
+        ...(Object.keys(transforms).length > 0 ? { transforms } : {}),
         ...(value.bloodMoonUnlocked === true ? { bloodMoonUnlocked: true } : {}),
+        ...(value.bloodMoonFixture === true ? { bloodMoonFixture: true } : {}),
         ...(value.bellTitanDefeated === true ? { bellTitanDefeated: true } : {}),
         ...(value.atlasSealOwned === true ? { atlasSealOwned: true } : {}),
         ...(value.firstSurveyorDefeated === true ? { firstSurveyorDefeated: true } : {}),
