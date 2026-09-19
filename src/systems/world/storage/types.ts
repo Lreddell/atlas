@@ -59,6 +59,24 @@ export interface WorldMetadata {
         layoutSignature: string;
         acceptedAtVersion: 1;
     }>;
+    /**
+     * Gate 0 campaign graph snapshot (deterministic anchors + site
+     * reservations). Absent on pre-campaign saves; progression.campaign holds
+     * the live crest/keystone state. Kept here so seed validation and retrofit
+     * tooling can reproduce the graph without loading progression first.
+     */
+    campaignGraph?: {
+        schema: number;
+        worldgenVersion: number;
+        seedNum: number;
+        isRetrofit: boolean;
+        anchors: { type: string; x: number; z: number; radius: number }[];
+    };
+    /** Scenario provenance: Standard vs Campaign Region Preview. Absent = Standard. */
+    provenance?: 'standard' | 'preview';
+    previewRegion?: string;
+    /** Chunk codec version. Absent = 1 (raw Uint8). */
+    chunkCodec?: number;
 }
 
 export interface ChunkCoordinate {

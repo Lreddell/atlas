@@ -39,13 +39,38 @@ export interface ResonantVaultProgressData {
     vaults: Record<string, VaultProgressData>;
 }
 
+export interface CampaignProgressionData {
+    graphSchema?: number;
+    seedNum?: number;
+    isRetrofit?: boolean;
+    provenance?: 'standard' | 'preview';
+    previewRegion?: string;
+    crests?: string[];
+    keystones?: string[];
+    boundRelics?: string[];
+    encounters?: Record<string, {
+        phase: string;
+        waystoneActive: boolean;
+        rematchAvailable: boolean;
+        attemptCount: number;
+        firstClearAt?: number;
+    }>;
+    waystones?: Record<string, { discovered: boolean; active: boolean }>;
+    bloodMoonUnlocked?: boolean;
+    bellTitanDefeated?: boolean;
+    atlasSealOwned?: boolean;
+    firstSurveyorDefeated?: boolean;
+}
+
 export interface ProgressionData {
-    version: 1;
+    version: 1 | 2;
     bossesDefeated: string[];
     regionStates: Record<string, RegionState>;
     unlockedAbilities: string[];
     unlockedRecipes: string[];
     resonantVaults?: ResonantVaultProgressData;
+    /** Gate 0 campaign state. Absent on pre-campaign saves -> treated as empty. */
+    campaign?: CampaignProgressionData;
 }
 
 function emptyVaultProgress(): VaultProgressData {
@@ -104,6 +129,7 @@ export class ProgressionStore {
     private unlockedRecipes = new Set<string>();
     private vaults = new Map<string, VaultProgressData>();
     private firstVaultRewardClaimed = false;
+    private campaign: CampaignProgressionData = {};
 
     load(data: ProgressionData | undefined | null): void {
         this.bossesDefeated = new Set(data?.bossesDefeated ?? []);
@@ -115,6 +141,7 @@ export class ProgressionStore {
                 .map(([vaultId, progress]) => [vaultId, readVaultProgress(progress)]),
         );
         this.firstVaultRewardClaimed = data?.resonantVaults?.firstVaultRewardClaimed === true;
+        this.campaign = sanitizeCampaignData(data?.campaign);
     }
 
     serialize(): ProgressionData {
@@ -122,8 +149,9 @@ export class ProgressionStore {
         for (const [vaultId, progress] of this.vaults) {
             serializedVaults[vaultId] = readVaultProgress(progress);
         }
+        const hasCampaign = Object.keys(this.campaign).length > 0;
         return {
-            version: 1,
+            version: hasCampaign ? 2 : 1,
             bossesDefeated: Array.from(this.bossesDefeated),
             regionStates: Object.fromEntries(this.regionStates),
             unlockedAbilities: Array.from(this.unlockedAbilities),
@@ -134,6 +162,7 @@ export class ProgressionStore {
                     vaults: serializedVaults,
                 },
             } : {}),
+            ...(hasCampaign ? { campaign: { ...this.campaign } } : {}),
         };
     }
 
@@ -337,6 +366,114 @@ export class ProgressionStore {
     resetVault(vaultId: string): void {
         this.vaults.delete(vaultId);
     }
+
+    // ---- Gate 0 campaign state (additive; old saves load as empty) ----
+    getCampaign(): CampaignProgressionData {
+        return { ...this.campaign };
+    }
+
+    setCampaignSeed(seedNum: number, isRetrofit: boolean, provenance: 'standard' | 'preview' = 'standard'): void {
+        this.campaign = {
+            ...this.campaign,
+            graphSchema: 1,
+            seedNum,
+            isRetrofit,
+            provenance,
+        };
+    }
+
+    grantCampaignCrest(crestId: string): boolean {
+        const crests = this.campaign.crests ?? [];
+        if (crests.includes(crestId)) return false;
+        this.campaign = { ...this.campaign, crests: [...crests, crestId] };
+        this.addBoundRelic(crestId);
+        return true;
+    }
+
+    grantCampaignKeystone(keystoneId: string): boolean {
+        const keystones = this.campaign.keystones ?? [];
+        if (keystones.includes(keystoneId)) return false;
+        this.campaign = { ...this.campaign, keystones: [...keystones, keystoneId] };
+        this.addBoundRelic(keystoneId);
+        return true;
+    }
+
+    private addBoundRelic(relicId: string): void {
+        const bound = this.campaign.boundRelics ?? [];
+        if (!bound.includes(relicId)) {
+            this.campaign = { ...this.campaign, boundRelics: [...bound, relicId] };
+        }
+    }
+
+    hasCampaignCrest(crestId: string): boolean {
+        return (this.campaign.crests ?? []).includes(crestId)
+            || (this.campaign.boundRelics ?? []).includes(crestId);
+    }
+
+    getCampaignKeystones(): string[] {
+        return [...(this.campaign.keystones ?? [])];
+    }
+
+    setEncounterPhase(
+        siteId: string,
+        phase: string,
+        patch: Partial<{ waystoneActive: boolean; rematchAvailable: boolean; attemptCount: number; firstClearAt: number }> = {},
+    ): void {
+        const encounters = { ...(this.campaign.encounters ?? {}) };
+        const prev = encounters[siteId] ?? {
+            phase: 'undiscovered',
+            waystoneActive: false,
+            rematchAvailable: false,
+            attemptCount: 0,
+        };
+        encounters[siteId] = { ...prev, phase, ...patch };
+        this.campaign = { ...this.campaign, encounters };
+    }
+
+    unlockBloodMoon(): void {
+        this.campaign = { ...this.campaign, bloodMoonUnlocked: true };
+    }
+
+    isBloodMoonUnlocked(): boolean {
+        return this.campaign.bloodMoonUnlocked === true;
+    }
+}
+
+function sanitizeCampaignData(value: CampaignProgressionData | undefined): CampaignProgressionData {
+    if (!value || typeof value !== 'object') return {};
+    const asStringArray = (input: unknown): string[] => {
+        if (!Array.isArray(input)) return [];
+        return input.filter((v): v is string => typeof v === 'string' && v.length > 0);
+    };
+    const provenance = value.provenance === 'preview' ? 'preview' : value.provenance === 'standard' ? 'standard' : undefined;
+    const encounters: CampaignProgressionData['encounters'] = {};
+    if (value.encounters && typeof value.encounters === 'object') {
+        for (const [siteId, record] of Object.entries(value.encounters)) {
+            if (!siteId || !record || typeof record !== 'object') continue;
+            encounters[siteId] = {
+                phase: typeof record.phase === 'string' ? record.phase : 'undiscovered',
+                waystoneActive: record.waystoneActive === true,
+                rematchAvailable: record.rematchAvailable === true,
+                attemptCount: Number.isFinite(record.attemptCount) ? Math.max(0, Math.floor(record.attemptCount)) : 0,
+                ...(Number.isFinite(record.firstClearAt) ? { firstClearAt: record.firstClearAt } : {}),
+            };
+        }
+    }
+    return {
+        ...(Number.isFinite(value.graphSchema) ? { graphSchema: 1 } : {}),
+        ...(Number.isFinite(value.seedNum) ? { seedNum: value.seedNum } : {}),
+        ...(typeof value.isRetrofit === 'boolean' ? { isRetrofit: value.isRetrofit } : {}),
+        ...(provenance ? { provenance } : {}),
+        ...(typeof value.previewRegion === 'string' ? { previewRegion: value.previewRegion } : {}),
+        ...(asStringArray(value.crests).length > 0 ? { crests: asStringArray(value.crests) } : {}),
+        ...(asStringArray(value.keystones).length > 0 ? { keystones: asStringArray(value.keystones) } : {}),
+        ...(asStringArray(value.boundRelics).length > 0 ? { boundRelics: asStringArray(value.boundRelics) } : {}),
+        ...(Object.keys(encounters).length > 0 ? { encounters } : {}),
+        ...(value.bloodMoonUnlocked === true ? { bloodMoonUnlocked: true } : {}),
+        ...(value.bellTitanDefeated === true ? { bellTitanDefeated: true } : {}),
+        ...(value.atlasSealOwned === true ? { atlasSealOwned: true } : {}),
+        ...(value.firstSurveyorDefeated === true ? { firstSurveyorDefeated: true } : {}),
+    };
 }
 
 export const progression = new ProgressionStore();
