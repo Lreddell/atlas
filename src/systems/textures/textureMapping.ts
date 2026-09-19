@@ -302,4 +302,5 @@ export const TEXTURE_PATHS: Record<number, string> = {
     348: 'items/heartwood_moonhide.png',
     349: 'items/heartwood_antler_tine.png',
     350: 'items/heartwood_bell_alloy.png',
+    351: 'items/heartwood_bellfinch_feather.png',
 };

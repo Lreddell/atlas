@@ -29,6 +29,7 @@ import {
     getPostureBreaks,
     STAGGER_BREAK_SECONDS,
 } from '../combat/guardPosture';
+import { tickHeartwoodEcology, createEcologyState } from '../heartwood/heartwoodEcology';
 
 export interface SpawnOptions {
     bossId?: string;
@@ -143,6 +144,7 @@ class EntityManager {
     private inCombat = false;
     private damageHandlers = new Map<string, EntityDamageHandler>();
     private brains = new Map<string, EntityBrain>();
+    private heartwoodEcology = createEcologyState();
     private navigationClock = 0;
     private readonly navigationValidator = new VoxelNavigator(NAVIGATION_WORLD);
     private readonly navigationPlanner = new NavigationPlanner(NAVIGATION_WORLD, {
@@ -293,6 +295,31 @@ class EntityManager {
         return this.shockwaves;
     }
 
+    /**
+     * Timed melee return of an enemy bolt (Heartwood reflectables: Cantor
+     * Tone Pulse, Stag Leafblade Fan). The bolt is struck out of the air and
+     * its force returns to whoever fired it as posture-heavy damage. Returns
+     * false when there is nothing to return.
+     */
+    reflectProjectile(id: number, dx: number, dy: number, dz: number): boolean {
+        const index = this.projectiles.findIndex((p) => p.id === id);
+        if (index < 0) return false;
+        const [bolt] = this.projectiles.splice(index, 1);
+        if (bolt.bounced) return false;
+        particleFx.burst({
+            x: bolt.pos.x, y: bolt.pos.y, z: bolt.pos.z,
+            color: [0.75, 0.95, 1.0], color2: [1, 1, 1],
+            count: 14, speed: 4, upBias: 0.5, spread: 0.7,
+            dir: [dx, dy, dz], size: 0.12, life: 0.4, gravity: 2, drag: 1.5,
+        });
+        gameEvents.emit('bolt:reflected', { x: bolt.pos.x, y: bolt.pos.y, z: bolt.pos.z });
+        if (bolt.sourceId != null) {
+            const len = Math.hypot(dx, dz) || 1;
+            this.damageEntity(bolt.sourceId, bolt.damage + 4, dx / len, dz / len, 1.0);
+        }
+        return true;
+    }
+
     /** An authored fight (boss brain) takes over every tick for its entity kind. */
     registerBrain(kind: string, brain: EntityBrain): void {
         this.brains.set(kind, brain);
@@ -326,7 +353,7 @@ class EntityManager {
             maxRadius: spec.maxRadius,
             speed: spec.speed,
             damage: spec.damage,
-            hit: spec.kind === 'slam',
+            hit: false,
             kind: spec.kind,
         };
         this.shockwaves.push(wave);
@@ -737,6 +764,19 @@ class EntityManager {
             gameEvents.emit('boss:defeated', { bossId: e.bossId, entityId: e.id, regionId: e.regionId });
         }
         this.notifyStructure();
+    }
+
+    /** First solid top scanning down (ecology spawn validity). */
+    private findEcologyGround(x: number, z: number): number | null {
+        for (let y = 110; y >= 30; y--) {
+            const at = worldManager.getBlock(x, y, z, false);
+            if (at !== BlockType.AIR) continue;
+            const below = worldManager.getBlock(x, y - 1, z, false);
+            if (below !== BlockType.AIR && below !== BlockType.WATER && below !== BlockType.LAVA) {
+                return y;
+            }
+        }
+        return null;
     }
 
     /** Ray vs entity AABBs. Returns the nearest entity id within maxDist, or null. */
@@ -1260,6 +1300,26 @@ class EntityManager {
 
         this.tickProjectiles(dt, pp, targetable);
         this.tickShockwaves(dt, pp, targetable);
+        // Heartwood overworld ecology: bounded populations per sub-biome.
+        // Runs inside the fixed-step tick so spawning stays frame-rate
+        // independent; the director self-limits to one spawn per 2s step.
+        tickHeartwoodEcology(this.heartwoodEcology, dt, {
+            gameMode,
+            playerPos: pp,
+            seed: worldManager.getSeed(),
+            spawn: (kind: string, x: number, y: number, z: number) => this.spawn(kind, x, y, z)?.id ?? null,
+            despawn: (id: number) => { this.despawn(id); },
+            list: () => [...this.entities.values()].map((e) => ({
+                id: e.id, kind: e.kind, hp: e.hp,
+                x: e.pos.x, y: e.pos.y, z: e.pos.z, boss: e.isBoss,
+            })),
+            hasChunk: (cx: number, cz: number) => worldManager.hasChunk(cx, cz),
+            groundY: (x: number, z: number) => this.findEcologyGround(x, z),
+            night: () => {
+                const t = worldManager.getTime() % 24000;
+                return t > 12542 && t < 23459;
+            },
+        });
 
         if (anyAggro && !this.inCombat) { this.inCombat = true; gameEvents.emit('combat:start', {}); }
         else if (!anyAggro && this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
@@ -1346,7 +1406,9 @@ class EntityManager {
                         if (!occluded) survivors.push(p);
                         continue;
                     }
-                    this.playerDamageHandler?.(p.damage, p.vel.x, p.vel.z);
+                    // Shared gate: guard/parry apply to bolts (knock follows
+                    // the bolt's travel, so frontal math reads correctly).
+                    this.tryDamagePlayer(p.damage, p.vel.x, p.vel.z, 'bolt');
                     continue;
                 }
             }
@@ -1370,10 +1432,12 @@ class EntityManager {
         for (const s of this.shockwaves) {
             const previousRadius = s.radius;
             s.radius += s.speed * dt;
-            if (!s.hit && s.kind === 'slam' && targetable && pp) {
-                // Jumpable ground rings (Heartwood sweeps, threshing wheels):
-                // the edge check already skips airborne players, and guarding
-                // cannot stop them — jump (or i-frame through) or take it.
+            if (!s.hit && s.kind === 'slam' && targetable && pp && s.sourceId != null && s.damage > 0) {
+                // Jumpable enemy ground rings (Heartwood sweeps, threshing
+                // wheels): the edge check already skips airborne players, and
+                // guarding cannot stop them — jump (or i-frame through) or
+                // take it. Player-owned slam visuals (no source, no damage)
+                // never reach this branch.
                 const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
                 if (ringSweepsPlayer(previousRadius, s.radius, s.maxRadius, dist, pp.y - s.y)) {
                     s.hit = true;
@@ -1400,11 +1464,12 @@ class EntityManager {
                         continue;
                     }
                     if (relation === 'same') {
-                        // Repulsion off the charged floor: launched HARD up and away.
-                        this.playerImpulseHandler?.(ox * 13, 19, oz * 13);
-                        this.playerDamageHandler?.(s.damage, ox, oz);
+                        // Repulsion off the charged floor: launched HARD up and away,
+                        // but only if the hit itself landed (parry/dodge deny it).
+                        const landed = this.tryDamagePlayer(s.damage, ox, oz, 'ring');
+                        if (landed) this.playerImpulseHandler?.(ox * 13, 19, oz * 13);
                     } else {
-                        this.playerDamageHandler?.(s.damage, ox, oz);
+                        this.tryDamagePlayer(s.damage, ox, oz, 'ring');
                     }
                 }
             }

@@ -112,8 +112,10 @@ import { generateCampaignGraph, toSnapshot } from './systems/campaign/campaignGr
 // at startup, before the texture atlas builds and before any world loads.
 // initCampaignContent is idempotent; the world worker calls it separately.
 import { initCampaignContent } from './data/campaign';
+import { registerHeartwoodEntities } from './systems/heartwood/heartwoodEntities';
 
 initCampaignContent();
+registerHeartwoodEntities();
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type RenderedChunk = { cx: number; cz: number };
@@ -1265,6 +1267,9 @@ const App: React.FC = () => {
       const offStaggered = gameEvents.on('entity:staggered', () => {
           soundManager.play('block.amethyst.hit', { volume: 0.7, pitch: 0.9 });
       });
+      const offReflected = gameEvents.on('bolt:reflected', () => {
+          soundManager.play('block.amethyst.hit', { volume: 0.75, pitch: 2.0 });
+      });
       const offSurge = gameEvents.on('player:surge', ({ armed }) => { if (armed) soundManager.play('entity.player.surge'); });
       const offPlayerSlam = gameEvents.on('player:slam', ({ landed }) => {
           soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
@@ -1316,7 +1321,7 @@ const App: React.FC = () => {
           offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offCharge(); offSlam(); offPhase(); offCrystal(); offPower();
           offBeatTick(); offBeat(); offCrystals(); offLost(); offShieldBroken(); offTowers(); offRepelled();
           offDodge(); offDodged(); offSurge(); offPlayerSlam(); offShocked();
-          offParried(); offGuarded(); offGuardBroken(); offStaggered();
+          offParried(); offGuarded(); offGuardBroken(); offStaggered(); offReflected();
           offView(); offSpawnView(); offDefeatView(); offClearView();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();

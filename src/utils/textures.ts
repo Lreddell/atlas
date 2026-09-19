@@ -1274,6 +1274,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     hwIcon(348, () => { set(3, 4, 10, 8, '#8aaaaa'); set(3, 4, 10, 2, '#b8d4d4'); set(5, 7, 6, 1, '#5e7e7e'); }); // moonhide
     hwIcon(349, () => { set(7, 2, 2, 5, '#d8c8a8'); set(4, 7, 8, 3, '#d8c8a8'); set(5, 12, 2, 2, '#b8a888'); set(9, 12, 2, 2, '#b8a888'); }); // tine
     hwIcon(350, () => { set(4, 7, 8, 4, '#e8c868'); set(4, 7, 8, 1, '#fff0b0'); set(7, 4, 2, 3, '#fff0b0'); set(4, 10, 8, 1, '#a8823a'); }); // alloy
+    hwIcon(351, () => { set(7, 2, 2, 12, '#e8eef4'); set(4, 4, 8, 1, '#b8c4d0'); set(4, 8, 8, 1, '#b8c4d0'); set(4, 12, 8, 1, '#b8c4d0'); }); // feather
 
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 

@@ -54,6 +54,8 @@ export interface GameEventMap {
     'boss:repelled': { bossId: string; entityId: number };
     /** A boss bolt bounced off the player's matching polarity. */
     'bolt:repelled': { x: number; y: number; z: number; polarity: number };
+    /** An enemy bolt was struck out of the air and returned to its firer. */
+    'bolt:reflected': { x: number; y: number; z: number };
     'crystal:broken': { x: number; y: number; z: number; regionId: string | null };
     // --- The player's kit ---
     /** F resolved into a move. */

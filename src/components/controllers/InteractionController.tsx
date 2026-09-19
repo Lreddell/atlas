@@ -741,6 +741,17 @@ export const InteractionController = ({
         if (direct && isEntityHitVisible(direct.dist, blockHit?.distance ?? null)) hits.set(direct.id, direct);
         const forward = _camDir.clone();
         const angle = profile?.kind === 'spear' || playerAttack.combo === 2 ? 30 : 120;
+        // Reflectable bolts: a timed swing meeting an enemy bolt in the arc
+        // strikes it back to its firer (concentric diamonds + clean ping).
+        // One return per swing; whiffed swings can still reflect.
+        for (const bolt of entityManager.getProjectiles()) {
+            const dx = bolt.pos.x - _camPos.x;
+            const dy = bolt.pos.y - _camPos.y;
+            const dz = bolt.pos.z - _camPos.z;
+            if (!inAttackArc(dx, dy, dz, forward.x, forward.y, forward.z, reach + 0.6, angle)) continue;
+            const len = Math.hypot(dx, dy, dz) || 1;
+            if (entityManager.reflectProjectile(bolt.id, dx / len, dy / len, dz / len)) break;
+        }
         // Sweep the visible bodies in the authored arc. Each ray still respects
         // voxels, foreground entities and encounter-specific crystal hit zones.
         for (const entity of profile ? entityManager.getEntities() : []) {

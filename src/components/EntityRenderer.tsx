@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { entityManager } from '../systems/entities/EntityManager';
 import { ENTITY_KINDS } from '../systems/entities/Entity';
 import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
+import { HeartwoodEntityRenderer } from './HeartwoodEntityRenderer';
+import { HEARTWOOD_RENDERED_KINDS } from './heartwoodModels';
 import { MagneticWardenRenderer } from './MagneticWardenRenderer';
 import { BossCompassTracker } from './BossCompassTracker';
 
@@ -18,6 +20,7 @@ const CUSTOM_RENDERED_ENTITY_KINDS = new Set([
     'bell_hound',
     'tollkeeper',
     'bell_titan',
+    ...HEARTWOOD_RENDERED_KINDS,
     'magnetic_warden',
 ]);
 
@@ -139,6 +142,7 @@ export const EntityRenderer: React.FC = () => {
     return (
         <>
             <ResonantVaultEnemyRenderer />
+            <HeartwoodEntityRenderer />
             <MagneticWardenRenderer />
             <BossCompassTracker />
             {ids.map((id) => {

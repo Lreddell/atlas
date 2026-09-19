@@ -76,6 +76,7 @@ export const HW_BRONZE_INGOT = 306;
 export const HW_MOONHIDE = 307;
 export const HW_ANTLER_TINE = 308;
 export const HW_BELL_ALLOY = 309;
+export const HW_FEATHER = 312;
 
 // Texture atlas slots (painters in utils/textures.ts heartwood section).
 const T = {
@@ -90,7 +91,7 @@ const T = {
   roothideHelm: 334, roothideChest: 335, roothideLegs: 336, roothideBoots: 337,
   crownHelm: 338, crownChest: 339, crownLegs: 340, crownBoots: 341,
   moonHelm: 342, moonChest: 343, moonLegs: 344, moonBoots: 345,
-  almanac: 346, bronzeIngot: 347, moonhide: 348, tine: 349, alloy: 350,
+  almanac: 346, bronzeIngot: 347,   moonhide: 348, tine: 349, alloy: 350, feather: 351,
 };
 
 interface BlockSpec {
@@ -169,6 +170,11 @@ const ITEMS: ItemSpec[] = [
   { numeric: HW_BELL_ALLOY, namespaced: 'atlas:heartwood_bell_alloy', def: { color: '#e8c868', name: 'Bell Alloy', textureSlot: T.alloy, hardness: 0, isItem: true, lightLevel: 2, category: 'ingredients' } },
 ];
 
+// Late items allocate after late blocks (312+).
+const LATE_ITEMS: ItemSpec[] = [
+  { numeric: HW_FEATHER, namespaced: 'atlas:heartwood_bellfinch_feather', def: { color: '#d8e0e8', name: 'Bellfinch Feather', textureSlot: T.feather, hardness: 0, isItem: true, category: 'ingredients' } },
+];
+
 let registered = false;
 
 export function registerHeartwoodContent(): void {
@@ -190,6 +196,12 @@ export function registerHeartwoodContent(): void {
     const numeric = allocateWorldBlockId(spec.namespaced, spec.def);
     if (numeric !== spec.numeric) {
       throw new Error(`Heartwood late-block allocation drift: ${spec.namespaced} got ${numeric}, expected ${spec.numeric}.`);
+    }
+  }
+  for (const spec of LATE_ITEMS) {
+    const numeric = allocateWorldBlockId(spec.namespaced, spec.def);
+    if (numeric !== spec.numeric) {
+      throw new Error(`Heartwood late-item allocation drift: ${spec.namespaced} got ${numeric}, expected ${spec.numeric}.`);
     }
   }
   registerCrossRenderedBlock(asId(HW_MOONLEAF_BLOCK));
@@ -290,6 +302,8 @@ function registerRecipes(): void {
   armorSet(MH, HW_MOON_HELMET, HW_MOON_CHEST, HW_MOON_LEGS, HW_MOON_BOOTS);
   // Crimson Almanac (post-Titan): bronze + moonleaf + resin.
   push(3, [null, asId(HW_MOONLEAF), null, INGOT, RES, INGOT, null, INGOT, null], asId(HW_CRIMSON_ALMANAC), 1);
+  // Fletching: bellfinch feathers become crossbow bolts.
+  push(2, [asId(HW_FEATHER), asId(HW_FEATHER), BlockType.STICK, null], BlockType.VAULT_BOLT, 4);
   // Gleaning Hook is a direct Gleaner drop (no recipe); Moonhide armor needs
   // Stalker material, keeping sidegrades honestly gated.
 }

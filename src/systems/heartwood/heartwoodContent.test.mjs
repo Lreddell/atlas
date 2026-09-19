@@ -28,20 +28,21 @@ hw.registerHeartwoodContent();
 const blocksSource = hw.BLOCKS;
 const C = hw.HW;
 
-test('allocation is exact and sequential (259-278 + 310-311 blocks, 279-309 items)', () => {
+test('allocation is exact and sequential (259-278 + 310-311 blocks, 279-309 + 312 items)', () => {
   assert.equal(C.HW_IRONWOOD_LOG, 259);
   assert.equal(C.HW_SURVEY_MARKER, 278);
   assert.equal(C.HW_IRONWOOD_LEAVES, 310);
   assert.equal(C.HW_CROWNROOT_LEAVES, 311);
   assert.equal(C.HW_BRIAR_FIBER, 279);
   assert.equal(C.HW_BELL_ALLOY, 309);
-  for (let id = 259; id <= 311; id++) {
+  assert.equal(C.HW_FEATHER, 312);
+  for (let id = 259; id <= 312; id++) {
     assert.ok(blocksSource[id], `id ${id} has a BLOCKS definition`);
   }
 });
 
 test('every Heartwood def is complete (texture, category, drops or item)', () => {
-  for (let id = 259; id <= 311; id++) {
+  for (let id = 259; id <= 312; id++) {
     const def = blocksSource[id];
     assert.ok(def.name && def.name.length > 1, `${id} name`);
     assert.ok(Number.isInteger(def.textureSlot), `${id} textureSlot`);
@@ -123,7 +124,7 @@ test('texture slots are mapped and unique across Heartwood tiles', () => {
     assert.ok(!seen.has(slot));
     seen.add(slot);
   }
-  for (let slot = 320; slot <= 350; slot++) {
+  for (let slot = 320; slot <= 351; slot++) {
     assert.match(mappingSrc, new RegExp(`^\\s*${slot}:`, 'm'), `slot ${slot} mapped`);
   }
   const texturesSrc = read('src/utils/textures.ts');
