@@ -22,6 +22,10 @@ export function getContentDefinition(id: number): ContentDefinition | undefined 
 }
 
 export function assertContentCatalogIntegrity(): void {
+    const numericIds = Object.values(BlockType).filter((v): v is number => typeof v === 'number');
+    const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
+    // Chunk storage is Uint8Array (0-255). Any ID above 255 would wrap to air.
+    if (maxId > 255) throw new Error(`Block/item ID ceiling exceeded: max=${maxId} (Uint8 chunk storage supports 0-255). Migrate to palette encoding before adding content.`);
     const all = [...RESONANT_WORLD_BLOCK_IDS, ...RESONANT_ITEM_IDS];
     if (new Set(all).size !== all.length) throw new Error('Resonant content id collision.');
     for (const id of RESONANT_WORLD_BLOCK_IDS) {

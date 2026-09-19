@@ -26,9 +26,11 @@ export function getChest(state: WorldState, x: number, y: number, z: number): Ch
 }
 
 export function createChest(state: WorldState, x: number, y: number, z: number) {
-    state.chests.set(`${x},${y},${z}`, {
-        items: Array(27).fill(null)
-    });
+    if (!state.chests.has(`${x},${y},${z}`)) {
+        state.chests.set(`${x},${y},${z}`, {
+            items: Array(27).fill(null)
+        });
+    }
 }
 
 export function removeChest(state: WorldState, x: number, y: number, z: number) {

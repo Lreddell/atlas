@@ -19,6 +19,10 @@ interface FluidUpdate {
 
 const fluidQueueMap = new Map<string, FluidUpdate>();
 
+export function clearFluidQueue(): void {
+    fluidQueueMap.clear();
+}
+
 export function scheduleFluidUpdate(x: number, y: number, z: number, type: BlockType, delayTicks: number) {
     const key = `${x},${y},${z}`;
     const tickAt = Date.now() + (delayTicks * 50);

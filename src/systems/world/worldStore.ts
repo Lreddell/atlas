@@ -59,4 +59,21 @@ export function evictChunk(state: WorldState, cx: number, cz: number) {
     state.lights.delete(key);
     state.metadata.delete(key);
     state.listeners.delete(key);
+    // Tile entities are keyed by world position; drop any furnace/chest whose
+    // block column belongs to the evicted chunk so a regenerated chunk cannot
+    // resurrect stale container contents.
+    const baseX = cx * CHUNK_SIZE;
+    const baseZ = cz * CHUNK_SIZE;
+    for (const map of [state.furnaces, state.chests] as const) {
+        for (const posKey of Array.from(map.keys())) {
+            const parts = posKey.split(',');
+            if (parts.length !== 3) continue;
+            const px = Number(parts[0]);
+            const pz = Number(parts[2]);
+            if (!Number.isFinite(px) || !Number.isFinite(pz)) continue;
+            if (px >= baseX && px < baseX + CHUNK_SIZE && pz >= baseZ && pz < baseZ + CHUNK_SIZE) {
+                map.delete(posKey);
+            }
+        }
+    }
 }

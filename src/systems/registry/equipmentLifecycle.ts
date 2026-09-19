@@ -1,4 +1,4 @@
-import { cloneStack, type StackLike } from '../inventory/itemStackRules.ts';
+import { cloneStack, type StackLike } from '../inventory/itemStackRules';
 
 const EQUIPMENT_SLOT_NAMES = ['helmet', 'chestplate', 'leggings', 'boots', 'accessory'] as const;
 

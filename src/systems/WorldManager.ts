@@ -235,6 +235,7 @@ export class WorldManager {
       this.acceptedVaultCandidates.clear();
       this.rejectedVaultCandidates.clear();
       this.vaultPreflightSerial = Promise.resolve();
+      Fluids.clearFluidQueue();
       this.activeWorldId = worldId;
       this.activeSeed = seedNum;
       
@@ -272,6 +273,7 @@ export class WorldManager {
       this.gcCounter = 0;
       this.dirtyChunks.clear();
       this.dirtyEditVersion.clear();
+      Fluids.clearFluidQueue();
       this.activeWorldId = null; // Clear context
     this.lastDesiredCenterKey = null;
     this.lastDesiredCount = -1;
@@ -1026,7 +1028,9 @@ export class WorldManager {
               const light = WorldStore.getLightData(this.state, cx, cz);
               const meta = WorldStore.getMetadataData(this.state, cx, cz);
               if (blocks && light && meta) {
-                  batch.push({ cx, cz, blocks, light, meta });
+                  // Snapshot live buffers: the async backend write must not
+                  // observe an edit that lands mid-write (torn save).
+                  batch.push({ cx, cz, blocks: blocks.slice(), light: light.slice(), meta: meta.slice() });
                   savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
               }
           }

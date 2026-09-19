@@ -1,4 +1,4 @@
-import { BlockType } from '../../types.ts';
+import { BlockType } from '../../types';
 
 export interface WoodFamily {
     name: 'oak' | 'spruce' | 'birch' | 'cherry' | 'jungle' | 'dark_oak' | 'acacia';
