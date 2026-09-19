@@ -20,7 +20,8 @@ const DATA_START_OFFSET = HEADER_SECTORS * SECTOR_SIZE; // 20480
 
 const LOCATION_ENTRY_BYTES = 8;
 const CHUNK_SLOT_HEADER_BYTES = 5;
-const BODY_SCHEMA_VERSION = 1;
+const BODY_SCHEMA_VERSION = 2;
+const BODY_SCHEMA_LEGACY_U8 = 1;
 const BODY_HEADER_BYTES = 21;
 const COMPRESSION_RAW = 0;
 const COMPRESSION_DEFLATE = 1;
@@ -46,15 +47,48 @@ function getU64(buf, off) {
     return getU32(buf, off) * 0x100000000 + getU32(buf, off + 4);
 }
 
+// Placeholder id for unknown voxels (enforced renderer-side; the codec is
+// byte-faithful so both impls stay identical).
+const UNKNOWN_PLACEHOLDER_ID = 65535;
+
+function blocksToBytesLE(blocks) {
+    const out = new Uint8Array(blocks.length * 2);
+    for (let i = 0; i < blocks.length; i++) {
+        const v = blocks[i];
+        out[i * 2] = v & 0xff;
+        out[i * 2 + 1] = (v >>> 8) & 0xff;
+    }
+    return out;
+}
+
+function bytesToBlocksLE(bytes, offset, byteLength) {
+    if (byteLength % 2 !== 0) {
+        throw new AcrFormatError(`Corrupt .acr chunk body: u16 blocks section has odd byte length ${byteLength}.`);
+    }
+    const out = new Uint16Array(byteLength / 2);
+    for (let i = 0; i < out.length; i++) {
+        out[i] = bytes[offset + i * 2] | (bytes[offset + i * 2 + 1] << 8);
+    }
+    return out;
+}
+
+function toU16Blocks(blocks) {
+    if (blocks instanceof Uint16Array) return blocks;
+    const out = new Uint16Array(blocks.length);
+    out.set(blocks);
+    return out;
+}
+
 function encodeChunkBody(blocks, light, meta, timestampMs) {
-    const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
+    const blocksBytes = blocksToBytesLE(toU16Blocks(blocks));
+    const out = new Uint8Array(BODY_HEADER_BYTES + blocksBytes.length + light.length + meta.length);
     out[0] = BODY_SCHEMA_VERSION;
     putU64(out, 1, timestampMs);
-    putU32(out, 9, blocks.length);
+    putU32(out, 9, blocksBytes.length);
     putU32(out, 13, light.length);
     putU32(out, 17, meta.length);
     let p = BODY_HEADER_BYTES;
-    out.set(blocks, p); p += blocks.length;
+    out.set(blocksBytes, p); p += blocksBytes.length;
     out.set(light, p); p += light.length;
     out.set(meta, p);
     return out;
@@ -63,12 +97,14 @@ function encodeChunkBody(blocks, light, meta, timestampMs) {
 function decodeChunkBody(body) {
     // STRICT framing (mirror of acrCodec.ts): min length, supported schema, and an
     // exact total length, no missing bytes, no trailing garbage.
+    // Dual-read: schema 1 (legacy uint8) copies up; unknown gap ids become the
+    // placeholder. Schema 2 decodes u16LE.
     if (body.length < BODY_HEADER_BYTES) {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
-        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
+    if (schema !== BODY_SCHEMA_VERSION && schema !== BODY_SCHEMA_LEGACY_U8) {
+        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION} or legacy ${BODY_SCHEMA_LEGACY_U8})`);
     }
     const timestamp = getU64(body, 1);
     const blocksLen = getU32(body, 9);
@@ -79,7 +115,15 @@ function decodeChunkBody(body) {
         throw new AcrFormatError(`Corrupt .acr chunk body: declared ${expectedLength} bytes (header + ${blocksLen}+${lightLen}+${metaLen}) but body is ${body.length}`);
     }
     let p = BODY_HEADER_BYTES;
-    const blocks = body.slice(p, p + blocksLen); p += blocksLen;
+    let blocks;
+    if (schema === BODY_SCHEMA_LEGACY_U8) {
+        const raw = body.slice(p, p + blocksLen);
+        blocks = new Uint16Array(raw.length);
+        blocks.set(raw);
+    } else {
+        blocks = bytesToBlocksLE(body, p, blocksLen);
+    }
+    p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
     return { blocks, light, meta, timestamp };

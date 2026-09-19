@@ -11,10 +11,10 @@ import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
 
 export interface NeighborData {
-    left?: Uint8Array;
-    right?: Uint8Array;
-    front?: Uint8Array;
-    back?: Uint8Array;
+    left?: Uint16Array;
+    right?: Uint16Array;
+    front?: Uint16Array;
+    back?: Uint16Array;
 }
 
 export interface NeighborLight {
@@ -161,10 +161,12 @@ const cutoutBuffer = new GeometryBuffer();
 const transparentBuffer = new GeometryBuffer();
 const greedyVisitedScratch = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
 
-const MAX_BLOCK_ID = Math.max(
-    ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
-);
+const MAX_BLOCK_ID = 65535;
 
+// Fixed 64K render-classification tables covering the full uint16 voxel
+// space. Lookups for unregistered ids fall through to the BLOCKS-driven
+// checks below (opaque by default), so dynamically registered blocks mesh
+// without a table rebuild.
 const IS_CUTOUT = new Uint8Array(MAX_BLOCK_ID + 1);
 const IS_TRANSPARENT = new Uint8Array(MAX_BLOCK_ID + 1);
 const IS_CROSS = new Uint8Array(MAX_BLOCK_ID + 1);
@@ -221,7 +223,7 @@ const SHAPED_FACES: { name: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'bac
 export function generateGeometryData(
     _cx: number,
     _cz: number,
-    chunk: Uint8Array,
+    chunk: Uint16Array,
     metaData: Uint8Array | undefined,
     neighbors: NeighborData,
     lights: NeighborLight,

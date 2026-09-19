@@ -27,8 +27,11 @@ class MemFile {
 }
 
 function chunk(seed, bl = 300, li = 120, me = 40) {
+    // Blocks avoid unassigned gap ids (4/90/... decode to the placeholder by
+    // design); light/meta stay raw bytes.
+    const mkBlocks = (len, salt) => { const a = new Uint16Array(len); for (let i = 0; i < len; i++) a[i] = 5 + ((i * 13 + seed + salt) % 56); return a; };
     const mk = (len, salt) => { const a = new Uint8Array(len); for (let i = 0; i < len; i++) a[i] = (i * 13 + seed + salt) & 0xff; return a; };
-    return { blocks: mk(bl, 1), light: mk(li, 2), meta: mk(me, 3) };
+    return { blocks: mkBlocks(bl, 1), light: mk(li, 2), meta: mk(me, 3) };
 }
 const eq = (a, b) => assert.deepEqual([...a], [...b]);
 
@@ -97,8 +100,42 @@ test('CJS decodeChunkBody enforces the same strict framing as the TS codec', () 
     assert.throws(() => cjs.decodeChunkBody(bad), cjs.AcrFormatError); // bad schema
 });
 
-test('TS-written world is readable by CJS, and vice versa', async () => {
-    // TS writes
+test('uint16 ids beyond the legacy ceiling survive TS<->CJS round-trips', async () => {
+    // Both codecs are byte-faithful, so unknown ids survive the round-trip
+    // here; the placeholder rule is enforced renderer-side at load.
+    const wide = { blocks: new Uint16Array([0, 1, 255, 256, 1000, 65534, 65535]), light: new Uint8Array([9]), meta: new Uint8Array([8]) };
+    // TS writes, CJS reads
+    const f = new MemFile();
+    const rw = new ts.RegionFile(f, null);
+    await rw.open();
+    await rw.writeChunk(3, { ...wide, timestamp: 11 });
+    const rr = new cjs.RegionFile(new MemFile(f.buf), null);
+    await rr.open();
+    eq((await rr.readChunk(3)).blocks, wide.blocks);
+    // CJS writes, TS reads
+    const g = new MemFile();
+    const cw = new cjs.RegionFile(g, null);
+    await cw.open();
+    await cw.writeChunk(4, { ...wide, timestamp: 13 });
+    const tr = new ts.RegionFile(new MemFile(g.buf), null);
+    await tr.open();
+    eq((await tr.readChunk(4)).blocks, wide.blocks);
+});
+
+test('legacy bodies decode byte-faithfully in TS and CJS', () => {
+    const putU32 = (out, off, v) => { out[off] = (v >>> 24) & 0xff; out[off + 1] = (v >>> 16) & 0xff; out[off + 2] = (v >>> 8) & 0xff; out[off + 3] = v & 0xff; };
+    const raw = new Uint8Array([1, 4, 90, 172, 255]);
+    const body = new Uint8Array(21 + raw.length);
+    body[0] = 1; // legacy schema
+    putU32(body, 9, raw.length); putU32(body, 13, 0); putU32(body, 17, 0);
+    body.set(raw, 21);
+    const a = ts.decodeChunkBody(body);
+    const b = cjs.decodeChunkBody(body);
+    eq(a.blocks, b.blocks);
+    eq(a.blocks, new Uint16Array([1, 4, 90, 172, 255]));
+});
+
+test('TS-written world is readable by CJS, and vice versa', async () => {    // TS writes
     const f = new MemFile();
     const rw = new ts.RegionFile(f, null);
     await rw.open();

@@ -1141,6 +1141,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // ===== Gate 0 proving-ground tiles (deterministic, no RNG) =====
     // Slots 267-269 back the first dynamically registered blocks (numeric ids
     // >= 256). They prove the registry/atlas path beyond the legacy ceiling.
+    // Slot 46 backs the unknown-block placeholder (never silent air).
     const gate0Tile = (slot: number, base: string, edge: string, sigil: string) => {
         withTile(slot, () => {
             fill(base);
@@ -1156,6 +1157,15 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     gate0Tile(267, '#3f5a52', '#22332e', '#b9f6ca'); // Proving Stone (teal survey marker)
     gate0Tile(268, '#4a3a6e', '#2a2140', '#e0ccff'); // Proving Waystone (violet)
     gate0Tile(269, '#6e4a2a', '#402a18', '#ffe0b2'); // Proving Anchor (amber)
+    // Unknown-block placeholder: high-visibility magenta/black checker.
+    withTile(46, () => {
+        for (let y = 0; y < 16; y++) {
+            for (let x = 0; x < 16; x++) {
+                ctx.fillStyle = ((x + y) % 2 === 0) ? '#ff00ff' : '#111111';
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+    });
 
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 

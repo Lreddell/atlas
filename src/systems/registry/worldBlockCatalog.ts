@@ -27,7 +27,7 @@ export const RESONANT_WORLD_BLOCK_IDS = [
 const resonantWorldBlockSet: ReadonlySet<number> = new Set(RESONANT_WORLD_BLOCK_IDS);
 
 export function isWorldBlockId(id: number): id is BlockType {
-    if (!Number.isInteger(id) || id < 0 || id > 255) return false;
+    if (!Number.isInteger(id) || id < 0 || id > 65535) return false;
     const definition = BLOCKS[id as BlockType] as BlockDef | undefined;
     return definition !== undefined && definition.isItem !== true;
 }

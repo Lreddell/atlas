@@ -13,7 +13,7 @@ export interface ContentDefinition {
 }
 
 export function getContentDefinition(id: number): ContentDefinition | undefined {
-    if (!Number.isInteger(id) || id < 0 || id > 255) return undefined;
+    if (!Number.isInteger(id) || id < 0 || id > 65535) return undefined;
     const definition = definitionsById[id];
     if (!definition) return undefined;
     if (getItemCatalogEntry(id)) return { id: id as BlockType, definition, classification: 'inventory_item' };
@@ -24,8 +24,10 @@ export function getContentDefinition(id: number): ContentDefinition | undefined 
 export function assertContentCatalogIntegrity(): void {
     const numericIds = Object.values(BlockType).filter((v): v is number => typeof v === 'number');
     const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
-    // Chunk storage is Uint8Array (0-255). Any ID above 255 would wrap to air.
-    if (maxId > 255) throw new Error(`Block/item ID ceiling exceeded: max=${maxId} (Uint8 chunk storage supports 0-255). Migrate to palette encoding before adding content.`);
+    // Voxel storage is Uint16Array (0-65535). The legacy enum range must stay
+    // frozen at/below 255 (locked by legacyIds.json); new content allocates
+    // >= 256 through the block registry, never by extending the enum.
+    if (maxId > 255) throw new Error(`Legacy BlockType ceiling exceeded: max=${maxId} (legacy ids must stay 0-255; use the block registry for new content).`);
     const all = [...RESONANT_WORLD_BLOCK_IDS, ...RESONANT_ITEM_IDS];
     if (new Set(all).size !== all.length) throw new Error('Resonant content id collision.');
     for (const id of RESONANT_WORLD_BLOCK_IDS) {

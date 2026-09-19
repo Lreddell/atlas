@@ -41,13 +41,21 @@
 //   off 5   ..     payload bytes    (the CHUNK BODY below, deflated if type=1)
 //
 // CHUNK BODY (the framed chunk, before optional compression):
-//   off 0   u8     bodySchema       = 1   (forward-compatible payload schema)
+//   off 0   u8     bodySchema       = 2   (forward-compatible payload schema)
 //   off 1   u64    timestampMs      (chunk save timestamp; preserves the
 //                                     existing ChunkStorageData.timestamp)
-//   off 9   u32    blocksLen
+//   off 9   u32    blocksLen        (BYTES of the blocks section)
 //   off 13  u32    lightLen
 //   off 17  u32    metaLen
 //   off 21  ..     blocks bytes | light bytes | meta bytes  (concatenated)
+//
+// BODY SCHEMA HISTORY (dual-read: every reader accepts all listed schemas):
+//   schema 1 (Alpha <= 1.2.x): blocks are raw uint8 voxel ids (blocksLen
+//     equals the voxel count). Read path copies up to uint16 and remaps
+//     unassigned gap ids to the unknown placeholder. Never written anymore.
+//   schema 2 (Gate 0+): blocks are little-endian uint16 voxel ids
+//     (blocksLen equals 2x the voxel count), covering registry ids >= 256.
+//     Light/meta planes stay uint8.
 //
 // COMMIT ORDERING (crash-safety): a writer MUST write the payload sectors and
 // flush them BEFORE writing the location/timestamp table entry that points at
@@ -74,7 +82,8 @@ export const LOCATION_ENTRY_BYTES = 8;
 export const TIMESTAMP_ENTRY_BYTES = 8;
 
 export const CHUNK_SLOT_HEADER_BYTES = 5; // u32 length + u8 compression
-export const BODY_SCHEMA_VERSION = 1;
+export const BODY_SCHEMA_VERSION = 2;
+export const BODY_SCHEMA_LEGACY_U8 = 1;
 // bodySchema(1) + timestampMs(8) + blocksLen(4) + lightLen(4) + metaLen(4)
 export const BODY_HEADER_BYTES = 21;
 

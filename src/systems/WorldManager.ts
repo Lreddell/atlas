@@ -1020,7 +1020,7 @@ export class WorldManager {
           // are cleared only AFTER the write succeeds; on failure they remain dirty
           // so the chunks are retried on the next pass (no silent data loss).
           const keys = Array.from(this.dirtyChunks);
-          const batch: Array<{ cx: number; cz: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array }> = [];
+          const batch: Array<{ cx: number; cz: number; blocks: Uint16Array; light: Uint8Array; meta: Uint8Array }> = [];
           const savedKeys: Array<{ key: string; version: number }> = [];
           for (const key of keys) {
               const [cx, cz] = key.split(',').map(Number);
@@ -1564,7 +1564,7 @@ export class WorldManager {
     if (!chunk) return BlockType.AIR;
     return chunk[WorldCoords.index3D(lx, y, lz)];
   }
-  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint8Array | null {
+  getChunkData(cx: number, cz: number, autoGenerate: boolean = true): Uint16Array | null {
     const chunk = WorldStore.getChunkData(this.state, cx, cz);
     if (chunk) return chunk;
     if (autoGenerate && this.getStage(cx, cz) === ChunkStage.EMPTY) { this.queueGen(cx, cz, 0); }

@@ -34,7 +34,7 @@ test('base64 helpers round-trip arbitrary bytes', () => {
 test('export then import preserves metadata fields and all chunks', () => {
     const exported = encodeExportedWorld(meta(), [rawChunk(0, 0), rawChunk(-1, 5)]);
     assert.equal(exported.format, 'atlas-world-export');
-    assert.equal(exported.version, 2);
+    assert.equal(exported.version, 3);
     const { metaFields, chunks } = decodeExportedWorld(exported);
     assert.equal(metaFields.name, 'My World');
     assert.equal(metaFields.seedNum, 42);
@@ -44,11 +44,25 @@ test('export then import preserves metadata fields and all chunks', () => {
     assert.deepEqual(metaFields.resonantVaultReservations, meta().resonantVaultReservations);
     assert.equal(metaFields.worldGenPresetName, 'Preset');
     assert.equal(chunks.length, 2);
+    assert.ok(chunks.every((c) => c.blocks instanceof Uint16Array), 'decoded chunks are uint16');
     const c0 = chunks.find((c) => c.cx === 0 && c.cz === 0);
     assert.deepEqual([...c0.blocks], [1, 2, 3, 0]);
     assert.equal(c0.timestamp, 999);
     const cN = chunks.find((c) => c.cx === -1 && c.cz === 5);
     assert.deepEqual([...cN.blocks], [1, 2, 3, 255]);
+});
+
+test('a legacy v1/v2 export (uint8 blocks) imports with copy-up and gap remap', () => {
+    const exported = encodeExportedWorld(meta(), [rawChunk(0, 0)]);
+    exported.version = 2;
+    // Simulate a real legacy file: uint8 base64 blocks incl. gap ids 4/90.
+    const legacyBytes = new Uint8Array([1, 4, 90, 255]);
+    let binary = '';
+    for (let i = 0; i < legacyBytes.length; i++) binary += String.fromCharCode(legacyBytes[i]);
+    exported.chunks = [{ cx: 0, cz: 0, blocks: btoa(binary), light: exported.chunks[0].light, meta: exported.chunks[0].meta, timestamp: 5 }];
+    const { chunks } = decodeExportedWorld(exported);
+    assert.ok(chunks[0].blocks instanceof Uint16Array);
+    assert.deepEqual([...chunks[0].blocks], [1, 65535, 65535, 255]);
 });
 
 test('a v1 export (no progression) still imports', () => {

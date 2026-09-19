@@ -10,6 +10,9 @@ import { DesktopFsBackend } from './storage/DesktopFsBackend';
 import { normalizeGenConfigSnapshot } from './genConfig';
 import { IndexedDbBackend } from './storage/IndexedDbBackend';
 import { OpfsBackend, opfsBackendSupported } from './storage/OpfsBackend';
+import { copyUpLegacyBlocks } from '../registry/blockRegistry';
+import { generateCampaignGraph, toSnapshot } from '../campaign/campaignGraph';
+import { buildRegistrySnapshotExtra } from '../registry/blockRegistry';
 import type { StorageBackend } from './storage/StorageBackend';
 import type {
     ChunkBatchEntry,
@@ -98,6 +101,13 @@ class WorldStorageSystem {
             ...meta,
             resonantVaultReservations: meta.resonantVaultReservations
                 ?? existing?.resonantVaultReservations,
+            // Campaign state rides the same merge-preserve pattern: a save
+            // that doesn't mention these fields must not wipe them.
+            campaignGraph: meta.campaignGraph ?? existing?.campaignGraph,
+            provenance: meta.provenance ?? existing?.provenance,
+            previewRegion: meta.previewRegion ?? existing?.previewRegion,
+            registrySnapshot: meta.registrySnapshot ?? existing?.registrySnapshot,
+            tileEntities: meta.tileEntities ?? existing?.tileEntities,
         });
     }
 
@@ -141,6 +151,15 @@ class WorldStorageSystem {
             ...(worldGenConfigSnapshot ? { worldGenConfig: worldGenConfigSnapshot } : {}),
             ...(worldGenPresetId ? { worldGenPresetId } : {}),
             ...(worldGenPresetName ? { worldGenPresetName } : {}),
+            // Gate 0: every new Standard world is born with its deterministic
+            // five-region campaign graph (Heartwood reserved around origin)
+            // and the current registry allocation snapshot. No command needed.
+            provenance: 'standard',
+            campaignGraph: toSnapshot(generateCampaignGraph(seedNum)),
+            registrySnapshot: {
+                version: 1,
+                extra: buildRegistrySnapshotExtra(),
+            },
         };
 
         await (await this.getBackend()).createWorld(meta);
@@ -174,14 +193,21 @@ class WorldStorageSystem {
     }
 
     /** Back-compat single-chunk write (wraps the batch path). */
-    public async saveChunk(worldId: string, cx: number, cz: number, data: { blocks: Uint8Array, light: Uint8Array, meta: Uint8Array }): Promise<void> {
+    public async saveChunk(worldId: string, cx: number, cz: number, data: { blocks: Uint16Array, light: Uint8Array, meta: Uint8Array }): Promise<void> {
         if (!worldId) return;
         return this.saveChunks(worldId, [{ cx, cz, blocks: data.blocks, light: data.light, meta: data.meta }]);
     }
 
     public async loadChunk(worldId: string, cx: number, cz: number): Promise<ChunkStorageData | null> {
         if (!worldId) return null;
-        return (await this.getBackend()).readChunk(worldId, cx, cz);
+        const data = await (await this.getBackend()).readChunk(worldId, cx, cz) as (ChunkStorageData & { blocks: Uint16Array | Uint8Array }) | null;
+        if (!data) return null;
+        // Single renderer-side enforcement point for every storage backend
+        // (IndexedDB, OPFS, desktop): legacy uint8 rows copy up, and any id
+        // outside the registry becomes the recoverable placeholder, never
+        // silent air. In-memory chunks are therefore always valid by the time
+        // the mesher, lighting, or interaction layers observe them.
+        return { ...data, blocks: copyUpLegacyBlocks(data.blocks) };
     }
 
     public async hasAnyChunk(worldId: string, coordinates: readonly ChunkCoordinate[]): Promise<boolean> {

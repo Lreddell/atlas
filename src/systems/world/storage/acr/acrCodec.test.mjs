@@ -14,9 +14,11 @@ const {
     SECTOR_SIZE,
     HEADER_SECTORS,
     LOCATION_TABLE_OFFSET,
+    allocateWorldBlockId,
 } = await loadTs(`
     export { RegionFile, AcrFormatError, encodeChunkBody, decodeChunkBody } from './src/systems/world/storage/acr/acrCodec.ts';
     export { ACR_MAGIC, DATA_START_OFFSET, SECTOR_SIZE, HEADER_SECTORS, LOCATION_TABLE_OFFSET } from './src/systems/world/storage/acr/acrFormat.ts';
+    export { allocateWorldBlockId } from './src/systems/registry/blockRegistry.ts';
 `);
 
 function readU32(buf, off) { return (buf[off] << 24 | buf[off + 1] << 16 | buf[off + 2] << 8 | buf[off + 3]) >>> 0; }
@@ -38,8 +40,12 @@ class MemFile {
 const zlibCompressor = { compress: (d) => deflateRawSync(d), decompress: (d) => inflateRawSync(d) };
 
 function chunk(seed, blocksLen = 4096, lightLen = 2048, metaLen = 512) {
+    // Blocks use only registry-known legacy ids (5..60 are all defined; gap
+    // ids like 4/90 intentionally decode to the unknown placeholder, so
+    // synthetic round-trip data must avoid them). Light/meta stay raw bytes.
+    const mkBlocks = (len, salt) => { const a = new Uint16Array(len); for (let i = 0; i < len; i++) a[i] = 5 + ((i * 7 + seed + salt) % 56); return a; };
     const mk = (len, salt) => { const a = new Uint8Array(len); for (let i = 0; i < len; i++) a[i] = (i * 7 + seed + salt) & 0xff; return a; };
-    return { blocks: mk(blocksLen, 1), light: mk(lightLen, 2), meta: mk(metaLen, 3) };
+    return { blocks: mkBlocks(blocksLen, 1), light: mk(lightLen, 2), meta: mk(metaLen, 3) };
 }
 
 function eqChunk(got, want) {
@@ -48,12 +54,62 @@ function eqChunk(got, want) {
     assert.deepEqual([...got.meta], [...want.meta]);
 }
 
+// Frame a legacy schema-1 (uint8 blocks) body by hand for dual-read tests.
+function frameV1(blocksU8, lightU8, metaU8, timestamp) {
+    const out = new Uint8Array(21 + blocksU8.length + lightU8.length + metaU8.length);
+    out[0] = 1;
+    const putU32 = (off, v) => { out[off] = (v >>> 24) & 0xff; out[off + 1] = (v >>> 16) & 0xff; out[off + 2] = (v >>> 8) & 0xff; out[off + 3] = v & 0xff; };
+    const hi = Math.floor(timestamp / 0x100000000);
+    putU32(1, hi); putU32(5, timestamp >>> 0);
+    putU32(9, blocksU8.length); putU32(13, lightU8.length); putU32(17, metaU8.length);
+    let p = 21;
+    out.set(blocksU8, p); p += blocksU8.length;
+    out.set(lightU8, p); p += lightU8.length;
+    out.set(metaU8, p);
+    return out;
+}
+
+const UNKNOWN_PLACEHOLDER_ID = 65535;
+
 test('chunk body encode/decode round-trips and preserves timestamp', () => {
     const c = chunk(11);
     const body = encodeChunkBody(c.blocks, c.light, c.meta, 1700000000123);
+    assert.equal(body[0], 2, 'writes body schema 2 (u16LE blocks)');
     const back = decodeChunkBody(body);
     eqChunk(back, c);
+    assert.ok(back.blocks instanceof Uint16Array, 'decode returns uint16 voxels');
     assert.equal(back.timestamp, 1700000000123);
+});
+
+test('uint16 ids beyond the legacy ceiling round-trip exactly', () => {
+    // The codec is byte-faithful at any width (placeholder enforcement lives
+    // renderer-side). Registration is proven separately in blockRegistry tests.
+    const dyn = allocateWorldBlockId('atlas:test_codec_block', {
+        color: '#ffffff', name: 'Codec Test Block', textureSlot: 46, hardness: 1, category: 'building',
+    });
+    assert.equal(dyn, 256);
+    const blocks = new Uint16Array([0, 1, 255, 256, 1000, 65534, 65535, 3]);
+    const body = encodeChunkBody(blocks, new Uint8Array(0), new Uint8Array(0), 7);
+    const back = decodeChunkBody(body);
+    assert.deepEqual([...back.blocks], [0, 1, 255, 256, 1000, 65534, 65535, 3]);
+});
+
+test('legacy schema-1 bodies dual-read with a faithful copy-up', () => {
+    // The codec is byte-faithful (gap ids preserved); the unknown-id rule is
+    // enforced renderer-side (see blockRegistry tests + migration fixtures).
+    const raw = new Uint8Array([1, 2, 3, 4, 90, 255]);
+    const back = decodeChunkBody(frameV1(raw, new Uint8Array(0), new Uint8Array(0), 9));
+    assert.ok(back.blocks instanceof Uint16Array);
+    assert.deepEqual([...back.blocks], [1, 2, 3, 4, 90, 255]);
+    assert.equal(back.timestamp, 9);
+});
+
+test('schema-2 bodies with odd blocks byte length fail safely', () => {
+    const good = encodeChunkBody(new Uint16Array([1, 2, 3]), new Uint8Array(0), new Uint8Array(0), 1);
+    // Corrupt the declared blocks length to an odd value.
+    const bad = good.slice();
+    bad[12] = (bad[12] + 1) & 0xff;
+    assert.throws(() => decodeChunkBody(bad), AcrFormatError);
 });
 
 test('new region file initializes with valid header and no chunks', async () => {

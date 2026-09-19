@@ -30,7 +30,7 @@ import { getVaultEscapeRoutes, type VaultEscapeRouteDescriptor } from './resonan
 import { buildVaultHazards, getHazardFloorCells, type VaultHazardDescriptor } from './resonantVaultHazards';
 
 export interface GeneratedChunkData {
-    blocks: Uint8Array;
+    blocks: Uint16Array;
     light: Uint8Array;
     meta: Uint8Array;
 }

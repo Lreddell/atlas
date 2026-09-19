@@ -1,14 +1,26 @@
 
-import { WorldState, ChunkUpdateCallback } from './worldTypes';
+import { WorldState, ChunkUpdateCallback, VoxelBlocks } from './worldTypes';
 import { getChunkKey } from './worldCoords';
 import { CHUNK_SIZE, WORLD_HEIGHT } from '../../constants';
 
-export function getChunkData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {
+export function getChunkData(state: WorldState, cx: number, cz: number): VoxelBlocks | undefined {
     return state.chunks.get(getChunkKey(cx, cz));
 }
 
-export function setChunkData(state: WorldState, cx: number, cz: number, data: Uint8Array) {
-    state.chunks.set(getChunkKey(cx, cz), data);
+export function setChunkData(state: WorldState, cx: number, cz: number, data: VoxelBlocks | Uint8Array) {
+    state.chunks.set(getChunkKey(cx, cz), normalizeVoxelBlocks(data));
+}
+
+/**
+ * Defensive copy-up: any legacy Uint8Array voxel plane becomes Uint16Array.
+ * Values pass through unchanged (0-255); ids outside the registry are mapped
+ * to the unknown placeholder by the storage decode paths, not here.
+ */
+export function normalizeVoxelBlocks(data: VoxelBlocks | Uint8Array): VoxelBlocks {
+    if (data instanceof Uint16Array) return data;
+    const out = new Uint16Array(data.length);
+    out.set(data);
+    return out;
 }
 
 export function getLightData(state: WorldState, cx: number, cz: number): Uint8Array | undefined {

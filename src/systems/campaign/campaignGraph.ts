@@ -64,6 +64,34 @@ export interface CampaignGraph {
   createdAt: number;
 }
 
+/** Persisted world-meta snapshot shape (mirrors WorldMetadata.campaignGraph). */
+export interface CampaignGraphSnapshot {
+  schema: number;
+  worldgenVersion: number;
+  seedNum: number;
+  isRetrofit: boolean;
+  anchors: { type: string; x: number; z: number; radius: number }[];
+}
+
+/** Lossless snapshot for world metadata (sites re-reserve at runtime). */
+export function toSnapshot(graph: CampaignGraph): CampaignGraphSnapshot {
+  return {
+    schema: graph.schema,
+    worldgenVersion: graph.worldgenVersion,
+    seedNum: graph.seedNum,
+    isRetrofit: graph.isRetrofit,
+    anchors: graph.anchors.map((a) => ({ type: a.type, x: a.x, z: a.z, radius: a.radius })),
+  };
+}
+
+/** Rehydrate a snapshot into a live graph (sites re-reserve deterministically). */
+export function fromSnapshot(snapshot: CampaignGraphSnapshot): CampaignGraph {
+  const graph = generateCampaignGraph(snapshot.seedNum, snapshot.isRetrofit);
+  graph.schema = snapshot.schema;
+  graph.worldgenVersion = snapshot.worldgenVersion;
+  return graph;
+}
+
 function hashSeed(seedNum: number, salt: string): number {
   let h = seedNum >>> 0;
   for (let i = 0; i < salt.length; i++) {

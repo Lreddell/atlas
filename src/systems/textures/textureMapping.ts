@@ -245,6 +245,7 @@ export const TEXTURE_PATHS: Record<number, string> = {
 
     // --- GATE 0 proving blocks (dynamic ids >= 256; procedural painters in
     // utils/textures.ts, PNGs are optional overrides) ---
+    46: 'blocks/gate0_unknown_placeholder.png',
     267: 'blocks/gate0_proving_stone.png',
     268: 'blocks/gate0_proving_waystone.png',
     269: 'blocks/gate0_proving_anchor.png',

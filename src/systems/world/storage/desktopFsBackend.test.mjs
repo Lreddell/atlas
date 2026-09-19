@@ -20,8 +20,11 @@ const { DesktopFsBackend } = await loadTs(`
 
 const meta = (id, name = 'World') => ({ id, name, seed: 's', seedNum: 7, created: 1, lastPlayed: 2, gameMode: 'survival', time: 1000 });
 function chunk(cx, cz, seed = 1) {
+    // Blocks avoid unassigned gap ids (they decode to the placeholder by
+    // design); light/meta stay raw bytes.
+    const mkBlocks = (n, s) => { const a = new Uint16Array(n); for (let i = 0; i < n; i++) a[i] = 5 + ((i + seed + s) % 56); return a; };
     const mk = (n, s) => { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = (i + seed + s) & 0xff; return a; };
-    return { cx, cz, blocks: mk(300, 1), light: mk(80, 2), meta: mk(20, 3), timestamp: 1000 + seed };
+    return { cx, cz, blocks: mkBlocks(300, 1), light: mk(80, 2), meta: mk(20, 3), timestamp: 1000 + seed };
 }
 
 // Wrap a SavesManager as the {ok,...} IPC bridge (same shape as main.js handlers).

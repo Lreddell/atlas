@@ -16,9 +16,9 @@ const LEAF_TYPES = new Set<BlockType>([
 
 // getOpacity is called per voxel in the lighting BFS and the mesher AO loops :
 // precompute every block id into a flat typed array so the hot path is one load.
-const MAX_OPACITY_ID = Math.max(
-    ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
-);
+// Sized for the full uint16 voxel space so registry-allocated blocks (>= 256)
+// resolve without a rebuild; computeOpacity falls back to the BLOCKS def.
+const MAX_OPACITY_ID = 65535;
 const OPACITY_TABLE = new Uint8Array(MAX_OPACITY_ID + 1);
 for (let id = 0; id <= MAX_OPACITY_ID; id++) {
     OPACITY_TABLE[id] = computeOpacity(id as BlockType);

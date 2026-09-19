@@ -7,6 +7,8 @@
 
 import type { ItemStack } from '../../../types';
 import type { ProgressionData } from '../../progression/ProgressionStore';
+import type { ChestState, FurnaceState } from '../worldTypes';
+import type { CampaignGraphSnapshot } from '../../campaign/campaignGraph';
 
 export interface PlayerData {
     position: { x: number, y: number, z: number };
@@ -65,18 +67,32 @@ export interface WorldMetadata {
      * the live crest/keystone state. Kept here so seed validation and retrofit
      * tooling can reproduce the graph without loading progression first.
      */
-    campaignGraph?: {
-        schema: number;
-        worldgenVersion: number;
-        seedNum: number;
-        isRetrofit: boolean;
-        anchors: { type: string; x: number; z: number; radius: number }[];
-    };
+    campaignGraph?: CampaignGraphSnapshot;
     /** Scenario provenance: Standard vs Campaign Region Preview. Absent = Standard. */
     provenance?: 'standard' | 'preview';
     previewRegion?: string;
     /** Chunk codec version. Absent = 1 (raw Uint8). */
     chunkCodec?: number;
+    /**
+     * Authoritative block-registry allocation snapshot for this world:
+     * dynamic (namespaced, id >= 256) blocks with their exact numerics.
+     * Absent on pre-campaign saves. Applied on world start so reloads and
+     * imports resolve identical numeric ids even if code order changes.
+     */
+    registrySnapshot?: {
+        version: 1;
+        extra: { numeric: number; namespaced: string }[];
+    };
+    /**
+     * Persisted tile entities (furnaces/chests by "x,y,z"). The in-memory
+     * maps are the live source; this record is written on save and
+     * rehydrated on world start, so container contents survive reloads.
+     * Absent on older saves -> no persisted containers.
+     */
+    tileEntities?: {
+        furnaces?: Record<string, FurnaceState>;
+        chests?: Record<string, ChestState>;
+    };
 }
 
 export interface ChunkCoordinate {
@@ -85,7 +101,8 @@ export interface ChunkCoordinate {
 }
 
 export interface ChunkStorageData {
-    blocks: Uint8Array;
+    /** Voxel ids (uint16). Legacy uint8 rows are copied up on read. */
+    blocks: Uint16Array;
     light: Uint8Array;
     meta: Uint8Array;
     timestamp: number;
@@ -95,7 +112,7 @@ export interface ChunkStorageData {
 export interface ChunkBatchEntry {
     cx: number;
     cz: number;
-    blocks: Uint8Array;
+    blocks: Uint16Array;
     light: Uint8Array;
     meta: Uint8Array;
     timestamp?: number;
@@ -112,9 +129,10 @@ export interface ExportedChunkData {
 
 export interface ExportedWorldData {
     format: 'atlas-world-export';
-    // v2 adds optional meta.progression. v1 files import fine (progression
-    // defaults to empty), so both versions are accepted on import.
-    version: 1 | 2;
+    // v2 adds optional meta.progression. v3 stores chunk blocks as u16LE
+    // (registry ids >= 256) and carries campaign/registry/tile metadata.
+    // v1/v2 files import fine (uint8 blocks are copied up + remapped).
+    version: 1 | 2 | 3;
     exportedAt: number;
     meta: Omit<WorldMetadata, 'id' | 'created' | 'lastPlayed'> & {
         name: string;

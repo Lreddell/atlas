@@ -17,6 +17,7 @@ import {
     uniqueWorldName,
     type RawChunk,
 } from './worldExport';
+import { copyUpLegacyBlocks } from '../../registry/blockRegistry';
 
 const DB_NAME = 'AtlasDB';
 const STORE_NAME = 'Chunks'; // key = "chunk_<worldId>_<cx>_<cz>"
@@ -183,9 +184,11 @@ export class IndexedDbBackend implements StorageBackend {
                 const cursor = req.result;
                 if (!cursor) { resolve(out); return; }
                 const parsed = this.parseChunkKey(String(cursor.key || ''), worldId);
-                const value = cursor.value as ChunkStorageData | undefined;
+                const value = cursor.value as (Omit<ChunkStorageData, 'blocks'> & { blocks: Uint16Array | Uint8Array }) | undefined;
                 if (parsed && value?.blocks && value?.light && value?.meta) {
-                    out.push({ cx: parsed.cx, cz: parsed.cz, blocks: value.blocks, light: value.light, meta: value.meta, timestamp: Number(value.timestamp) || Date.now() });
+                    // Uniform storage-read rule: legacy uint8 rows copy up and
+                    // out-of-registry ids remap to the unknown placeholder.
+                    out.push({ cx: parsed.cx, cz: parsed.cz, blocks: copyUpLegacyBlocks(value.blocks), light: value.light, meta: value.meta, timestamp: Number(value.timestamp) || Date.now() });
                 }
                 cursor.continue();
             };

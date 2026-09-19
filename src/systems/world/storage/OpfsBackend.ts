@@ -84,13 +84,14 @@ export class OpfsBackend extends RegionBackendBase {
      *  OPFS (or createSyncAccessHandle) is unusable, triggering the IndexedDB fallback. */
     private async selfTest(): Promise<void> {
         const id = '__opfs_selftest__';
-        const probe = new Uint8Array([1, 2, 3, 4, 5]);
+        const probeBlocks = new Uint16Array([1, 2, 3, 4, 5]);
+        const probeBytes = new Uint8Array([1, 2, 3, 4, 5]);
         const meta: WorldMetadata = { id, name: 'selftest', seed: '', seedNum: 1, created: 0, lastPlayed: 0, gameMode: 'survival', time: 0 };
         await this.call('create', meta);
-        await this.call('writeChunks', id, [{ cx: 0, cz: 0, blocks: probe, light: probe, meta: probe, timestamp: 1 }]);
+        await this.call('writeChunks', id, [{ cx: 0, cz: 0, blocks: probeBlocks, light: probeBytes, meta: probeBytes, timestamp: 1 }]);
         const back = await this.call<ChunkStorageData | null>('readChunk', id, 0, 0);
         await this.call('delete', id);
-        if (!back || back.blocks.length !== probe.length || back.blocks[2] !== 3) {
+        if (!back || back.blocks.length !== probeBlocks.length || back.blocks[2] !== 3) {
             throw new Error('OPFS self-test round-trip failed');
         }
     }

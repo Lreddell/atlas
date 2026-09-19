@@ -18,8 +18,15 @@ export interface ChestState {
     items: (ItemStack | null)[];
 }
 
+/**
+ * Voxel block storage. Uint16Array: ids 0-255 are the frozen legacy range,
+ * 256-65534 are registry-allocated campaign blocks, 65535 is the
+ * unknown-block placeholder. Light/meta planes stay Uint8Array.
+ */
+export type VoxelBlocks = Uint16Array;
+
 export interface WorldState {
-    chunks: Map<string, Uint8Array>;
+    chunks: Map<string, VoxelBlocks>;
     lights: Map<string, Uint8Array>;
     metadata: Map<string, Uint8Array>;
     listeners: Map<string, Set<ChunkUpdateCallback>>;

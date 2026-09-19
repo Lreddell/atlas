@@ -10,6 +10,7 @@ import {
     ACR_FORMAT_VERSION,
     ACR_MAGIC,
     BODY_HEADER_BYTES,
+    BODY_SCHEMA_LEGACY_U8,
     BODY_SCHEMA_VERSION,
     CHUNK_SLOT_HEADER_BYTES,
     COMPRESSION_DEFLATE,
@@ -72,21 +73,51 @@ function getU64(buf: Uint8Array, off: number): number {
 
 // --- Chunk body framing (pure, compression-independent) -------------------
 
-/** Frame {blocks, light, meta, timestamp} into the uncompressed chunk body. */
+/** Plain width copy without remap (encode path only: memory is already valid). */
+function copyUpPlain(blocks: Uint8Array): Uint16Array {
+    const out = new Uint16Array(blocks.length);
+    out.set(blocks);
+    return out;
+}
+
+function blocksToBytesLE(blocks: Uint16Array): Uint8Array {
+    const out = new Uint8Array(blocks.length * 2);
+    for (let i = 0; i < blocks.length; i++) {
+        const v = blocks[i];
+        out[i * 2] = v & 0xff;
+        out[i * 2 + 1] = (v >>> 8) & 0xff;
+    }
+    return out;
+}
+
+function bytesToBlocksLE(bytes: Uint8Array, offset: number, byteLength: number): Uint16Array {
+    if (byteLength % 2 !== 0) {
+        throw new AcrFormatError(`Corrupt .acr chunk body: u16 blocks section has odd byte length ${byteLength}.`);
+    }
+    const out = new Uint16Array(byteLength / 2);
+    for (let i = 0; i < out.length; i++) {
+        out[i] = bytes[offset + i * 2] | (bytes[offset + i * 2 + 1] << 8);
+    }
+    return out;
+}
+
+/** Frame {blocks, light, meta, timestamp} into the uncompressed chunk body (schema 2, u16LE). */
 export function encodeChunkBody(
-    blocks: Uint8Array,
+    blocks: Uint16Array | Uint8Array,
     light: Uint8Array,
     meta: Uint8Array,
     timestampMs: number,
 ): Uint8Array {
-    const out = new Uint8Array(BODY_HEADER_BYTES + blocks.length + light.length + meta.length);
+    const wide = blocks instanceof Uint16Array ? blocks : copyUpPlain(blocks);
+    const blocksBytes = blocksToBytesLE(wide);
+    const out = new Uint8Array(BODY_HEADER_BYTES + blocksBytes.length + light.length + meta.length);
     out[0] = BODY_SCHEMA_VERSION;
     putU64(out, 1, timestampMs);
-    putU32(out, 9, blocks.length);
+    putU32(out, 9, blocksBytes.length);
     putU32(out, 13, light.length);
     putU32(out, 17, meta.length);
     let p = BODY_HEADER_BYTES;
-    out.set(blocks, p); p += blocks.length;
+    out.set(blocksBytes, p); p += blocksBytes.length;
     out.set(light, p); p += light.length;
     out.set(meta, p);
     return out;
@@ -97,14 +128,21 @@ export function encodeChunkBody(
  * must be at least the header size, carry a supported schema, and be EXACTLY the
  * length its declared section sizes imply, no missing bytes, no trailing
  * garbage. Anything else throws rather than silently returning wrong/short data.
+ *
+ * Dual-read: schema 1 (legacy uint8) copies up to uint16; schema 2 decodes
+ * u16LE. Both are byte-faithful: the unknown-id rule (gap ids and ids
+ * outside the registry decode to the placeholder) is enforced once at the
+ * renderer-side funnels (WorldStorage.loadChunk, IndexedDB readAllChunks,
+ * decodeExportedWorld), never inside the codec, so the TS codec and the
+ * Electron CJS mirror stay exactly byte-identical.
  */
 export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
     if (body.length < BODY_HEADER_BYTES) {
         throw new AcrFormatError(`Truncated .acr chunk body: ${body.length} bytes < ${BODY_HEADER_BYTES}-byte header`);
     }
     const schema = body[0];
-    if (schema !== BODY_SCHEMA_VERSION) {
-        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION})`);
+    if (schema !== BODY_SCHEMA_VERSION && schema !== BODY_SCHEMA_LEGACY_U8) {
+        throw new AcrFormatError(`Unsupported .acr chunk body schema ${schema} (expected ${BODY_SCHEMA_VERSION} or legacy ${BODY_SCHEMA_LEGACY_U8})`);
     }
     const timestamp = getU64(body, 1);
     const blocksLen = getU32(body, 9);
@@ -115,7 +153,15 @@ export function decodeChunkBody(body: Uint8Array): ChunkStorageData {
         throw new AcrFormatError(`Corrupt .acr chunk body: declared ${expectedLength} bytes (header + ${blocksLen}+${lightLen}+${metaLen}) but body is ${body.length}`);
     }
     let p = BODY_HEADER_BYTES;
-    const blocks = body.slice(p, p + blocksLen); p += blocksLen;
+    let blocks: Uint16Array;
+    if (schema === BODY_SCHEMA_LEGACY_U8) {
+        const raw = body.slice(p, p + blocksLen);
+        blocks = new Uint16Array(raw.length);
+        blocks.set(raw);
+    } else {
+        blocks = bytesToBlocksLE(body, p, blocksLen);
+    }
+    p += blocksLen;
     const light = body.slice(p, p + lightLen); p += lightLen;
     const meta = body.slice(p, p + metaLen);
     return { blocks, light, meta, timestamp };
@@ -245,7 +291,7 @@ export class RegionFile {
     }
 
     /** Encode a chunk body into its slot payload (length + compression + bytes). */
-    private async encodePayload(blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Promise<Uint8Array> {
+    private async encodePayload(blocks: Uint16Array | Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number): Promise<Uint8Array> {
         const body = encodeChunkBody(blocks, light, meta, timestampMs);
         let compType = COMPRESSION_RAW;
         let payload = body;
@@ -297,7 +343,7 @@ export class RegionFile {
      * Crash-safe: a relocated chunk's old sectors stay valid until commit.
      */
     private async writePayloadSectors(
-        slot: number, blocks: Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number,
+        slot: number, blocks: Uint16Array | Uint8Array, light: Uint8Array, meta: Uint8Array, timestampMs: number,
     ): Promise<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> {
         const payload = await this.encodePayload(blocks, light, meta, timestampMs);
         const need = Math.max(1, sectorsFor(payload.length));
@@ -331,7 +377,7 @@ export class RegionFile {
     }
 
     /** Write a single chunk (payload sectors flushed before the header commit). */
-    async writeChunk(slot: number, data: { blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }): Promise<void> {
+    async writeChunk(slot: number, data: { blocks: Uint16Array | Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }): Promise<void> {
         await this.writeChunkBatch([{ slot, ...data }]);
     }
 
@@ -340,12 +386,12 @@ export class RegionFile {
      * entries (flush), then free relocated old runs. The header flush is the
      * single commit point for the whole batch.
      */
-    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>): Promise<void> {
+    async writeChunkBatch(entries: Array<{ slot: number; blocks: Uint16Array | Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>): Promise<void> {
         this.ensureOpen();
         if (entries.length === 0) return;
 
         // De-dupe slots (last write wins) so a batch never double-allocates a slot.
-        const bySlot = new Map<number, { slot: number; blocks: Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>();
+        const bySlot = new Map<number, { slot: number; blocks: Uint16Array | Uint8Array; light: Uint8Array; meta: Uint8Array; timestamp?: number }>();
         for (const e of entries) bySlot.set(e.slot, e);
 
         const placed: Array<{ slot: number; offset: number; count: number; timestamp: number; freeOffset: number; freeCount: number }> = [];
