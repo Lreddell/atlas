@@ -60,6 +60,14 @@ export interface GameEventMap {
     'player:dodge': { kind: 'roll' | 'dash' | 'leap' | 'jump-off'; x: number; y: number; z: number };
     /** A hit passed through an invulnerability window. */
     'player:dodged': { source: 'bolt' | 'ring' | 'contact' | 'attack' };
+    /** A hit landed inside the perfect-parry window: negated + posture. */
+    'player:parried': { source: 'bolt' | 'ring' | 'contact' | 'attack'; damage: number };
+    /** A hit landed on an active guard: reduced, stability spent. */
+    'player:guarded': { source: 'bolt' | 'ring' | 'contact' | 'attack'; heavy: boolean; reduction: number };
+    /** A guarded hit exhausted stability: the guard is broken. */
+    'player:guard_broken': { source: 'bolt' | 'ring' | 'contact' | 'attack' };
+    /** An entity's posture meter broke: long stagger opening. */
+    'entity:staggered': { entityId: number; kind: string; breaks: number };
     /** A magnetic dash arrived at the boss: the next strike is a Magnet Slam. */
     'player:surge': { armed: boolean };
     /** A Magnet Slam landed (or bounced). */

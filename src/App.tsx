@@ -100,6 +100,10 @@ import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
 import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
+import * as guardPosture from './systems/combat/guardPosture';
+import { MOONHIDE_STAMINA_REFUND } from './systems/combat/guardPosture';
+import { refundPlayerStamina } from './systems/player/playerMotion';
+import { HW_THORN_BUCKLER, hasMoonhideBonus } from './systems/heartwood/heartwoodContent';
 import { CampaignAtlasPanel } from './components/ui/CampaignAtlasPanel';
 import { useCampaignProving } from './hooks/useCampaignProving';
 import { applyRegistrySnapshot, buildRegistrySnapshotExtra } from './systems/registry/blockRegistry';
@@ -655,8 +659,16 @@ const App: React.FC = () => {
           // The kit's invulnerability windows (a roll's i-frames, a dash, a leap):
           // every attack, bolt, ring and contact hit passes through.
           () => motionStatus.invulnerable,
+          // Heartwood guard layer: camera yaw for frontal-guard checks.
+          () => controlsRef.current?.getRotation()?.y ?? 0,
       );
   }, [damagePlayer]);
+
+  // Heartwood: Thorn Buckler in the accessory slot widens the parry window
+  // and grants heavy guard; Moonhide armor refunds roll stamina on dodges.
+  useEffect(() => {
+      guardPosture.setBucklerEquipped((equipment.accessory?.type as number) === HW_THORN_BUCKLER);
+  }, [equipment]);
 
   // Magnetic susceptibility from equipment: polarity boots grant control,
   // otherwise iron armor makes the player passively ferromagnetic. Upgraded
@@ -1229,7 +1241,30 @@ const App: React.FC = () => {
           const slot = kind === 'roll' ? 'entity.player.roll' : kind === 'dash' ? 'entity.player.dash' : kind === 'leap' ? 'entity.player.leap' : 'entity.player.launch';
           soundManager.play(slot);
       });
-      const offDodged = gameEvents.on('player:dodged', () => soundManager.play('entity.player.dodged'));
+      const offDodged = gameEvents.on('player:dodged', () => {
+          soundManager.play('entity.player.dodged');
+          // Heartwood arts: a successful evade opens Boarstep/Crown windows,
+          // and Moonhide restores a bounded slice of roll stamina.
+          guardPosture.noteDodge(Date.now(),
+              progression.isAbilityUnlocked('art:boarstep'),
+              progression.isAbilityUnlocked('art:crown_reversal'));
+          if (hasMoonhideBonus(equipment)) refundPlayerStamina(MOONHIDE_STAMINA_REFUND);
+      });
+      // Heartwood guard layer: parry opens Briar Counter + Echo Guard storage,
+      // guarded hits get the metallic contact cue, breaks get the low tear.
+      const offParried = gameEvents.on('player:parried', () => {
+          soundManager.play('block.amethyst.hit', { volume: 0.8, pitch: 1.6 });
+          guardPosture.noteParry(Date.now(), progression.isAbilityUnlocked('art:echo_guard'));
+      });
+      const offGuarded = gameEvents.on('player:guarded', ({ heavy }: { heavy?: boolean }) => {
+          soundManager.play('block.amethyst.hit', { volume: 0.5, pitch: heavy ? 0.7 : 1.1 });
+      });
+      const offGuardBroken = gameEvents.on('player:guard_broken', () => {
+          soundManager.play('entity.player.hurt', { volume: 0.7, pitch: 0.6 });
+      });
+      const offStaggered = gameEvents.on('entity:staggered', () => {
+          soundManager.play('block.amethyst.hit', { volume: 0.7, pitch: 0.9 });
+      });
       const offSurge = gameEvents.on('player:surge', ({ armed }) => { if (armed) soundManager.play('entity.player.surge'); });
       const offPlayerSlam = gameEvents.on('player:slam', ({ landed }) => {
           soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
@@ -1281,11 +1316,12 @@ const App: React.FC = () => {
           offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offCharge(); offSlam(); offPhase(); offCrystal(); offPower();
           offBeatTick(); offBeat(); offCrystals(); offLost(); offShieldBroken(); offTowers(); offRepelled();
           offDodge(); offDodged(); offSurge(); offPlayerSlam(); offShocked();
+          offParried(); offGuarded(); offGuardBroken(); offStaggered();
           offView(); offSpawnView(); offDefeatView(); offClearView();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
-  }, [restoreSummonAltar]);
+  }, [restoreSummonAltar, equipment]);
 
   // Update Chunks & Stream
   useEffect(() => {

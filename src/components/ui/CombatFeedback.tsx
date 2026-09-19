@@ -3,6 +3,7 @@ import { gameEvents } from '../../systems/events/GameEvents';
 import { motionStatus } from '../../systems/player/playerMotion';
 import { climbSurfaces } from '../../systems/player/climbSurfaces';
 import { inputState } from '../../systems/player/playerInput';
+import { getGuardView } from '../../systems/combat/guardPosture';
 import { PolarityIndicator } from './PolarityIndicator';
 
 const CIRCUMFERENCE = 2 * Math.PI * 17;
@@ -12,26 +13,34 @@ const CIRCUMFERENCE = 2 * Math.PI * 17;
  * so React only re-renders when something visibly changed.
  */
 function useCombatView() {
-    const [view, setView] = useState(() => ({ ...motionStatus, dodged: false, shocked: false, refused: false, flux: 0, aligned: false }));
+    const [view, setView] = useState(() => ({ ...motionStatus, dodged: false, shocked: false, refused: false, flux: 0, aligned: false, parried: false, guarded: false, guardBroken: false, staggered: false, guarding: false, guardStability: 100 }));
     useEffect(() => {
-        let dodgedAt = 0, shockedAt = 0;
+        let dodgedAt = 0, shockedAt = 0, parriedAt = 0, guardedAt = 0, guardBrokenAt = 0, staggeredAt = 0;
         const offDodge = gameEvents.on('player:dodged', () => { dodgedAt = Date.now(); });
         const offShock = gameEvents.on('player:shocked', () => { shockedAt = Date.now(); });
+        const offParry = gameEvents.on('player:parried', () => { parriedAt = Date.now(); });
+        const offGuard = gameEvents.on('player:guarded', () => { guardedAt = Date.now(); });
+        const offBreak = gameEvents.on('player:guard_broken', () => { guardBrokenAt = Date.now(); });
+        const offStagger = gameEvents.on('entity:staggered', () => { staggeredAt = Date.now(); });
         let last = '';
         const poll = window.setInterval(() => {
             const zone = climbSurfaces.attachedZone ? climbSurfaces.get(climbSurfaces.attachedZone) : null;
             const open = zone && !zone.retiring && climbSurfaces.clock >= zone.opensAt && climbSurfaces.clock < zone.until;
             const now = Date.now();
+            const guard = getGuardView(now);
             const next = { ...motionStatus, stamina: Math.floor(motionStatus.stamina * 10) / 10,
                 cooldown: Math.round(motionStatus.cooldown * 40) / 40,
                 recoverySeconds: Math.max(0, Math.ceil((motionStatus.recoverySeconds - 1e-6) * 10) / 10),
                 refused: now - motionStatus.refusedAt < 400, dodged: now - dodgedAt < 500, shocked: now - shockedAt < 1200,
+                parried: now - parriedAt < 600, guarded: now - guardedAt < 400, guardBroken: now - guardBrokenAt < 900,
+                staggered: now - staggeredAt < 900,
+                guarding: inputState.guarding, guardStability: Math.round(guard.stability),
                 flux: open ? Math.max(0, Math.min(1, (zone.until - climbSurfaces.clock) / Math.max(0.001, zone.until - zone.opensAt))) : 0,
                 aligned: !!open && inputState.magneticPolarity !== 0 && Math.sign(inputState.magneticPolarity) !== Math.sign(zone.polarity) };
             const key = JSON.stringify(next);
             if (key !== last) { last = key; setView(next); }
         }, 40);
-        return () => { offDodge(); offShock(); window.clearInterval(poll); };
+        return () => { offDodge(); offShock(); offParry(); offGuard(); offBreak(); offStagger(); window.clearInterval(poll); };
     }, []);
     return view;
 }
@@ -42,6 +51,9 @@ export const CombatFeedback: React.FC<{ magnetic?: boolean }> = ({ magnetic = fa
     return <div className="pointer-events-none flex w-full flex-col items-center gap-2 select-none">
         {view.stamina < 100 && <div className="h-2 w-[180px] max-w-full border border-black bg-black/60" role="meter" aria-label="Roll stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)}>
             <div className="h-full bg-[#83bd63] transition-[width] duration-75 motion-reduce:transition-none" style={{ width: `${view.stamina}%` }} />
+        </div>}
+        {(view.guarding || view.guardStability < 100) && <div className="h-2 w-[180px] max-w-full border border-black bg-black/60" role="meter" aria-label="Guard stability" aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.guardStability}>
+            <div className="h-full bg-[#7fb2d9] transition-[width] duration-75 motion-reduce:transition-none" style={{ width: `${view.guardStability}%` }} />
         </div>}
         {magnetic && <PolarityIndicator />}
     </div>;
@@ -76,5 +88,9 @@ export const CombatOverlay: React.FC = () => {
         </div>}
         {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]" role="status" aria-label="Shocked off: wrong polarity">SHOCKED OFF</div>}
         {view.dodged && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-lg text-white drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack dodged">✓</div>}
+        {view.parried && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-lg text-amber-200 drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack parried">PARRY</div>}
+        {view.guarded && !view.parried && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-sm text-sky-200 drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack guarded">GUARD</div>}
+        {view.guardBroken && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-sm text-red-300 drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Guard broken">GUARD BREAK</div>}
+        {view.staggered && <div className="absolute left-1/2 top-[45%] -translate-x-1/2 text-sm text-yellow-200 drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Enemy staggered">STAGGERED</div>}
     </div>;
 };

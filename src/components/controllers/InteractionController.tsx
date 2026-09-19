@@ -36,6 +36,10 @@ import { isEntityHitVisible } from '../../systems/entities/meleeOcclusion';
 import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/ResonantVaultRuntime';
 import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
+import * as guardPosture from '../../systems/combat/guardPosture';
+import { BOARSTEP_DAMAGE_MULT, CROWN_DAMAGE_MULT, CROWN_STAGGER_FLOOR } from '../../systems/combat/guardPosture';
+import { progression } from '../../systems/progression/ProgressionStore';
+import { HW_MOONLEAF } from '../../systems/heartwood/heartwoodContent';
 import { particleFx } from '../../systems/fx/particleFx';
 import { PROVING_WAYSTONE_NUMERIC, PROVING_ANCHOR_NUMERIC } from '../../data/campaign/gate0';
 import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../systems/player/viewRig';
@@ -220,6 +224,28 @@ export const InteractionController = ({
 
     // Dispose the dynamically-built outline geometry on unmount.
     useEffect(() => () => { highlightGeoRef.current?.dispose(); }, []);
+
+    const cameraRef = useRef(camera);
+    cameraRef.current = camera;
+    useEffect(() => {
+        // Briar Counter: a perfect parry answers with a short thorn line
+        // down the crosshair. Requires the art unlock; the shared projectile
+        // sim owns flight, collision, and reflection rules.
+        const off = gameEvents.on('player:parried', () => {
+            if (!progression.isAbilityUnlocked('art:briar_counter')) return;
+            const cam = cameraRef.current;
+            if (!cam) return;
+            aimFromCamera(cam);
+            vaultProjectileSystem.fire(
+                { x: _camPos.x + _camDir.x * 0.5, y: _camPos.y + _camDir.y * 0.5, z: _camPos.z + _camDir.z * 0.5 },
+                { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+                5,
+                { owner: 'player', speed: 24, gravity: 1.5, stagger: 0.5, maxDistance: 9 },
+            );
+            soundManager.playAt('block.amethyst.hit', { x: _camPos.x, y: _camPos.y, z: _camPos.z }, { volume: 0.6, pitch: 1.8, fallback: false });
+        });
+        return off;
+    }, []);
 
     useEffect(() => {
         // A different item starts a fresh bite/mining action. Stack count changes
@@ -668,24 +694,35 @@ export const InteractionController = ({
             }
         }
 
-        if (!isContinuous && heldForUse?.type === BlockType.VAULT_CROSSBOW) {
-            const profile = getVaultWeaponProfile(heldForUse.type);
-            if (!profile || weaponCooldown.current > 0 || attackBusy(playerAttack) || motionStatus.action !== 'none') return;
-            if (!consumeInventoryType(BlockType.VAULT_BOLT)) return;
-            aimFromCamera(camera);
-            const projectileId = vaultProjectileSystem.fire(
-                { x: _camPos.x + _camDir.x * 0.25, y: _camPos.y + _camDir.y * 0.25, z: _camPos.z + _camDir.z * 0.25 },
-                { x: _camDir.x, y: _camDir.y, z: _camDir.z },
-                profile.damage,
-                { owner: 'player', speed: 28, gravity: 2.8, stagger: profile.stagger, maxDistance: profile.reach },
-            );
-            if (projectileId === null) return;
-            damageHeldItem(selectedSlotRef.current, profile.durabilityCost);
-            weaponCooldown.current = profile.cooldownSeconds;
-            beginAttack(playerAttack, 'crossbow', profile.cooldownSeconds);
-            playerAttack.struck = true;
-            attackItem.current = null;
-            window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
+        if (!isContinuous && heldForUse) {
+            // Ranged use path: crossbow family fires bolts, the Resonant
+            // Branch (Heartwood arcane staff) fires a slower heavy bolt fed
+            // by moonleaf. Same shared projectile sim either way.
+            const useProfile = getVaultWeaponProfile(heldForUse.type);
+            if (useProfile && (useProfile.kind === 'crossbow' || useProfile.kind === 'staff')) {
+                if (weaponCooldown.current > 0 || attackBusy(playerAttack) || motionStatus.action !== 'none') return;
+                const ammo = useProfile.kind === 'staff' ? (HW_MOONLEAF as BlockType) : BlockType.VAULT_BOLT;
+                if (!consumeInventoryType(ammo)) return;
+                aimFromCamera(camera);
+                const isStaff = useProfile.kind === 'staff';
+                const projectileId = vaultProjectileSystem.fire(
+                    { x: _camPos.x + _camDir.x * 0.25, y: _camPos.y + _camDir.y * 0.25, z: _camPos.z + _camDir.z * 0.25 },
+                    { x: _camDir.x, y: _camDir.y, z: _camDir.z },
+                    useProfile.damage,
+                    isStaff
+                        ? { owner: 'player', speed: 17, gravity: 4.5, stagger: useProfile.stagger, maxDistance: 40 }
+                        : { owner: 'player', speed: 28, gravity: 2.8, stagger: useProfile.stagger, maxDistance: useProfile.reach },
+                );
+                if (projectileId === null) return;
+                damageHeldItem(selectedSlotRef.current, useProfile.durabilityCost);
+                weaponCooldown.current = useProfile.cooldownSeconds;
+                beginAttack(playerAttack, isStaff ? 'staff' : 'crossbow', useProfile.cooldownSeconds);
+                playerAttack.struck = true;
+                attackItem.current = null;
+                window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: useProfile.kind } }));
+                interactionCooldown.current = 2 / 60;
+                return;
+            }
         }
     }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, onCampaignInteract, setOpenContainer, setIsSleeping]);
 
@@ -697,6 +734,7 @@ export const InteractionController = ({
         const reach = profile && profile.kind !== 'crossbow' ? profile.reach : MELEE_REACH;
         aimFromCamera(camera);
         if (profile?.kind === 'crossbow') return true;
+        if (profile?.kind === 'staff') return true;
         const hits = new Map<number, NonNullable<ReturnType<typeof entityManager.raycastEntity>>>();
         const direct = entityManager.raycastEntity(_camPos, _camDir, reach);
         const blockHit = castFromCamera(camera, reach);
@@ -729,11 +767,33 @@ export const InteractionController = ({
             const stagger = resolved?.stagger ?? 0;
             const struckEntity = entityManager.getEntity(hit.id);
             const targetKind = struckEntity?.kind;
+            // Heartwood signature arts (one swing consumes any armed window):
+            // Boarstep lunges forward with bonus damage, Crown Reversal
+            // guarantees a staggering counter, Echo Guard discharges stored
+            // posture through heavy-weapon hits.
+            const arts = guardPosture.consumeArtWindows(Date.now());
+            let artDamage = damage;
+            let artStagger = stagger;
+            if (arts.boarstep && progression.isAbilityUnlocked('art:boarstep')) {
+                artDamage *= BOARSTEP_DAMAGE_MULT;
+                entityManager.impulsePlayer(forward.x * 7, 1.5, forward.z * 7);
+            }
+            if (arts.crown && progression.isAbilityUnlocked('art:crown_reversal')) {
+                artDamage *= CROWN_DAMAGE_MULT;
+                artStagger = Math.max(artStagger, CROWN_STAGGER_FLOOR);
+            }
+            if (resolved && (resolved.technique === 'armor_break' || resolved.technique === 'titan_crush')) {
+                artDamage += guardPosture.consumeEcho();
+            }
             // A strike loaded by a magnetic dash is a Magnet Slam: the boss's
             // encounter reads the hit zone and lands it harder (and staggers).
             const slam = motionStatus.surge && !motionRequests.consumeSurge && struckEntity?.isBoss === true;
             if (slam) motionRequests.consumeSurge = true;
-            const result = entityManager.damageEntity(hit.id, damage, _camDir.x, _camDir.z, stagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
+            // Gleaning Hook draws small, non-boss targets toward the player
+            // instead of knocking them away (bounded pull, never bosses).
+            const hookPull = resolved?.technique === 'hook_draw'
+                && struckEntity && !struckEntity.isBoss && struckEntity.width < 1.4;
+            const result = entityManager.damageEntity(hit.id, artDamage, hookPull ? -_camDir.x : _camDir.x, hookPull ? -_camDir.z : _camDir.z, artStagger, slam ? MAGNET_SLAM_HIT_ZONE : hit.hitZone);
             if (resolved && struckEntity && result === 'damaged' && resolved.technique !== 'standard') {
                 const heavy = resolved.technique === 'armor_break' || resolved.technique === 'titan_crush';
                 particleFx.burst({
@@ -799,6 +859,9 @@ export const InteractionController = ({
             if (block && (!target || !isEntityHitVisible(target.dist, block.distance))) return false;
         }
         if (attackBusy(playerAttack) || weaponCooldown.current > 0 || motionStatus.action !== 'none') return true;
+        // Guarding roots the weapon: attacks wait until the guard drops
+        // (commitment is the lesson; Boarstep/Crown windows fire on release).
+        if (inputState.guarding) return true;
         const kind = profile.kind;
         const duration = profile.cooldownSeconds;
         if (beginAttack(playerAttack, kind, duration)) {

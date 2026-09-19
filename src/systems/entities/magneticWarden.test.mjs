@@ -81,7 +81,13 @@ test('EntityManager dispatches registered brains and resolves bolts, rings and i
     assert.match(manager, /polarityProvider\?: \(\) => number/);
     assert.match(manager, /invulnerableProvider\?: \(\) => boolean/);
     assert.match(manager, /getPlayerPolarity\(\): number/);
-    assert.match(manager, /tryDamagePlayer\(amount: number, knockX: number, knockZ: number, source: PlayerHitSource = 'attack'\): boolean/);
+    assert.match(manager, /tryDamagePlayer\(\s*amount: number,\s*knockX: number,\s*knockZ: number,\s*source: PlayerHitSource = 'attack',\s*options\?: \{ guardable\?: boolean \},\s*\): boolean/);
+    // Guard layer: parry negates, guard reduces, breaks land full; dodge-only
+    // attacks bypass the guard.
+    assert.match(manager, /resolveIncomingHit\(\{/);
+    assert.match(manager, /gameEvents\.emit\('player:parried', \{ source, damage: amount \}\)/);
+    assert.match(manager, /gameEvents\.emit\('player:guarded', \{/);
+    assert.match(manager, /\{ guardable: false \}/);
     assert.match(manager, /gameEvents\.emit\('player:dodged', \{ source \}\)/);
     assert.match(manager, /damagePlayer\(amount: number, knockX: number, knockZ: number\): void \{\s*this.tryDamagePlayer\(amount, knockX, knockZ\)/);
     const vaultController = read('src/components/ResonantVaultController.tsx');
@@ -205,7 +211,7 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     // C is the kit key, and its press is a BUFFERED timestamp rather than a
     // one-frame flag: at 60 fps only every third frame runs a 20 Hz substep, so
     // a flag would drop two presses out of three ("I have to spam it").
-    assert.match(input, /'KeyC'\]/);
+    assert.match(input, /'KeyC', 'KeyF'\]/);
     assert.match(input, /case 'KeyC':[\s\S]*?inputState\.dodgePressedAt = now/);
     // The press is queued as a timestamp and only expires AFTER the physics has
     // had a chance at it, so a slow frame cannot swallow one.

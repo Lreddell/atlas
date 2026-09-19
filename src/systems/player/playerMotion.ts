@@ -320,8 +320,12 @@ export function previewDodge(state: MotionState, ctx: DodgeContext): DodgeResolu
 /** Advance timers; ends an action when its duration runs out. */
 export function advanceMotion(state: MotionState, dt: number): MotionState {
     const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+    // Moonhide perfect-dodge refunds land here (bounded accumulator, applied
+    // once on the next advance so rolls can chain without an infinite loop).
+    const refund = Math.min(40, pendingStaminaRefund);
+    pendingStaminaRefund = 0;
     state = { ...state, staminaDelay: Math.max(0, state.staminaDelay - step),
-        stamina: Math.min(100, state.stamina + Math.max(0, step - state.staminaDelay) * STAMINA_REGEN_RATE) };
+        stamina: Math.min(100, state.stamina + Math.max(0, step - state.staminaDelay) * STAMINA_REGEN_RATE + refund) };
     const cooldowns = {
         roll: Math.max(0, state.cooldowns.roll - step),
         dash: Math.max(0, state.cooldowns.dash - step),
@@ -341,6 +345,22 @@ export function advanceMotion(state: MotionState, dt: number): MotionState {
 export function endMotion(state: MotionState): MotionState {
     if (state.action === 'none') return state;
     return { ...state, action: 'none', time: 0, duration: 0, target: null, onto: null };
+}
+
+/**
+ * Bounded stamina refunds (Moonhide perfect-dodge perk). Accumulates until
+ * the next advanceMotion, which applies it once; the 40-point cap plus the
+ * 100-point stamina ceiling is what keeps rolls from looping forever.
+ */
+let pendingStaminaRefund = 0;
+
+export function refundPlayerStamina(amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    pendingStaminaRefund = Math.min(40, pendingStaminaRefund + amount);
+}
+
+export function resetStaminaRefundForTests(): void {
+    pendingStaminaRefund = 0;
 }
 
 /** A dash reached the boss: arm the Magnet Slam. */

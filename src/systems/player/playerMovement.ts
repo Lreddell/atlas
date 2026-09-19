@@ -65,6 +65,9 @@ export function simulateStep(
     let targetSpeed = WALK_SPEED;
     if (intent.sprint) targetSpeed *= SPRINT_MULTIPLIER;
     if (intent.sneak) targetSpeed *= SNEAK_MULTIPLIER;
+    // Guarding roots you like sneaking (commitment is the lesson): you cannot
+    // sprint-chase while guarding, and guarding slows a retreat.
+    if ((intent as { guarding?: boolean }).guarding) targetSpeed *= SNEAK_MULTIPLIER;
 
     // Apply Fluid Speed Modifiers
     if (boat) {

@@ -22,6 +22,13 @@ import {
     shouldPreserveKnockback,
 } from './entityBehavior';
 import { raycastBellTitanCore, resolveBellTitanHitZone } from './BellTitanEncounterCore';
+import { inputState } from '../player/playerInput';
+import {
+    resolveIncomingHit,
+    addPosture,
+    getPostureBreaks,
+    STAGGER_BREAK_SECONDS,
+} from '../combat/guardPosture';
 
 export interface SpawnOptions {
     bossId?: string;
@@ -169,6 +176,9 @@ class EntityManager {
     // True while the player's kit grants invulnerability (a roll's i-frames, a
     // dash, a leap): every attack, bolt, ring and contact hit passes through.
     private playerInvulnerableProvider: (() => boolean) | null = null;
+    // Camera yaw (three.js convention) for frontal-guard checks. Optional so
+    // headless tests and older callers keep working (defaults to facing -Z).
+    private playerFacingProvider: (() => number) | null = null;
 
     // Structural-change subscribers (the renderer rebuilds its mesh list on these).
     private structureListeners = new Set<() => void>();
@@ -180,6 +190,7 @@ class EntityManager {
         teleportHandler?: (x: number, y: number, z: number) => void,
         polarityProvider?: () => number,
         invulnerableProvider?: () => boolean,
+        facingProvider?: () => number,
     ): void {
         this.playerPosProvider = posProvider;
         this.playerDamageHandler = damageHandler;
@@ -187,6 +198,7 @@ class EntityManager {
         this.playerTeleportHandler = teleportHandler ?? null;
         this.playerPolarityProvider = polarityProvider ?? null;
         this.playerInvulnerableProvider = invulnerableProvider ?? null;
+        this.playerFacingProvider = facingProvider ?? null;
     }
 
     teleportPlayer(x: number, y: number, z: number): boolean {
@@ -211,15 +223,49 @@ class EntityManager {
 
     /**
      * An attack reaching the player: lands unless an invulnerability window is
-     * open, in which case it is announced as dodged instead. Returns whether it
-     * landed, so a caller can withhold its knockback and impact effects too.
+     * open (announced as dodged), is perfectly parried, or is guarded, in
+     * which case it is announced as parried/guarded instead. Returns whether
+     * it landed, so a caller can withhold its knockback and impact effects
+     * too. Dodge-only/jumpable attacks pass { guardable: false }.
      */
-    tryDamagePlayer(amount: number, knockX: number, knockZ: number, source: PlayerHitSource = 'attack'): boolean {
+    tryDamagePlayer(
+        amount: number,
+        knockX: number,
+        knockZ: number,
+        source: PlayerHitSource = 'attack',
+        options?: { guardable?: boolean },
+    ): boolean {
         if (this.isPlayerInvulnerable()) {
             gameEvents.emit('player:dodged', { source });
             return false;
         }
-        this.playerDamageHandler?.(amount, knockX, knockZ);
+        const guard = resolveIncomingHit({
+            nowMs: Date.now(),
+            guardActive: inputState.guarding,
+            sneaking: inputState.sneak,
+            facingYaw: this.playerFacingProvider?.() ?? 0,
+            knockX,
+            knockZ,
+            damage: amount,
+            guardable: options?.guardable ?? true,
+        });
+        if (guard.outcome === 'parry') {
+            gameEvents.emit('player:parried', { source, damage: amount });
+            return false;
+        }
+        if (guard.outcome === 'guarded' || guard.outcome === 'heavy_guarded') {
+            gameEvents.emit('player:guarded', {
+                source,
+                heavy: guard.outcome === 'heavy_guarded',
+                reduction: guard.heavyGuard ? 0.8 : 0.5,
+            });
+            this.playerDamageHandler?.(guard.damageTaken, knockX, knockZ);
+            return true;
+        }
+        if (guard.outcome === 'broken') {
+            gameEvents.emit('player:guard_broken', { source });
+        }
+        this.playerDamageHandler?.(guard.damageTaken, knockX, knockZ);
         return true;
     }
 
@@ -488,8 +534,26 @@ class EntityManager {
         const e = this.entities.get(id);
         if (!e || e.hp <= 0) return 'none';
         const damageHandler = this.damageHandlers.get(e.kind);
-        if (damageHandler) return damageHandler(id, amount, knockX, knockZ, stagger, hitZone);
-        return this.applyStandardDamage(id, amount, knockX, knockZ, stagger);
+        const result = damageHandler
+            ? damageHandler(id, amount, knockX, knockZ, stagger, hitZone)
+            : this.applyStandardDamage(id, amount, knockX, knockZ, stagger);
+        if (result === 'damaged') this.applyPostureHit(id, amount, stagger);
+        return result;
+    }
+
+    /**
+     * Shared posture contract: every landed player hit feeds the target's
+     * posture meter. On a break, ordinary enemies suffer a long stagger;
+     * bosses accumulate breaks for their brains to consume (phase logic)
+     * without an automatic knockback takeover.
+     */
+    private applyPostureHit(id: number, amount: number, stagger: number): void {
+        const e = this.entities.get(id);
+        if (!e || e.hp <= 0) return;
+        const broke = addPosture(id, amount, stagger, Date.now());
+        if (!broke) return;
+        gameEvents.emit('entity:staggered', { entityId: id, kind: e.kind, breaks: getPostureBreaks(id) });
+        if (!e.isBoss) this.applyHitReaction(e, 0, 0, STAGGER_BREAK_SECONDS);
     }
 
     /**
@@ -1306,6 +1370,17 @@ class EntityManager {
         for (const s of this.shockwaves) {
             const previousRadius = s.radius;
             s.radius += s.speed * dt;
+            if (!s.hit && s.kind === 'slam' && targetable && pp) {
+                // Jumpable ground rings (Heartwood sweeps, threshing wheels):
+                // the edge check already skips airborne players, and guarding
+                // cannot stop them — jump (or i-frame through) or take it.
+                const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
+                if (ringSweepsPlayer(previousRadius, s.radius, s.maxRadius, dist, pp.y - s.y)) {
+                    s.hit = true;
+                    const d = dist || 1;
+                    this.tryDamagePlayer(s.damage, (pp.x - s.x) / d, (pp.z - s.z) / d, 'ring', { guardable: false });
+                }
+            }
             if (!s.hit && s.kind === 'polarity' && targetable && pp) {
                 const dist = Math.hypot(pp.x - s.x, pp.z - s.z);
                 // Resolve once the ring's edge sweeps over the player (and they're

@@ -23,6 +23,11 @@ export interface PlayerInputState {
     /** True while a bite is actively charging (drives the held-item eat animation). */
     eating: boolean;
     /**
+     * True while Guard is held (F). Read by the guard/posture layer
+     * (systems/combat/guardPosture) and by movement (guard slows like sneak).
+     */
+    guarding: boolean;
+    /**
      * Timestamp (ms) of the last dodge press (C), or 0. Kept as a timestamp
      * rather than a boolean so a press that lands between physics substeps is
      * still honoured a few frames later (the input buffer every action game
@@ -54,6 +59,7 @@ export const inputState: PlayerInputState = {
     polarityPowerOn: true,
     eating: false,
     dodgePressedAt: 0,
+    guarding: false,
 };
 
 /**
@@ -74,7 +80,7 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC']);
+const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC', 'KeyF']);
 
 /**
  * Whether every walk direction can sprint, rather than forward alone. That is
@@ -196,11 +202,20 @@ export const onKeyDown = (code: string, e?: KeyboardEvent) => {
             if (e && e.repeat) break;
             inputState.dodgePressedAt = now;
             break;
+        case 'KeyF':
+            // Guard (Heartwood defense layer): hold to raise your weapon.
+            // Timed right it parries; with sneak or a Thorn Buckler it is a
+            // heavy guard. Read by guardPosture; movement slows while held.
+            inputState.guarding = true;
+            break;
     }
 };
 
 export const onKeyUp = (code: string) => {
     switch (code) {
+        case 'KeyF':
+            inputState.guarding = false;
+            break;
         case 'KeyW':
         case 'ArrowUp':
             releaseDirection('forward');
@@ -288,6 +303,7 @@ export const resetInputState = () => {
     inputState.polarityPowerOn = true;
     inputState.eating = false;
     inputState.dodgePressedAt = 0;
+    inputState.guarding = false;
     doubleTapSprintActive = false;
     lastTapDirection = null;
     lastTapTime = 0;

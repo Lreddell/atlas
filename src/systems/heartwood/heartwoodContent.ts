@@ -290,3 +290,18 @@ function armorSet(mat: BlockType, helmet: number, chest: number, legs: number, b
 export function resetHeartwoodContentForTests(): void {
   registered = false;
 }
+
+/** Moonhide perk: 2+ moonhide armor pieces refund roll stamina on dodges. */
+export function hasMoonhideBonus(equipment: {
+  helmet?: { type: number } | null;
+  chestplate?: { type: number } | null;
+  leggings?: { type: number } | null;
+  boots?: { type: number } | null;
+}): boolean {
+  const moon = new Set([HW_MOON_HELMET, HW_MOON_CHEST, HW_MOON_LEGS, HW_MOON_BOOTS]);
+  let count = 0;
+  for (const piece of [equipment.helmet, equipment.chestplate, equipment.leggings, equipment.boots]) {
+    if (piece && moon.has(piece.type as number)) count++;
+  }
+  return count >= 2;
+}
