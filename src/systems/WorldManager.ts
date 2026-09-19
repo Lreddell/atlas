@@ -10,6 +10,7 @@ import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
+import { getHeartwoodLayout } from './heartwood/heartwoodSites';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow } from './world/blockProps';
@@ -1337,10 +1338,62 @@ export class WorldManager {
       else if (biome.id === 'desert') score -= 5;
       else if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') score -= 5;
 
+      // Heartwood origin guarantee: the campaign opens in Founder's Meadow,
+      // which must hold wood, stone, food, and water within walking distance.
+      // These probes use cheap biome queries (no chunk generation).
+      const meadowDist = Math.hypot(x, z);
+      if (meadowDist <= 220) score += 40;
+      else score -= Math.min(40, (meadowDist - 220) / 12);
+      let wooded = 0;
+      let watery = 0;
+      for (const [ox, oz] of [[32, 0], [-32, 0], [0, 32], [0, -32]] as const) {
+          const probe = getBiome(x + ox, z + oz);
+          if (probe.treeChance > 0) wooded++;
+          if (probe.waterBlock === BlockType.WATER || probe.id === 'river' || probe.id === 'ocean') watery++;
+      }
+      if (wooded > 0) score += 8;
+      if (watery > 0) score += 8;
+      // Local relief implies exposed stone (early tools + iron below).
+      const relief = Math.max(
+          Math.abs(h0 - WorldGen.getTerrainHeight(x + 12, z)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x - 12, z)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x, z + 12)),
+          Math.abs(h0 - WorldGen.getTerrainHeight(x, z - 12)),
+      );
+      if (relief >= 3 && relief <= 14) score += 6;
+
       return score;
   }
 
+  /**
+   * Heartwood-first spawn search: probe the meadow basin ring directly so a
+   * fresh Standard world always opens inside Founder's Meadow (campaign
+   * origin guarantee). Falls back to the legacy spiral when no meadow
+   * candidate clears the bar (e.g. a test seed with an ocean at origin).
+   */
+  private findMeadowSpawn(): { x: number, y: number, z: number } | null {
+      const meadowRadius = getHeartwoodLayout(this.activeSeed).meadowRadius;
+      let best: { x: number, z: number, score: number } | null = null;
+      for (let r = 40; r <= meadowRadius - 20; r += 16) {
+          const steps = Math.max(8, Math.floor((2 * Math.PI * r) / 24));
+          for (let i = 0; i < steps; i++) {
+              const angle = (i / steps) * Math.PI * 2;
+              const x = Math.floor(Math.cos(angle) * r);
+              const z = Math.floor(Math.sin(angle) * r);
+              const score = this.scoreSpawnCandidate(x, z);
+              if (!best || score > best.score) best = { x, z, score };
+              if (best && best.score >= GenConfig.spawn.earlyAcceptScore) {
+                  return this.findSafeSpawnPosition(best.x, best.z);
+              }
+          }
+      }
+      if (best && best.score > 60) return this.findSafeSpawnPosition(best.x, best.z);
+      return null;
+  }
+
   public findBestInitialSpawn(): { x: number, y: number, z: number } {
+      const meadow = this.findMeadowSpawn();
+      if (meadow) return meadow;
       const center = getSpawnSearchCenter(this.activeSeed);
       const searchRadius = GenConfig.spawn.searchRadius;
 

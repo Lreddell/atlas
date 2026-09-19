@@ -39,6 +39,7 @@ const GRASSY_SURFACES = new Set<BlockType>([
 const isGrassySurface = (t: BlockType) => GRASSY_SURFACES.has(t);
 import { generateTreeBlocks, isValidSoil } from './trees';
 import type { TreeKind } from './trees';
+import { getHeartwoodHeightOverride } from '../heartwood/heartwoodSites';
 
 // Companion cache to beginGenParamsCache, getTerrainInfo is itself called several
 // times per column during generateChunk (terrain pass, beach probes, tree pass).
@@ -91,7 +92,12 @@ function computeTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height:
         }
         return { height: surfaceY, baseHeight: surfaceY };
     }
-    return computeAmbientTerrainInfo(x, z, noiseSet);
+    const ambient = computeAmbientTerrainInfo(x, z, noiseSet);
+    // Heartwood site volumes level toward their datum (pure function of x/z,
+    // so generation and gameplay queries agree at chunk borders).
+    const hwHeight = getHeartwoodHeightOverride(x, z, noiseSet.seed | 0, ambient.height);
+    if (hwHeight !== null) return { height: hwHeight, baseHeight: hwHeight };
+    return ambient;
 }
 
 function computeAmbientTerrainInfo(x: number, z: number, noiseSet: NoiseSet): { height: number, baseHeight: number } {

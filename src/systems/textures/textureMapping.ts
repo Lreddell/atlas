@@ -269,6 +269,8 @@ export const TEXTURE_PATHS: Record<number, string> = {
     314: 'blocks/heartwood_furrowed_earth.png',
     315: 'blocks/heartwood_stable_path.png',
     316: 'blocks/heartwood_survey_marker.png',
+    317: 'blocks/heartwood_ironwood_leaves.png',
+    318: 'blocks/heartwood_crownroot_leaves.png',
     320: 'items/heartwood_briar_fiber.png',
     321: 'items/heartwood_root_hide.png',
     322: 'items/heartwood_crownwood_twig.png',

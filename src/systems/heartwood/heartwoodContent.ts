@@ -42,6 +42,8 @@ export const HW_MOONLEAF_BLOCK = 275;
 export const HW_FURROWED_EARTH = 276;
 export const HW_STABLE_PATH = 277;
 export const HW_SURVEY_MARKER = 278;
+export const HW_IRONWOOD_LEAVES = 310;
+export const HW_CROWNROOT_LEAVES = 311;
 
 export const HW_BRIAR_FIBER = 279;
 export const HW_ROOT_HIDE = 280;
@@ -81,7 +83,7 @@ const T = {
   resonantLimestone: 304, cutLimestone: 305, ringingStone: 306, bellBronze: 307,
   bronzeLamp: 308, briarHedge: 309, rootBlock: 310, crownrootLog: 311,
   crownrootPlanks: 312, moonleaf: 313, furrowedEarth: 314, stablePath: 315,
-  surveyMarker: 316,
+  surveyMarker: 316, ironwoodLeaves: 317, crownrootLeaves: 318,
   briarFiber: 320, rootHide: 321, crownTwig: 322, resonantShard: 323,
   bellFleck: 324, resin: 325, moonleafItem: 326, salve: 327, buckler: 328,
   maul: 329, daggers: 330, hook: 331, bow: 332, staff: 333,
@@ -118,6 +120,13 @@ const WORLD_BLOCKS: BlockSpec[] = [
   { numeric: HW_FURROWED_EARTH, namespaced: 'atlas:heartwood_furrowed_earth', def: { color: '#5d4a37', name: 'Furrowed Earth', textureSlot: T.furrowedEarth, hardness: 0.5, preferredTool: 'shovel', category: 'natural', soundGroup: 'sand', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }] } },
   { numeric: HW_STABLE_PATH, namespaced: 'atlas:heartwood_stable_path', def: { color: '#8a7a5a', name: 'Stable Path', textureSlot: T.stablePath, hardness: 0.6, preferredTool: 'shovel', category: 'building', soundGroup: 'sand', drops: [{ type: asId(HW_STABLE_PATH), chance: 1, min: 1, max: 1 }] } },
   { numeric: HW_SURVEY_MARKER, namespaced: 'atlas:heartwood_survey_marker', def: { color: '#c8c0b0', name: 'Survey Marker', textureSlot: T.surveyMarker, hardness: 1, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 4, category: 'functional', soundGroup: 'stone', drops: [{ type: asId(HW_SURVEY_MARKER), chance: 1, min: 1, max: 1 }] } },
+];
+
+// Leaf canopies allocate LAST (310-311) so the block/item ranges stay dense.
+// Registration order below must match numeric order exactly.
+const LATE_BLOCKS: BlockSpec[] = [
+  { numeric: HW_IRONWOOD_LEAVES, namespaced: 'atlas:heartwood_ironwood_leaves', def: { color: '#3f7038', name: 'Ironwood Leaves', textureSlot: T.ironwoodLeaves, hardness: 0.2, transparent: true, category: 'natural', soundGroup: 'grass', drops: [{ type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }, { type: asId(HW_RESIN), chance: 0.04, min: 1, max: 1 }] } },
+  { numeric: HW_CROWNROOT_LEAVES, namespaced: 'atlas:heartwood_crownroot_leaves', def: { color: '#7a9a72', name: 'Crownroot Leaves', textureSlot: T.crownrootLeaves, hardness: 0.2, transparent: true, category: 'natural', soundGroup: 'grass', drops: [{ type: asId(HW_CROWNWOOD_TWIG), chance: 0.08, min: 1, max: 1 }, { type: BlockType.STICK, chance: 0.1, min: 1, max: 2 }] } },
 ];
 
 interface ItemSpec {
@@ -175,6 +184,12 @@ export function registerHeartwoodContent(): void {
     const numeric = allocateWorldBlockId(spec.namespaced, spec.def);
     if (numeric !== spec.numeric) {
       throw new Error(`Heartwood item allocation drift: ${spec.namespaced} got ${numeric}, expected ${spec.numeric}.`);
+    }
+  }
+  for (const spec of LATE_BLOCKS) {
+    const numeric = allocateWorldBlockId(spec.namespaced, spec.def);
+    if (numeric !== spec.numeric) {
+      throw new Error(`Heartwood late-block allocation drift: ${spec.namespaced} got ${numeric}, expected ${spec.numeric}.`);
     }
   }
   registerCrossRenderedBlock(asId(HW_MOONLEAF_BLOCK));

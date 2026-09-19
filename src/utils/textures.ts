@@ -1228,6 +1228,18 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#8a6d3b'; ctx.fillRect(6, 3, 4, 1); ctx.fillRect(6, 8, 4, 1); ctx.fillRect(6, 12, 4, 1);
         ctx.fillStyle = '#efe8d8'; ctx.fillRect(7, 1, 2, 1);
     });
+    // Leaf canopies on transparent tiles (cutout cubes, like oak leaves).
+    const hwLeaves = (slot: number, base: string, dark: string, light: string) => {
+        withTile(slot, () => {
+            const blob = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+            blob(2, 2, 12, 12, base);
+            blob(0, 4, 3, 8, base); blob(13, 4, 3, 8, base); blob(4, 0, 8, 3, base); blob(4, 13, 8, 3, base);
+            blob(3, 3, 3, 3, dark); blob(10, 9, 3, 3, dark); blob(6, 11, 2, 2, dark);
+            blob(6, 5, 2, 2, light); blob(11, 4, 2, 2, light);
+        });
+    };
+    hwLeaves(317, '#3f7038', '#2a4f26', '#5a9a4e'); // ironwood leaves
+    hwLeaves(318, '#7a9a72', '#5a7454', '#9abc90'); // crownroot leaves
     // --- Heartwood item icons (transparent tiles, centered pictograms) ---
     const hwIcon = (slot: number, draw: () => void) => withTile(slot, draw);
     const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
