@@ -2926,7 +2926,7 @@ const App: React.FC = () => {
           // Preview decontamination (live): a preview world never carries
           // foreign boss/crest state, even if its file was hand-edited.
           if (meta.provenance === 'preview') {
-              const dropped = progression.sanitizePreviewCampaign('gate0:');
+              const dropped = progression.sanitizePreviewCampaign(['atlas:gate0_', 'gate0:']);
               if (dropped.length > 0) {
                   console.log(`[Campaign] Preview sanitize dropped ${dropped.length} foreign progression entries.`);
                   meta.progression = progression.serialize();

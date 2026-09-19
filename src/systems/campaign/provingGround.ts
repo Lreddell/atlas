@@ -273,10 +273,12 @@ export function tryProvingTravel(
   }
   const solid = (x: number, y: number, z: number): boolean => isSolidForBuild(access.getBlock(x, y, z));
   const d = layout.waystone;
-  if (!validateLandingVolume(solid, d.x, d.y, d.z)) {
+  // Land beside the node, never inside it: one step east on the pad.
+  const landing = { x: d.x + 1, y: d.y, z: d.z };
+  if (!validateLandingVolume(solid, landing.x, landing.y, landing.z)) {
     return { ok: false, reason: 'Landing volume is obstructed.' };
   }
-  return { ok: true, destination: { x: d.x + 0.5, y: d.y + 0.1, z: d.z + 0.5 } };
+  return { ok: true, destination: { x: landing.x + 0.5, y: landing.y + 0.1, z: landing.z + 0.5 } };
 }
 
 export interface ProvingAtlasInfo {

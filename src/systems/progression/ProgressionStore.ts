@@ -539,10 +539,12 @@ export class ProgressionStore {
      * Preview decontamination (live enforcement): drop any crest/keystone/
      * relic whose id does not belong to the preview target's namespace, so a
      * preview world can never fabricate or export foreign progression.
+     * Allowed entries are prefixes: 'atlas:gate0_' keeps atlas:gate0_crest.
      */
-    sanitizePreviewCampaign(allowedPrefix: string): string[] {
+    sanitizePreviewCampaign(allowed: string | string[]): string[] {
+        const prefixes = Array.isArray(allowed) ? allowed : [allowed];
         const dropped: string[] = [];
-        const keep = (id: string) => id.startsWith(allowedPrefix);
+        const keep = (id: string) => prefixes.some((p) => id.startsWith(p));
         for (const key of ['crests', 'keystones', 'boundRelics'] as const) {
             const list = this.campaign[key] ?? [];
             const kept = list.filter(keep);
