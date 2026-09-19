@@ -71,9 +71,20 @@ export function evictChunk(state: WorldState, cx: number, cz: number) {
     state.lights.delete(key);
     state.metadata.delete(key);
     state.listeners.delete(key);
-    // Tile entities are keyed by world position; drop any furnace/chest whose
-    // block column belongs to the evicted chunk so a regenerated chunk cannot
-    // resurrect stale container contents.
+    // NOTE: tile entities are intentionally KEPT on evict. The in-memory
+    // furnace/chest maps are the persistence source (serialized to world meta
+    // on save), so dropping them here would lose container contents for any
+    // chunk evicted before the next save. Staleness is instead invalidated at
+    // the single fresh-generation point (clearTileColumn): regenerated terrain
+    // never inherits tiles from an older incarnation of the same chunk.
+}
+
+/**
+ * Drop furnace/chest state whose block column belongs to (cx, cz). Called
+ * only when fresh terrain is about to generate (never on evict, never on
+ * storage load), so a regenerated chunk cannot resurrect stale containers.
+ */
+export function clearTileColumn(state: WorldState, cx: number, cz: number) {
     const baseX = cx * CHUNK_SIZE;
     const baseZ = cz * CHUNK_SIZE;
     for (const map of [state.furnaces, state.chests] as const) {

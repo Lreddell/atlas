@@ -2,6 +2,12 @@ import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+// Gate 0: the worker meshes voxels, so it needs the same dynamic block
+// definitions (256+) as the main thread. Registration is idempotent and
+// allocation order is fixed, so both sides resolve identical numerics.
+import { initCampaignContent } from '../../../data/campaign';
+
+initCampaignContent();
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;

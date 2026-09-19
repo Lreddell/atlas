@@ -100,6 +100,14 @@ import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
 import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import { getSpawnSearchCenter } from './utils/noise';
+import { applyRegistrySnapshot, buildRegistrySnapshotExtra } from './systems/registry/blockRegistry';
+import { generateCampaignGraph, toSnapshot } from './systems/campaign/campaignGraph';
+// Gate 0: register campaign content (dynamic blocks 256+, region metadata)
+// at startup, before the texture atlas builds and before any world loads.
+// initCampaignContent is idempotent; the world worker calls it separately.
+import { initCampaignContent } from './data/campaign';
+
+initCampaignContent();
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type RenderedChunk = { cx: number; cz: number };
@@ -701,10 +709,11 @@ const App: React.FC = () => {
       const worldSpawn = worldManager.getWorldSpawn();
       const progressionData = progression.serialize();
       const boatsData = entityManager.serializeBoats();
+      const tileEntitiesData = worldManager.serializeTileEntities();
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, tileEntitiesData });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -732,6 +741,7 @@ const App: React.FC = () => {
               }
           }
           meta.boats = boatsData;
+          meta.tileEntities = tileEntitiesData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -2852,6 +2862,27 @@ const App: React.FC = () => {
 
       // Hydrate action-adventure progression (defaults to empty for old worlds).
       progression.load(meta.progression);
+      // Gate 0: resolve dynamic block ids for this world, then ensure every
+      // world (including pre-campaign saves) carries its deterministic
+      // campaign graph. Played worlds (player/spawn state present) backfill
+      // as retrofit so Heartwood is never stamped over generated terrain;
+      // untouched worlds backfill canonically with Heartwood at (0,0).
+      {
+          const snapshotIssues = applyRegistrySnapshot(meta.registrySnapshot?.extra);
+          for (const issue of snapshotIssues) console.warn(`[Campaign] ${issue}`);
+          if (!meta.campaignGraph) {
+              const played = !!meta.player || !!meta.spawnPoint || !!meta.worldSpawn;
+              meta.campaignGraph = toSnapshot(generateCampaignGraph(meta.seedNum, played));
+              meta.provenance = meta.provenance ?? 'standard';
+              if (!meta.registrySnapshot) {
+                  meta.registrySnapshot = { version: 1, extra: buildRegistrySnapshotExtra() };
+              }
+              await WorldStorage.saveWorldMeta(meta);
+              console.log(`[Campaign] Backfilled ${played ? 'retrofit' : 'canonical'} graph for world ${meta.name}.`);
+          }
+          progression.setCampaignSeed(meta.seedNum, meta.campaignGraph.isRetrofit, meta.provenance ?? 'standard');
+      }
+      worldManager.loadTileEntities(meta.tileEntities);
       const vaultRecovery = progression.getActiveVaultEscapeRecovery(meta.player?.position ?? null);
 
       // Respawn this world's parked boats (entityManager.clear() above removed

@@ -982,6 +982,10 @@ export class WorldManager {
   private triggerWorkerGen(cx: number, cz: number, ticket: number) {
       const key = WorldCoords.getChunkKey(cx, cz);
       const rejectedVaultIds = [...this.rejectedVaultCandidates];
+      // Fresh terrain is about to generate (storage had no chunk): invalidate
+      // any lingering tiles from an older incarnation of this column. Storage
+      // loads never pass through here, so persisted containers are unaffected.
+      WorldStore.clearTileColumn(this.state, cx, cz);
       if (this.workersEnabled && this.workers.length > 0) {
           this.postToPool({ type: 'GEN', id: `gen-${cx}-${cz}`, cx, cz, ticket, rejectedVaultIds });
       } else {
@@ -1404,6 +1408,7 @@ export class WorldManager {
               }
           }
           const result = WorldGen.generateChunk(cx, cz, { rejectedVaultIds: [...this.rejectedVaultCandidates] });
+          WorldStore.clearTileColumn(this.state, cx, cz);
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataData(this.state, cx, cz, result.meta);
@@ -1435,6 +1440,38 @@ export class WorldManager {
   getChest(x: number, y: number, z: number) { return TileEntities.getChest(this.state, x, y, z); }
   createChest(x: number, y: number, z: number) { TileEntities.createChest(this.state, x, y, z); }
   removeChest(x: number, y: number, z: number) { TileEntities.removeChest(this.state, x, y, z); }
+
+  /**
+   * Serialize all live tile entities for world-meta persistence. The
+   * in-memory maps are sparse (only placed/seeded containers), so this is
+   * small; evicted chunks keep their tiles in memory until overwritten by
+   * fresh generation, which is what makes this complete.
+   */
+  serializeTileEntities(): { furnaces: Record<string, WorldTypes.FurnaceState>; chests: Record<string, WorldTypes.ChestState> } {
+      return {
+          furnaces: Object.fromEntries(this.state.furnaces),
+          chests: Object.fromEntries(this.state.chests),
+      };
+  }
+
+  /** Rehydrate tile entities after world start (validated; corrupt entries dropped). */
+  loadTileEntities(data: { furnaces?: Record<string, WorldTypes.FurnaceState>; chests?: Record<string, WorldTypes.ChestState> } | undefined | null) {
+      this.state.furnaces.clear();
+      this.state.chests.clear();
+      if (!data || typeof data !== 'object') return;
+      if (data.furnaces && typeof data.furnaces === 'object') {
+          for (const [key, f] of Object.entries(data.furnaces)) {
+              if (typeof key === 'string' && f && typeof f === 'object') this.state.furnaces.set(key, f as WorldTypes.FurnaceState);
+          }
+      }
+      if (data.chests && typeof data.chests === 'object') {
+          for (const [key, c] of Object.entries(data.chests)) {
+              if (typeof key === 'string' && c && typeof c === 'object' && Array.isArray((c as WorldTypes.ChestState).items)) {
+                  this.state.chests.set(key, c as WorldTypes.ChestState);
+              }
+          }
+      }
+  }
 
   private resolveGeneratedVaultCache(
       x: number,

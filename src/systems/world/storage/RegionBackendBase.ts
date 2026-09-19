@@ -21,6 +21,7 @@ import {
     uniqueWorldName,
     type RawChunk,
 } from './worldExport';
+import { normalizeVoxelBlocks } from '../worldStore';
 
 const MIGRATION_BATCH = 64; // chunks per writeChunks call during migration/import
 
@@ -71,7 +72,10 @@ export abstract class RegionBackendBase implements StorageBackend {
                 // Chunks FIRST, level.json (via create) LAST = the commit point. If
                 // anything fails, no level.json exists, so the world stays
                 // IndexedDB-only (visible + loadable) and re-migrates next launch.
-                const chunks = await this.legacy.readAllChunks(world.id);
+                // Legacy rows may still be uint8: widen faithfully (enforcement
+                // happens on the next loadChunk/import funnel).
+                const chunks = (await this.legacy.readAllChunks(world.id))
+                    .map((c) => ({ ...c, blocks: normalizeVoxelBlocks(c.blocks) }));
                 for (let i = 0; i < chunks.length; i += MIGRATION_BATCH) {
                     await this.api.writeChunks(world.id, chunks.slice(i, i + MIGRATION_BATCH));
                 }
