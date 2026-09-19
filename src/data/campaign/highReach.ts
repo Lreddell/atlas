@@ -1,3 +1,6 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Entry-state helpers for a future High Reach branch. No High Reach content
+// exists in this branch.
 // Addendum 07: High Reach canonical integration.
 // Two entry contexts share one High Reach implementation:
 // - High Reach Preview: direct scenario launch, no prior flags fabricated.

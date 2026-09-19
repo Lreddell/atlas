@@ -1,3 +1,5 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Sunscar metadata for validation and future work. No region implementation.
 // Region 02: Sunscar Expanse (3.5-5.1, 8-12h).
 // Rule: heat as readable encounter state.
 // Required: Glassjaw -> Cinder Warden -> Mirage Regent -> Pyreback Colossus.

@@ -1,3 +1,5 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Tidelost metadata for validation and future work. No region implementation.
 // Region 04: Tidelost Canopy (6.9-8.0, 9-13h).
 // Rule: discrete water heights + vertical routes; no prolonged underwater DPS.
 // Required: Riverjaw -> Jade Mantis -> Mangrove Colossus -> Nacre Leviathan.

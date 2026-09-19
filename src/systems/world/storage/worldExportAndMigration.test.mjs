@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import test from 'node:test';
 
 import { loadTs } from './bundleTs.mjs';
@@ -57,9 +58,7 @@ test('a legacy v1/v2 export (uint8 blocks) imports with copy-up and gap remap', 
     exported.version = 2;
     // Simulate a real legacy file: uint8 base64 blocks incl. gap ids 4/90.
     const legacyBytes = new Uint8Array([1, 4, 90, 255]);
-    let binary = '';
-    for (let i = 0; i < legacyBytes.length; i++) binary += String.fromCharCode(legacyBytes[i]);
-    exported.chunks = [{ cx: 0, cz: 0, blocks: btoa(binary), light: exported.chunks[0].light, meta: exported.chunks[0].meta, timestamp: 5 }];
+    exported.chunks = [{ cx: 0, cz: 0, blocks: Buffer.from(legacyBytes).toString('base64'), light: exported.chunks[0].light, meta: exported.chunks[0].meta, timestamp: 5 }];
     const { chunks } = decodeExportedWorld(exported);
     assert.ok(chunks[0].blocks instanceof Uint16Array);
     assert.deepEqual([...chunks[0].blocks], [1, 65535, 65535, 255]);

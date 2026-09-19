@@ -1,3 +1,8 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// This file registers Heartwood metadata (boss ids, crest chain, palettes,
+// frenzy packages) for validation and future work. It implements NO terrain,
+// encounters, AI, art, or audio. Heartwood production belongs to a future
+// campaign/heartwood-marches branch built on this Gate 0 base.
 // Region 01: Heartwood Marches (origin, 1.5-3.3, 6-10h).
 // Rule: vibration through roots/stone/bell structures.
 // Required: Root-Tusk -> Briar Castellan -> Crownroot Stag -> Bell Titan.

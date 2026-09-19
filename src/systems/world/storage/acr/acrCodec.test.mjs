@@ -69,8 +69,6 @@ function frameV1(blocksU8, lightU8, metaU8, timestamp) {
     return out;
 }
 
-const UNKNOWN_PLACEHOLDER_ID = 65535;
-
 test('chunk body encode/decode round-trips and preserves timestamp', () => {
     const c = chunk(11);
     const body = encodeChunkBody(c.blocks, c.light, c.meta, 1700000000123);

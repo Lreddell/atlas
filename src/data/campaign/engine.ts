@@ -1,3 +1,6 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Finale metadata (keystone gate, Atlas Seal) for validation and future
+// work. No Engine geometry, Surveyor AI, or postgame implementation exists.
 // Finale 06: Meridian Engine / The First Surveyor (10.0, 2-4h expedition).
 // Six chapters: Convergence Court -> Survey Archive -> Index Works ->
 // Five Bearings -> Engine Annulus -> Meridian Chamber.

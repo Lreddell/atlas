@@ -1,3 +1,7 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Shattered Meridian metadata for validation and future work. The existing
+// Magnetic Fields / Warden content is untouched production; the region arc
+// itself is not implemented.
 // Region 05: Shattered Meridian (8.1-9.4, 10-14h).
 // Rule: explicit bounded magnetic fields; stable camera/gravity.
 // Required: Compass Beast -> Rail Saint -> Twin Poles -> Magnetic Warden.

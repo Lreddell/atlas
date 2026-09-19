@@ -18,6 +18,7 @@ export async function loadTs(entrySource) {
         bundle: true,
         format: 'esm',
         platform: 'node',
+        define: { __APP_VERSION__: '"test"', __APP_DISPLAY_VERSION__: '"test"' },
         stdin: { contents: entrySource, resolveDir: ROOT, sourcefile: 'storage-test-entry.ts' },
         write: false,
     });
@@ -36,6 +37,7 @@ export async function loadTsViaFile(entrySource, tag = 'ts-entry') {
         bundle: true,
         format: 'esm',
         platform: 'node',
+        define: { __APP_VERSION__: '"test"', __APP_DISPLAY_VERSION__: '"test"' },
         stdin: { contents: entrySource, resolveDir: ROOT, sourcefile: `${tag}.ts` },
         write: false,
     });

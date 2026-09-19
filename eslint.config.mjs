@@ -14,6 +14,11 @@ export default [
     languageOptions: { globals: { ...globals.node } },
   },
   {
+    // Node-run campaign tooling (seed corpus, perf bench, id snapshot).
+    files: ['scripts/campaign-seed-corpus.mjs', 'scripts/campaign-perf-bench.mjs', 'scripts/gen-legacy-ids.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     // Electron main-process / preload CommonJS modules (Node runtime).
     files: ['electron/**/*.cjs'],
     languageOptions: {

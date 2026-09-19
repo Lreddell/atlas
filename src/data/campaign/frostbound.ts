@@ -1,3 +1,5 @@
+// IMPLEMENTATION STATE: DESIGN/RUNTIME MANIFEST ONLY (Gate 0).
+// Frostbound metadata for validation and future work. No region implementation.
 // Region 03: Frostbound Crown (5.2-6.8, 8-12h).
 // Rule: delayed frost echoes + authored instability only.
 // Required: Whitefang Packlord -> Rimeblade Exile -> Pale Avalanche -> Boreal Weaver.
