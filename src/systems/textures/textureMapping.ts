@@ -241,5 +241,11 @@ export const TEXTURE_PATHS: Record<number, string> = {
     234: 'items/banana.png',
     235: 'items/lumen_berry.png',
     236: 'items/foragers_bowl.png',
-    238: 'items/upgraded_polarity_boots.png',
+    125: 'items/upgraded_polarity_boots.png',
+
+    // --- GATE 0 proving blocks (dynamic ids >= 256; procedural painters in
+    // utils/textures.ts, PNGs are optional overrides) ---
+    267: 'blocks/gate0_proving_stone.png',
+    268: 'blocks/gate0_proving_waystone.png',
+    269: 'blocks/gate0_proving_anchor.png',
 };

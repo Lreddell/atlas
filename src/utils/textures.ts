@@ -1126,6 +1126,37 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         speckle('#f0f0ea', 22);
     });
 
+    // 125: Upgraded Polarity Boots, violet boot icon with a glowing core
+    // (deterministic painter; PNG override optional like other items).
+    withTile(125, () => {
+        const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+        set(5, 2, 3, 2, '#5e35b1');            // cuff
+        set(4, 4, 5, 9, '#7e57c2');            // boot body
+        set(4, 12, 8, 2, '#5e35b1');           // sole
+        set(5, 6, 2, 4, '#b39ddb');            // strap highlight
+        set(6, 8, 2, 2, '#efe6ff');            // polarity core glint
+        set(4, 4, 1, 9, '#4527a0');            // edge shade
+    });
+
+    // ===== Gate 0 proving-ground tiles (deterministic, no RNG) =====
+    // Slots 267-269 back the first dynamically registered blocks (numeric ids
+    // >= 256). They prove the registry/atlas path beyond the legacy ceiling.
+    const gate0Tile = (slot: number, base: string, edge: string, sigil: string) => {
+        withTile(slot, () => {
+            fill(base);
+            ctx.fillStyle = edge;
+            ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1);
+            ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+            ctx.fillStyle = sigil;
+            ctx.fillRect(6, 6, 4, 4);
+            ctx.fillStyle = edge;
+            ctx.fillRect(7, 7, 2, 2);
+        });
+    };
+    gate0Tile(267, '#3f5a52', '#22332e', '#b9f6ca'); // Proving Stone (teal survey marker)
+    gate0Tile(268, '#4a3a6e', '#2a2140', '#e0ccff'); // Proving Waystone (violet)
+    gate0Tile(269, '#6e4a2a', '#402a18', '#ffe0b2'); // Proving Anchor (amber)
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);

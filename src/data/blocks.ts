@@ -253,7 +253,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.IRON_BOOTS]: { id: BlockType.IRON_BOOTS, color: '#d7ccc8', name: 'Iron Boots', textureSlot: 154, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.POLARITY_BOOTS]: { id: BlockType.POLARITY_BOOTS, color: '#7e57c2', name: 'Polarity Boots', textureSlot: 155, hardness: 0, isItem: true, category: 'tools' },
   [BlockType.POLARITY_BOOTS_UPGRADE]: { id: BlockType.POLARITY_BOOTS_UPGRADE, color: '#8a7fd6', name: 'Polarity Boots Upgrade', textureSlot: 215, hardness: 0, isItem: true, category: 'tools' },
-  [BlockType.UPGRADED_POLARITY_BOOTS]: { id: BlockType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 238, hardness: 0, isItem: true, category: 'tools' },
+  [BlockType.UPGRADED_POLARITY_BOOTS]: { id: BlockType.UPGRADED_POLARITY_BOOTS, color: '#b39ddb', name: 'Upgraded Polarity Boots', textureSlot: 125, hardness: 0, isItem: true, category: 'tools' },
   // Boat, use on water to place a boat entity; right-click it to board, sneak
   // to hop out (it stays parked). Breaking the boat drops this item back.
   [BlockType.BOAT]: { id: BlockType.BOAT, color: '#8d6e63', name: 'Boat', textureSlot: 216, hardness: 0, isItem: true, isFuel: true, fuelValue: 20000, category: 'functional' },
