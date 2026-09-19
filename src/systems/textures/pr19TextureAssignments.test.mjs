@@ -22,12 +22,15 @@ const resolverSource = fs.readFileSync(path.join(root, 'src/systems/world/textur
 // Biome wood-family saplings are placeable items that render straight from the
 // block atlas (blocks/*_sapling.png), so they intentionally have no dedicated
 // items/*.png mapping like the PR 19 tool/armor/ingredient items below.
+// UPGRADED_POLARITY_BOOTS has a dedicated slot (238) with a procedural
+// fallback mapping; it stays excepted here until its PNG joins the generated
+// catalog (which would also bump the item-entry counts below).
 const BLOCK_TEXTURED_ITEMS = new Set([
     'JUNGLE_SAPLING',
     'DARK_OAK_SAPLING',
     'ACACIA_SAPLING',
-    // Reuses the polarity-boots item tile (slot 155), the upgrade module and
-    // the boat now have their own dedicated PNGs (215/216).
+    // UPGRADED_POLARITY_BOOTS has its own slot (238); the upgrade module and
+    // the boat have their own dedicated PNGs (215/216).
     'UPGRADED_POLARITY_BOOTS',
 ]);
 

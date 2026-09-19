@@ -61,13 +61,13 @@ test('the boat item is registered with a name, icon slot, and creative category'
 
 test('no two item entries share a texture slot (block-parent reuse excepted)', () => {
     // Items (isItem: true) must each render their own icon. UPGRADED_POLARITY_BOOTS
-    // intentionally reuses the base boots tile (slot 155).
+    // previously reused the base boots tile (slot 155); it now has its own
+    // dedicated slot (238) with a procedural fallback until PNG art lands.
     const entryStarts = [...blocksSrc.matchAll(/^\s*\[BlockType\.([A-Z0-9_]+)\]:/gm)];
     const seen = new Map();
     entryStarts.forEach((m, i) => {
         const body = blocksSrc.slice(m.index, entryStarts[i + 1]?.index ?? blocksSrc.length);
         if (!/\bisItem:\s*true\b/.test(body)) return;
-        if (m[1] === 'UPGRADED_POLARITY_BOOTS') return;
         const slot = Number(body.match(/textureSlot:\s*(\d+)/)?.[1]);
         assert.ok(!seen.has(slot), `items ${seen.get(slot)} and ${m[1]} share texture slot ${slot}`);
         seen.set(slot, m[1]);
