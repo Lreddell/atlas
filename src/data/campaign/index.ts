@@ -16,6 +16,7 @@ import { registerTidelostCanopy } from './tidelost';
 import { registerShatteredMeridian } from './shattered';
 import { registerMeridianEngine } from './engine';
 import { registerGate0ProvingBlocks } from './gate0';
+import { registerHeartwoodContent } from '../../systems/heartwood/heartwoodContent';
 
 let initialized = false;
 
@@ -23,6 +24,9 @@ export function initCampaignContent(): void {
   if (initialized) return;
   initialized = true;
   registerGate0ProvingBlocks();
+  // Production Heartwood blocks/items (numeric 259+). Region metadata below
+  // stays manifest-only; only this call allocates voxel ids.
+  registerHeartwoodContent();
   registerHeartwoodMarches();
   registerSunscarExpanse();
   registerFrostboundCrown();

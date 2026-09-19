@@ -42,6 +42,16 @@ export function isCrossRenderedBlock(type: BlockType): boolean {
 }
 
 /**
+ * Register a dynamically allocated block (>= 256) for cross-plane sprite
+ * rendering. Must be called at startup before the atlas builds and before
+ * first meshing; call refreshRenderClassification() afterwards so the
+ * mesher's fixed tables pick it up.
+ */
+export function registerCrossRenderedBlock(type: BlockType): void {
+    (CROSS_RENDERED_BLOCKS as Set<BlockType>).add(type);
+}
+
+/**
  * True when a stack of this type presents as a flat sprite (held in hand,
  * dropped on the ground, in break particles) rather than a miniature cube.
  */

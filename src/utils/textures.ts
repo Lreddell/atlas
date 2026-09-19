@@ -1167,6 +1167,102 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         }
     });
 
+    // ===== Heartwood Marches tiles (deterministic, no RNG) =====
+    // Block tiles 300-316, item tiles 320-350. Flat fills + fixed speckle maps
+    // so every session paints byte-identical tiles.
+    const hwSpeckle = (color: string, pts: Array<[number, number, number, number]>) => {
+        ctx.fillStyle = color;
+        for (const [x, y, w, h] of pts) ctx.fillRect(x, y, w, h);
+    };
+    const hwBlock = (slot: number, base: string, dark: string, light: string) => {
+        withTile(slot, () => {
+            fill(base);
+            hwSpeckle(dark, [[1, 2, 3, 1], [6, 0, 2, 2], [11, 3, 3, 1], [3, 7, 2, 2], [9, 6, 2, 3], [0, 11, 3, 1], [6, 10, 2, 2], [12, 11, 3, 2], [4, 13, 2, 1], [8, 14, 4, 1]]);
+            hwSpeckle(light, [[2, 1, 2, 1], [8, 2, 2, 1], [13, 5, 2, 1], [5, 5, 1, 2], [11, 8, 2, 1], [1, 9, 2, 1], [7, 12, 2, 1], [14, 13, 1, 2]]);
+        });
+    };
+    hwBlock(300, '#6b4a2f', '#4a2f1c', '#8a6242'); // ironwood log
+    hwBlock(301, '#8a6242', '#6b4a2f', '#a8805a'); // ironwood planks
+    hwBlock(302, '#b06a2a', '#8a4f1c', '#d89248'); // resin block
+    hwBlock(304, '#9a9484', '#7a7466', '#b8b2a2'); // resonant limestone
+    hwBlock(305, '#a8a294', '#88847a', '#c4beb2'); // cut limestone
+    hwBlock(307, '#8a6d3b', '#6a5228', '#aa8a4e'); // bell bronze
+    hwBlock(309, '#2e5d33', '#1e3d22', '#448a4c'); // briar hedge
+    hwBlock(310, '#5a4632', '#423322', '#745844'); // root block
+    hwBlock(311, '#7a6a55', '#5a4c3c', '#96866a'); // crownroot log
+    hwBlock(312, '#96866a', '#746552', '#b2a284'); // crownroot planks
+    hwBlock(314, '#5d4a37', '#463728', '#75614a'); // furrowed earth
+    hwBlock(315, '#8a7a5a', '#6a5c42', '#a8946e'); // stable path
+    // Resin lantern: warm lamp with glowing panes.
+    withTile(303, () => {
+        fill('#5d4037');
+        hwSpeckle('#3e2723', [[0, 0, 16, 2], [0, 14, 16, 2], [0, 0, 2, 16], [14, 0, 2, 16]]);
+        ctx.fillStyle = '#ffca6a'; ctx.fillRect(4, 4, 8, 8);
+        ctx.fillStyle = '#fff2cc'; ctx.fillRect(6, 6, 2, 2); ctx.fillRect(10, 9, 1, 1);
+    });
+    // Ringing stone: pale stone with concentric resonance rings.
+    withTile(306, () => {
+        fill('#8f8a9a');
+        hwSpeckle('#6f6a7a', [[1, 2, 3, 1], [11, 3, 3, 1], [3, 11, 3, 1], [9, 12, 4, 1]]);
+        ctx.fillStyle = '#c8c4d8'; ctx.fillRect(5, 5, 6, 1); ctx.fillRect(5, 10, 6, 1); ctx.fillRect(5, 5, 1, 6); ctx.fillRect(10, 5, 1, 6);
+        ctx.fillStyle = '#efe8ff'; ctx.fillRect(7, 7, 2, 2);
+    });
+    // Bronze lamp: dark housing, bright core.
+    withTile(308, () => {
+        fill('#3a3226');
+        ctx.fillStyle = '#8a6d3b'; ctx.fillRect(1, 1, 14, 14);
+        ctx.fillStyle = '#ffdf8a'; ctx.fillRect(4, 4, 8, 8);
+        ctx.fillStyle = '#fff8e0'; ctx.fillRect(6, 6, 2, 2);
+    });
+    // Moonleaf: pale leaves on a transparent tile (cutout).
+    withTile(313, () => {
+        const leaf = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+        leaf(7, 9, 2, 6, '#3f5a52');
+        leaf(4, 4, 4, 5, '#8fc8a8'); leaf(8, 3, 4, 6, '#a8d8b8'); leaf(5, 9, 6, 2, '#7ab898');
+        leaf(5, 5, 1, 2, '#d8f0e0'); leaf(9, 4, 1, 2, '#d8f0e0');
+    });
+    // Survey marker: pale post with bronze bands.
+    withTile(316, () => {
+        fill('#6e6258');
+        ctx.fillStyle = '#c8c0b0'; ctx.fillRect(6, 0, 4, 16);
+        ctx.fillStyle = '#8a6d3b'; ctx.fillRect(6, 3, 4, 1); ctx.fillRect(6, 8, 4, 1); ctx.fillRect(6, 12, 4, 1);
+        ctx.fillStyle = '#efe8d8'; ctx.fillRect(7, 1, 2, 1);
+    });
+    // --- Heartwood item icons (transparent tiles, centered pictograms) ---
+    const hwIcon = (slot: number, draw: () => void) => withTile(slot, draw);
+    const set = (x: number, y: number, w: number, h: number, c: string) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    hwIcon(320, () => { set(4, 3, 1, 10, '#3a7a42'); set(7, 5, 1, 8, '#2e5d33'); set(10, 2, 1, 11, '#448a4c'); set(4, 6, 8, 1, '#2e5d33'); }); // fiber
+    hwIcon(321, () => { set(3, 4, 10, 8, '#7a5a3a'); set(3, 4, 10, 2, '#8f6f4a'); set(5, 7, 6, 1, '#5a4028'); set(5, 10, 6, 1, '#5a4028'); }); // hide
+    hwIcon(322, () => { set(3, 11, 10, 2, '#6a5a40'); set(4, 8, 8, 2, '#8a7658'); set(5, 5, 6, 2, '#a89878'); set(6, 2, 4, 2, '#b2a284'); }); // twig
+    hwIcon(323, () => { set(7, 2, 2, 3, '#d8d2c4'); set(5, 5, 6, 6, '#b8b0a0'); set(6, 6, 2, 2, '#e8e2d4'); set(4, 11, 8, 2, '#8a8478'); }); // shard
+    hwIcon(324, () => { set(6, 6, 4, 4, '#d8a848'); set(7, 7, 2, 2, '#f8d888'); set(5, 11, 6, 1, '#8a6a28'); }); // fleck
+    hwIcon(325, () => { set(6, 3, 4, 8, '#d08030'); set(7, 4, 2, 3, '#f8b868'); set(5, 11, 6, 2, '#8a4f1c'); }); // resin drop
+    hwIcon(326, () => { set(7, 9, 2, 5, '#3f5a52'); set(4, 4, 4, 5, '#8fc8a8'); set(8, 3, 4, 6, '#a8d8b8'); }); // moonleaf item
+    hwIcon(327, () => { set(4, 6, 8, 6, '#90c090'); set(4, 6, 8, 2, '#b0d8b0'); set(6, 12, 4, 2, '#5a7a5a'); set(7, 2, 2, 4, '#d8e8d8'); }); // salve pouch
+    hwIcon(328, () => { set(3, 3, 10, 10, '#4a7a3a'); set(4, 4, 8, 8, '#5d8f4a'); set(7, 7, 2, 2, '#2e5d33'); set(3, 3, 10, 2, '#6a9a5a'); }); // buckler
+    hwIcon(329, () => { set(7, 1, 3, 7, '#8a6d3b'); set(6, 2, 5, 2, '#c8a050'); set(7, 8, 2, 7, '#6b4a2f'); set(6, 13, 4, 2, '#4a2f1c'); }); // maul
+    hwIcon(330, () => { set(3, 10, 6, 3, '#b8c8d8'); set(9, 4, 3, 6, '#b8c8d8'); set(4, 11, 4, 1, '#e8f2f8'); set(10, 5, 1, 4, '#e8f2f8'); }); // daggers
+    hwIcon(331, () => { set(3, 3, 2, 10, '#9a8a6a'); set(3, 3, 8, 2, '#9a8a6a'); set(9, 3, 2, 7, '#c8b88a'); set(11, 9, 2, 2, '#e8d8a8'); }); // hook
+    hwIcon(332, () => { set(3, 2, 2, 12, '#a89878'); set(5, 3, 2, 2, '#c8b88a'); set(5, 11, 2, 2, '#c8b88a'); set(11, 2, 2, 12, '#8fc8a8'); set(7, 7, 4, 1, '#d8c8a8'); }); // bow
+    hwIcon(333, () => { set(7, 2, 2, 12, '#6a5a40'); set(5, 1, 6, 5, '#c8b8e8'); set(6, 2, 4, 3, '#e8d8f8'); set(7, 14, 2, 1, '#4a3a28'); }); // staff
+    const armorIcon = (slot: number, base: string, light: string, dark: string, piece: 0 | 1 | 2 | 3) => hwIcon(slot, () => {
+        if (piece === 0) { set(5, 3, 6, 5, base); set(5, 3, 6, 1, light); set(5, 7, 6, 1, dark); set(7, 8, 2, 2, dark); }
+        if (piece === 1) { set(4, 2, 8, 9, base); set(4, 2, 8, 1, light); set(7, 3, 2, 8, dark); set(4, 10, 8, 1, dark); }
+        if (piece === 2) { set(4, 2, 3, 11, base); set(9, 2, 3, 11, base); set(4, 2, 3, 1, light); set(9, 2, 3, 1, light); }
+        if (piece === 3) { set(4, 9, 3, 5, base); set(9, 9, 3, 5, base); set(4, 9, 3, 1, light); set(9, 9, 3, 1, light); }
+    });
+    armorIcon(334, '#6a4a2a', '#8f6f4a', '#4a2f1c', 0); armorIcon(335, '#6a4a2a', '#8f6f4a', '#4a2f1c', 1);
+    armorIcon(336, '#6a4a2a', '#8f6f4a', '#4a2f1c', 2); armorIcon(337, '#6a4a2a', '#8f6f4a', '#4a2f1c', 3);
+    armorIcon(338, '#a89878', '#c8b88a', '#7a6a50', 0); armorIcon(339, '#a89878', '#c8b88a', '#7a6a50', 1);
+    armorIcon(340, '#a89878', '#c8b88a', '#7a6a50', 2); armorIcon(341, '#a89878', '#c8b88a', '#7a6a50', 3);
+    armorIcon(342, '#7a9a9a', '#a8c8c8', '#546e6e', 0); armorIcon(343, '#7a9a9a', '#a8c8c8', '#546e6e', 1);
+    armorIcon(344, '#7a9a9a', '#a8c8c8', '#546e6e', 2); armorIcon(345, '#7a9a9a', '#a8c8c8', '#546e6e', 3);
+    hwIcon(346, () => { set(4, 2, 8, 12, '#a02020'); set(4, 2, 8, 2, '#c04040'); set(7, 5, 2, 6, '#e8b8b8'); set(5, 11, 6, 1, '#701010'); }); // almanac
+    hwIcon(347, () => { set(4, 7, 8, 4, '#c89840'); set(4, 7, 8, 1, '#e8c868'); set(4, 10, 8, 1, '#8a6a28'); }); // ingot
+    hwIcon(348, () => { set(3, 4, 10, 8, '#8aaaaa'); set(3, 4, 10, 2, '#b8d4d4'); set(5, 7, 6, 1, '#5e7e7e'); }); // moonhide
+    hwIcon(349, () => { set(7, 2, 2, 5, '#d8c8a8'); set(4, 7, 8, 3, '#d8c8a8'); set(5, 12, 2, 2, '#b8a888'); set(9, 12, 2, 2, '#b8a888'); }); // tine
+    hwIcon(350, () => { set(4, 7, 8, 4, '#e8c868'); set(4, 7, 8, 1, '#fff0b0'); set(7, 4, 2, 3, '#fff0b0'); set(4, 10, 8, 1, '#a8823a'); }); // alloy
+
     sanitizeCutoutTiles(ctx, size, cols, rows, CUTOUT_TILE_CONFIGS);
 
     const paddedAtlas = createPaddedAtlasCanvas(rawCanvas, rows, ATLAS_COLS, ATLAS_PADDING, ATLAS_STRIDE);

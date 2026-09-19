@@ -1,7 +1,7 @@
 import { BlockType } from '../../types';
 import { isSword } from '../registry/itemStats';
 
-export type VaultWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer';
+export type VaultWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer' | 'daggers' | 'hook' | 'staff';
 
 export interface VaultWeaponProfile {
     kind: VaultWeaponKind;
@@ -27,7 +27,7 @@ export interface VaultWeaponHit {
     armorMultiplier: number;
     spacingMultiplier: number;
     stagger: number;
-    technique: 'standard' | 'spear_sweet_spot' | 'armor_break' | 'titan_crush';
+    technique: 'standard' | 'spear_sweet_spot' | 'armor_break' | 'titan_crush' | 'hook_draw' | 'flurry';
 }
 
 const PROFILES = new Map<BlockType, VaultWeaponProfile>([
@@ -39,6 +39,12 @@ const PROFILES = new Map<BlockType, VaultWeaponProfile>([
 
 export function getVaultWeaponProfile(type: BlockType): VaultWeaponProfile | null {
     return PROFILES.get(type) ?? null;
+}
+
+/** Register a dynamically allocated weapon profile (campaign content). */
+export function registerVaultWeaponProfile(type: BlockType, profile: VaultWeaponProfile): void {
+    if (PROFILES.has(type)) throw new Error(`Weapon profile already registered for ${type}.`);
+    PROFILES.set(type, { ...profile });
 }
 
 export interface PlayerWeaponProfile extends Omit<VaultWeaponProfile, 'kind' | 'damage'> {
@@ -80,7 +86,9 @@ export function resolveVaultMeleeHit(
     const technique = spearSweetSpot ? 'spear_sweet_spot'
         : target.armored && profile.kind === 'maul' ? 'armor_break'
             : profile.kind === 'hammer' ? 'titan_crush'
-                : 'standard';
+                : profile.kind === 'hook' ? 'hook_draw'
+                    : profile.kind === 'daggers' ? 'flurry'
+                        : 'standard';
     return {
         profile,
         damage: profile.damage * armorMultiplier * spacingMultiplier,

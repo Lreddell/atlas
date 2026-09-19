@@ -28,6 +28,19 @@ export function getOpacity(type: BlockType): number {
     return type <= MAX_OPACITY_ID ? OPACITY_TABLE[type] : 15;
 }
 
+/**
+ * Recompute opacity/shaped tables after dynamic block registration.
+ * Idempotent, startup-only cost (~65k lookups).
+ */
+export function refreshOpacityTables(): void {
+    for (let id = 0; id <= MAX_OPACITY_ID; id++) {
+        OPACITY_TABLE[id] = computeOpacity(id as BlockType);
+    }
+    for (let id = 0; id <= MAX_OPACITY_ID; id++) {
+        SHAPED_TABLE[id] = isShaped(id as BlockType) ? 1 : 0;
+    }
+}
+
 function computeOpacity(type: BlockType): number {
     if (type === BlockType.AIR || type === BlockType.TORCH || type === BlockType.GLASS) return 0;
     if (type === BlockType.WATER || LEAF_TYPES.has(type)) return 2;

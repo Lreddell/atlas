@@ -203,6 +203,23 @@ for (let id = 0; id <= MAX_BLOCK_ID; id++) {
     if (isShaped(id as BlockType)) IS_SHAPED[id] = 1;
 }
 
+/**
+ * Re-run render classification after dynamic block registration (>= 256).
+ * Idempotent. Must run at startup before first meshing whenever new blocks
+ * were allocated (cross/cutout/transparent/shaped); the fixed tables are
+ * otherwise frozen at their module-init snapshot.
+ */
+export function refreshRenderClassification(): void {
+    for (const t of CROSS_RENDERED_BLOCKS) IS_CROSS[t] = 1;
+    const defs = BLOCKS as unknown as Record<number, { transparent?: boolean } | undefined>;
+    for (let id = 256; id <= MAX_BLOCK_ID; id++) {
+        const def = defs[id];
+        if (!def) continue;
+        if (def.transparent) IS_CUTOUT[id] = 1;
+        if (isShaped(id as BlockType)) IS_SHAPED[id] = 1;
+    }
+}
+
 function isOpaqueGreedyCandidate(type: BlockType): boolean {
     if (type === BlockType.AIR) return false;
     if (IS_CUTOUT[type] || IS_TRANSPARENT[type] || IS_CROSS[type] || IS_SHAPED[type]) return false;
