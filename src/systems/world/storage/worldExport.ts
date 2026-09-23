@@ -47,6 +47,7 @@ export function encodeExportedWorld(meta: WorldMetadata, chunks: RawChunk[]): Ex
             worldGenPresetName: meta.worldGenPresetName ?? null,
             progression: meta.progression,
             boats: meta.boats,
+            drops: meta.drops,
             resonantVaultReservations: meta.resonantVaultReservations,
         },
         chunks: chunks.map((c) => ({
@@ -84,6 +85,7 @@ export function decodeExportedWorld(data: ExportedWorldData): DecodedExport {
         worldGenPresetName: m?.worldGenPresetName ?? null,
         progression: m?.progression,
         boats: m?.boats,
+        drops: m?.drops,
         resonantVaultReservations: m?.resonantVaultReservations,
     };
 

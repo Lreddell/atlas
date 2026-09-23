@@ -7,6 +7,7 @@
 
 import type { ItemStack } from '../../../types';
 import type { ProgressionData } from '../../progression/ProgressionStore';
+import type { SavedDrop } from '../dropPersistence';
 
 export interface PlayerData {
     position: { x: number, y: number, z: number };
@@ -51,6 +52,8 @@ export interface WorldMetadata {
     // no boats. Same optional-extension pattern as `progression`, so old worlds
     // and v1/v2 exports load unchanged.
     boats?: { x: number; y: number; z: number; yaw: number }[];
+    // Item drops lying in the world. Absent on older saves -> no drops.
+    drops?: SavedDrop[];
     /**
      * Vault footprints accepted before any of their chunks generated. Optional
      * so older worlds remain byte-for-byte compatible until an acceptance is written.

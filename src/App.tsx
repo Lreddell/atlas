@@ -81,6 +81,7 @@ import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
 import { MAX_BREATH, EYE_HEIGHT_STANDING } from './systems/player/playerConstants';
+import { serializeDrops, restoreDrops } from './systems/world/dropPersistence';
 import {
   type BreakingVisual,
   type GameMode,
@@ -292,6 +293,13 @@ const App: React.FC = () => {
   
   const [chunks, setChunks] = useState<{ cx: number; cz: number }[]>([]);
   const [drops, setDrops] = useState<Drop[]>([]);
+  // Latest drops for saving (drops are mutated in place by DropManager, so the
+  // array's entries are always current). Drops spawned this same tick, before
+  // React commits them, are held in spawnedDropsRef so a save right after (quit
+  // straight after a kill) still includes them.
+  const dropsRef = useRef<Drop[]>([]);
+  const spawnedDropsRef = useRef<Drop[]>([]);
+  useEffect(() => { dropsRef.current = drops; spawnedDropsRef.current = []; }, [drops]);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false); 
@@ -701,10 +709,12 @@ const App: React.FC = () => {
       const worldSpawn = worldManager.getWorldSpawn();
       const progressionData = progression.serialize();
       const boatsData = entityManager.serializeBoats();
+      const pendingDrops = spawnedDropsRef.current.filter((d) => !dropsRef.current.includes(d));
+      const dropsData = serializeDrops(pendingDrops.length > 0 ? [...dropsRef.current, ...pendingDrops] : dropsRef.current, DROP_LIFETIME_MS);
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -732,6 +742,7 @@ const App: React.FC = () => {
               }
           }
           meta.boats = boatsData;
+          meta.drops = dropsData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -946,7 +957,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
-          setDrops(p => [...p, {
+          const drop: Drop = {
                 id: Math.random().toString(), 
                 type: stack.type,
                 count: stack.count,
@@ -956,7 +967,9 @@ const App: React.FC = () => {
                 createdAt: Date.now(),
                 pickupDelay: Date.now() + 500,
                 age: 0,
-          }]);
+          };
+          spawnedDropsRef.current.push(drop);
+          setDrops(p => [...p, drop]);
       });
       return unsub;
   }, []);
@@ -1068,6 +1081,9 @@ const App: React.FC = () => {
           daisRestoreRef.current = null;
           flush();
       }
+      // Same for the defeated Warden's loot, which lands after the dais rebuilds,
+      // so the save we are about to make keeps it.
+      entityManager.flushPendingLoot();
       bossSummon.cancel();
       releaseDetachedCamera();
       bellTitanCinematic.cancel();
@@ -2855,7 +2871,11 @@ const App: React.FC = () => {
       // Per-world React state: item entities and chat/log lines belong to the
       // previous session, without this, World A's ground drops render (and are
       // collectible) at their old coordinates inside World B.
-      setDrops([]);
+      // This world's saved ground items (none on worlds saved before drops were).
+      const restoredDrops = restoreDrops(meta.drops, DROP_LIFETIME_MS, Date.now(), () => Math.random().toString());
+      dropsRef.current = restoredDrops;
+      spawnedDropsRef.current = [];
+      setDrops(restoredDrops);
       setMessages([]);
       setRidingBoatId(null);
 

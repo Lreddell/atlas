@@ -121,6 +121,10 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   creative music folder is empty, instead of going silent.
 - Items near your body are no longer pulled toward you while you are dead, and
   can't be picked up in the first moments after respawning.
+- Items lying on the ground are now saved with the world. Quitting or reloading
+  no longer deletes them; they come back where they were, with their despawn
+  timer where it left off. This includes the Magnetic Warden's loot when you
+  quit right after the kill, before it has landed.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

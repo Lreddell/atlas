@@ -130,6 +130,7 @@ class EntityManager {
     // Tracked so clear() (world unload) can cancel it, otherwise the timer
     // would spawn the Warden's loot into whatever world is loaded next.
     private lootDropTimer: ReturnType<typeof setTimeout> | null = null;
+    private lootDropRun: (() => void) | null = null;
     private nextId = 1;
     private nextProjectileId = 1;
     private nextShockwaveId = 1;
@@ -474,6 +475,7 @@ class EntityManager {
         this.projectiles = [];
         this.shockwaves = [];
         if (this.lootDropTimer !== null) { clearTimeout(this.lootDropTimer); this.lootDropTimer = null; }
+        this.lootDropRun = null;
         if (this.inCombat) { this.inCombat = false; gameEvents.emit('combat:stop', {}); }
         gameEvents.emit('boss:cleared', {});
         if (hadEntities) this.notifyStructure();
@@ -527,6 +529,17 @@ class EntityManager {
     }
 
     /** Completes an encounter-owned lethal hit through the normal drops/events path. */
+    /**
+     * Drop a defeated boss's delayed loot now (its timer calls this too). Leaving
+     * the world calls it before saving so the loot is saved, not lost to a timer.
+     */
+    flushPendingLoot(): void {
+        if (this.lootDropTimer !== null) { clearTimeout(this.lootDropTimer); this.lootDropTimer = null; }
+        const run = this.lootDropRun;
+        this.lootDropRun = null;
+        run?.();
+    }
+
     defeatEntity(id: number): void {
         const entity = this.entities.get(id);
         if (entity) this.kill(entity);
@@ -642,10 +655,8 @@ class EntityManager {
             // lands cleanly on top of the summoner instead of being buried.
             const hx = e.home.x, hy = e.home.y + 4, hz = e.home.z;
             if (this.lootDropTimer !== null) clearTimeout(this.lootDropTimer);
-            this.lootDropTimer = setTimeout(() => {
-                this.lootDropTimer = null;
-                spawnDrops(hx, hy, hz);
-            }, BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
+            this.lootDropRun = () => spawnDrops(hx, hy, hz);
+            this.lootDropTimer = setTimeout(() => this.flushPendingLoot(), BOSS_DEFEAT_ALTAR_DELAY_MS + 200);
             // A huge multi-stage polarity eruption where the Warden falls.
             const cx = e.home.x, cy = e.pos.y + e.height * 0.5, cz = e.home.z;
             const col = polarityFxColor(e.polarity);

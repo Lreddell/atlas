@@ -628,7 +628,7 @@ test('leaving the world mid-fight resets the arena before saving', () => {
 
 test('boss loot erupts above the altar and the altar re-forms after a delay', () => {
     assert.match(manager, /e\.home\.y \+ 4/);
-    assert.match(manager, /this\.lootDropTimer = setTimeout\([\s\S]*?spawnDrops\(hx, hy, hz\);[\s\S]*?BOSS_DEFEAT_ALTAR_DELAY_MS/);
+    assert.match(manager, /this\.lootDropRun = \(\) => spawnDrops\(hx, hy, hz\);\s*this\.lootDropTimer = setTimeout\(\(\) => this\.flushPendingLoot\(\), BOSS_DEFEAT_ALTAR_DELAY_MS/);
     assert.match(manager, /clear\(\): void \{[\s\S]*?clearTimeout\(this\.lootDropTimer\)/);
     assert.match(manager, /if \(e\.kind === 'magnetic_warden' && e\.home\) \{[\s\S]*?particleFx\.burst[\s\S]*?addTrauma\(1\.0\)/);
     assert.match(app, /restoreSummonAltar\(BOSS_DEFEAT_ALTAR_DELAY_MS\)/);
