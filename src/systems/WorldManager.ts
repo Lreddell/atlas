@@ -1000,6 +1000,23 @@ export class WorldManager {
       return this.dirtyChunks.size > 0;
   }
 
+  /**
+   * Read-only streaming snapshot for diagnostics and the dev visual tour: how many
+   * of the desired chunks already have a mesh, and how much work is still queued.
+   */
+  public getStreamingStatus(): { desired: number; meshed: number; queued: number; inFlight: number } {
+      let meshed = 0;
+      for (const key of this.desiredChunkKeys) {
+          if (this.chunkStages.get(key) === ChunkStage.READY && this.meshCache.has(key)) meshed++;
+      }
+      return {
+          desired: this.desiredChunkKeys.size,
+          meshed,
+          queued: this.genQueue.length + this.meshQueue.length,
+          inFlight: this.inFlightGen + this.inFlightMesh,
+      };
+  }
+
   private markDirty(key: string): void {
       this.dirtyChunks.add(key);
       this.dirtyEditVersion.set(key, (this.dirtyEditVersion.get(key) ?? 0) + 1);

@@ -68,6 +68,8 @@ import { shouldUseCaveMusic } from './systems/sound/caveMusic';
 import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
+import { DevQaProbe } from './components/DevQaProbe';
+import { installDevQa, registerDevQaHandles } from './systems/debug/devQa';
 import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
@@ -2103,6 +2105,26 @@ const App: React.FC = () => {
       resumeGame();
   }, [commandValue, executeCommand, resumeGame]);
 
+  // DEV-only QA bridge (window.__atlasQA) for the scripted visual tour: an
+  // automated browser pane can't take pointer lock, so it drives the camera,
+  // commands and HUD through these handles instead. Stripped from production.
+  useEffect(() => {
+      if (!import.meta.env.DEV) return;
+      installDevQa();
+      registerDevQaHandles({
+          command: executeCommand,
+          camera: (yaw, pitch) => controlsRef.current?.setRotation(pitch, yaw),
+          tp: (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
+          hud: visible => setHudHidden(!visible),
+          openInventory,
+          closeContainers: () => { if (openContainer) closeInventory({ deferPointerLock: true }); },
+          streaming: () => worldManager.getStreamingStatus(),
+          position: () => ({ x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z }),
+          renderDistance: chunks => setRenderDistance(Math.max(4, Math.min(48, Math.round(chunks)))),
+          vsync: enabled => { setVsync(enabled); if (!enabled) setMaxFps(260); },
+      });
+  }, [executeCommand, openInventory, closeInventory, openContainer]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
 
@@ -3297,6 +3319,7 @@ const App: React.FC = () => {
             >
                 {!isNativeLoop && <FPSLimiter limit={effectiveMaxFps} />}
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
+                {import.meta.env.DEV && <DevQaProbe />}
                 {/* Scene-only motion blur. Unmounted when off, which restores R3F's
                     own render path and costs nothing; never mounted during a
                     panorama capture. */}
