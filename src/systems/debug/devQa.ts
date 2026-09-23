@@ -178,6 +178,24 @@ function removePlacedTorches(): void {
     placedTorches = [];
 }
 
+/**
+ * Takes out any tour torch still standing (from a shot staged on its own, or
+ * an interrupted run), so no other shot is lit by it. Only cells that hold a
+ * torch at a tour torch spot are touched.
+ */
+function clearTourTorches(): boolean {
+    let removed = placedTorches.length > 0;
+    removePlacedTorches();
+    for (const shot of VISUAL_TOUR_SHOTS) {
+        for (const [x, y, z] of shot.torches ?? []) {
+            if (need('getBlock')(x, y, z) !== TORCH_BLOCK_ID) continue;
+            need('setBlock')(x, y, z, 0);
+            removed = true;
+        }
+    }
+    return removed;
+}
+
 async function waitForChunks(timeoutMs = 20000): Promise<StreamingStatus> {
     const started = performance.now();
     let status = need('streaming')();
@@ -368,15 +386,17 @@ async function stageShot(shot: VisualTourShot): Promise<StreamingStatus> {
     need('hud')(shot.hud ?? false);
     await wait(300);
     let status = await waitForChunks();
-    // Light the scene once its chunks are loaded: torches go only into empty
-    // cells (nothing is ever overwritten) and runTour takes them out again
-    // after the capture.
-    if (shot.torches?.length) {
-        for (const [x, y, z] of shot.torches) {
-            if (need('getBlock')(x, y, z) !== 0) continue;
-            need('setBlock')(x, y, z, TORCH_BLOCK_ID);
-            placedTorches.push([x, y, z]);
-        }
+    // Once the scene's chunks are loaded: take out any tour torch left standing,
+    // then light this shot. Torches go only into empty cells (nothing is ever
+    // overwritten) and runTour takes them out again after the capture.
+    let changed = clearTourTorches();
+    for (const [x, y, z] of shot.torches ?? []) {
+        if (need('getBlock')(x, y, z) !== 0) continue;
+        need('setBlock')(x, y, z, TORCH_BLOCK_ID);
+        placedTorches.push([x, y, z]);
+        changed = true;
+    }
+    if (changed) {
         await wait(300);
         status = await waitForChunks();
     }
