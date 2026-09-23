@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
-import { VISUAL_TOUR_SHOTS, type VisualTourShot } from './visualTour';
+import { advance } from '@react-three/fiber';
+import { VISUAL_TOUR_SEED, VISUAL_TOUR_SHOTS, type VisualTourShot } from './visualTour';
 
 // DEV-only QA bridge for scripted screenshot and performance passes.
 //
@@ -55,6 +56,10 @@ const handles: Partial<DevQaHandles> = {};
 let renderer: THREE.WebGLRenderer | null = null;
 let recording: FrameSample[] | null = null;
 let lastFrameAt = 0;
+let lastRealFrameAt = 0;
+let pumping = false;
+let pumpedFrames = 0;
+let pumpTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Called by App once its refs and callbacks exist. Later calls replace earlier ones. */
 export function registerDevQaHandles(next: Partial<DevQaHandles>): void {
@@ -73,6 +78,35 @@ export function recordDevQaFrame(gl: THREE.WebGLRenderer): void {
         });
     }
     lastFrameAt = now;
+    if (!pumping) lastRealFrameAt = now;
+}
+
+/**
+ * A hidden automation pane stops requestAnimationFrame, so with VSync on the
+ * game neither simulates nor renders and every scripted pass stalls. While the
+ * pump is on, a timer steps R3F itself whenever no real frame has run for
+ * 100 ms, and steps aside as soon as real frames resume, so a visible pane
+ * never renders twice per frame. Timings taken while pumping mean nothing, so
+ * perf() refuses to report them.
+ */
+function pump(enabled: boolean): void {
+    if (!enabled) {
+        if (pumpTimer) clearInterval(pumpTimer);
+        pumpTimer = null;
+        return;
+    }
+    if (pumpTimer) return;
+    pumpTimer = setInterval(() => {
+        if (performance.now() - lastRealFrameAt < 100) return;
+        pumping = true;
+        try {
+            // Seconds, like FPSLimiter: frameloop 'never' clocks from it, 'always' ignores it.
+            advance(performance.now() / 1000);
+            pumpedFrames++;
+        } finally {
+            pumping = false;
+        }
+    }, 16);
 }
 
 const need = <K extends keyof DevQaHandles>(key: K): DevQaHandles[K] => {
@@ -130,10 +164,14 @@ async function saveShot(phase: string, name: string, dataUrl: string): Promise<s
 }
 
 async function perf(seconds = 5): Promise<PerfReport> {
+    const pumpedBefore = pumpedFrames;
     recording = [];
     await wait(seconds * 1000);
     const samples = recording;
     recording = null;
+    if (pumpedFrames !== pumpedBefore) {
+        throw new Error('perf() needs real frames, but the pane is hidden and frames were being pumped');
+    }
     const frameTimes = samples.map(s => s.ms).sort((a, b) => a - b);
     const avg = (values: number[]) => values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
     const frameMsAvg = avg(frameTimes);
@@ -154,7 +192,7 @@ async function perf(seconds = 5): Promise<PerfReport> {
 }
 
 /** The menu flow a player clicks through, driven through the DOM: Singleplayer → world → Play. */
-async function enterWorld(worldName: string, timeoutMs = 60000): Promise<StreamingStatus> {
+async function enterWorld(worldName: string, timeoutMs = 180000): Promise<StreamingStatus> {
     const visible = (el: Element) => (el as HTMLElement).offsetParent !== null;
     const byText = (text: string): HTMLElement | undefined => {
         // Prefer the real <button>: MenuButton wraps it in a div with the same text,
@@ -169,16 +207,41 @@ async function enterWorld(worldName: string, timeoutMs = 60000): Promise<Streami
         const started = performance.now();
         while (performance.now() - started < timeoutMs) {
             const el = byText(text);
-            if (el) { el.click(); return; }
+            // A button that exists but is still disabled (e.g. Play before the
+            // selection lands) would swallow the click: wait for it to enable.
+            if (el && !(el instanceof HTMLButtonElement && el.disabled)) { el.click(); return; }
             await wait(250);
         }
-        throw new Error(`Menu item not found: ${text}`);
+        throw new Error(`Menu item not found or never enabled: ${text}`);
     };
     await click('Singleplayer');
-    await wait(600);
-    await click(worldName);
-    await wait(300);
-    await click('Play Selected World');
+    // The list loads asynchronously; give it a moment before deciding the world is missing.
+    let row: HTMLElement | undefined;
+    for (let i = 0; i < 20 && !row; i++) {
+        await wait(250);
+        row = byText(worldName);
+    }
+    if (row) {
+        row.click();
+        await wait(300);
+        await click('Play Selected World');
+    } else {
+        // The browser-pane profile doesn't always keep saves: recreate the world from
+        // its seed (worldgen is deterministic, so every tour position still holds).
+        await click('Create New World');
+        await wait(400);
+        const inputs = [...document.querySelectorAll('input[type="text"]')] as HTMLInputElement[];
+        const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        const fill = (input: HTMLInputElement | undefined, value: string) => {
+            if (!input || !setValue) throw new Error('Create World form not found');
+            setValue.call(input, value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        fill(inputs[0], worldName);
+        fill(inputs[1], VISUAL_TOUR_SEED);
+        await wait(200);
+        await click('Create World');
+    }
     const started = performance.now();
     while (!handles.streaming && performance.now() - started < timeoutMs) await wait(250);
     await wait(1000);
@@ -274,8 +337,10 @@ export interface AtlasQaApi {
     shot(phase: string, name: string): Promise<string>;
     perf(seconds?: number): Promise<PerfReport>;
     perfSweep(distances?: readonly number[], seconds?: number): Promise<Record<string, PerfReport>>;
-    /** From the title screen: Singleplayer → the named world → Play, then waits for chunks. */
+    /** From the title screen: Singleplayer → the named world → Play (creating it from the tour seed if it is missing), then waits for chunks. */
     enterWorld(worldName: string, timeoutMs?: number): Promise<StreamingStatus>;
+    /** Keeps frames coming while the pane is hidden (requestAnimationFrame stops there). */
+    pump(enabled: boolean): void;
     tour: {
         shots: readonly VisualTourShot[];
         stage(id: string): Promise<StreamingStatus>;
@@ -301,6 +366,7 @@ export function createDevQaApi(): AtlasQaApi {
         perf,
         perfSweep,
         enterWorld,
+        pump,
         tour: {
             shots: VISUAL_TOUR_SHOTS,
             stage: async (id) => {

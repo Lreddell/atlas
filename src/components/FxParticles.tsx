@@ -94,7 +94,12 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
             void main() {
                 float a = texture2D(uTex, gl_PointCoord).a;
                 if (a < 0.01) discard;
-                gl_FragColor = vec4(vColor * (0.6 + vAlpha), a * vAlpha);
+                // FX colours are authored as display (sRGB) values: decode to scene-linear
+                // so they go through the same tone map as the rest of the frame.
+                vec3 linearColor = pow(vColor, vec3(2.2));
+                gl_FragColor = vec4(linearColor * (0.6 + vAlpha) * 1.25, a * vAlpha);
+                #include <tonemapping_fragment>
+                #include <colorspace_fragment>
             }
         `,
     }), [sprite]);

@@ -447,14 +447,15 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     assert.match(pass, /#include <tonemapping_fragment>/);
     assert.match(pass, /#include <colorspace_fragment>/);
     assert.match(pass, /type: THREE\.HalfFloatType/);
-    // ...but the background layers (sky, stars, aurora) are hand-written shaders
-    // that emit a final colour with no chunks of their own, so they are already
-    // display-referred and pass through untouched. Running them through the
-    // transfer as well is what turned the sky brighter.
-    assert.match(pass, /if \(depth >= 1\.0\) \{\s*gl_FragColor = texture2D\(tColor, vUv\);\s*return;/);
-    for (const f of ['world/DayNightCycle']) {
-        assert.doesNotMatch(read(`src/components/${f}.tsx`), /tonemapping_fragment|colorspace_fragment/);
-    }
+    // One colour pipeline: the background layers (sky, stars, aurora, shooting
+    // stars) write scene-linear light and end in the same chunks as lit
+    // materials, so the pass tone maps EVERY pixel exactly once. A far-plane pixel
+    // is not blurred (nothing there can move), but it is not passed through raw.
+    assert.match(pass, /gl_FragColor = depth >= 1\.0 \? texture2D\(tColor, vUv\) : gatherAlongMotion\(depth\);\s*#include <tonemapping_fragment>/);
+    assert.doesNotMatch(pass, /return;\s*\}\s*\/\/[^\n]*\n\s*gl_FragColor = gatherAlongMotion/);
+    const dayNight = read('src/components/world/DayNightCycle.tsx');
+    assert.ok((dayNight.match(/#include <tonemapping_fragment>/g) ?? []).length >= 4, 'sky, stars, aurora and shooting stars tone map');
+    assert.doesNotMatch(dayNight, /toneMapped: false|toneMapped=\{false\}/);
     // One shared toggle feeds both the main-menu and in-game Video Settings: both
     // are the same PauseMenu, reading and writing the graphics store directly.
     assert.doesNotMatch(app, /motionBlurEnabled=\{/);
@@ -686,7 +687,12 @@ test('the World Editor surfaces the Magnetic Fields boss biome + boss-field laye
 
 test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutscene', () => {
     const dn = read('src/components/world/DayNightCycle.tsx');
-    assert.match(dn, /MAGNETIC_FOG_TINT/);
+    // The haze colour and density live in the atmosphere model; DayNightCycle
+    // feeds it the biome blend and the storm.
+    const atmosphere = read('src/systems/graphics/atmosphere.ts');
+    assert.match(atmosphere, /MAGNETIC_FOG_TINT/);
+    assert.match(atmosphere, /haze \+= mag \* \(/);
+    assert.match(dn, /magnetic: magneticFogBlendRef\.current/);
     assert.match(dn, /magneticFogBlendRef/);
     assert.match(dn, /MAGNETIC_FIELDS_BIOME_ID/);
     assert.match(dn, /bossSummon\.isActive\(\)[\s\S]*?magneticFogBlendRef\.current = 0/);

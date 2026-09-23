@@ -64,11 +64,12 @@ let newCloudFadeMultiplier = 1.0;
 let leavingCloudMultiplier = 0.0;
 
 // Hoisted, updateCloudColor runs every frame from DayNightCycle's useFrame.
-const CLOUD_NIGHT_COLOR = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
-const CLOUD_DAY_COLOR = new THREE.Color(0xFFFFFF);
+// Clouds are a constant soft white: the scene's key and sky lights colour them
+// (gold at sunset, moonlit blue at night), and the atmosphere fogs them.
+const CLOUD_ALBEDO = new THREE.Color(0xf3f5fb);
 
 const updateCloudColor = (dayFactor: number) => {
-    cloudBackMaterial.color.lerpColors(CLOUD_NIGHT_COLOR, CLOUD_DAY_COLOR, dayFactor);
+    cloudBackMaterial.color.copy(CLOUD_ALBEDO);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
     newCloudBackMaterial.color.copy(cloudBackMaterial.color);
     newCloudFrontMaterial.color.copy(cloudBackMaterial.color);

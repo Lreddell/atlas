@@ -99,21 +99,12 @@ vec4 gatherAlongMotion(float depth) {
 void main() {
     float depth = texture2D(tDepth, vUv).x;
 
-    // Nothing wrote depth here, so this pixel came from the background layers —
-    // the sky dome, the stars, the aurora. Those are hand-written ShaderMaterials
-    // that emit a final colour directly, without three's tone mapping or encode
-    // chunks, so they are ALREADY display-referred and must pass through
-    // untouched; running them through the transfer below is what turned the sky
-    // noticeably brighter. They are also at the far plane, with no surface that
-    // could have moved, so there is nothing to blur either.
-    if (depth >= 1.0) {
-        gl_FragColor = texture2D(tColor, vUv);
-        return;
-    }
-
-    // Everything else came from a three-managed material, which wrote linear
-    // light into the target and still owes a tone map and an encode.
-    gl_FragColor = gatherAlongMotion(depth);
+    // Nothing wrote depth here, so this pixel came from the background layers
+    // (sky dome, stars, aurora). They are at the far plane with no surface that
+    // could have moved, so there is nothing to blur; like every other layer they
+    // wrote scene-linear light (they end in the same tone-mapping chunks as lit
+    // materials), so they owe the same tone map and encode below.
+    gl_FragColor = depth >= 1.0 ? texture2D(tColor, vUv) : gatherAlongMotion(depth);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
 }
