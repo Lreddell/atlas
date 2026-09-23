@@ -142,9 +142,11 @@ const FRAGMENT_MAP = /* glsl */`
 	// Dissolve in and out on a 4x4 ordered-dither pattern.
 	if ( atlasBayer4( gl_FragCoord.xy ) >= atlasVoxelFade ) discard;
 #endif
-	atlasSkyLight = vColor.r;
-	atlasBlockLight = vColor.g;
-	atlasAo = 0.5 + 0.5 * vColor.b;
+	// Clamped: with MSAA, edge samples extrapolate vertex values slightly past
+	// 0..1, and pow() of a negative number is NaN (which bloom would smear).
+	atlasSkyLight = clamp( vColor.r, 0.0, 1.0 );
+	atlasBlockLight = clamp( vColor.g, 0.0, 1.0 );
+	atlasAo = 0.5 + 0.5 * clamp( vColor.b, 0.0, 1.0 );
 	// The sun and moon only reach surfaces that are open to the sky.
 	atlasVoxelKeyGate = smoothstep( 0.5, 0.95, atlasSkyLight );
 `;

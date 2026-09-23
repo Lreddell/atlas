@@ -19,6 +19,7 @@ import { createPixelMoonTexture, createPixelSunTexture } from '../../systems/gra
 import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { snapShadowCenter } from '../../systems/graphics/shadows';
+import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
 
 // The sky, the sun and moon, the stars, and the scene's two lights, all driven
 // by one sampled atmosphere (systems/graphics/atmosphere.ts) per frame.
@@ -662,7 +663,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             chunkSize: CHUNK_SIZE,
         }, atmosphere);
         applyAtmosphereUniforms(state);
-        gl.toneMappingExposure = state.exposure;
+        const exposure = state.exposure * TONE_MAPPING_EXPOSURE_TRIM;
+        gl.toneMappingExposure = exposure;
 
         // --- The fluid the camera is in (water or lava) fogs everything in its colour. ---
         const cellType = worldManager.getBlock(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z), false);
@@ -687,7 +689,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // Chunks now take day and night from the scene lights; the legacy sunlight
         // factor stays at 1 and only the Brightness floor passes through.
         updateChunkMaterials(1.0, brightness);
-        updateVoxelLighting(brightness, state.exposure, clock.elapsedTime);
+        updateVoxelLighting(brightness, exposure, clock.elapsedTime);
         updateCloudColor(dayFactor);
 
         scene.background = scratchBackground.setRGB(state.skyHorizon[0], state.skyHorizon[1], state.skyHorizon[2]);

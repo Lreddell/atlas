@@ -21,7 +21,8 @@ import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
 import { PolarityVignette } from './components/ui/PolarityVignette';
 import { LowHealthVignette } from './components/ui/LowHealthVignette';
-import { MotionBlurPass } from './components/MotionBlurPass';
+import { RenderPipeline } from './systems/graphics/pipeline/RenderPipeline';
+import { TONE_MAPPING, planPipeline, wantsContextAntialias } from './systems/graphics/pipeline/pipelinePlan';
 import { lowHealthState } from './systems/player/lowHealthState';
 import { resetMotionBlurHistory } from './systems/render/motionBlur';
 import { BossCompass } from './components/ui/BossCompass';
@@ -371,9 +372,13 @@ const App: React.FC = () => {
     const shadowsEnabled = graphics.config.shadows !== 'off';
     const cloudsEnabled = graphics.config.clouds !== 'off';
     const mipmapsEnabled = graphics.config.mipmaps;
-    const antialiasing = graphics.config.antialiasing !== 'off';
+    // Bloom, god rays or motion blur put a post pipeline in charge of the frame
+    // (systems/graphics/pipeline); without them R3F draws straight to the canvas.
+    // The pipeline brings its own MSAA or FXAA, so the context only needs MSAA
+    // when there is no pipeline.
+    const pipelinePlan = useMemo(() => planPipeline(graphics.config, { maxSamples: 4 }), [graphics.config]);
+    const antialiasing = wantsContextAntialias(graphics.config, pipelinePlan);
     const chunkFadeEnabled = graphics.config.chunkFade;
-    const motionBlurEnabled = graphics.config.motionBlur;
     // Wind and water detail are uniforms on the shared chunk materials: no recompile.
     const foliageWind = graphics.config.foliageWind;
     const fancyWater = graphics.config.water === 'fancy';
@@ -3326,7 +3331,10 @@ const App: React.FC = () => {
                 key={canvasKey} 
                 onCreated={state => { gameRendererRef.current = state; }}
                 shadows={shadowsEnabled ? { type: graphics.config.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap } : false}
-                gl={{ antialias: contextAntialias, preserveDrawingBuffer: isElectron }}
+                gl={{
+                    antialias: contextAntialias, alpha: false, preserveDrawingBuffer: isElectron,
+                    toneMapping: TONE_MAPPING === 'agx' ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping,
+                }}
                 dpr={[1, graphics.config.maxPixelRatio]}
                 camera={{ fov: 70, near: 0.1, far: 1000, position: [currentSpawnPos.x, currentSpawnPos.y, currentSpawnPos.z] }} 
                 frameloop={canvasFrameloop}
@@ -3337,7 +3345,7 @@ const App: React.FC = () => {
                 {/* Scene-only motion blur. Unmounted when off, which restores R3F's
                     own render path and costs nothing; never mounted during a
                     panorama capture. */}
-                {motionBlurEnabled && !isCapturingPanorama && <MotionBlurPass />}
+                {pipelinePlan.active && !isCapturingPanorama && <RenderPipeline plan={pipelinePlan} />}
                 {/* Streamer runs logic loop for loading */}
                 <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}

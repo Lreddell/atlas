@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { advance } from '@react-three/fiber';
 import { VISUAL_TOUR_SEED, VISUAL_TOUR_SHOTS, type VisualTourShot } from './visualTour';
 import { graphicsSettings } from '../graphics/graphicsStore';
-import type { GraphicsPresetId } from '../graphics/graphicsSettings';
+import type { GraphicsConfig, GraphicsPresetId } from '../graphics/graphicsSettings';
 
 // DEV-only QA bridge for scripted screenshot and performance passes.
 //
@@ -181,12 +181,28 @@ function removePlacedTorches(): void {
 async function waitForChunks(timeoutMs = 20000): Promise<StreamingStatus> {
     const started = performance.now();
     let status = need('streaming')();
+    // Ready on two polls in a row: right after a teleport the streamer can still
+    // report the OLD area as complete before it recentres on the new one.
+    let readyPolls = 0;
     while (performance.now() - started < timeoutMs) {
         status = need('streaming')();
-        if (status.desired > 0 && status.meshed >= status.desired && status.queued === 0 && status.inFlight === 0) break;
+        const ready = status.desired > 0 && status.meshed >= status.desired && status.queued === 0 && status.inFlight === 0;
+        readyPolls = ready ? readyPolls + 1 : 0;
+        if (readyPolls >= 2) break;
         await wait(250);
     }
     return status;
+}
+
+/** Teleports and waits until the player is actually there (the move lands on a later frame). */
+async function teleport(x: number, y: number, z: number): Promise<void> {
+    need('tp')(x, y, z);
+    const started = performance.now();
+    while (performance.now() - started < 3000) {
+        const at = need('position')();
+        if (Math.abs(at.x - x) < 2 && Math.abs(at.z - z) < 2) return;
+        await wait(100);
+    }
 }
 
 /**
@@ -342,12 +358,12 @@ async function stageShot(shot: VisualTourShot): Promise<StreamingStatus> {
     command(`/time set ${shot.time}`);
     command(shot.bloodMoon ? '/bloodmoon force current' : '/bloodmoon clear current');
     if (shot.spawnAt) {
-        need('tp')(shot.spawnAt[0], shot.spawnAt[1], shot.spawnAt[2]);
+        await teleport(shot.spawnAt[0], shot.spawnAt[1], shot.spawnAt[2]);
         await wait(300);
         await waitForChunks();
     }
     for (const extra of shot.commands ?? []) command(extra);
-    need('tp')(shot.position[0], shot.position[1], shot.position[2]);
+    await teleport(shot.position[0], shot.position[1], shot.position[2]);
     need('camera')(shot.yaw, shot.pitch);
     need('hud')(shot.hud ?? false);
     await wait(300);
@@ -422,6 +438,8 @@ export interface AtlasQaApi {
     programKeys(): string[];
     /** Switches the graphics preset, as the Video Settings cycler does. */
     preset(id: GraphicsPresetId): void;
+    /** Changes one graphics option, as the Video Settings list does. */
+    option<K extends keyof GraphicsConfig>(key: K, value: GraphicsConfig[K]): void;
     tour: {
         shots: readonly VisualTourShot[];
         stage(id: string): Promise<StreamingStatus>;
@@ -452,6 +470,7 @@ export function createDevQaApi(): AtlasQaApi {
         pump,
         programKeys: () => (renderer?.info.programs ?? []).map(program => program.cacheKey),
         preset: id => graphicsSettings.setPreset(id),
+        option: (key, value) => graphicsSettings.setOption(key, value),
         tour: {
             shots: VISUAL_TOUR_SHOTS,
             stage: async (id) => {

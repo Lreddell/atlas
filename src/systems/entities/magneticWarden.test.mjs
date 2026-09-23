@@ -428,31 +428,33 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     assert.doesNotMatch(read('src/systems/sound/musicRate.ts'), /lowHealth/i);
 
     // Motion blur: off unless the player turned it on (it is off in every graphics
-    // preset), and unmounted when off so the disabled path is R3F's own renderer
+    // preset). It runs as one stage of the post pipeline, which is unmounted
+    // whenever nothing needs post-processing, so that path is R3F's own renderer
     // with no extra targets.
     const graphicsPresets = read('src/systems/graphics/graphicsSettings.ts');
     assert.equal((graphicsPresets.match(/motionBlur: false/g) ?? []).length, 4);
     assert.doesNotMatch(graphicsPresets, /motionBlur: true/);
-    assert.match(app, /const motionBlurEnabled = graphics\.config\.motionBlur;/);
-    assert.match(app, /\{motionBlurEnabled && !isCapturingPanorama && <MotionBlurPass \/>\}/);
-    // Scene only: the pass renders the scene into its own target inside the
+    assert.match(app, /\{pipelinePlan\.active && !isCapturingPanorama && <RenderPipeline plan=\{pipelinePlan\} \/>\}/);
+    const plan = read('src/systems/graphics/pipeline/pipelinePlan.ts');
+    assert.match(plan, /const active = config\.bloom !== 'off' \|\| config\.godRays \|\| config\.motionBlur;/);
+    assert.match(plan, /motionBlur: config\.motionBlur/);
+    // Scene only: the pipeline renders the scene into its own target inside the
     // canvas. Nothing here may reach the DOM overlays.
-    const pass = read('src/components/MotionBlurPass.tsx');
-    assert.match(pass, /gl\.setRenderTarget\(target\)/);
-    assert.doesNotMatch(pass, /document\.|filter:\s*blur|backdrop/);
+    const pipeline = read('src/systems/graphics/pipeline/RenderPipeline.tsx');
+    const shaders = read('src/systems/graphics/pipeline/postShaders.ts');
+    assert.match(pipeline, /gl\.setRenderTarget\(targets\.scene\)/);
+    assert.doesNotMatch(pipeline + shaders, /document\.|filter:\s*blur|backdrop/);
     // three applies tone mapping and the sRGB encode only when rendering to the
-    // CANVAS, so a pass that renders the scene through a target owes both on the
-    // way out -- without them the whole world goes dark. The target has to be
-    // float, because what it now holds is pre-tone-mapping linear light.
-    assert.match(pass, /#include <tonemapping_fragment>/);
-    assert.match(pass, /#include <colorspace_fragment>/);
-    assert.match(pass, /type: THREE\.HalfFloatType/);
-    // One colour pipeline: the background layers (sky, stars, aurora, shooting
-    // stars) write scene-linear light and end in the same chunks as lit
-    // materials, so the pass tone maps EVERY pixel exactly once. A far-plane pixel
-    // is not blurred (nothing there can move), but it is not passed through raw.
-    assert.match(pass, /gl_FragColor = depth >= 1\.0 \? texture2D\(tColor, vUv\) : gatherAlongMotion\(depth\);\s*#include <tonemapping_fragment>/);
-    assert.doesNotMatch(pass, /return;\s*\}\s*\/\/[^\n]*\n\s*gl_FragColor = gatherAlongMotion/);
+    // CANVAS, so the scene target holds raw linear light (half float, because
+    // it runs past 1.0) and the composite owes both, exactly once: its own tone
+    // map and encode, with three's switched off on every pipeline pass.
+    assert.match(pipeline, /type: THREE\.HalfFloatType/);
+    assert.match(pipeline, /toneMapped: false/);
+    assert.match(shaders, /vec3 color = acesToneMap\( hdr \* uExposure \);/);
+    assert.match(shaders, /vec3 display = toSrgb\( clamp\( color, 0\.0, 1\.0 \) \);/);
+    // A far-plane pixel (sky) is not blurred -- nothing there can move -- but it
+    // is not passed through raw either: the composite tone maps every pixel.
+    assert.match(shaders, /gl_FragColor = depth >= 1\.0 \? texture2D\( tColor, vUv \) : gatherAlongMotion\( depth \);/);
     const dayNight = read('src/components/world/DayNightCycle.tsx');
     assert.ok((dayNight.match(/#include <tonemapping_fragment>/g) ?? []).length >= 4, 'sky, stars, aurora and shooting stars tone map');
     assert.doesNotMatch(dayNight, /toneMapped: false|toneMapped=\{false\}/);
