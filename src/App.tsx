@@ -69,6 +69,8 @@ import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
 import { DevQaProbe } from './components/DevQaProbe';
+import { useGraphicsSettings } from './systems/graphics/graphicsStore';
+import { lowerPreset } from './systems/graphics/graphicsSettings';
 import { installDevQa, registerDevQaHandles } from './systems/debug/devQa';
 import { isEditableElement } from './utils/dom';
 
@@ -157,14 +159,11 @@ const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
 const SETTINGS_WORKERS_ENABLED_KEY = 'atlas.settings.workersEnabled';
-const SETTINGS_SHADOWS_ENABLED_KEY = 'atlas.settings.shadowsEnabled';
-const SETTINGS_CLOUDS_ENABLED_KEY = 'atlas.settings.cloudsEnabled';
-const SETTINGS_MIPMAPS_ENABLED_KEY = 'atlas.settings.mipmapsEnabled';
-const SETTINGS_ANTIALIASING_KEY = 'atlas.settings.antialiasing';
+// Shadows, clouds, mipmaps, antialiasing, chunk fade and motion blur moved into
+// the graphics store (atlas.settings.graphics.v1); their old keys are only read
+// once, by migrateLegacyGraphics, on the first launch of this build.
 const SETTINGS_MAX_FPS_KEY = 'atlas.settings.maxFps';
 const SETTINGS_VSYNC_KEY = 'atlas.settings.vsync';
-const SETTINGS_CHUNK_FADE_ENABLED_KEY = 'atlas.settings.chunkFadeEnabled';
-const SETTINGS_MOTION_BLUR_KEY = 'atlas.settings.motionBlur';
 
 const readNumberSetting = (key: string, fallback: number, min?: number, max?: number) => {
     if (typeof window === 'undefined') return fallback;
@@ -363,14 +362,17 @@ const App: React.FC = () => {
   const [commandValue, setCommandValue] = useState('');
   
     const [workersEnabled] = useState(() => readBooleanSetting(SETTINGS_WORKERS_ENABLED_KEY, WORKERS_ENABLED));
-    const [shadowsEnabled, setShadowsEnabled] = useState(() => readBooleanSetting(SETTINGS_SHADOWS_ENABLED_KEY, false));
-    const [cloudsEnabled, setCloudsEnabled] = useState(() => readBooleanSetting(SETTINGS_CLOUDS_ENABLED_KEY, true));
-    const [mipmapsEnabled, setMipmapsEnabled] = useState(() => readBooleanSetting(SETTINGS_MIPMAPS_ENABLED_KEY, true));
-    const [antialiasing, setAntialiasing] = useState(() => readBooleanSetting(SETTINGS_ANTIALIASING_KEY, true));
-    const [chunkFadeEnabled, setChunkFadeEnabled] = useState(() => readBooleanSetting(SETTINGS_CHUNK_FADE_ENABLED_KEY, true));
-    // Off by default, for a saved value that predates the setting and for a fresh install alike.
-    const [motionBlurEnabled, setMotionBlurEnabled] = useState(() => readBooleanSetting(SETTINGS_MOTION_BLUR_KEY, false));
-  
+    // Graphics options come from the quality preset plus the player's overrides
+    // (systems/graphics/graphicsStore.ts). Motion blur is off in every preset,
+    // so it stays off until the player turns it on.
+    const graphics = useGraphicsSettings();
+    const shadowsEnabled = graphics.config.shadows !== 'off';
+    const cloudsEnabled = graphics.config.clouds !== 'off';
+    const mipmapsEnabled = graphics.config.mipmaps;
+    const antialiasing = graphics.config.antialiasing !== 'off';
+    const chunkFadeEnabled = graphics.config.chunkFade;
+    const motionBlurEnabled = graphics.config.motionBlur;
+
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
     const [menuBackgroundMode, setMenuBackgroundMode] = useState<'dirt' | 'panorama'>('panorama');
@@ -424,8 +426,11 @@ const App: React.FC = () => {
 
   const isNativeLoop = vsync;
   const canvasFrameloop = isNativeLoop ? 'always' : 'never';
-  // Include antialiasing in the key to force WebGL context recreation when changed
-  const canvasKey = `${canvasFrameloop}-${antialiasing}`;
+  // The context's MSAA flag can only be set at creation, so it lives in its own
+  // state and changes through safeSetSetting (below), which parks the player at
+  // their current position before the Canvas is recreated.
+  const [contextAntialias, setContextAntialias] = useState(antialiasing);
+  const canvasKey = `${canvasFrameloop}-${contextAntialias}`;
   const effectiveMaxFps = maxFps;
 
   const dayNightRef = useRef<DayNightCycleRef>(null);
@@ -583,6 +588,38 @@ const App: React.FC = () => {
       }
       setter(value);
   }, [appState]);
+
+  // A graphics change that needs a new WebGL context (MSAA on/off) goes through
+  // the same safe path as the VSync toggle.
+  useEffect(() => {
+      if (antialiasing !== contextAntialias) safeSetSetting(setContextAntialias, antialiasing);
+  }, [antialiasing, contextAntialias, safeSetSetting]);
+
+  // The first session on a new build picks a preset from the GPU. If that pick
+  // runs slowly, say so once, suggesting one step down. Never lowered silently.
+  const fpsHintShownRef = useRef(false);
+  const autoPickedPreset = graphics.autoDetected && graphics.quality !== 'custom' ? graphics.state.preset : null;
+  useEffect(() => {
+      if (appState !== 'game' || !autoPickedPreset || fpsHintShownRef.current) return;
+      const suggestion = lowerPreset(autoPickedPreset);
+      if (!suggestion) return;
+      const samples: number[] = [];
+      const timer = window.setInterval(() => {
+          // Skip the first seconds of chunk streaming, then average one minute.
+          samples.push(fpsRef.current);
+          if (samples.length < 70) return;
+          window.clearInterval(timer);
+          const measured = samples.slice(10);
+          const average = measured.reduce((sum, fps) => sum + fps, 0) / measured.length;
+          if (average >= 40) return;
+          fpsHintShownRef.current = true;
+          setAppNotice({
+              type: 'info',
+              message: `Running at about ${Math.round(average)} fps. The ${suggestion[0].toUpperCase()}${suggestion.slice(1)} graphics preset may play smoother (Options > Video Settings).`,
+          });
+      }, 1000);
+      return () => window.clearInterval(timer);
+  }, [appState, autoPickedPreset]);
 
   useEffect(() => {
       if (appState === 'game' && playerPosRef.current && Number.isFinite(playerPosRef.current.x)) {
@@ -2373,26 +2410,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_SHADOWS_ENABLED_KEY, String(shadowsEnabled));
-  }, [shadowsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_CLOUDS_ENABLED_KEY, String(cloudsEnabled));
-  }, [cloudsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_MIPMAPS_ENABLED_KEY, String(mipmapsEnabled));
-  }, [mipmapsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_ANTIALIASING_KEY, String(antialiasing));
-  }, [antialiasing]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
       window.localStorage.setItem(SETTINGS_MAX_FPS_KEY, String(maxFps));
   }, [maxFps]);
 
@@ -2400,16 +2417,6 @@ const App: React.FC = () => {
       if (typeof window === 'undefined') return;
       window.localStorage.setItem(SETTINGS_VSYNC_KEY, String(vsync));
   }, [vsync]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_CHUNK_FADE_ENABLED_KEY, String(chunkFadeEnabled));
-  }, [chunkFadeEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_MOTION_BLUR_KEY, String(motionBlurEnabled));
-  }, [motionBlurEnabled]);
 
   // --- Low health ---------------------------------------------------------
   // The ONE input to the low-health state: whatever `health` settled on, from any
@@ -3171,10 +3178,6 @@ const App: React.FC = () => {
                   setAppState('menu');
               }} 
               renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov}
-              shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled}
-              cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled}
-              antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)}
-              chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} motionBlurEnabled={motionBlurEnabled} setMotionBlurEnabled={setMotionBlurEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
               onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
@@ -3231,7 +3234,7 @@ const App: React.FC = () => {
                         damage pulse can never be mistaken for positive polarity. */}
                     {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
                     {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
-                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} motionBlurEnabled={motionBlurEnabled} setMotionBlurEnabled={setMotionBlurEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
+                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
@@ -3312,8 +3315,9 @@ const App: React.FC = () => {
             <Canvas 
                 key={canvasKey} 
                 onCreated={state => { gameRendererRef.current = state; }}
-                shadows={shadowsEnabled ? { type: THREE.BasicShadowMap } : false} 
-                gl={{ antialias: antialiasing, preserveDrawingBuffer: isElectron }}
+                shadows={shadowsEnabled ? { type: THREE.BasicShadowMap } : false}
+                gl={{ antialias: contextAntialias, preserveDrawingBuffer: isElectron }}
+                dpr={[1, graphics.config.maxPixelRatio]}
                 camera={{ fov: 70, near: 0.1, far: 1000, position: [currentSpawnPos.x, currentSpawnPos.y, currentSpawnPos.z] }} 
                 frameloop={canvasFrameloop}
             >
@@ -3330,7 +3334,7 @@ const App: React.FC = () => {
                 <ChunkFadeTicker />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
-                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
+                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
                 
                 <Suspense fallback={null}>

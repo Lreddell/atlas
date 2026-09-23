@@ -9,8 +9,26 @@ import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
 import { SkinsMenu } from './SkinsMenu';
 import { UiNotice, type UiNoticeState } from './UiNotice';
+import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
+import {
+    GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
+    type CloudQuality, type GraphicsConfig, type GraphicsPresetId, type GraphicsQuality, type ShadowQuality,
+} from '../../systems/graphics/graphicsSettings';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
+
+const QUALITY_LABELS: Record<GraphicsQuality, string> = {
+    low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', custom: 'Custom',
+};
+const SHADOW_LABELS: Record<ShadowQuality, string> = { off: 'OFF', low: 'Low', medium: 'Medium', high: 'High' };
+const SHADOW_CYCLE: readonly ShadowQuality[] = ['off', 'low', 'medium', 'high'];
+const PIXEL_RATIO_CYCLE: readonly GraphicsConfig['maxPixelRatio'][] = [1, 1.5, 2];
+
+const nextInCycle = <T,>(cycle: readonly T[], current: T): T => cycle[(cycle.indexOf(current) + 1) % cycle.length];
+const nextPresetAfter = (preset: GraphicsPresetId): GraphicsPresetId => nextInCycle(GRAPHICS_PRESET_ORDER, preset);
+/** Turning clouds back on restores the preset's cloud quality. */
+const presetCloudsOrFancy = (preset: GraphicsPresetId): CloudQuality =>
+    GRAPHICS_PRESETS[preset].clouds === 'off' ? 'fancy' : GRAPHICS_PRESETS[preset].clouds;
 
 interface PauseMenuProps {
     onResume: () => void;
@@ -19,18 +37,6 @@ interface PauseMenuProps {
     setRenderDistance: (dist: number) => void;
     fov: number;
     setFov: (fov: number) => void;
-    shadowsEnabled: boolean;
-    setShadowsEnabled: (val: boolean) => void;
-    cloudsEnabled: boolean;
-    setCloudsEnabled: (val: boolean) => void;
-    mipmapsEnabled: boolean;
-    setMipmapsEnabled: (val: boolean) => void;
-    antialiasing: boolean;
-    setAntialiasing: (val: boolean) => void;
-    chunkFadeEnabled: boolean;
-    setChunkFadeEnabled: (val: boolean) => void;
-    motionBlurEnabled: boolean;
-    setMotionBlurEnabled: (val: boolean) => void;
     maxFps: number;
     setMaxFps: (val: number) => void;
     vsync: boolean;
@@ -119,12 +125,7 @@ const MCToggle: React.FC<{
 );
 
 export const PauseMenu: React.FC<PauseMenuProps> = ({ 
-    onResume, onQuitToTitle, renderDistance, setRenderDistance, fov, setFov, 
-    shadowsEnabled, setShadowsEnabled,
-    cloudsEnabled, setCloudsEnabled,
-    mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing,
-    motionBlurEnabled, setMotionBlurEnabled, 
-    chunkFadeEnabled, setChunkFadeEnabled,
+    onResume, onQuitToTitle, renderDistance, setRenderDistance, fov, setFov,
     maxFps, setMaxFps, vsync, setVsync,
     brightness, setBrightness,
     panoramaBlur,
@@ -139,6 +140,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     onTutorialClose,
 }) => {
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
+    const graphics = useGraphicsSettings();
+    const gfx = graphics.config;
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
     const [notice, setNotice] = useState<UiNoticeState | null>(null);
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
@@ -248,7 +251,21 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const renderVideo = () => (
         <div className="flex flex-col gap-2 items-center w-[600px]">
             <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Video Settings</h1>
-            
+
+            {/* Quality presets. Changing any option below switches to Custom. */}
+            <div className="flex flex-col items-center gap-1 mb-3">
+                <MenuButton
+                    label={`Graphics: ${QUALITY_LABELS[graphics.quality]}`}
+                    onClick={() => graphicsSettings.setPreset(nextPresetAfter(graphics.quality === 'custom' ? graphics.state.preset : graphics.quality))}
+                    width="w-[33rem]"
+                />
+                <p className="text-xs font-pixel text-gray-300 text-shadow-md">
+                    {graphics.quality === 'custom'
+                        ? `Custom, based on ${QUALITY_LABELS[graphics.state.preset]}. Click to pick a preset again.`
+                        : 'Low, Medium, High or Ultra. Changing an option below switches to Custom.'}
+                </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 mb-4">
                 <MenuSlider 
                     label="Brightness" 
@@ -278,19 +295,34 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 />
                 <MCToggle label="VSync" value={vsync} onChange={setVsync} width="w-64" />
 
-                <MCToggle label="Sun Shadows" value={shadowsEnabled} onChange={setShadowsEnabled} width="w-64" />
-                <MCToggle label="Clouds" value={cloudsEnabled} onChange={setCloudsEnabled} width="w-64" />
-                <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
-                <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
-                {/* Scene only: the 3D world blurs, the HUD never does. Off by default. */}
-                <MCToggle label="Motion Blur" value={motionBlurEnabled} onChange={setMotionBlurEnabled} width="w-64" />
-                <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
-                
+                <MenuButton
+                    label={`Shadows: ${SHADOW_LABELS[gfx.shadows]}`}
+                    onClick={() => graphicsSettings.setOption('shadows', nextInCycle(SHADOW_CYCLE, gfx.shadows))}
+                    width="w-64"
+                />
+                <MCToggle
+                    label="Clouds" value={gfx.clouds !== 'off'} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('clouds', on ? presetCloudsOrFancy(graphics.state.preset) : 'off')}
+                />
+                <MCToggle label="Antialiasing" value={gfx.antialiasing !== 'off'} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('antialiasing', on ? 'msaa' : 'off')} />
+                <MenuButton
+                    label={`Resolution: ${gfx.maxPixelRatio}x`}
+                    tooltip="Highest pixel density the world renders at on high-DPI screens"
+                    onClick={() => graphicsSettings.setOption('maxPixelRatio', nextInCycle(PIXEL_RATIO_CYCLE, gfx.maxPixelRatio))}
+                    width="w-64"
+                />
+                <MCToggle label="Mipmaps" value={gfx.mipmaps} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('mipmaps', on)} />
+                <MCToggle label="Chunk Fade-In" value={gfx.chunkFade} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('chunkFade', on)} />
+                {/* Scene only: the 3D world blurs, the HUD never does. Off in every preset. */}
+                <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('motionBlur', on)} />
+
                 {/* Custom Environment */}
-                <div className="col-span-2 flex justify-center mt-2 pt-2 border-t border-white/10 w-full">
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
-                    <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={!cloudsEnabled} />
-                </div>
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
+                <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={gfx.clouds === 'off'} />
             </div>
 
             <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />

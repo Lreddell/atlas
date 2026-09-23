@@ -12,6 +12,7 @@ import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
 import { bossSummon } from '../../systems/boss/bossSummon';
 import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
+import { SHADOW_QUALITY_SETTINGS, type ShadowQuality } from '../../systems/graphics/graphicsSettings';
 
 // Shader for the skybox gradient with Directional Sunset
 const SkyMaterial = {
@@ -395,11 +396,14 @@ const AURORA_BLOOD_MOON_THEME: [number,number,number,number,number,number,number
 export const DayNightCycle = forwardRef<DayNightCycleRef, {
     isPaused: boolean,
     renderDistance: number,
-    shadowsEnabled: boolean,
+    shadowQuality: ShadowQuality,
     brightness: number // Add Brightness prop
 }>(({
-    isPaused, renderDistance, shadowsEnabled, brightness
+    isPaused, renderDistance, shadowQuality, brightness
 }, ref) => {
+    const shadowsEnabled = shadowQuality !== 'off';
+    const shadowSettings = SHADOW_QUALITY_SETTINGS[shadowQuality === 'off' ? 'low' : shadowQuality];
+    const shadowMapSize = shadowSettings.mapSize;
     const { scene, camera } = useThree();
     const starsRef = useRef<THREE.Group>(null);
     const auroraGroupRef = useRef<THREE.Group>(null);
@@ -433,9 +437,19 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const moonLightTintColor = useMemo(() => new THREE.Color(), []);
     const ambientLightTintColor = useMemo(() => new THREE.Color(), []);
 
-    // Performance: Limit shadows to 8 chunks max, regardless of render distance
-    const MAX_SHADOW_CHUNKS = 8;
-    const shadowDist = Math.min(renderDistance, MAX_SHADOW_CHUNKS) * CHUNK_SIZE;
+    // Performance: shadows reach a fixed distance per quality (48/80/112 blocks),
+    // never past the render distance.
+    const shadowDist = Math.min(renderDistance * CHUNK_SIZE, shadowSettings.distance);
+
+    // three allocates a light's shadow map once; a new size only takes effect
+    // after the old map is released.
+    useEffect(() => {
+        for (const light of [sunLightRef.current, moonLightRef.current]) {
+            if (!light?.shadow.map) continue;
+            light.shadow.map.dispose();
+            light.shadow.map = null;
+        }
+    }, [shadowMapSize]);
 
     const sunTexture = useMemo(() => createSunTexture(), []);
     const sunGlow = useMemo(() => createGlowTexture('#FFD54F'), []);
@@ -755,7 +769,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // --- Shadows & Lights ---
         const shadowSize = shadowDist;
         const lightDistance = shadowSize + 50; 
-        const TEXEL_SIZE = (shadowSize * 2) / 2048;
+        const TEXEL_SIZE = (shadowSize * 2) / shadowMapSize;
         
         const snappedX = Math.floor(camera.position.x / TEXEL_SIZE) * TEXEL_SIZE;
         const snappedY = Math.floor(camera.position.y / TEXEL_SIZE) * TEXEL_SIZE;
@@ -971,7 +985,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
             <directionalLight 
                 ref={sunLightRef} castShadow={shadowsEnabled}
-                shadow-mapSize={[2048, 2048]} shadow-bias={-0.0001}
+                shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-bias={-0.0001}
                 shadow-camera-left={-shadowDist} shadow-camera-right={shadowDist}
                 shadow-camera-top={shadowDist} shadow-camera-bottom={-shadowDist}
                 shadow-camera-near={0.1} shadow-camera-far={shadowDist * 2 + 100}
@@ -979,7 +993,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
             <directionalLight 
                 ref={moonLightRef} castShadow={shadowsEnabled}
-                shadow-mapSize={[2048, 2048]} shadow-bias={-0.0001}
+                shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-bias={-0.0001}
                 shadow-camera-left={-shadowDist} shadow-camera-right={shadowDist}
                 shadow-camera-top={shadowDist} shadow-camera-bottom={-shadowDist}
                 shadow-camera-near={0.1} shadow-camera-far={shadowDist * 2 + 100}

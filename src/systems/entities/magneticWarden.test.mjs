@@ -427,9 +427,13 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     assert.doesNotMatch(state, /musicController|PlaybackRate/);
     assert.doesNotMatch(read('src/systems/sound/musicRate.ts'), /lowHealth/i);
 
-    // Motion blur: off unless the player turned it on, and unmounted when off so
-    // the disabled path is R3F's own renderer with no extra targets.
-    assert.match(app, /readBooleanSetting\(SETTINGS_MOTION_BLUR_KEY, false\)/);
+    // Motion blur: off unless the player turned it on (it is off in every graphics
+    // preset), and unmounted when off so the disabled path is R3F's own renderer
+    // with no extra targets.
+    const graphicsPresets = read('src/systems/graphics/graphicsSettings.ts');
+    assert.equal((graphicsPresets.match(/motionBlur: false/g) ?? []).length, 4);
+    assert.doesNotMatch(graphicsPresets, /motionBlur: true/);
+    assert.match(app, /const motionBlurEnabled = graphics\.config\.motionBlur;/);
     assert.match(app, /\{motionBlurEnabled && !isCapturingPanorama && <MotionBlurPass \/>\}/);
     // Scene only: the pass renders the scene into its own target inside the
     // canvas. Nothing here may reach the DOM overlays.
@@ -451,9 +455,12 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     for (const f of ['world/DayNightCycle']) {
         assert.doesNotMatch(read(`src/components/${f}.tsx`), /tonemapping_fragment|colorspace_fragment/);
     }
-    // One shared toggle feeds both the main-menu and in-game Video Settings.
-    assert.equal((app.match(/motionBlurEnabled=\{motionBlurEnabled\}/g) ?? []).length, 2);
-    assert.match(read('src/components/ui/PauseMenu.tsx'), /label="Motion Blur"/);
+    // One shared toggle feeds both the main-menu and in-game Video Settings: both
+    // are the same PauseMenu, reading and writing the graphics store directly.
+    assert.doesNotMatch(app, /motionBlurEnabled=\{/);
+    const pauseMenu = read('src/components/ui/PauseMenu.tsx');
+    assert.match(pauseMenu, /label="Motion Blur"/);
+    assert.match(pauseMenu, /graphicsSettings\.setOption\('motionBlur', on\)/);
 });
 
 test('the Warden dies on camera: a defeat cinematic that hands the view back', () => {
