@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { bellTitanEncounter } from '../systems/entities/BellTitanEncounter';
+import { dynamicLights, type DynamicLight } from '../systems/graphics/dynamicLights';
 import {
     BELL_TITAN_ATTACK_GEOMETRY,
     getBellTitanActionDuration,
@@ -33,6 +34,8 @@ const TITAN_LIGHT_OFFSETS = [
     [8, 5, 8], [-8, 5, 8], [8, 5, -8], [-8, 5, -8],
     [0, 10.5, 5.5], [0, 10.5, -5.5], [11, 6, 0], [-11, 6, 0],
 ] as const;
+// The core glow sits in the Titan's chest, in the root group's local space.
+const CORE_LIGHT_OFFSET = new THREE.Vector3(0, 2.9, 1.72);
 const BELL_TITAN_HIT_ZONES = {
     core: { hitZone: 'core' },
     shell: { hitZone: 'shell' },
@@ -151,8 +154,8 @@ export const BellTitanRenderer: React.FC = () => {
     const impactRefs = useRef<Array<THREE.Mesh | null>>([]);
     const laneRefs = useRef<Array<THREE.Mesh | null>>([]);
     const debrisRefs = useRef<Array<THREE.Mesh | null>>([]);
-    const lightRefs = useRef<Array<THREE.PointLight | null>>([]);
-    const coreLightRef = useRef<THREE.PointLight>(null);
+    const lightRefs = useRef<Array<DynamicLight | null>>([]);
+    const coreLightRef = useRef<DynamicLight | null>(null);
     const sectorTelegraphRef = useRef<THREE.Mesh>(null);
     const wideSectorTelegraphRef = useRef<THREE.Mesh>(null);
     const lineTelegraphRef = useRef<THREE.Mesh>(null);
@@ -167,6 +170,26 @@ export const BellTitanRenderer: React.FC = () => {
         if (name === 'head') headRef.current = object;
         if (name === 'bell_clapper') clapperRef.current = object;
     };
+
+    // Arena and core lights live in the dynamic-light registry, not the scene graph,
+    // so the Titan arriving or leaving never changes the scene's light count
+    // (which would recompile every lit shader in the world).
+    useEffect(() => {
+        const arenaLights = Array.from({ length: TITAN_LIGHT_OFFSETS.length }, (_, index) => dynamicLights.create({
+            color: index >= 4 ? 0xffe0aa : index < 2 ? 0xffc27a : 0xe6c394,
+            distance: index >= 4 ? 29 : 24,
+            decay: 1.4,
+        }));
+        const coreLight = dynamicLights.create({ color: 0xb89462, distance: 8.5, decay: 1.7 });
+        lightRefs.current = arenaLights;
+        coreLightRef.current = coreLight;
+        return () => {
+            for (const light of arenaLights) dynamicLights.remove(light);
+            dynamicLights.remove(coreLight);
+            lightRefs.current = [];
+            coreLightRef.current = null;
+        };
+    }, []);
 
     const groups = useMemo(() => ({
         leftArm: BELL_TITAN_MODEL.parts.filter((part) => leftArmNames.has(part.name)),
@@ -215,6 +238,7 @@ export const BellTitanRenderer: React.FC = () => {
         }
         if (!anchor) {
             root.visible = false;
+            if (coreLightRef.current) coreLightRef.current.intensity = 0;
             for (const ring of ringRefs.current) if (ring) ring.visible = false;
             for (const impact of impactRefs.current) if (impact) impact.visible = false;
             for (const lane of laneRefs.current) if (lane) lane.visible = false;
@@ -267,6 +291,8 @@ export const BellTitanRenderer: React.FC = () => {
             bellRef.current.scale.setScalar(openScale);
         }
         if (coreLightRef.current) {
+            root.updateWorldMatrix(true, false);
+            coreLightRef.current.position.copy(CORE_LIGHT_OFFSET).applyMatrix4(root.matrixWorld);
             const ringing = snapshot.action.includes('toll') || snapshot.action.includes('storm')
                 || snapshot.action.includes('resonance_cage');
             coreLightRef.current.intensity = snapshot.coreExposed ? 4.8 + corePulse * 1.4 : ringing ? 1.35 : 0.35 + snapshot.shellStage * 0.28;
@@ -405,7 +431,6 @@ export const BellTitanRenderer: React.FC = () => {
                 <group ref={bellRef} position={BELL_ANCHOR}>
                     {groups.bell.map((part) => <TitanPartMesh key={part.name} part={part} materials={materials} offset={BELL_ANCHOR} register={register} />)}
                 </group>
-                <pointLight ref={coreLightRef} position={[0, 2.9, 1.72]} color={0xb89462} intensity={0} distance={8.5} decay={1.7} />
             </group>
             <mesh ref={sectorTelegraphRef} visible={false} renderOrder={3}>
                 <ringGeometry args={[0, 1, 56, 1, -11 * Math.PI / 12, 5 * Math.PI / 6]} />
@@ -423,17 +448,6 @@ export const BellTitanRenderer: React.FC = () => {
                 <circleGeometry args={[1, 48]} />
                 <meshLambertMaterial color={0xb98b58} emissive={0x24180d} emissiveIntensity={0.18} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
-            {Array.from({ length: TITAN_LIGHT_OFFSETS.length }, (_, index) => (
-                <pointLight
-                    key={`titan-light:${index}`}
-                    ref={(light) => { lightRefs.current[index] = light; }}
-                    position={[0, 0, 0]}
-                    color={index >= 4 ? 0xffe0aa : index < 2 ? 0xffc27a : 0xe6c394}
-                    intensity={0}
-                    distance={index >= 4 ? 29 : 24}
-                    decay={1.4}
-                />
-            ))}
             {Array.from({ length: MAX_TITAN_RINGS }, (_, index) => (
                 <mesh key={`titan-ring:${index}`} ref={(mesh) => { ringRefs.current[index] = mesh; }} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
                     <ringGeometry args={[0.9, 1, 64]} />

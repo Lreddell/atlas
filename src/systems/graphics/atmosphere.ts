@@ -70,6 +70,8 @@ interface SkyKey {
 // Light levels are calibrated as radiance on a top face relative to its albedo
 // (Lambert divides irradiance by PI): about 0.7 at noon, 0.45 in golden hour,
 // 0.2 at sunset, and about 0.1 under the moon, lifted by exposure at night.
+// By day the sky and ground bounce stay strong enough that a face in shadow is
+// about a fifth as bright as a sunlit one: readable, never black.
 const SKY_KEYS: readonly SkyKey[] = [
     {   // deep night
         h: -0.3,
@@ -93,25 +95,25 @@ const SKY_KEYS: readonly SkyKey[] = [
         h: 0.02,
         zenith: linear(0x30498a), horizon: linear(0x8c7ca2), horizonSun: linear(0xff8e52),
         sunGlow: linear(0xffa060, 1.7), sunLight: linear(0xff9a5a, 0.4),
-        hemiSky: linear(0x8a90c2, 0.32), hemiGround: linear(0x6a4c3c, 0.14), haze: 0.0024, exposure: 1.2,
+        hemiSky: linear(0x8a90c2, 0.42), hemiGround: linear(0x6a4c3c, 0.2), haze: 0.0024, exposure: 1.2,
     },
     {   // golden hour
         h: 0.1,
         zenith: linear(0x2f5eb4), horizon: linear(0xa2b4da), horizonSun: linear(0xffc27e),
         sunGlow: linear(0xffd090, 1.3), sunLight: linear(0xffc58a, 0.95),
-        hemiSky: linear(0x9fb6e0, 0.54), hemiGround: linear(0x735a42, 0.2), haze: 0.0018, exposure: 1.05,
+        hemiSky: linear(0x9fb6e0, 0.8), hemiGround: linear(0x735a42, 0.32), haze: 0.0018, exposure: 1.05,
     },
     {   // morning
         h: 0.25,
         zenith: linear(0x2d6cd0), horizon: linear(0x9fc0ea), horizonSun: linear(0xf2d8b0),
-        sunGlow: linear(0xffe4bc, 0.9), sunLight: linear(0xffe2bc, 1.3),
-        hemiSky: linear(0xa8c8f0, 0.6), hemiGround: linear(0x786650, 0.22), haze: 0.0013, exposure: 1.0,
+        sunGlow: linear(0xffe4bc, 0.9), sunLight: linear(0xffe2bc, 1.2),
+        hemiSky: linear(0xa8c8f0, 0.95), hemiGround: linear(0x786650, 0.38), haze: 0.0013, exposure: 1.05,
     },
     {   // full day
         h: 0.5,
         zenith: linear(0x2a70da), horizon: linear(0xa6c8f0), horizonSun: linear(0xd6e8f8),
-        sunGlow: linear(0xfff6e6, 0.8), sunLight: linear(0xfff1dc, 1.5),
-        hemiSky: linear(0xb0d0f8, 0.65), hemiGround: linear(0x7c6c54, 0.24), haze: 0.0011, exposure: 1.0,
+        sunGlow: linear(0xfff6e6, 0.8), sunLight: linear(0xfff1dc, 1.3),
+        hemiSky: linear(0xb0d0f8, 1.05), hemiGround: linear(0x7c6c54, 0.42), haze: 0.0011, exposure: 1.05,
     },
 ];
 

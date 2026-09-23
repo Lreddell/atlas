@@ -9,6 +9,7 @@ import { resolveTexture } from './textureResolver';
 import { getOpacity } from './blockProps';
 import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
+import { AO_BYTES, FACE_INDEX, SWAY_BIT, VoxelClass, applyUvVariant, isFluidBlock, lightByte, uvVariantFor, voxelAlphaOf, voxelClassOf } from './voxelVertex';
 
 export interface NeighborData {
     left?: Uint8Array;
@@ -29,7 +30,8 @@ export interface GeometryAttributes {
     positions: Float32Array;
     normals: Float32Array;
     uvs: Float32Array;
-    colors: Float32Array;
+    /** Four bytes a vertex: sky light, block light, AO, class | emission | sway (see voxelVertex.ts). */
+    colors: Uint8Array;
     indices: Uint32Array;
 }
 
@@ -51,7 +53,7 @@ class GeometryBuffer {
     positions = new Float32Array(this.capacityVerts * 3);
     normals = new Float32Array(this.capacityVerts * 3);
     uvs = new Float32Array(this.capacityVerts * 2);
-    colors = new Float32Array(this.capacityVerts * 3);
+    colors = new Uint8Array(this.capacityVerts * 4);
     indices = new Uint32Array((this.capacityVerts / 4) * 6);
 
     vCount = 0;
@@ -80,7 +82,9 @@ class GeometryBuffer {
         this.positions = growF32(this.positions, 3);
         this.normals = growF32(this.normals, 3);
         this.uvs = growF32(this.uvs, 2);
-        this.colors = growF32(this.colors, 3);
+        const nextColors = new Uint8Array(newCapacity * 4);
+        nextColors.set(this.colors);
+        this.colors = nextColors;
         const nextIndices = new Uint32Array((newCapacity / 4) * 6);
         nextIndices.set(this.indices);
         this.indices = nextIndices;
@@ -95,40 +99,42 @@ class GeometryBuffer {
         p4x: number, p4y: number, p4z: number,
         nx: number, ny: number, nz: number,
         uMin: number, uMax: number, vMin: number, vMax: number,
-        r: number, g: number, b: number
+        sky: number, block: number, ao: number, alphaBottom: number, alphaTop: number
     ) {
         if (!this.ensureCapacity(1)) return;
 
         let vp = this.vCount * 3;
         let up = this.vCount * 2;
+        let cp = this.vCount * 4;
         let ip = this.iCount;
         const vBase = this.vCount;
+        const colors = this.colors;
 
         // Vertex 1
         this.positions[vp] = p1x; this.positions[vp+1] = p1y; this.positions[vp+2] = p1z;
         this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
-        this.colors[vp] = r; this.colors[vp+1] = g; this.colors[vp+2] = b;
+        colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaBottom;
         this.uvs[up] = uMin; this.uvs[up+1] = vMin; // 0,0
 
         // Vertex 2
-        vp += 3; up += 2;
+        vp += 3; up += 2; cp += 4;
         this.positions[vp] = p2x; this.positions[vp+1] = p2y; this.positions[vp+2] = p2z;
         this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
-        this.colors[vp] = r; this.colors[vp+1] = g; this.colors[vp+2] = b;
+        colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaBottom;
         this.uvs[up] = uMax; this.uvs[up+1] = vMin; // 1,0
 
         // Vertex 3
-        vp += 3; up += 2;
+        vp += 3; up += 2; cp += 4;
         this.positions[vp] = p3x; this.positions[vp+1] = p3y; this.positions[vp+2] = p3z;
         this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
-        this.colors[vp] = r; this.colors[vp+1] = g; this.colors[vp+2] = b;
+        colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaTop;
         this.uvs[up] = uMax; this.uvs[up+1] = vMax; // 1,1
 
         // Vertex 4
-        vp += 3; up += 2;
+        vp += 3; up += 2; cp += 4;
         this.positions[vp] = p4x; this.positions[vp+1] = p4y; this.positions[vp+2] = p4z;
         this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
-        this.colors[vp] = r; this.colors[vp+1] = g; this.colors[vp+2] = b;
+        colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaTop;
         this.uvs[up] = uMin; this.uvs[up+1] = vMax; // 0,1
 
         // Indices (0, 1, 2,  0, 2, 3)
@@ -149,7 +155,7 @@ class GeometryBuffer {
             positions: this.positions.slice(0, this.vCount * 3),
             normals: this.normals.slice(0, this.vCount * 3),
             uvs: this.uvs.slice(0, this.vCount * 2),
-            colors: this.colors.slice(0, this.vCount * 3),
+            colors: this.colors.slice(0, this.vCount * 4),
             indices: this.indices.slice(0, this.iCount)
         };
     }
@@ -257,7 +263,11 @@ export function generateGeometryData(
 
     const directions = ['right', 'left', 'top', 'bottom', 'front', 'back'] as const;
     const { width: atlasWidth, height: atlasHeight } = getAtlasDimensions();
-    const aoScratch = new Float32Array(12);
+    // Four corner vertices x [sky, block, AO, class|emission] bytes.
+    const cornerScratch = new Uint8Array(16);
+    const uvScratch = new Float32Array(8);
+    const worldX0 = _cx * CHUNK_SIZE;
+    const worldZ0 = _cz * CHUNK_SIZE;
 
     const getTypeFast = (x: number, y: number, z: number): BlockType => {
         if (y < MIN_Y || y > MAX_Y) return BlockType.AIR;
@@ -291,8 +301,41 @@ export function generateGeometryData(
     // Slabs/stairs attenuate light by shape (getDirectionalOpacity), so getOpacity no
     // longer flags them as occluders, but they're still solid partial geometry, so
     // they must darken neighbouring AO corners. Treat any shaped block as an occluder.
+    // Fluids never occlude: a sea floor or a shoreline is open space, not a crevice.
     const isAOOccluder = (type: BlockType) =>
-        type !== BlockType.AIR && (IS_SHAPED[type] === 1 || getOpacity(type) >= 2);
+        type !== BlockType.AIR && !isFluidBlock(type) && (IS_SHAPED[type] === 1 || getOpacity(type) >= 2);
+
+    // Samples one face corner around the (outward) cell (cx, cy, cz): smooth sky and
+    // block light over the four cells meeting at the corner, and AO from the
+    // three solid neighbours, written as the corner's four vertex bytes.
+    const writeCorner = (
+        out: Uint8Array, offset: number, alpha: number,
+        cx: number, cy: number, cz: number,
+        a1x: number, a1y: number, a1z: number, a1Valid: boolean,
+        a2x: number, a2y: number, a2z: number, a2Valid: boolean,
+    ) => {
+        const rc = getLightFast(cx, cy, cz);
+        const rs1 = a1Valid ? getLightFast(cx + a1x, cy + a1y, cz + a1z) : rc;
+        const rs2 = a2Valid ? getLightFast(cx + a2x, cy + a2y, cz + a2z) : rc;
+        const rco = (a1Valid && a2Valid) ? getLightFast(cx + a1x + a2x, cy + a1y + a2y, cz + a1z + a2z) : rc;
+        const s1Occ = a1Valid && isAOOccluder(getTypeFast(cx + a1x, cy + a1y, cz + a1z)) ? 1 : 0;
+        const s2Occ = a2Valid && isAOOccluder(getTypeFast(cx + a2x, cy + a2y, cz + a2z)) ? 1 : 0;
+        const cOcc = (a1Valid && a2Valid && isAOOccluder(getTypeFast(cx + a1x + a2x, cy + a1y + a2y, cz + a1z + a2z))) ? 1 : 0;
+        const occluders = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cOcc);
+        const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;
+        const block = ((rc & 0xF) + (rs1 & 0xF) + (rs2 & 0xF) + (rco & 0xF)) / 4.0;
+        out[offset] = lightByte(sky);
+        out[offset + 1] = lightByte(block);
+        out[offset + 2] = AO_BYTES[occluders];
+        out[offset + 3] = alpha;
+    };
+
+    const copyCorner = (buffer: GeometryBuffer, cp: number, offset: number) => {
+        buffer.colors[cp] = cornerScratch[offset];
+        buffer.colors[cp + 1] = cornerScratch[offset + 1];
+        buffer.colors[cp + 2] = cornerScratch[offset + 2];
+        buffer.colors[cp + 3] = cornerScratch[offset + 3];
+    };
 
     // Emits a slab/stairs block as a set of partial boxes. Each box face is drawn
     // unless it lies flush on the cell boundary against a full opaque cube. UVs are
@@ -354,8 +397,10 @@ export function generateGeometryData(
                 if (!opaqueBuffer.ensureCapacity(1)) continue;
                 let vp = opaqueBuffer.vCount * 3;
                 let up = opaqueBuffer.vCount * 2;
+                let cp = opaqueBuffer.vCount * 4;
                 const ip = opaqueBuffer.iCount;
                 const vBase = opaqueBuffer.vCount;
+                const alpha = voxelAlphaOf(type);
 
                 for (let k = 0; k < 4; k++) {
                     const corner = c[k];
@@ -385,19 +430,11 @@ export function generateGeometryData(
                         a[0] !== 0 ? (a[0] > 0 ? lx === 1 : lx === 0)
                       : a[1] !== 0 ? (a[1] > 0 ? ly === 1 : ly === 0)
                       :              (a[2] > 0 ? lz === 1 : lz === 0);
-                    const a1Valid = reaches(a1);
-                    const a2Valid = reaches(a2);
-                    const rc = getLightFast(nx, ny, nz);
-                    const rs1 = a1Valid ? getLightFast(nx + a1[0], ny + a1[1], nz + a1[2]) : rc;
-                    const rs2 = a2Valid ? getLightFast(nx + a2[0], ny + a2[1], nz + a2[2]) : rc;
-                    const rco = (a1Valid && a2Valid) ? getLightFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]) : rc;
-                    const s1Occ = a1Valid && isAOOccluder(getTypeFast(nx + a1[0], ny + a1[1], nz + a1[2])) ? 1 : 0;
-                    const s2Occ = a2Valid && isAOOccluder(getTypeFast(nx + a2[0], ny + a2[1], nz + a2[2])) ? 1 : 0;
-                    const cOcc = (a1Valid && a2Valid && isAOOccluder(getTypeFast(nx + a1[0] + a2[0], ny + a1[1] + a2[1], nz + a1[2] + a2[2]))) ? 1 : 0;
-                    const aoOcc = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cOcc);
-                    const aoMul = 1.0 - aoOcc * 0.14;
-                    const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;
-                    const blk = ((rc & 0xF) + (rs1 & 0xF) + (rs2 & 0xF) + (rco & 0xF)) / 4.0;
+                    writeCorner(
+                        cornerScratch, 0, alpha, nx, ny, nz,
+                        a1[0], a1[1], a1[2], reaches(a1),
+                        a2[0], a2[1], a2[2], reaches(a2),
+                    );
 
                     opaqueBuffer.positions[vp] = x + lx;
                     opaqueBuffer.positions[vp + 1] = y + ly;
@@ -405,12 +442,10 @@ export function generateGeometryData(
                     opaqueBuffer.normals[vp] = f.dx;
                     opaqueBuffer.normals[vp + 1] = f.dy;
                     opaqueBuffer.normals[vp + 2] = f.dz;
-                    opaqueBuffer.colors[vp] = (sky / 15.0) * aoMul;
-                    opaqueBuffer.colors[vp + 1] = (blk / 15.0) * aoMul;
-                    opaqueBuffer.colors[vp + 2] = 1.0;
+                    copyCorner(opaqueBuffer, cp, 0);
                     opaqueBuffer.uvs[up] = u;
                     opaqueBuffer.uvs[up + 1] = v;
-                    vp += 3; up += 2;
+                    vp += 3; up += 2; cp += 4;
                 }
 
                 opaqueBuffer.indices[ip] = vBase;
@@ -488,35 +523,16 @@ export function generateGeometryData(
                 const c2 = face.corners[2];
                 const c3 = face.corners[3];
 
-                const writeAOColor = (cornerIndex: number, offset: number, tx: number, tz: number) => {
+                const alpha = voxelAlphaOf(type);
+                const faceIndex = topFace ? FACE_INDEX.top : FACE_INDEX.bottom;
+                const writeCellCorner = (cornerIndex: number, tx: number, tz: number) => {
                     const ax1 = face.aoVectors[cornerIndex][0];
                     const ax2 = face.aoVectors[cornerIndex][1];
-
-                    const baseX = tx;
-                    const baseY = y + normalY;
-                    const baseZ = tz;
-
-                    const rc = getLightFast(baseX, baseY, baseZ);
-                    const rs1 = getLightFast(baseX + ax1[0], baseY + ax1[1], baseZ + ax1[2]);
-                    const rs2 = getLightFast(baseX + ax2[0], baseY + ax2[1], baseZ + ax2[2]);
-                    const rco = getLightFast(
-                        baseX + ax1[0] + ax2[0],
-                        baseY + ax1[1] + ax2[1],
-                        baseZ + ax1[2] + ax2[2]
+                    writeCorner(
+                        cornerScratch, cornerIndex * 4, alpha, tx, y + normalY, tz,
+                        ax1[0], ax1[1], ax1[2], true,
+                        ax2[0], ax2[1], ax2[2], true,
                     );
-
-                    const s1Occ = isAOOccluder(getTypeFast(baseX + ax1[0], baseY + ax1[1], baseZ + ax1[2])) ? 1 : 0;
-                    const s2Occ = isAOOccluder(getTypeFast(baseX + ax2[0], baseY + ax2[1], baseZ + ax2[2])) ? 1 : 0;
-                    const cornerOcc = isAOOccluder(getTypeFast(baseX + ax1[0] + ax2[0], baseY + ax1[1] + ax2[1], baseZ + ax1[2] + ax2[2])) ? 1 : 0;
-                    const aoOcclusion = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cornerOcc);
-                    const aoMul = 1.0 - aoOcclusion * 0.14;
-
-                    const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;
-                    const block = ((rc & 0xF) + (rs1 & 0xF) + (rs2 & 0xF) + (rco & 0xF)) / 4.0;
-
-                    aoScratch[offset] = (sky / 15.0) * aoMul;
-                    aoScratch[offset + 1] = (block / 15.0) * aoMul;
-                    aoScratch[offset + 2] = 1.0;
                 };
 
                 for (let dz = 0; dz < depth; dz++) {
@@ -547,39 +563,44 @@ export function generateGeometryData(
                         const p3y = y + c3[1];
                         const p3z = tz + c3[2];
 
-                        writeAOColor(0, 0, tx, tz);
-                        writeAOColor(1, 3, tx, tz);
-                        writeAOColor(2, 6, tx, tz);
-                        writeAOColor(3, 9, tx, tz);
+                        writeCellCorner(0, tx, tz);
+                        writeCellCorner(1, tx, tz);
+                        writeCellCorner(2, tx, tz);
+                        writeCellCorner(3, tx, tz);
+
+                        // Every cell is its own quad, so each gets its own texture variant.
+                        const variant = uvVariantFor(type, faceIndex, worldX0 + tx, y, worldZ0 + tz);
+                        const cellUvs = variant === 0 ? uvs : (applyUvVariant(uvs, variant, uvScratch), uvScratch);
 
                         if (opaqueBuffer.ensureCapacity(1)) {
                             let vp = opaqueBuffer.vCount * 3;
                             let up = opaqueBuffer.vCount * 2;
+                            let cp = opaqueBuffer.vCount * 4;
                             let ip = opaqueBuffer.iCount;
                             const vBase = opaqueBuffer.vCount;
 
                             opaqueBuffer.positions[vp] = p0x; opaqueBuffer.positions[vp + 1] = p0y; opaqueBuffer.positions[vp + 2] = p0z;
                             opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            opaqueBuffer.colors[vp] = aoScratch[0]; opaqueBuffer.colors[vp + 1] = aoScratch[1]; opaqueBuffer.colors[vp + 2] = aoScratch[2];
-                            opaqueBuffer.uvs[up] = uvs[0]; opaqueBuffer.uvs[up + 1] = uvs[1];
+                            copyCorner(opaqueBuffer, cp, 0);
+                            opaqueBuffer.uvs[up] = cellUvs[0]; opaqueBuffer.uvs[up + 1] = cellUvs[1];
 
-                            vp += 3; up += 2;
+                            vp += 3; up += 2; cp += 4;
                             opaqueBuffer.positions[vp] = p1x; opaqueBuffer.positions[vp + 1] = p1y; opaqueBuffer.positions[vp + 2] = p1z;
                             opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            opaqueBuffer.colors[vp] = aoScratch[3]; opaqueBuffer.colors[vp + 1] = aoScratch[4]; opaqueBuffer.colors[vp + 2] = aoScratch[5];
-                            opaqueBuffer.uvs[up] = uvs[2]; opaqueBuffer.uvs[up + 1] = uvs[3];
+                            copyCorner(opaqueBuffer, cp, 4);
+                            opaqueBuffer.uvs[up] = cellUvs[2]; opaqueBuffer.uvs[up + 1] = cellUvs[3];
 
-                            vp += 3; up += 2;
+                            vp += 3; up += 2; cp += 4;
                             opaqueBuffer.positions[vp] = p2x; opaqueBuffer.positions[vp + 1] = p2y; opaqueBuffer.positions[vp + 2] = p2z;
                             opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            opaqueBuffer.colors[vp] = aoScratch[6]; opaqueBuffer.colors[vp + 1] = aoScratch[7]; opaqueBuffer.colors[vp + 2] = aoScratch[8];
-                            opaqueBuffer.uvs[up] = uvs[4]; opaqueBuffer.uvs[up + 1] = uvs[5];
+                            copyCorner(opaqueBuffer, cp, 8);
+                            opaqueBuffer.uvs[up] = cellUvs[4]; opaqueBuffer.uvs[up + 1] = cellUvs[5];
 
-                            vp += 3; up += 2;
+                            vp += 3; up += 2; cp += 4;
                             opaqueBuffer.positions[vp] = p3x; opaqueBuffer.positions[vp + 1] = p3y; opaqueBuffer.positions[vp + 2] = p3z;
                             opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            opaqueBuffer.colors[vp] = aoScratch[9]; opaqueBuffer.colors[vp + 1] = aoScratch[10]; opaqueBuffer.colors[vp + 2] = aoScratch[11];
-                            opaqueBuffer.uvs[up] = uvs[6]; opaqueBuffer.uvs[up + 1] = uvs[7];
+                            copyCorner(opaqueBuffer, cp, 12);
+                            opaqueBuffer.uvs[up] = cellUvs[6]; opaqueBuffer.uvs[up + 1] = cellUvs[7];
 
                             opaqueBuffer.indices[ip] = vBase;
                             opaqueBuffer.indices[ip + 1] = vBase + 1;
@@ -662,8 +683,11 @@ export function generateGeometryData(
           if (isCross) {
               const raw = getLightFast(x, y, z);
               if (cullDarkFaces && raw === 0) continue;
-              const r = ((raw >> 4) & 0xF) / 15.0;
-              const g = (raw & 0xF) / 15.0;
+              const sky = lightByte((raw >> 4) & 0xF);
+              const blockLight = lightByte(raw & 0xF);
+              const alphaBottom = voxelAlphaOf(type);
+              // Plants bend from the root: only their top corners sway.
+              const alphaTop = voxelClassOf(type) === VoxelClass.PLANT ? alphaBottom | SWAY_BIT : alphaBottom;
               
               const texIdx = def.textureSlot || 0;
               
@@ -683,21 +707,21 @@ export function generateGeometryData(
               
               // Cross 1
               targetBuffer.pushQuad(
-                  x+min, y, z+min, 
-                  x+max, y, z+max, 
-                  x+max, y+1, z+max, 
-                  x+min, y+1, z+min, 
-                  0, 1, 0, 
-                  u0, u1, v0, v1, r, g, 1.0
+                  x+min, y, z+min,
+                  x+max, y, z+max,
+                  x+max, y+1, z+max,
+                  x+min, y+1, z+min,
+                  0, 1, 0,
+                  u0, u1, v0, v1, sky, blockLight, 255, alphaBottom, alphaTop
               );
               // Cross 2
               targetBuffer.pushQuad(
-                  x+min, y, z+max, 
-                  x+max, y, z+min, 
-                  x+max, y+1, z+min, 
-                  x+min, y+1, z+max, 
-                  0, 1, 0, 
-                  u0, u1, v0, v1, r, g, 1.0
+                  x+min, y, z+max,
+                  x+max, y, z+min,
+                  x+max, y+1, z+min,
+                  x+min, y+1, z+max,
+                  0, 1, 0,
+                  u0, u1, v0, v1, sky, blockLight, 255, alphaBottom, alphaTop
               );
               continue;
           }
@@ -807,40 +831,27 @@ export function generateGeometryData(
                      if (cy3 === 1) cy3 = blockHeight;
                  }
 
-                 // AO and Light Calculation per vertex
-                 // Calculate lighting for each vertex (0, 1, 2, 3) corresponding to corner indices
-                 const writeAOColor = (cornerIndex: number, offset: number) => {
-                     const ax1 = face.aoVectors[cornerIndex][0];
-                     const ax2 = face.aoVectors[cornerIndex][1];
-                     
-                     const rc = getLightFast(nx, ny, nz);
-                     const rs1 = getLightFast(nx + ax1[0], ny + ax1[1], nz + ax1[2]);
-                     const rs2 = getLightFast(nx + ax2[0], ny + ax2[1], nz + ax2[2]);
-                     const rco = getLightFast(nx + ax1[0] + ax2[0], ny + ax1[1] + ax2[1], nz + ax1[2] + ax2[2]);
+                 // Light and AO per corner, sampled around the outward cell.
+                 const alpha = voxelAlphaOf(type);
+                 for (let corner = 0; corner < 4; corner++) {
+                     const ax1 = face.aoVectors[corner][0];
+                     const ax2 = face.aoVectors[corner][1];
+                     writeCorner(
+                         cornerScratch, corner * 4, alpha, nx, ny, nz,
+                         ax1[0], ax1[1], ax1[2], true,
+                         ax2[0], ax2[1], ax2[2], true,
+                     );
+                 }
 
-                     const s1Occ = isAOOccluder(getTypeFast(nx + ax1[0], ny + ax1[1], nz + ax1[2])) ? 1 : 0;
-                     const s2Occ = isAOOccluder(getTypeFast(nx + ax2[0], ny + ax2[1], nz + ax2[2])) ? 1 : 0;
-                     const cornerOcc = isAOOccluder(getTypeFast(nx + ax1[0] + ax2[0], ny + ax1[1] + ax2[1], nz + ax1[2] + ax2[2])) ? 1 : 0;
-                     const aoOcclusion = (s1Occ === 1 && s2Occ === 1) ? 3 : (s1Occ + s2Occ + cornerOcc);
-                     const aoMul = 1.0 - aoOcclusion * 0.14;
-
-                     const sky = (((rc >> 4) & 0xF) + ((rs1 >> 4) & 0xF) + ((rs2 >> 4) & 0xF) + ((rco >> 4) & 0xF)) / 4.0;
-                     const block = ((rc & 0xF) + (rs1 & 0xF) + (rs2 & 0xF) + (rco & 0xF)) / 4.0;
-                     aoScratch[offset] = (sky / 15.0) * aoMul;
-                     aoScratch[offset + 1] = (block / 15.0) * aoMul;
-                     aoScratch[offset + 2] = 1.0;
-                 };
-
-                 writeAOColor(0, 0);
-                 writeAOColor(1, 3);
-                 writeAOColor(2, 6);
-                 writeAOColor(3, 9);
+                 // Natural blocks get a per-position texture variant (voxelVertex.ts).
+                 const variant = uvVariantFor(type, FACE_INDEX[dir], worldX0 + x, y, worldZ0 + z);
+                 const faceUvs = variant === 0 ? uvs : (applyUvVariant(uvs, variant, uvScratch), uvScratch);
 
                  // Correct texture UVs
-                 let u0 = uvs[0], v0 = uvs[1];
-                 let u1 = uvs[2], v1 = uvs[3];
-                 let u2 = uvs[4], v2 = uvs[5];
-                 let u3 = uvs[6], v3 = uvs[7];
+                 let u0 = faceUvs[0], v0 = faceUvs[1];
+                 let u1 = faceUvs[2], v1 = faceUvs[3];
+                 let u2 = faceUvs[4], v2 = faceUvs[5];
+                 let u3 = faceUvs[6], v3 = faceUvs[7];
 
                  if (isBed && dir !== 'top' && dir !== 'bottom') {
                      // Simple bed side mapping adjustment
@@ -869,34 +880,35 @@ export function generateGeometryData(
                  if (targetBuffer.ensureCapacity(1)) {
                      let vp = targetBuffer.vCount * 3;
                      let up = targetBuffer.vCount * 2;
+                     let cp = targetBuffer.vCount * 4;
                      let ip = targetBuffer.iCount;
                      const vBase = targetBuffer.vCount;
 
                      // V0
                      targetBuffer.positions[vp] = x + c0[0]; targetBuffer.positions[vp+1] = y + cy0; targetBuffer.positions[vp+2] = z + c0[2];
                      targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
-                     targetBuffer.colors[vp] = aoScratch[0]; targetBuffer.colors[vp+1] = aoScratch[1]; targetBuffer.colors[vp+2] = aoScratch[2];
+                     copyCorner(targetBuffer, cp, 0);
                      targetBuffer.uvs[up] = u0; targetBuffer.uvs[up+1] = v0;
 
                      // V1
-                     vp+=3; up+=2;
+                     vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c1[0]; targetBuffer.positions[vp+1] = y + cy1; targetBuffer.positions[vp+2] = z + c1[2];
                      targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
-                     targetBuffer.colors[vp] = aoScratch[3]; targetBuffer.colors[vp+1] = aoScratch[4]; targetBuffer.colors[vp+2] = aoScratch[5];
+                     copyCorner(targetBuffer, cp, 4);
                      targetBuffer.uvs[up] = u1; targetBuffer.uvs[up+1] = v1;
 
                      // V2
-                     vp+=3; up+=2;
+                     vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c2[0]; targetBuffer.positions[vp+1] = y + cy2; targetBuffer.positions[vp+2] = z + c2[2];
                      targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
-                     targetBuffer.colors[vp] = aoScratch[6]; targetBuffer.colors[vp+1] = aoScratch[7]; targetBuffer.colors[vp+2] = aoScratch[8];
+                     copyCorner(targetBuffer, cp, 8);
                      targetBuffer.uvs[up] = u2; targetBuffer.uvs[up+1] = v2;
 
                      // V3
-                     vp+=3; up+=2;
+                     vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c3[0]; targetBuffer.positions[vp+1] = y + cy3; targetBuffer.positions[vp+2] = z + c3[2];
                      targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
-                     targetBuffer.colors[vp] = aoScratch[9]; targetBuffer.colors[vp+1] = aoScratch[10]; targetBuffer.colors[vp+2] = aoScratch[11];
+                     copyCorner(targetBuffer, cp, 12);
                      targetBuffer.uvs[up] = u3; targetBuffer.uvs[up+1] = v3;
 
                      // Indices

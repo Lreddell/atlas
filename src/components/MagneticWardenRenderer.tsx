@@ -5,6 +5,7 @@ import { entityManager } from '../systems/entities/EntityManager';
 import { magneticWardenEncounter } from '../systems/boss/MagneticWardenEncounter';
 import { WARDEN_TIMING } from '../systems/boss/magneticWardenCore';
 import { ARENA_PILLAR_COUNT, ARENA_PILLAR_HALF } from '../systems/world/magneticArena';
+import { dynamicLights, type DynamicLight } from '../systems/graphics/dynamicLights';
 
 // The Magnetic Warden's body, its three forms, and every telegraph of its fight,
 // driven from the encounter snapshot each frame (no React re-renders):
@@ -87,7 +88,7 @@ export const MagneticWardenRenderer: React.FC = () => {
     const beamRefs = useRef<Array<THREE.Mesh | null>>([]);
     const towerRefs = useRef<Array<THREE.Mesh | null>>([]);
     const crystalGlowRefs = useRef<Array<THREE.Mesh | null>>([]);
-    const coreLightRef = useRef<THREE.PointLight>(null);
+    const coreLightRef = useRef<DynamicLight | null>(null);
     const lastPolarity = useRef(0);
     const auraFlashUntil = useRef(0);
 
@@ -100,6 +101,16 @@ export const MagneticWardenRenderer: React.FC = () => {
         eye: new THREE.MeshBasicMaterial({ color: 0xffffff }),
     }), []);
     useEffect(() => () => { for (const m of Object.values(materials)) m.dispose(); }, [materials]);
+    // The core glow is a registry light (no scene light, so no shader recompiles
+    // when the Warden appears); it follows the core group every frame.
+    useEffect(() => {
+        const light = dynamicLights.create({ color: POLARITY_RED, distance: 11, decay: 1.6 });
+        coreLightRef.current = light;
+        return () => {
+            dynamicLights.remove(light);
+            coreLightRef.current = null;
+        };
+    }, []);
 
     useFrame(({ clock }) => {
         const root = rootRef.current;
@@ -272,6 +283,7 @@ export const MagneticWardenRenderer: React.FC = () => {
             core.scale.setScalar(scale);
             if (reeling) core.position.x = (Math.random() - 0.5) * 0.08;
             if (coreInnerRef.current) coreInnerRef.current.rotation.set(-t * spinRate * 1.6, t * spinRate * 0.4, 0);
+            if (coreLightRef.current) core.getWorldPosition(coreLightRef.current.position);
         }
 
         // --- Form II wings.
@@ -533,7 +545,6 @@ export const MagneticWardenRenderer: React.FC = () => {
                 <group ref={coreRef} position={[0, 1.6, 0.55]}>
                     <mesh material={materials.dark}><boxGeometry args={[1, 1, 1]} /></mesh>
                     <mesh ref={coreInnerRef} material={materials.core}><boxGeometry args={[0.62, 0.62, 0.62]} /></mesh>
-                    <pointLight ref={coreLightRef} color={POLARITY_RED} intensity={0} distance={11} decay={1.6} />
                 </group>
                 {/* Form II wings */}
                 <group ref={wingsRef} visible={false}>

@@ -2159,6 +2159,8 @@ const App: React.FC = () => {
           position: () => ({ x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z }),
           renderDistance: chunks => setRenderDistance(Math.max(4, Math.min(48, Math.round(chunks)))),
           vsync: enabled => { setVsync(enabled); if (!enabled) setMaxFps(260); },
+          getBlock: (x, y, z) => worldManager.getBlock(x, y, z, false),
+          setBlock: (x, y, z, type) => { worldManager.setBlock(x, y, z, type as BlockType); },
       });
   }, [executeCommand, openInventory, closeInventory, openContainer]);
 
@@ -3315,7 +3317,7 @@ const App: React.FC = () => {
             <Canvas 
                 key={canvasKey} 
                 onCreated={state => { gameRendererRef.current = state; }}
-                shadows={shadowsEnabled ? { type: THREE.BasicShadowMap } : false}
+                shadows={shadowsEnabled ? { type: graphics.config.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap } : false}
                 gl={{ antialias: contextAntialias, preserveDrawingBuffer: isElectron }}
                 dpr={[1, graphics.config.maxPixelRatio]}
                 camera={{ fov: 70, near: 0.1, far: 1000, position: [currentSpawnPos.x, currentSpawnPos.y, currentSpawnPos.z] }} 

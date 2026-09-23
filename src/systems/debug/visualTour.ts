@@ -26,6 +26,8 @@ export interface VisualTourShot {
     /** Where to stand while `commands` run (e.g. /boss spawn places the boss beside the player). */
     spawnAt?: readonly [number, number, number];
     commands?: readonly string[];
+    /** Torches placed (in empty cells only) before the shot, to light a cave. */
+    torches?: ReadonlyArray<readonly [number, number, number]>;
     /** Commands run after the capture to undo the shot's setup. */
     cleanup?: readonly string[];
     settleMs?: number;
@@ -42,6 +44,7 @@ export const VISUAL_TOUR_SHOTS: readonly VisualTourShot[] = [
     { id: 'jungle_lagoon', label: 'Jungle lagoon', position: [407, 100, 199], yaw: 0.5, pitch: -0.45, time: 5000 },
     { id: 'dark_forest', label: 'Dark forest under a cliff', position: [343, 100, 191], yaw: 0.5, pitch: -0.45, time: 5000 },
     { id: 'lush_cave', label: 'Lush cave (glow lichen)', position: [407, 14.2, 775], yaw: Math.PI, pitch: -0.1, time: 6000 },
+    { id: 'torch_cave', label: 'Torch-lit cave floor', position: [407, 14.2, 775], yaw: Math.PI, pitch: -0.3, time: 6000, torches: [[409, 11, 780], [406, 12, 784], [402, 14, 786]] },
     {
         id: 'magnetic_fields', label: 'Warden arena', position: [-1588, 141, 1516], yaw: 0, pitch: -0.25, time: 5000,
         spawnAt: [-1590, 134, 1503], commands: ['/boss spawn'], cleanup: ['/boss kill'], settleMs: 2500,

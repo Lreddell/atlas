@@ -15,6 +15,9 @@ import { SHADOW_QUALITY_SETTINGS, type ShadowQuality } from '../../systems/graph
 import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms } from '../../systems/graphics/atmosphereUniforms';
 import { createPixelMoonTexture, createPixelSunTexture } from '../../systems/graphics/celestialSprites';
+import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
+import { packDynamicLights } from '../../systems/graphics/dynamicLights';
+import { snapShadowCenter } from '../../systems/graphics/shadows';
 
 // The sky, the sun and moon, the stars, and the scene's two lights, all driven
 // by one sampled atmosphere (systems/graphics/atmosphere.ts) per frame.
@@ -371,6 +374,8 @@ const scratchStarQuat = new THREE.Quaternion();
 const scratchStarMatrix = new THREE.Matrix4();
 const scratchKeyDir = new THREE.Vector3();
 const scratchBackground = new THREE.Color();
+const scratchCameraCenter: [number, number, number] = [0, 0, 0];
+const scratchShadowCenter: [number, number, number] = [0, 0, 0];
 
 // Moon-phase color themes (phaseIndex 0-7: 0=new, 4=full)
 // [hueA, satA, lightA, hueB, satB, lightB, hueC, satC, lightC]
@@ -469,6 +474,18 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
     // Restore the renderer's exposure if the sky unmounts (e.g. back to the menu).
     useEffect(() => () => { gl.toneMappingExposure = 1; }, [gl]);
+
+    // Boss and arena lights (systems/graphics/dynamicLights.ts) are packed into
+    // their shared uniforms right before each render of the world, after every
+    // useFrame has moved them.
+    useEffect(() => {
+        const previous = scene.onBeforeRender;
+        scene.onBeforeRender = function onBeforeRender(renderer, renderScene, renderCamera, ...rest) {
+            packDynamicLights(renderCamera);
+            previous.call(this, renderer, renderScene, renderCamera, ...rest);
+        };
+        return () => { scene.onBeforeRender = previous; };
+    }, [scene]);
 
     const sunTexture = useMemo(() => createPixelSunTexture(), []);
 
@@ -644,6 +661,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // Chunks now take day and night from the scene lights; the legacy sunlight
         // factor stays at 1 and only the Brightness floor passes through.
         updateChunkMaterials(1.0, brightness);
+        updateVoxelLighting(brightness, state.exposure, clock.elapsedTime);
         updateCloudColor(dayFactor);
 
         scene.background = scratchBackground.setRGB(state.skyHorizon[0], state.skyHorizon[1], state.skyHorizon[2]);
@@ -686,10 +704,15 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // --- Lights: one key (sun or moon) and one hemisphere ---
         const shadowSize = shadowDist;
         const lightDistance = shadowSize + 50;
-        const TEXEL_SIZE = (shadowSize * 2) / shadowMapSize;
-        const snappedX = Math.floor(camera.position.x / TEXEL_SIZE) * TEXEL_SIZE;
-        const snappedY = Math.floor(camera.position.y / TEXEL_SIZE) * TEXEL_SIZE;
-        const snappedZ = Math.floor(camera.position.z / TEXEL_SIZE) * TEXEL_SIZE;
+        // Snap the shadow camera to whole texels in the light's own frame, so
+        // shadow edges hold still while the player moves.
+        scratchCameraCenter[0] = camera.position.x;
+        scratchCameraCenter[1] = camera.position.y;
+        scratchCameraCenter[2] = camera.position.z;
+        const snapped = snapShadowCenter(scratchCameraCenter, state.keyDir, (shadowSize * 2) / shadowMapSize, scratchShadowCenter);
+        const snappedX = snapped[0];
+        const snappedY = snapped[1];
+        const snappedZ = snapped[2];
 
         const key = keyLightRef.current;
         if (key) {
@@ -836,7 +859,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
             <directionalLight
                 ref={keyLightRef} castShadow={shadowsEnabled}
-                shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-bias={-0.0001}
+                shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-bias={-0.0002} shadow-normalBias={0.045}
                 shadow-camera-left={-shadowDist} shadow-camera-right={shadowDist}
                 shadow-camera-top={shadowDist} shadow-camera-bottom={-shadowDist}
                 shadow-camera-near={0.1} shadow-camera-far={shadowDist * 2 + 100}

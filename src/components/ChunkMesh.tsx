@@ -4,7 +4,13 @@ import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
-import { CHUNK_LIGHTING_UNIFORMS } from './chunkLightingState';
+import {
+  createVoxelFadeMaterials,
+  createVoxelMaterials,
+  disposeVoxelMaterials,
+  setVoxelFade,
+  type VoxelMaterials,
+} from '../systems/graphics/materials/voxelMaterial';
 
 // Use shared texture from manager
 const getChunkTexture = () => textureAtlasManager.getTexture();
@@ -18,127 +24,20 @@ interface ChunkMeshProps {
   onFadeOutComplete?: () => void;
 }
 
-const setupMaterial = (
-  mat: THREE.MeshLambertMaterial,
-  options?: { alphaWeightSample?: boolean; binaryCutoutAlpha?: boolean; minLightBase?: number }
-) => {
-  const alphaWeightSample = options?.alphaWeightSample ?? false;
-  const binaryCutoutAlpha = options?.binaryCutoutAlpha ?? false;
-  const minLightBase = options?.minLightBase ?? 0.05;
-
-  mat.onBeforeCompile = (shader) => {
-    // Link material uniforms directly to the global shared objects
-    shader.uniforms.uSunlight = CHUNK_LIGHTING_UNIFORMS.uSunlight;
-    shader.uniforms.uBrightness = CHUNK_LIGHTING_UNIFORMS.uBrightness;
-
-    shader.fragmentShader = `
-uniform float uSunlight;
-uniform float uBrightness;
-vec3 myTorchBaseColor;
-${shader.fragmentShader}
-      `;
-
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '');
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <map_fragment>',
-      `#ifdef USE_MAP
-  vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-  ${binaryCutoutAlpha ? 'sampledDiffuseColor.a = sampledDiffuseColor.a >= 0.5 ? 1.0 : 0.0;' : ''}
-  ${alphaWeightSample ? 'sampledDiffuseColor.rgb *= sampledDiffuseColor.a;' : ''}
-  diffuseColor *= sampledDiffuseColor;
-#endif
-
-myTorchBaseColor = diffuseColor.rgb;
-
-float minLight = ${minLightBase.toFixed(3)} + (uBrightness * 0.25);
-
-// vColor.r carries skylight in [0..1]
-float skyFactor = max(vColor.r * uSunlight, minLight);
-diffuseColor.rgb *= skyFactor;
-`
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <lights_fragment_end>',
-      `#include <lights_fragment_end>
-
-// vColor.g carries block light (torch) in [0..1]
-float torchIntensity = clamp(vColor.g, 0.0, 1.0);
-
-float torchGlow = pow(torchIntensity, 1.8);
-
-reflectedLight.directDiffuse += myTorchBaseColor * (torchGlow * 0.85);
-`
-    );
-  };
-
-  mat.needsUpdate = true;
-};
-
 // Shared singleton materials used by EVERY chunk that is not actively fading.
 // Sharing matters at scale: with per-chunk clones the renderer re-uploaded the
 // full uniform set on every draw call (material id changes between objects);
 // with shared materials consecutive chunk draws skip that entirely, and we keep
 // 3 materials alive instead of 3 per chunk (~21,000 at render distance 48).
-const chunkMaterialSolid = new THREE.MeshLambertMaterial({
-    map: getChunkTexture(),
-    side: THREE.FrontSide,
-    vertexColors: true
-});
+// The voxel lighting itself lives in systems/graphics/materials/voxelMaterial.ts.
+const sharedMaterials = createVoxelMaterials(getChunkTexture());
 
-const chunkMaterialCutout = new THREE.MeshLambertMaterial({
-    map: getChunkTexture(),
-    transparent: false,
-    alphaTest: 0.5,
-  side: THREE.DoubleSide,
-    vertexColors: true
-});
+type FadeMaterials = VoxelMaterials;
 
-const chunkMaterialTransparent = new THREE.MeshLambertMaterial({
-    map: getChunkTexture(),
-    transparent: true,
-    opacity: 0.6,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    vertexColors: true
-});
+const createFadeMaterials = (startOpacity: number): FadeMaterials =>
+  createVoxelFadeMaterials(sharedMaterials, startOpacity);
 
-setupMaterial(chunkMaterialSolid);
-setupMaterial(chunkMaterialCutout, { alphaWeightSample: true, binaryCutoutAlpha: true });
-setupMaterial(chunkMaterialTransparent, { minLightBase: 0.16 });
-
-interface FadeMaterials {
-  opaque: THREE.MeshLambertMaterial;
-  cutout: THREE.MeshLambertMaterial;
-  transparent: THREE.MeshLambertMaterial;
-}
-
-const createFadeMaterials = (startOpacity: number): FadeMaterials => {
-  const opaque = chunkMaterialSolid.clone();
-  setupMaterial(opaque);
-  const cutout = chunkMaterialCutout.clone();
-  setupMaterial(cutout, { alphaWeightSample: true, binaryCutoutAlpha: true });
-  const transparent = chunkMaterialTransparent.clone();
-  setupMaterial(transparent, { minLightBase: 0.16 });
-
-  opaque.transparent = true;
-  opaque.depthWrite = false;
-  opaque.opacity = startOpacity;
-  cutout.transparent = true;
-  cutout.depthWrite = false;
-  cutout.opacity = startOpacity;
-  transparent.transparent = true;
-  transparent.depthWrite = false;
-  transparent.opacity = 0.6 * startOpacity;
-  return { opaque, cutout, transparent };
-};
-
-const disposeFadeMaterials = (mats: FadeMaterials) => {
-  mats.opaque.dispose();
-  mats.cutout.dispose();
-  mats.transparent.dispose();
-};
+const disposeFadeMaterials = (mats: FadeMaterials) => disposeVoxelMaterials(mats);
 
 // ── Global fade ticker ──
 // Previously every chunk registered its own useFrame callback to animate fades :
@@ -252,9 +151,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           const smooth = progress * progress * (3 - 2 * progress);
           const eased = fadeModeRef.current === 'out' ? 1.0 - smooth : smooth;
 
-          m.opaque.opacity = eased;
-          m.cutout.opacity = eased;
-          m.transparent.opacity = 0.6 * eased;
+          setVoxelFade(m, eased);
 
           if (progress >= 1) {
             const wasOut = fadeModeRef.current === 'out';
@@ -335,7 +232,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
             geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
             geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
-            geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 4, true));
             if (buff.indices && buff.indices.length > 0) {
                 geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }
@@ -390,9 +287,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     };
   }, [cx, cz, fadeInEnabled, startFade, stopFade, queueDispose]);
 
-  const matOpaque = fadeMats ? fadeMats.opaque : chunkMaterialSolid;
-  const matCutout = fadeMats ? fadeMats.cutout : chunkMaterialCutout;
-  const matTransparent = fadeMats ? fadeMats.transparent : chunkMaterialTransparent;
+  const matOpaque = fadeMats ? fadeMats.solid : sharedMaterials.solid;
+  const matCutout = fadeMats ? fadeMats.cutout : sharedMaterials.cutout;
+  const matTransparent = fadeMats ? fadeMats.transparent : sharedMaterials.transparent;
 
   return (
     // Static transforms: freeze matrices so Three doesn't recompose thousands of

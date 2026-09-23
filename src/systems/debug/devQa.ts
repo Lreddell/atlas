@@ -30,6 +30,8 @@ export interface DevQaHandles {
     position: () => { x: number; y: number; z: number };
     renderDistance: (chunks: number) => void;
     vsync: (enabled: boolean) => void;
+    getBlock: (x: number, y: number, z: number) => number;
+    setBlock: (x: number, y: number, z: number, type: number) => void;
 }
 
 export interface PerfReport {
@@ -109,6 +111,52 @@ function pump(enabled: boolean): void {
     }, 16);
 }
 
+/**
+ * Opt-in with `?qaFrames` in the URL: requestAnimationFrame falls back to a
+ * timer whenever the browser stops delivering frames (a hidden automation
+ * pane), so boot, the menu and the world keep running for scripted passes.
+ * While frames arrive normally the native callback always wins and the timer
+ * is cancelled, so a visible pane behaves exactly as without the flag.
+ */
+function installHiddenPaneFrames(): void {
+    if (typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('qaFrames')) return;
+    const nativeRequest = window.requestAnimationFrame.bind(window);
+    const nativeCancel = window.cancelAnimationFrame.bind(window);
+    const pending = new Map<number, { native: number; timer: ReturnType<typeof setTimeout> }>();
+    let nextId = 1;
+    let lastNativeFrameAt = performance.now();
+    window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+        const id = nextId++;
+        const fire = (time: number) => {
+            const entry = pending.get(id);
+            if (!entry) return;
+            pending.delete(id);
+            nativeCancel(entry.native);
+            clearTimeout(entry.timer);
+            callback(time);
+        };
+        const native = nativeRequest((time) => { lastNativeFrameAt = performance.now(); fire(time); });
+        pending.set(id, { native, timer: setTimeout(() => fire(performance.now()), 33) });
+        return id;
+    };
+    // A page that isn't rendering never delivers ResizeObserver callbacks either,
+    // so the Canvas would never learn its size and never start. A window resize
+    // event makes its measuring hook read the size directly.
+    setInterval(() => {
+        if (performance.now() - lastNativeFrameAt > 500) window.dispatchEvent(new Event('resize'));
+    }, 500);
+    window.cancelAnimationFrame = (id: number): void => {
+        const entry = pending.get(id);
+        if (!entry) return;
+        pending.delete(id);
+        nativeCancel(entry.native);
+        clearTimeout(entry.timer);
+    };
+}
+
+// Module scope, so it is in place before App's boot waits on its first frame.
+if (import.meta.env.DEV) installHiddenPaneFrames();
+
 const need = <K extends keyof DevQaHandles>(key: K): DevQaHandles[K] => {
     const handle = handles[key];
     if (!handle) throw new Error(`__atlasQA.${key} is not available yet (is a world loaded?)`);
@@ -116,6 +164,17 @@ const need = <K extends keyof DevQaHandles>(key: K): DevQaHandles[K] => {
 };
 
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/** BlockType.TORCH (kept as a number so this module stays free of the block tables). */
+const TORCH_BLOCK_ID = 20;
+let placedTorches: Array<[number, number, number]> = [];
+
+function removePlacedTorches(): void {
+    for (const [x, y, z] of placedTorches) {
+        if (need('getBlock')(x, y, z) === TORCH_BLOCK_ID) need('setBlock')(x, y, z, 0);
+    }
+    placedTorches = [];
+}
 
 async function waitForChunks(timeoutMs = 20000): Promise<StreamingStatus> {
     const started = performance.now();
@@ -269,6 +328,7 @@ async function perfSweep(distances: readonly number[] = [8, 16, 32], seconds = 8
     }
     need('renderDistance')(8);
     need('hud')(true);
+    need('vsync')(true);
     return out;
 }
 
@@ -285,6 +345,13 @@ async function stageShot(shot: VisualTourShot): Promise<StreamingStatus> {
         await waitForChunks();
     }
     for (const extra of shot.commands ?? []) command(extra);
+    // Light the scene: torches go only into empty cells (so nothing is ever
+    // overwritten) and runTour takes them out again after the capture.
+    for (const [x, y, z] of shot.torches ?? []) {
+        if (need('getBlock')(x, y, z) !== 0) continue;
+        need('setBlock')(x, y, z, TORCH_BLOCK_ID);
+        placedTorches.push([x, y, z]);
+    }
     need('tp')(shot.position[0], shot.position[1], shot.position[2]);
     need('camera')(shot.yaw, shot.pitch);
     need('hud')(shot.hud ?? false);
@@ -313,6 +380,7 @@ async function runTour(phase: string, only?: string[]): Promise<Array<{ id: stri
             results.push({ id: shot.id, error: String(error) });
         }
         for (const undo of shot.cleanup ?? []) need('command')(undo);
+        removePlacedTorches();
     }
     need('closeContainers')();
     need('command')('/bloodmoon clear current');
@@ -331,6 +399,8 @@ export interface AtlasQaApi {
     renderDistance(chunks: number): void;
     /** VSync off also lifts the frame cap to 260 so perf() measures real frame cost. */
     vsync(enabled: boolean): void;
+    getBlock(x: number, y: number, z: number): number;
+    setBlock(x: number, y: number, z: number, type: number): void;
     streaming(): StreamingStatus;
     waitForChunks(timeoutMs?: number): Promise<StreamingStatus>;
     snapshot(): Promise<string>;
@@ -341,6 +411,8 @@ export interface AtlasQaApi {
     enterWorld(worldName: string, timeoutMs?: number): Promise<StreamingStatus>;
     /** Keeps frames coming while the pane is hidden (requestAnimationFrame stops there). */
     pump(enabled: boolean): void;
+    /** Cache keys of every compiled shader program: a changed list means something recompiled. */
+    programKeys(): string[];
     tour: {
         shots: readonly VisualTourShot[];
         stage(id: string): Promise<StreamingStatus>;
@@ -359,6 +431,8 @@ export function createDevQaApi(): AtlasQaApi {
         position: () => need('position')(),
         renderDistance: chunks => need('renderDistance')(chunks),
         vsync: enabled => need('vsync')(enabled),
+        getBlock: (x, y, z) => need('getBlock')(x, y, z),
+        setBlock: (x, y, z, type) => need('setBlock')(x, y, z, type),
         streaming: () => need('streaming')(),
         waitForChunks,
         snapshot: captureNextFrame,
@@ -367,6 +441,7 @@ export function createDevQaApi(): AtlasQaApi {
         perfSweep,
         enterWorld,
         pump,
+        programKeys: () => (renderer?.info.programs ?? []).map(program => program.cacheKey),
         tour: {
             shots: VISUAL_TOUR_SHOTS,
             stage: async (id) => {
