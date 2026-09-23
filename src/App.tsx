@@ -80,7 +80,7 @@ import { requestPersistentStorage } from './systems/world/storage/storagePersist
 import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
-import { MAX_BREATH } from './systems/player/playerConstants';
+import { MAX_BREATH, EYE_HEIGHT_STANDING } from './systems/player/playerConstants';
 import {
   type BreakingVisual,
   type GameMode,
@@ -1301,8 +1301,13 @@ const App: React.FC = () => {
         return () => window.removeEventListener('wheel', onWheel, { passive: false } as EventListenerOptions);
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
+  // Item pickup is off while dead and for a short grace after respawning: the
+  // tracked player position lags at the death spot for a few frames while the
+  // Player remounts, which would otherwise vacuum up the dropped inventory.
+  const pickupLockUntilRef = useRef(0);
+  const pickupsBlocked = isDead;
   const handleCollect = useCallback((id: string, stack: ItemStack) => {
-    if (health <= 0) return false;
+    if (health <= 0 || performance.now() < pickupLockUntilRef.current) return false;
     const remainder = addToInventory(stack);
     const pickedUp = stack.count - (remainder?.count ?? 0);
     if (pickedUp <= 0) return false;
@@ -2685,6 +2690,10 @@ const App: React.FC = () => {
 
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
+    // Move the tracked eye to the spawn too, so PlayerRefUpdater can't write the
+    // death position back into playerPosRef before the new Player takes over.
+    viewRig.eye.x = spawnVec.x; viewRig.eye.y = spawnVec.y + EYE_HEIGHT_STANDING; viewRig.eye.z = spawnVec.z;
+    pickupLockUntilRef.current = performance.now() + 1500;
     setRidingBoatId((riding) => {
         if (riding !== null) entityManager.setRidden(riding, false);
         return null;
@@ -3283,7 +3292,7 @@ const App: React.FC = () => {
                 
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
-                    <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
+                    <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} pickupsBlocked={pickupsBlocked} pickupLockUntilRef={pickupLockUntilRef} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
                 {gameMode !== 'spectator' && !isDead && !cinematicMode && !isCapturingPanorama && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}
                     <BossCinematic />

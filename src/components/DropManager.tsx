@@ -25,6 +25,10 @@ interface DropManagerProps {
     playerPos: THREE.Vector3;
     onCollect: (id: string, stack: ItemStack) => boolean;
     onDestroy: (id: string) => void;
+    /** True while the player can't collect (dead): no pickup and no pull. */
+    pickupsBlocked?: boolean;
+    /** performance.now() before which pickup and pull stay off (respawn grace). */
+    pickupLockUntilRef?: React.MutableRefObject<number>;
     isPaused: boolean;
     brightness: number;
 }
@@ -283,7 +287,7 @@ interface MagnetSourceCacheEntry {
     sources: MagnetSource[];
 }
 
-export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, isPaused, brightness }) => {
+export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, pickupsBlocked = false, pickupLockUntilRef, isPaused, brightness }) => {
     // Map of ID -> Timestamp when burning started
     const burningDrops = useRef<Map<string, number>>(new Map());
     const magnetSourceCache = useRef<Map<string, MagnetSourceCacheEntry>>(new Map());
@@ -412,7 +416,8 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                     drop.velocity[2] *= -0.5;
                 }
 
-                const canPickup = now > drop.pickupDelay;
+                const canPickup = now > drop.pickupDelay && !pickupsBlocked
+                    && (!pickupLockUntilRef || performance.now() >= pickupLockUntilRef.current);
                 const dist = newPos.distanceTo(playerPos);
                 
                 if (canPickup && !burningDrops.current.has(drop.id)) {
