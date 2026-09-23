@@ -13,7 +13,8 @@ import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 import { SHADOW_QUALITY_SETTINGS, type ShadowQuality } from '../../systems/graphics/graphicsSettings';
 import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
-import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms } from '../../systems/graphics/atmosphereUniforms';
+import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
+import { BlockType } from '../../types';
 import { createPixelMoonTexture, createPixelSunTexture } from '../../systems/graphics/celestialSprites';
 import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
@@ -70,6 +71,8 @@ const SKY_FRAGMENT = /* glsl */`
             float horizonFade = smoothstep(-0.05, 0.3, dir.y);
             color += vec3(0.03, 0.034, 0.055) * band * smoothstep(0.25, 0.85, cloud) * uStarVisibility * horizonFade;
         }
+        // Seen from inside water or lava, the sky is lost in that fluid's fog.
+        color = mix(color, atlasMediumColor, atlasMediumParams.x);
         gl_FragColor = vec4(color, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -374,6 +377,10 @@ const scratchStarQuat = new THREE.Quaternion();
 const scratchStarMatrix = new THREE.Matrix4();
 const scratchKeyDir = new THREE.Vector3();
 const scratchBackground = new THREE.Color();
+const scratchMedium: [number, number, number] = [0, 0, 0];
+// Under water, the fog is the sky's ambient light filtered through blue-green water.
+const WATER_MEDIUM_TINT: readonly number[] = [0.07, 0.3, 0.38];
+const LAVA_MEDIUM_COLOR: readonly number[] = [1.5, 0.36, 0.03];
 const scratchCameraCenter: [number, number, number] = [0, 0, 0];
 const scratchShadowCenter: [number, number, number] = [0, 0, 0];
 
@@ -448,6 +455,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const stormBlendRef = useRef(0);
     const biomeSampleRef = useRef({ age: Infinity, inMagnetic: false, snowy: false });
     const atmosphere = useMemo(() => createAtmosphereState(), []);
+    const mediumBlendRef = useRef(0);
+    const mediumIsLavaRef = useRef(false);
 
     const TICK_CYCLE = 24000;
 
@@ -655,6 +664,23 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         applyAtmosphereUniforms(state);
         gl.toneMappingExposure = state.exposure;
 
+        // --- The fluid the camera is in (water or lava) fogs everything in its colour. ---
+        const cellType = worldManager.getBlock(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z), false);
+        const inLava = cellType === BlockType.LAVA;
+        const inFluid = inLava || cellType === BlockType.WATER;
+        if (inFluid) mediumIsLavaRef.current = inLava;
+        mediumBlendRef.current = THREE.MathUtils.damp(mediumBlendRef.current, inFluid ? 1 : 0, 14, delta);
+        const medium = mediumBlendRef.current < 0.001 ? 0 : mediumBlendRef.current;
+        if (mediumIsLavaRef.current) {
+            applyMediumUniforms(medium, LAVA_MEDIUM_COLOR, 0.9);
+        } else {
+            // Water takes the sky's light: bright teal by day, deep navy at night, murky red under a blood moon.
+            scratchMedium[0] = state.hemiSky[0] * WATER_MEDIUM_TINT[0];
+            scratchMedium[1] = state.hemiSky[1] * WATER_MEDIUM_TINT[1];
+            scratchMedium[2] = state.hemiSky[2] * WATER_MEDIUM_TINT[2];
+            applyMediumUniforms(medium, scratchMedium, 0.06);
+        }
+
         const dayFactor = state.dayFactor;
         if (Math.abs(dayFactor - currentDayFactor) > 0.01) setCurrentDayFactor(dayFactor);
 
@@ -673,7 +699,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const radius = 400;
         const sunDir = state.sunDir;
         const moonDir = state.moonDir;
-        const sunFade = THREE.MathUtils.smoothstep(sunDir[1], -0.08, 0.06);
+        const sunFade = THREE.MathUtils.smoothstep(sunDir[1], -0.08, 0.06) * (1 - medium);
 
         if (sunGroupRef.current && sunCoreRef.current) {
             sunGroupRef.current.position.set(
@@ -686,7 +712,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             sunGroupRef.current.visible = sunFade > 0.001;
         }
 
-        const moonFade = state.moonVisibility;
+        const moonFade = state.moonVisibility * (1 - medium);
         if (moonGroupRef.current && moonCoreRef.current) {
             moonGroupRef.current.position.set(
                 camera.position.x + moonDir[0] * radius,

@@ -29,9 +29,22 @@ export const ATMOSPHERE_UNIFORMS = {
     atlasSunDir: { value: { x: 0, y: 1, z: 0 } as V3 },
     atlasMoonDir: { value: { x: 0, y: -1, z: 0 } as V3 },
     atlasFogGround: { value: v3() },
+    /** Light on something floating in open air (sky fill plus some key light): for motes and particles. */
+    atlasSceneLight: { value: v3() },
     /** x fog start, y fog end (horizontal blocks), z haze density, w haze scale height. */
     atlasFogParams: { value: { x: 40, y: 120, z: 0.002, w: 56 } as V4 },
+    /** Camera in a fluid: x amount 0..1, y fog density per block. */
+    atlasMediumParams: { value: { x: 0, y: 0.1, z: 0, w: 0 } as V4 },
+    atlasMediumColor: { value: v3() },
 };
+
+/** Fog colour and density for the fluid the camera is in; amount 0 turns it off. */
+export function applyMediumUniforms(amount: number, color: readonly number[], density: number): void {
+    const u = ATMOSPHERE_UNIFORMS;
+    u.atlasMediumParams.value.x = amount;
+    u.atlasMediumParams.value.y = density;
+    setV3(u.atlasMediumColor.value, color);
+}
 
 const setV3 = (target: V3, source: readonly number[]) => {
     target.x = source[0]; target.y = source[1]; target.z = source[2];
@@ -48,6 +61,10 @@ export function applyAtmosphereUniforms(state: AtmosphereState): void {
     setV3(u.atlasSunDir.value, state.sunDir);
     setV3(u.atlasMoonDir.value, state.moonDir);
     setV3(u.atlasFogGround.value, state.fogGround);
+    const sceneLight = u.atlasSceneLight.value;
+    sceneLight.x = state.hemiSky[0] + state.keyColor[0] * 0.35;
+    sceneLight.y = state.hemiSky[1] + state.keyColor[1] * 0.35;
+    sceneLight.z = state.hemiSky[2] + state.keyColor[2] * 0.35;
     const fog = u.atlasFogParams.value;
     fog.x = state.fogStart;
     fog.y = state.fogEnd;
@@ -65,7 +82,10 @@ uniform vec3 atlasMoonGlow;
 uniform vec3 atlasSunDir;
 uniform vec3 atlasMoonDir;
 uniform vec3 atlasFogGround;
+uniform vec3 atlasSceneLight;
 uniform vec4 atlasFogParams;
+uniform vec4 atlasMediumParams;
+uniform vec3 atlasMediumColor;
 
 // Scene-linear sky radiance looking along a (normalised) world direction.
 vec3 atlasSkyRadiance(vec3 dir) {
@@ -105,7 +125,10 @@ float atlasFogAmount(vec3 v) {
 }
 
 vec3 atlasApplyFog(vec3 color, vec3 v) {
-    return mix(color, atlasSkyRadiance(normalize(v)), atlasFogAmount(v));
+    vec3 fogged = mix(color, atlasSkyRadiance(normalize(v)), atlasFogAmount(v));
+    // With the camera in water or lava, a short dense fog of that fluid's colour.
+    float medium = atlasMediumParams.x * (1.0 - exp(-length(v) * atlasMediumParams.y));
+    return mix(fogged, atlasMediumColor, medium);
 }
 `;
 

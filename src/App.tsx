@@ -70,6 +70,8 @@ import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
 import { DevQaProbe } from './components/DevQaProbe';
 import { useGraphicsSettings } from './systems/graphics/graphicsStore';
+import { setVoxelStyle } from './systems/graphics/materials/voxelMaterial';
+import { AmbientParticles } from './components/world/AmbientParticles';
 import { lowerPreset } from './systems/graphics/graphicsSettings';
 import { installDevQa, registerDevQaHandles } from './systems/debug/devQa';
 import { isEditableElement } from './utils/dom';
@@ -372,6 +374,10 @@ const App: React.FC = () => {
     const antialiasing = graphics.config.antialiasing !== 'off';
     const chunkFadeEnabled = graphics.config.chunkFade;
     const motionBlurEnabled = graphics.config.motionBlur;
+    // Wind and water detail are uniforms on the shared chunk materials: no recompile.
+    const foliageWind = graphics.config.foliageWind;
+    const fancyWater = graphics.config.water === 'fancy';
+    useEffect(() => { setVoxelStyle({ wind: foliageWind, fancyWater }); }, [foliageWind, fancyWater]);
 
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
@@ -3063,9 +3069,11 @@ const App: React.FC = () => {
       pendingBedSpawnRef.current = { x, y, z };
   }, []);
 
-  let overlayColor = 'transparent';
-  if (headBlockType === BlockType.WATER) overlayColor = 'rgba(0, 0, 100, 0.4)';
-  else if (headBlockType === BlockType.LAVA) overlayColor = 'rgba(255, 50, 0, 0.8)';
+  // Under water the world itself fogs blue-green (DayNightCycle), so the overlay
+  // only darkens the edges; lava keeps its strong orange as a damage cue.
+  let overlayStyle: React.CSSProperties = { backgroundColor: 'transparent' };
+  if (headBlockType === BlockType.WATER) overlayStyle = { background: 'radial-gradient(ellipse at center, rgba(3, 18, 36, 0) 55%, rgba(3, 18, 36, 0.5) 100%)' };
+  else if (headBlockType === BlockType.LAVA) overlayStyle = { backgroundColor: 'rgba(255, 50, 0, 0.8)' };
 
       const hideGameplayCursor =
           appState === 'game' &&
@@ -3217,7 +3225,7 @@ const App: React.FC = () => {
           <>
             {appState === 'game' && (
                 <>
-                    {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={{ backgroundColor: overlayColor }} />}
+                    {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={overlayStyle} />}
                     {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
@@ -3338,6 +3346,9 @@ const App: React.FC = () => {
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
+                {graphics.config.ambientParticles !== 'off' && appState === 'game' && (
+                    <AmbientParticles density={graphics.config.ambientParticles} isPaused={worldPaused} />
+                )}
                 
                 <Suspense fallback={null}>
                     {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}

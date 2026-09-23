@@ -1,6 +1,8 @@
 import type * as THREE from 'three';
 import { advance } from '@react-three/fiber';
 import { VISUAL_TOUR_SEED, VISUAL_TOUR_SHOTS, type VisualTourShot } from './visualTour';
+import { graphicsSettings } from '../graphics/graphicsStore';
+import type { GraphicsPresetId } from '../graphics/graphicsSettings';
 
 // DEV-only QA bridge for scripted screenshot and performance passes.
 //
@@ -345,18 +347,23 @@ async function stageShot(shot: VisualTourShot): Promise<StreamingStatus> {
         await waitForChunks();
     }
     for (const extra of shot.commands ?? []) command(extra);
-    // Light the scene: torches go only into empty cells (so nothing is ever
-    // overwritten) and runTour takes them out again after the capture.
-    for (const [x, y, z] of shot.torches ?? []) {
-        if (need('getBlock')(x, y, z) !== 0) continue;
-        need('setBlock')(x, y, z, TORCH_BLOCK_ID);
-        placedTorches.push([x, y, z]);
-    }
     need('tp')(shot.position[0], shot.position[1], shot.position[2]);
     need('camera')(shot.yaw, shot.pitch);
     need('hud')(shot.hud ?? false);
     await wait(300);
-    const status = await waitForChunks();
+    let status = await waitForChunks();
+    // Light the scene once its chunks are loaded: torches go only into empty
+    // cells (nothing is ever overwritten) and runTour takes them out again
+    // after the capture.
+    if (shot.torches?.length) {
+        for (const [x, y, z] of shot.torches) {
+            if (need('getBlock')(x, y, z) !== 0) continue;
+            need('setBlock')(x, y, z, TORCH_BLOCK_ID);
+            placedTorches.push([x, y, z]);
+        }
+        await wait(300);
+        status = await waitForChunks();
+    }
     // Let chunk fade-ins, light and the atmosphere settle before capturing.
     await wait(shot.settleMs ?? 1500);
     need('camera')(shot.yaw, shot.pitch);
@@ -413,6 +420,8 @@ export interface AtlasQaApi {
     pump(enabled: boolean): void;
     /** Cache keys of every compiled shader program: a changed list means something recompiled. */
     programKeys(): string[];
+    /** Switches the graphics preset, as the Video Settings cycler does. */
+    preset(id: GraphicsPresetId): void;
     tour: {
         shots: readonly VisualTourShot[];
         stage(id: string): Promise<StreamingStatus>;
@@ -442,6 +451,7 @@ export function createDevQaApi(): AtlasQaApi {
         enterWorld,
         pump,
         programKeys: () => (renderer?.info.programs ?? []).map(program => program.cacheKey),
+        preset: id => graphicsSettings.setPreset(id),
         tour: {
             shots: VISUAL_TOUR_SHOTS,
             stage: async (id) => {

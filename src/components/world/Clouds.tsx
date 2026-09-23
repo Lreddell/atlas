@@ -54,6 +54,27 @@ const leavingCloudFrontMaterial = new THREE.MeshLambertMaterial({
     side: THREE.FrontSide
 });
 
+// Clouds pick up the sky around them (the same atlasSkyRadiance the dome and
+// fog use): silver near the sun, gold at sunset, moonlit blue-grey at night and
+// red under a blood moon, instead of turning into dark slabs when the scene
+// lights dim.
+const CLOUD_SKY_SCATTER = /* glsl */`
+#include <lights_fragment_end>
+#ifdef USE_FOG
+	totalEmissiveRadiance += diffuseColor.rgb * atlasSkyRadiance( normalize( vAtlasFogOffset ) ) * 1.5;
+#endif
+`;
+
+for (const material of [
+    cloudBackMaterial, cloudFrontMaterial, newCloudBackMaterial,
+    newCloudFrontMaterial, leavingCloudBackMaterial, leavingCloudFrontMaterial,
+]) {
+    material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', CLOUD_SKY_SCATTER);
+    };
+    material.customProgramCacheKey = () => 'atlas-cloud-v1';
+}
+
 // Tracks the natural (day/night-adjusted) opacity before any fade multiplier
 let cloudNaturalOpacity = 0.8;
 // Animated 0→1 on first cloud appearance; stays at 1 when not fading
@@ -75,8 +96,9 @@ const updateCloudColor = (dayFactor: number) => {
     newCloudFrontMaterial.color.copy(cloudBackMaterial.color);
     leavingCloudBackMaterial.color.copy(cloudBackMaterial.color);
     leavingCloudFrontMaterial.color.copy(cloudBackMaterial.color);
-    // Slight opacity adjustment based on time; respect the current fade multipliers
-    cloudNaturalOpacity = 0.6 + (0.2 * dayFactor);
+    // Thinner at night, when they can only show as dark shapes against the stars;
+    // respect the current fade multipliers.
+    cloudNaturalOpacity = 0.35 + (0.45 * dayFactor);
     cloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     cloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     newCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * newCloudFadeMultiplier;
