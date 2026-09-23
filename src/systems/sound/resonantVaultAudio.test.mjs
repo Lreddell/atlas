@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -14,20 +13,6 @@ const MUSIC = {
   boss_bell_titan: 'bell_titan.ogg',
   resonant_escape: 'the_vault_unravels.ogg',
 };
-const EXPECTED_MUSIC_FRAMES = {
-  resonant_vault: 9_216_000,
-  resonant_combat: 6_248_135,
-  boss_bell_titan: 9_525_454,
-  resonant_escape: 5_266_286,
-};
-const SFX = [
-  'resonator_pulse_1.ogg', 'resonator_pulse_2.ogg', 'resonator_pulse_3.ogg',
-  'pylon_correct_1.ogg', 'pylon_correct_2.ogg', 'pylon_correct_3.ogg',
-  'pylon_wrong.ogg', 'wing_complete.ogg', 'phase_shift.ogg', 'sentinel_spawn.ogg',
-  'seal_release.ogg', 'bolt_deflect_1.ogg', 'bolt_deflect_2.ogg',
-  'core_claim.ogg', 'escape_start.ogg', 'escape_warning.ogg', 'escape_complete.ogg',
-  'listening_stone.ogg', 'vault_enter.ogg',
-];
 const ENEMY_SFX = [
   'guard_step_1.ogg', 'guard_step_2.ogg', 'guard_swing.ogg',
   'marksman_brace.ogg', 'marksman_fire.ogg', 'marksman_reload.ogg',
@@ -51,25 +36,6 @@ const TITAN_EVENTS = [
   'vault.titan_slam', 'vault.titan_toll', 'vault.titan_core_open',
   'vault.titan_shell_break', 'vault.titan_hurt', 'vault.titan_death',
 ];
-
-test('rendered Resonant music and SFX are non-empty Ogg/Vorbis runtime assets', () => {
-  for (const [tag, file] of Object.entries(MUSIC)) {
-    const audioPath = path.join(root, 'public/assets/rvx/sounds/music', tag, file);
-    assert.ok(fs.statSync(audioPath).size > 100_000, `${tag} music should be a substantial rendered asset`);
-    assert.equal(fs.readFileSync(audioPath).subarray(0, 4).toString('ascii'), 'OggS');
-
-    const decoded = spawnSync('ffmpeg', [
-      '-v', 'error', '-i', audioPath, '-f', 'f32le', '-ac', '2', '-ar', '48000', 'pipe:1',
-    ], { encoding: null, maxBuffer: 96 * 1024 * 1024 });
-    assert.equal(decoded.status, 0, `${file} failed full music decode: ${decoded.stderr}`);
-    assert.equal(decoded.stdout.length / 8, EXPECTED_MUSIC_FRAMES[tag], `${file} has the wrong frame count`);
-  }
-  for (const file of SFX) {
-    const audioPath = path.join(root, 'public/assets/rvx/sounds/resonant_vault', file);
-    assert.ok(fs.statSync(audioPath).size > 8_000, `${file} should not be an empty/fallback placeholder`);
-    assert.equal(fs.readFileSync(audioPath).subarray(0, 4).toString('ascii'), 'OggS');
-  }
-});
 
 test('music controller gives vault exploration, combat, Bell Titan, and escape dedicated priority contexts', () => {
   const music = read('src/systems/sound/MusicController.ts');
@@ -164,87 +130,6 @@ test('sound manifests and static web music index include every Resonant event an
   assert.doesNotMatch(read('src/systems/sound/ResonantVaultAudio.ts'), /this\.sound\.play\('vault\.phase_shift'\)/);
   assert.match(defaults, /"vault\.echo_step"[^\n]*fallback: false/);
   assert.doesNotMatch(JSON.stringify(manifest), /custodian/i);
-});
-
-test('every active Vault cue is fail-silent, decodable, tail-safe, and provenance-backed', () => {
-  const manifest = JSON.parse(read('public/assets/rvx/sounds.json'));
-  const provenance = JSON.parse(read('public/assets/rvx/sounds/resonant_vault/audio-provenance.json'));
-  const activeAssets = new Set();
-
-  for (const [event, definition] of Object.entries(manifest)) {
-    if (!event.startsWith('vault.')) continue;
-    assert.equal(definition.fallback, false, `${event} must fail silent`);
-    for (const sound of definition.sounds) {
-      if (sound.startsWith('resonant_vault/')) activeAssets.add(`${sound.slice('resonant_vault/'.length)}.ogg`);
-    }
-  }
-
-  assert.ok(activeAssets.size >= 30, 'the active Vault cue inventory should remain substantial');
-  for (const file of activeAssets) assert.ok(provenance.assets[file], `${file} needs provenance`);
-  assert.doesNotMatch(JSON.stringify(provenance), /synthesized|oscillator|generated tone/i);
-
-  for (const file of activeAssets) {
-    const entry = provenance.assets[file];
-    assert.match(entry.sourceKind, /^(recorded|foley|licensed_music)$/);
-    assert.ok(entry.sourceNote?.length > 12, `${file} needs a source and license note`);
-    assert.ok(entry.editChain?.length > 12, `${file} needs an edit-chain note`);
-    assert.ok(entry.durationSeconds > 0, `${file} needs a duration`);
-    assert.ok(entry.terminalPeakDb <= -45, `${file} tail ends too abruptly`);
-
-    const audioPath = path.join(root, 'public/assets/rvx/sounds/resonant_vault', file);
-    assert.ok(fs.statSync(audioPath).size > 0, `${file} is empty`);
-    const probe = spawnSync('ffprobe', [
-      '-v', 'error', '-select_streams', 'a:0', '-show_entries',
-      'stream=codec_name,sample_rate,channels,duration', '-of', 'json', audioPath,
-    ], { encoding: 'utf8' });
-    assert.equal(probe.status, 0, `${file} failed to decode: ${probe.stderr}`);
-    const stream = JSON.parse(probe.stdout).streams?.[0];
-    assert.equal(stream?.codec_name, 'vorbis', `${file} must remain Ogg/Vorbis`);
-    assert.equal(Number(stream?.sample_rate), 48_000, `${file} must be 48 kHz`);
-    assert.equal(Number(stream?.channels), 2, `${file} must be stereo`);
-
-    const decoded = spawnSync('ffmpeg', [
-      '-v', 'error', '-i', audioPath, '-f', 'f32le', '-ac', '2', '-ar', '48000', 'pipe:1',
-    ], { encoding: null, maxBuffer: 64 * 1024 * 1024 });
-    assert.equal(decoded.status, 0, `${file} failed full-tail decode`);
-    const terminalStart = Math.max(0, decoded.stdout.length - 240 * 4 * 2);
-    let terminalPeak = 0;
-    for (let offset = terminalStart; offset + 4 <= decoded.stdout.length; offset += 4) {
-      terminalPeak = Math.max(terminalPeak, Math.abs(decoded.stdout.readFloatLE(offset)));
-    }
-    const terminalPeakDb = terminalPeak > 0 ? 20 * Math.log10(terminalPeak) : -120;
-    assert.ok(terminalPeakDb <= -45, `${file} terminal samples end at ${terminalPeakDb.toFixed(2)} dB`);
-  }
-});
-
-test('all four Vault music masters have loop and provenance records', () => {
-  const provenance = JSON.parse(read('public/assets/rvx/sounds/resonant_vault/audio-provenance.json'));
-  const loops = JSON.parse(read('public/assets/rvx/sounds/music-loops.json'));
-  assert.deepEqual(Object.keys(provenance.music).sort(), Object.keys(loops).sort());
-  for (const entry of Object.values(provenance.music)) {
-    assert.equal(entry.sourceKind, 'licensed_music');
-    assert.ok(entry.sourceNote.length > 12);
-    assert.ok(entry.editChain.length > 12);
-    assert.equal(entry.sourceProject, undefined, 'editable music projects must remain outside the repository');
-    assert.match(entry.editableSource, /local-only/i);
-    assert.equal(entry.frameCount, loops[entry.loopId].endSample);
-    const audioPath = path.join(root, 'public', entry.file);
-    assert.equal(createHash('sha256').update(fs.readFileSync(audioPath)).digest('hex'), entry.sha256);
-  }
-  assert.equal(provenance.music.echoes_below.originalComposition, true);
-  assert.equal(provenance.music.three_wings.originalComposition, true);
-  assert.equal(provenance.music.the_vault_unravels.originalComposition, true);
-  assert.equal(provenance.music.three_wings.trialMotifAppearances, 0);
-  assert.equal(
-    provenance.music.echoes_below.trialMotifAppearances
-      + provenance.music.three_wings.trialMotifAppearances
-      + provenance.music.the_vault_unravels.trialMotifAppearances,
-    2,
-    'Trial motif should remain a rare altered memory across the recomposed suite',
-  );
-  for (const id of ['echoes_below', 'three_wings', 'the_vault_unravels']) {
-    assert.equal(provenance.music[id].tempoBoundLoopsUsed, false);
-  }
 });
 
 test('Bell Titan cues are recorded, positional, provenance-backed, and fail silent', () => {

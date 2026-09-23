@@ -113,6 +113,15 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   respawn, cinematics, the detached camera, FOV changes, panorama capture) reset
   the reprojection history, so none of them streak.
 
+### Fixes
+- Desktop app: Ctrl+W, Ctrl+R and Ctrl+Q no longer close, reload or quit the
+  window mid-game (Ctrl is sprint, W forward, Q drop). The keys still reach the
+  game.
+- Creative mode plays the normal survival music (biome and cave tracks) while the
+  creative music folder is empty, instead of going silent.
+- Items near your body are no longer pulled toward you while you are dead, and
+  can't be picked up in the first moments after respawning.
+
 ## [v1.2.0-alpha]: 2026-08-01
 
 ### Highlights

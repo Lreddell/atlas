@@ -349,6 +349,12 @@ class MusicController {
         return BIOME_TAGS[context] ?? [];
     }
 
+    // Creative has its own music only when the creative folder actually has
+    // songs; otherwise creative plays the normal survival music (biome / caves).
+    private creativeMusicAvailable(): boolean {
+        return STATE_TAGS.CREATIVE.some((tag) => soundManager.hasTracksForEvent(`music.${tag}`));
+    }
+
     private isKnownContext(context: string): boolean {
         return !!STATE_TAGS[context] || this.tagsForContext(context).length > 0;
     }
@@ -365,7 +371,7 @@ class MusicController {
 
         if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
-        } else if (gameMode === 'creative') {
+        } else if (gameMode === 'creative' && this.creativeMusicAvailable()) {
             targetContext = 'CREATIVE';
         } else if (inCaves) {
             targetContext = (biomeId === 'lush_caves' || biomeId === 'dripstone_caves') ? biomeId : 'CAVES';
@@ -435,7 +441,7 @@ class MusicController {
             targetContext = 'BOSS_MAGNETIC';
         } else if (gameMode === 'survival' && inBloodMoon) {
             targetContext = 'BLOODMOON';
-        } else if (gameMode === 'creative') {
+        } else if (gameMode === 'creative' && this.creativeMusicAvailable()) {
             targetContext = "CREATIVE";
         } else if (inCaves) {
             // Cave biomes can carry their own music; otherwise the generic caves pack.
