@@ -7,6 +7,7 @@ import { setCloudTexture } from '../world/cloudState';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
+import { SkinsMenu } from './SkinsMenu';
 import { UiNotice, type UiNoticeState } from './UiNotice';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
@@ -28,6 +29,8 @@ interface PauseMenuProps {
     setAntialiasing: (val: boolean) => void;
     chunkFadeEnabled: boolean;
     setChunkFadeEnabled: (val: boolean) => void;
+    motionBlurEnabled: boolean;
+    setMotionBlurEnabled: (val: boolean) => void;
     maxFps: number;
     setMaxFps: (val: number) => void;
     vsync: boolean;
@@ -42,11 +45,11 @@ interface PauseMenuProps {
     panoramaFaceDataUrls?: string[] | null;
     isMainMenu?: boolean;
     showMenuBackground?: boolean;
-    initialScreen?: 'main' | 'video' | 'audio' | 'tutorial';
+    initialScreen?: 'main' | 'video' | 'audio' | 'skins' | 'tutorial';
     onTutorialClose?: () => void;
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'tutorial';
+type MenuScreen = 'main' | 'video' | 'audio' | 'skins' | 'tutorial';
 
 // Menu Slider Component
 const MenuSlider: React.FC<{
@@ -119,7 +122,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     onResume, onQuitToTitle, renderDistance, setRenderDistance, fov, setFov, 
     shadowsEnabled, setShadowsEnabled,
     cloudsEnabled, setCloudsEnabled,
-    mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing, 
+    mipmapsEnabled, setMipmapsEnabled, antialiasing, setAntialiasing,
+    motionBlurEnabled, setMotionBlurEnabled, 
     chunkFadeEnabled, setChunkFadeEnabled,
     maxFps, setMaxFps, vsync, setVsync,
     brightness, setBrightness,
@@ -229,6 +233,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MenuButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
                     <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
+                <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-80" />
                 <div className="flex gap-3">
                     <MenuButton label="Controls..." disabled width="w-[9.5rem]" />
                     <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
@@ -277,6 +282,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Clouds" value={cloudsEnabled} onChange={setCloudsEnabled} width="w-64" />
                 <MCToggle label="Mipmap Levels" value={mipmapsEnabled} onChange={setMipmapsEnabled} width="w-64" />
                 <MCToggle label="Antialiasing" value={antialiasing} onChange={setAntialiasing} width="w-64" />
+                {/* Scene only: the 3D world blurs, the HUD never does. Off by default. */}
+                <MCToggle label="Motion Blur" value={motionBlurEnabled} onChange={setMotionBlurEnabled} width="w-64" />
                 <MCToggle label="Fade In" value={chunkFadeEnabled} onChange={setChunkFadeEnabled} width="w-64" />
                 
                 {/* Custom Environment */}
@@ -402,10 +409,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <div className="relative flex flex-col items-center p-2">
                 {!isMainMenu && <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />}
                 
-                <div className="relative z-10 flex flex-col items-center py-6 px-10 min-w-[400px]">
+                <div className={`relative z-10 flex flex-col items-center ${screen === 'skins' ? 'p-4' : 'py-6 px-10 min-w-[400px]'}`}>
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}
+                    {screen === 'skins' && <SkinsMenu onDone={() => setScreen('main')} />}
                     {screen === 'tutorial' && renderTutorial()}
                 </div>
             </div>

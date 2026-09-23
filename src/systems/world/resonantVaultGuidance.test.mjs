@@ -59,7 +59,9 @@ test('prose popups and the vault guide command are removed', () => {
   assert.doesNotMatch(runtime, /showGuidance|shownGuidance|replayGuide|getVaultStageGuidance/);
   assert.doesNotMatch(controller, /querySelector|createElement|data-texture-slot|updateCooldownOverlay/);
   assert.doesNotMatch(chat, /resonantVaultCommands|executeResonantVaultCommand/);
-  assert.doesNotMatch(commandData, /['"]\/vault['"]/);
+  // /vault skip is the supported debug shortcut; only the retired guide is gone.
+  assert.doesNotMatch(commandData, /['"]\/vault guide['"]/);
+  assert.match(commandData, /'\/vault':\s*\['skip'\]/);
   assert.equal(fs.existsSync(path.join(root, 'src/systems/world/resonantVaultCommands.ts')), false);
 });
 

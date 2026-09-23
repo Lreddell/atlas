@@ -71,6 +71,16 @@ function createWindow() {
     }
   });
 
+  // The default menu binds Ctrl+W (close window), Ctrl+R (reload) and Ctrl+Q
+  // (quit). Ctrl is sprint, W is forward and Q is drop, so those fire mid-game and
+  // close or reload the window. Ignore the menu shortcuts for these keys while
+  // still delivering the key to the game.
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    const mod = input.control || input.meta;
+    const key = String(input.key || '').toLowerCase();
+    mainWindow.webContents.setIgnoreMenuShortcuts(mod && (key === 'w' || key === 'r' || key === 'q'));
+  });
+
   // Production vs Development Logic
   if (app.isPackaged) {
     // In production, load the built index.html from dist

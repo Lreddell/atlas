@@ -25,9 +25,9 @@ test('drops only age toward despawn while loaded near the player (drop-aging rul
 test('turning off boss frenzy does not snap the fading track pitch (no glitch)', () => {
     const mc = read('src/systems/sound/MusicController.ts');
     // Only the ON path applies the rate live; OFF leaves the fading track alone so
-    // the next track (death/world) starts fresh at 1.0 via playNextTrack().
-    assert.match(mc, /if \(active\) \{[\s\S]*?setMusicPlaybackRate\(FRENZY_PLAYBACK_RATE\)/);
-    assert.doesNotMatch(mc, /setMusicPlaybackRate\(active \? FRENZY_PLAYBACK_RATE : 1\.0\)/);
+    // the next track (death/world) starts fresh via playNextTrack().
+    assert.match(mc, /if \(active\) \{[\s\S]{0,200}this\.applyMusicRate\(\);[\s\S]{0,40}return;/);
+    assert.doesNotMatch(mc, /setMusicPlaybackRate\(1\.0\)\s*;?\s*\}\s*$/m);
 });
 
 test('the death screen no longer shows a score', () => {

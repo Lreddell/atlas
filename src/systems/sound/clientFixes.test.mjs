@@ -11,8 +11,13 @@ test('use/place animation only plays on success, and eating repeats while held',
     const held = read('src/components/HeldItem.tsx');
     // The continuous swing is gated on left-click (mine/attack) or an active bite :
     // NOT raw right-mouse, so a failed/no-op right-click no longer animates.
-    assert.match(held, /const isAction = \(isLeftMouseDown\.current \|\| inputState\.eating\) && isLocked/);
-    assert.doesNotMatch(held, /const isAction = \(isLeftMouseDown\.current \|\| isRightMouseDown\.current\) && isLocked/);
+    assert.match(held, /playerMining\.active \|\| inputState\.eating/);
+    assert.match(held, /playerInteraction\.leftHeld/);
+    assert.match(held, /placementPose\(playerInteraction\.placementElapsed\)/);
+    assert.doesNotMatch(held, /isRightMouseDown|addEventListener\('mousedown'/);
+
+    assert.match(held, /const time = state\.clock\.elapsedTime/);
+    assert.doesNotMatch(held, /const time = playerPose\.time/);
 
     const ctrl = read('src/components/controllers/InteractionController.tsx');
     // A bite no longer cancels the held button; it pauses briefly then eats again.

@@ -28,7 +28,10 @@ export const PolarityVignette: React.FC = () => {
 
     return (
         <div
-            className="pointer-events-none fixed inset-0 z-[110] transition-[box-shadow] duration-200"
+            // Atmospheric tint, so it sits with the fire overlay at z-30: below the
+            // HUD, and below the pause menu (z-50) so it dims and blurs with
+            // everything else instead of glowing over the buttons.
+            className="pointer-events-none absolute inset-0 z-30 transition-[box-shadow] duration-200"
             style={{ boxShadow: `inset 0 0 150px ${spread}px rgba(${rgb}, ${alpha})` }}
         />
     );

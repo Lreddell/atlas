@@ -63,6 +63,13 @@ class SoundManager {
     private musicStopTimeoutB: number | null = null;
     private musicBufferCache: Map<string, Promise<AudioBuffer | null>> = new Map();
     private decodedMusicVoices: Set<DecodedMusicVoice> = new Set();
+    /**
+     * The composed music rate (night / boss frenzy / low health). Held here so a
+     * source created while a modifier is already active starts at the right rate
+     * instead of snapping when the next change comes through.
+     */
+    private musicPlaybackRate = 1;
+    private musicRateTween: number | null = null;
     private decodedMusicSession = 0;
     private musicRequestSerial = 0;
 
@@ -454,23 +461,74 @@ class SoundManager {
         }
     }
 
+    /** The rate every music source should be running at (see setMusicPlaybackRate). */
+    public getMusicPlaybackRate(): number {
+        return this.musicPlaybackRate;
+    }
+
+    /** Pitch preservation OFF, so pitch rises and falls with the speed. */
+    private applyDeckRate(deck: HTMLAudioElement | null, rate: number): void {
+        if (!deck) return;
+        const d = deck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
+        d.preservesPitch = false;
+        d.mozPreservesPitch = false;
+        d.webkitPreservesPitch = false;
+        deck.playbackRate = rate;
+    }
+
     /**
-     * Live-set the playback rate of the music decks (mid-song), with pitch
-     * preservation OFF so the pitch shifts with the speed. Used for the boss
-     * frenzy speed-up (the exact opposite of the night slowdown).
+     * Live-set the playback rate of ALL music (mid-song), with pitch preservation
+     * off so the pitch shifts with the speed. Drives the composed night / boss
+     * frenzy / low-health modifier (see musicRate.ts).
+     *
+     * Both backends have to move together. Streaming decks carry world and menu
+     * music; authored loops (boss, Resonant) run as decoded AudioBufferSourceNodes
+     * and would otherwise keep playing at 1.0 while everything else shifted.
+     * Loop points are held in SECONDS, so they stay musically correct under a
+     * rate change — the loop simply comes round sooner.
      */
-    public setMusicPlaybackRate(rate: number): void {
+    public setMusicPlaybackRate(rate: number, rampSeconds: number = 0.28): void {
         // Defensive clamp: a bad rate (NaN/0/huge) would throw or chipmunk the
         // decks; live rate changes are only ever small musical shifts.
         if (!Number.isFinite(rate) || rate < 0.5 || rate > 2) return;
-        for (const deck of [this.musicDeckA, this.musicDeckB]) {
-            if (!deck) continue;
-            const d = deck as HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean };
-            d.preservesPitch = false;
-            d.mozPreservesPitch = false;
-            d.webkitPreservesPitch = false;
-            deck.playbackRate = rate;
+        if (Math.abs(rate - this.musicPlaybackRate) < 1e-6) return;
+        const from = this.musicPlaybackRate;
+        this.musicPlaybackRate = rate;
+
+        // Decoded loops ramp natively on the audio thread: an instant jump is an
+        // audible click at the seam.
+        const ramp = Math.max(0, rampSeconds);
+        if (this.ctx) {
+            const now = this.ctx.currentTime;
+            for (const voice of this.decodedMusicVoices) {
+                const param = voice.source.playbackRate;
+                try {
+                    param.cancelScheduledValues(now);
+                    param.setValueAtTime(param.value, now);
+                    if (ramp > 0) param.linearRampToValueAtTime(rate, now + ramp);
+                    else param.setValueAtTime(rate, now);
+                } catch { /* source already ended */ }
+            }
         }
+
+        // HTMLMediaElement.playbackRate has no ramp API, so tween it on rAF over
+        // the same window. Only one tween runs at a time; a new target retargets
+        // the running one rather than racing it.
+        if (ramp <= 0 || typeof window === 'undefined') {
+            this.applyDeckRate(this.musicDeckA, rate);
+            this.applyDeckRate(this.musicDeckB, rate);
+            return;
+        }
+        if (this.musicRateTween !== null) window.cancelAnimationFrame(this.musicRateTween);
+        const started = performance.now();
+        const step = () => {
+            const t = Math.min(1, (performance.now() - started) / (ramp * 1000));
+            const value = from + (this.musicPlaybackRate - from) * t;
+            this.applyDeckRate(this.musicDeckA, value);
+            this.applyDeckRate(this.musicDeckB, value);
+            this.musicRateTween = t < 1 ? window.requestAnimationFrame(step) : null;
+        };
+        this.musicRateTween = window.requestAnimationFrame(step);
     }
 
     private async getDecodedMusicBuffer(fullUrl: string): Promise<AudioBuffer | null> {
@@ -592,6 +650,10 @@ class SoundManager {
         source.loop = true;
         source.loopStart = bounds.startSeconds;
         source.loopEnd = bounds.endSeconds;
+        // Inherit whatever modifiers are already active, so a loop that starts
+        // during the frenzy or at low health begins in pitch instead of sliding
+        // into it on the next change.
+        source.playbackRate.setValueAtTime(this.musicPlaybackRate, startTime);
         source.connect(gain);
         gain.connect(musicBus);
         gain.gain.setValueAtTime(0, startTime);
