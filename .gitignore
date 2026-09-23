@@ -755,3 +755,6 @@ output/playwright/high-reach/profile/extensions_crx_cache/metadata.json
 output/playwright/high-reach/profile/segmentation_platform/ukm_db
 output/playwright/high-reach/profile/segmentation_platform/ukm_db-wal
 output/playwright/magnetic-boss/dev-check.png
+
+# Visual overhaul QA captures (dev-only tour, src/systems/debug/devQa.ts)
+output/qa/
