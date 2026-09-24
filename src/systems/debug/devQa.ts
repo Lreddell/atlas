@@ -52,6 +52,25 @@ export interface PerfReport {
     programs: number;
 }
 
+/** One scene render, timed synchronously (see renderCost). */
+export interface RenderCostReport {
+    /** Milliseconds a render, CPU submission plus GPU, waited out with a 1-pixel read. */
+    medianMs: number;
+    p10Ms: number;
+    p90Ms: number;
+    drawCalls: number;
+    triangles: number;
+}
+
+/** What the chunk meshes in the scene hold, whether or not they are in view. */
+export interface SceneStats {
+    chunkMeshes: number;
+    triangles: number;
+    vertices: number;
+    /** Vertex and index arrays of the chunk meshes, in MB. */
+    geometryMB: number;
+}
+
 interface FrameSample {
     ms: number;
     calls: number;
@@ -60,6 +79,8 @@ interface FrameSample {
 
 const handles: Partial<DevQaHandles> = {};
 let renderer: THREE.WebGLRenderer | null = null;
+let sceneRef: THREE.Scene | null = null;
+let cameraRef: THREE.Camera | null = null;
 let recording: FrameSample[] | null = null;
 let lastFrameAt = 0;
 let lastRealFrameAt = 0;
@@ -73,8 +94,10 @@ export function registerDevQaHandles(next: Partial<DevQaHandles>): void {
 }
 
 /** Called every frame by DevQaProbe (inside the Canvas). */
-export function recordDevQaFrame(gl: THREE.WebGLRenderer): void {
+export function recordDevQaFrame(gl: THREE.WebGLRenderer, scene?: THREE.Scene, camera?: THREE.Camera): void {
     renderer = gl;
+    if (scene) sceneRef = scene;
+    if (camera) cameraRef = camera;
     const now = performance.now();
     if (recording && lastFrameAt > 0) {
         recording.push({
@@ -258,6 +281,58 @@ async function saveShot(phase: string, name: string, dataUrl: string): Promise<s
     if (!response.ok) throw new Error(`Saving ${name} failed: ${response.status} ${await response.text()}`);
     const { file } = await response.json() as { file: string };
     return file;
+}
+
+/**
+ * Renders the scene (shadow maps included, post-processing not) `count` times
+ * back to back, each waited out with a 1-pixel read, and reports the median.
+ * Unlike perf() it needs no real frames, so it works in a hidden pane, and it
+ * compares like with like within one session (GPU clocks drift between them).
+ */
+function renderCost(count = 40): RenderCostReport {
+    if (!renderer || !sceneRef || !cameraRef) throw new Error('renderCost() needs a running world');
+    const gl = renderer;
+    const context = gl.getContext();
+    const pixel = new Uint8Array(4);
+    const renderOnce = () => {
+        gl.render(sceneRef!, cameraRef!);
+        context.readPixels(0, 0, 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
+    };
+    for (let i = 0; i < 8; i++) renderOnce();
+    const times: number[] = [];
+    for (let i = 0; i < count; i++) {
+        const started = performance.now();
+        renderOnce();
+        times.push(performance.now() - started);
+    }
+    times.sort((a, b) => a - b);
+    const at = (q: number) => Number(times[Math.min(times.length - 1, Math.floor(times.length * q))].toFixed(2));
+    return {
+        medianMs: at(0.5),
+        p10Ms: at(0.1),
+        p90Ms: at(0.9),
+        drawCalls: gl.info.render.calls,
+        triangles: gl.info.render.triangles,
+    };
+}
+
+function sceneStats(): SceneStats {
+    if (!sceneRef) throw new Error('sceneStats() needs a running world');
+    let chunkMeshes = 0;
+    let triangles = 0;
+    let vertices = 0;
+    let bytes = 0;
+    sceneRef.traverse((object) => {
+        const geometry = (object as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+        // Chunk meshes are the indexed ones carrying the 4-byte voxel colour (voxelVertex.ts).
+        if (!(object as THREE.Mesh).isMesh || !geometry?.index || geometry.attributes.color?.itemSize !== 4) return;
+        chunkMeshes++;
+        triangles += geometry.index.count / 3;
+        vertices += geometry.attributes.position.count;
+        for (const attribute of Object.values(geometry.attributes)) bytes += (attribute as THREE.BufferAttribute).array.byteLength;
+        bytes += geometry.index.array.byteLength;
+    });
+    return { chunkMeshes, triangles, vertices, geometryMB: Number((bytes / 1048576).toFixed(1)) };
 }
 
 async function perf(seconds = 5): Promise<PerfReport> {
@@ -466,6 +541,10 @@ export interface AtlasQaApi {
     snapshot(): Promise<string>;
     shot(phase: string, name: string): Promise<string>;
     perf(seconds?: number): Promise<PerfReport>;
+    /** Synchronous render timing that works in a hidden pane: see renderCost above. */
+    renderCost(count?: number): RenderCostReport;
+    /** Triangles, vertices and memory of every chunk mesh in the scene. */
+    sceneStats(): SceneStats;
     perfSweep(distances?: readonly number[], seconds?: number): Promise<Record<string, PerfReport>>;
     /** From the title screen: Singleplayer → the named world → Play (creating it from the tour seed if it is missing), then waits for chunks. */
     enterWorld(worldName: string, timeoutMs?: number): Promise<StreamingStatus>;
@@ -503,6 +582,8 @@ export function createDevQaApi(): AtlasQaApi {
         snapshot: captureNextFrame,
         shot: async (phase, name) => saveShot(phase, name, await captureNextFrame()),
         perf,
+        renderCost,
+        sceneStats,
         perfSweep,
         enterWorld,
         pump,
