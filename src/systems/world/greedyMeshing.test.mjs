@@ -176,3 +176,21 @@ test('a lone shaded corner keeps to its own triangle', () => {
     }
     assert.equal(darkCorners.size, 4, 'every corner position is covered');
 });
+
+test('water leaves out faces toward an unloaded chunk, not toward loaded air', () => {
+    const chunk = new Uint8Array(CELLS);
+    const light = new Uint8Array(CELLS).fill(15 << 4);
+    // A strip of water along the chunk's west edge (x = 0).
+    for (let z = 0; z < CHUNK_SIZE; z++) chunk[index3D(0, 1, z)] = BlockType.WATER;
+    const westFaces = (result) => {
+        const { positions, normals } = result.transparent;
+        let count = 0;
+        for (let v = 0; v * 3 < positions.length; v += 4) if (normals[v * 3] === -1 && positions[v * 3] === 0) count++;
+        return count;
+    };
+    const unloaded = generateGeometryData(0, 0, chunk, undefined, {}, { center: light }, false);
+    assert.equal(westFaces(unloaded), 0, 'no wall toward the unloaded west chunk');
+    const air = new Uint8Array(CELLS);
+    const loaded = generateGeometryData(0, 0, chunk, undefined, { left: air }, { center: light, left: light }, false);
+    assert.equal(westFaces(loaded), CHUNK_SIZE, 'a real shore toward loaded air keeps its faces');
+});

@@ -801,16 +801,25 @@ export function generateGeometryData(
 
              let nType: BlockType = BlockType.AIR;
              const nx = x + dx; const ny = y + dy; const nz = z + dz;
-             
+             // The neighbouring chunk isn't loaded (the edge of the render distance, or
+             // it hasn't generated yet; it remeshes this chunk when it does).
+             let neighborMissing = false;
+
              if (ny < MIN_Y || ny > MAX_Y) nType = BlockType.AIR;
              else if (nx >= 0 && nx < CHUNK_SIZE && nz >= 0 && nz < CHUNK_SIZE) {
                  nType = chunk[index3D(nx, ny, nz)] as BlockType;
              } else {
-                 if (nx < 0) nType = neighbors.left ? neighbors.left[index3D(CHUNK_SIZE + nx, ny, nz)] as BlockType : BlockType.AIR;
-                 else if (nx >= CHUNK_SIZE) nType = neighbors.right ? neighbors.right[index3D(nx - CHUNK_SIZE, ny, nz)] as BlockType : BlockType.AIR;
-                 else if (nz < 0) nType = neighbors.back ? neighbors.back[index3D(nx, ny, CHUNK_SIZE + nz)] as BlockType : BlockType.AIR;
-                 else if (nz >= CHUNK_SIZE) nType = neighbors.front ? neighbors.front[index3D(nx, ny, nz - CHUNK_SIZE)] as BlockType : BlockType.AIR;
+                 const side = nx < 0 ? neighbors.left : nx >= CHUNK_SIZE ? neighbors.right : nz < 0 ? neighbors.back : neighbors.front;
+                 if (!side) neighborMissing = true;
+                 else if (nx < 0) nType = side[index3D(CHUNK_SIZE + nx, ny, nz)] as BlockType;
+                 else if (nx >= CHUNK_SIZE) nType = side[index3D(nx - CHUNK_SIZE, ny, nz)] as BlockType;
+                 else if (nz < 0) nType = side[index3D(nx, ny, CHUNK_SIZE + nz)] as BlockType;
+                 else nType = side[index3D(nx, ny, nz - CHUNK_SIZE)] as BlockType;
              }
+             // Water, glass and ice are drawn from both sides, so a face toward an
+             // unloaded chunk would show from inside as a wall at the horizon (a
+             // back face). Leave it out until that chunk exists.
+             if (neighborMissing && (isFluid || IS_TRANSPARENT[type] === 1)) continue;
              
              const nDef = BLOCKS[nType];
              const nIsFluid = nType === BlockType.WATER || nType === BlockType.LAVA;
