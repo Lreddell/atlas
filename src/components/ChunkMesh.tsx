@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { regionBatcher } from '../systems/world/regionBatcher';
 import {
   createVoxelFadeMaterials,
   createCutoutDepthMaterial,
+  createSplitTransparentMaterials,
   createVoxelMaterials,
   disposeVoxelMaterials,
   setVoxelFade,
@@ -34,6 +36,8 @@ interface ChunkMeshProps {
 const sharedMaterials = createVoxelMaterials(getChunkTexture());
 // Leaves and plants cast (and now receive) shadows through this, swaying with the wind.
 const cutoutDepthMaterial = createCutoutDepthMaterial(getChunkTexture());
+// Region-merged water and glass, drawn away from the camera as two passes (voxelMaterial.ts).
+const regionTransparentMaterials = createSplitTransparentMaterials(getChunkTexture());
 
 type FadeMaterials = VoxelMaterials;
 
@@ -63,6 +67,30 @@ export const ChunkFadeTicker: React.FC = () => {
   return null;
 };
 
+// Settled chunks draw through one merged mesh per region (regionBatcher.ts),
+// which cuts the draw calls a frame by about an order of magnitude. This owns
+// the region meshes' root and rebuilds at most one region a frame.
+export const ChunkRegionBatches: React.FC<{ shadowsEnabled: boolean }> = ({ shadowsEnabled }) => {
+  const rootRef = useRef<THREE.Group>(null);
+  useLayoutEffect(() => {
+    regionBatcher.setShadows(shadowsEnabled);
+  }, [shadowsEnabled]);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    regionBatcher.attach(root, {
+      opaque: sharedMaterials.solid,
+      cutout: sharedMaterials.cutout,
+      transparent: regionTransparentMaterials.front,
+      transparentBack: regionTransparentMaterials.back,
+      cutoutDepth: cutoutDepthMaterial,
+    });
+    return () => regionBatcher.detach();
+  }, []);
+  useFrame(({ camera }) => regionBatcher.update(performance.now(), camera.position.x, camera.position.z));
+  return <group ref={rootRef} name="chunkRegions" />;
+};
+
 const CHUNK_FADE_DURATION_MS = 400;
 const CHUNK_FADE_RETRIGGER_GUARD_MS = 450;
 const CHUNK_FAST_RELOAD_NO_FADE_MS = 800;
@@ -89,6 +117,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   const lastFadeStartMsRef = useRef(0);
   const lastClearedMsRef = useRef(-Infinity);
   const hasRenderedMeshRef = useRef(false);
+  const opaqueMeshRef = useRef<THREE.Mesh>(null);
+  const cutoutMeshRef = useRef<THREE.Mesh>(null);
+  const transparentMeshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
     geometriesRef.current = geometries;
@@ -292,6 +323,19 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     };
   }, [cx, cz, fadeInEnabled, startFade, stopFade, queueDispose]);
 
+  // Once its geometry is on screen and not fading, the chunk offers it to its
+  // region's merged mesh; whatever changes next (new geometry, a fade, leaving)
+  // takes it back in this same commit, so it is never missing or drawn twice.
+  const batchable = fadeMats === null && !fadingOut;
+  useLayoutEffect(() => {
+    if (!batchable || (!geometries.opaque && !geometries.cutout && !geometries.transparent)) return;
+    regionBatcher.offer(cx, cz, {
+      geometries,
+      meshes: { opaque: opaqueMeshRef.current, cutout: cutoutMeshRef.current, transparent: transparentMeshRef.current },
+    });
+    return () => regionBatcher.withdraw(cx, cz);
+  }, [cx, cz, geometries, batchable]);
+
   const matOpaque = fadeMats ? fadeMats.solid : sharedMaterials.solid;
   const matCutout = fadeMats ? fadeMats.cutout : sharedMaterials.cutout;
   const matTransparent = fadeMats ? fadeMats.transparent : sharedMaterials.transparent;
@@ -304,9 +348,9 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       matrixAutoUpdate={false}
       onUpdate={(g) => g.updateMatrix()}
     >
-        {geometries.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.transparent && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
+        {geometries.opaque && <mesh ref={opaqueMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
+        {geometries.cutout && <mesh ref={cutoutMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
+        {geometries.transparent && <mesh ref={transparentMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
     </group>
   );
 };

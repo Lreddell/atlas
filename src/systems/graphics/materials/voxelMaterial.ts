@@ -508,6 +508,22 @@ export function createVoxelMaterials(map: THREE.Texture | null): VoxelMaterials 
 }
 
 /**
+ * Region-merged water and glass (regionBatcher.ts), split into its two sides.
+ * Three draws a double-sided transparent mesh as back faces then front faces,
+ * one object at a time; with regions that big, a farther region's back faces
+ * (the dark undersides round sunken plants) could land on a nearer region's
+ * surface. Drawing every far region's back faces first (renderOrder -1), then
+ * the front faces sorted as usual, keeps the double-sided look without that.
+ */
+export function createSplitTransparentMaterials(map: THREE.Texture | null): { front: THREE.MeshLambertMaterial; back: THREE.MeshLambertMaterial } {
+    const front = createVoxelMaterial('transparent', map);
+    front.side = THREE.FrontSide;
+    const back = createVoxelMaterial('transparent', map);
+    back.side = THREE.BackSide;
+    return { front, back };
+}
+
+/**
  * Clones for one fading chunk. They stay opaque (depth-writing) and dissolve
  * through atlasVoxelFade instead, so they sort and occlude like the shared ones.
  */

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
 import { Analytics } from '@vercel/analytics/react';
 
-import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
+import { ChunkMesh, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -3403,6 +3403,7 @@ const App: React.FC = () => {
                 <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
+                <ChunkRegionBatches shadowsEnabled={shadowsEnabled} />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
