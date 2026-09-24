@@ -2,13 +2,21 @@ import * as THREE from 'three';
 import '../atmosphereUniforms';
 import '../dynamicLights';
 import '../shadows';
-import { ATLAS_PADDING, ATLAS_RAW_TILE_SIZE, ATLAS_STRIDE } from '../../../utils/textures';
+import {
+    WORLD_LIGHT_DECLARATIONS,
+    WORLD_LIGHT_END,
+    WORLD_LIGHT_UNIFORMS,
+    keyGatedLightsFragmentBegin,
+    worldLightPrepare,
+} from './worldLighting';
 
 // The chunk materials: three's MeshLambertMaterial, re-lit for voxels.
 //
 // Three still supplies the key light (with shadows), the hemisphere ambient,
 // fog, dynamic lights and program caching; onBeforeCompile swaps in the voxel
-// parts, driven by the per-vertex bytes the mesher writes (voxelVertex.ts):
+// parts, driven by the per-vertex bytes the mesher writes (voxelVertex.ts). The
+// light itself is the shared world model (worldLighting.ts), so entities that
+// stand among the blocks are lit the same way:
 //
 //  - Ambient: hemisphere irradiance x (sky light)^2 x AO x a per-axis face
 //    shade, so caves go dark by their own light data, corners darken, and
@@ -17,28 +25,25 @@ import { ATLAS_PADDING, ATLAS_RAW_TILE_SIZE, ATLAS_STRIDE } from '../../../utils
 //    light, so no sun reaches into a cave, with or without shadow maps.
 //  - Block light: warm near strong sources, neutral further out, with a
 //    slight shared flicker; it reads the same day or night.
-//  - The Brightness option: a cool slate floor where the sky can't reach,
-//    the same after exposure day or night.
+//  - The Brightness option: a cool slate floor where the sky can't reach.
 //  - Emission: bright texels of light-emitting blocks glow (lava, torches,
 //    crystals); Resonant blocks are capped low at the mesher.
 //  - Leaves and plants glow when the sun or moon is behind them, and sway in
 //    the wind (leaves as whole blocks, plants from the root).
 //  - Water and glass reflect the sky and the sun or moon; water ripples on
-//    the 16-texel grid. Lava flows through its tile a texel at a time.
+//    the 16-texel grid.
+//  - Pixel shadows (the Pixel shadow style, BasicShadowMap): every texture
+//    pixel takes one shadow value, so shadow edges step on the same 16x16 grid
+//    as the art.
 //  - Chunk fade in/out is an ordered-dither dissolve: depth-correct, no sorting.
+//  - The Classic style swaps all of that for the pre-overhaul lighting.
 
 export type VoxelVariant = 'solid' | 'cutout' | 'transparent';
 
-/** Shared by every chunk material and fade clone: one write per frame reaches them all. */
-export const VOXEL_UNIFORMS = {
-    atlasTorchColor: { value: new THREE.Color(1.0, 0.55, 0.24) },
-    /** x floor light, y torch strength (with flicker), z 1 / exposure, w clock (seconds). */
-    atlasVoxelLight: { value: { x: 0.085, y: 1.25, z: 1, w: 0 } },
-    /** x wind strength (0 = still), y 1 for water and glass reflections and ripples. */
-    atlasVoxelStyle: { value: { x: 1, y: 1, z: 0, w: 0 } },
-};
+/** Shared by every chunk material and fade clone (and every world-lit entity). */
+export const VOXEL_UNIFORMS = WORLD_LIGHT_UNIFORMS;
 
-/** Graphics-preset switches that change only uniforms, never shaders. */
+/** Graphics switches that change only uniforms, never shaders. */
 export function setVoxelStyle(options: { wind: boolean; fancyWater: boolean }): void {
     const style = VOXEL_UNIFORMS.atlasVoxelStyle.value;
     style.x = options.wind ? 1 : 0;
@@ -98,9 +103,7 @@ const VERTEX_WIND = /* glsl */`
 `;
 
 const FRAGMENT_DECLARATIONS = /* glsl */`
-uniform vec3 atlasTorchColor;
-uniform vec4 atlasVoxelLight;
-uniform vec4 atlasVoxelStyle;
+${WORLD_LIGHT_DECLARATIONS}
 #ifdef ATLAS_VOXEL_FADE
 uniform float atlasVoxelFade;
 #endif
@@ -108,30 +111,22 @@ varying float vVoxelClass;
 varying float vVoxelEmission;
 varying float vVoxelFaceShade;
 varying vec3 vVoxelNormal;
-float atlasSkyLight;
-float atlasBlockLight;
-float atlasAo;
-float atlasVoxelKeyGate;
 float atlasBayer2( vec2 a ) { a = floor( a ); return fract( a.x / 2.0 + a.y * a.y * 0.75 ); }
 float atlasBayer4( vec2 a ) { return atlasBayer2( 0.5 * a ) * 0.25 + atlasBayer2( a ); }
 `;
 
+// The pre-overhaul water was lit a little brighter in the dark than solid blocks.
+const CLASSIC_FLOOR = /* glsl */`
+#ifdef ATLAS_VOXEL_TRANSPARENT
+	#define ATLAS_CLASSIC_FLOOR 0.16
+#else
+	#define ATLAS_CLASSIC_FLOOR 0.05
+#endif
+`;
+
 const FRAGMENT_MAP = /* glsl */`
 #ifdef USE_MAP
-	vec2 atlasMapUv = vMapUv;
-	#if defined( ATLAS_VOXEL_CUTOUT ) && __VERSION__ >= 300
-	if ( vVoxelClass > 3.5 && vVoxelClass < 4.5 ) {
-		// Lava flows: its tile scrolls within itself, one whole texel at a time.
-		vec2 atlasSize = vec2( textureSize( map, 0 ) );
-		vec2 atlasPx = vec2( atlasMapUv.x, 1.0 - atlasMapUv.y ) * atlasSize;
-		vec2 atlasTile = floor( atlasPx / ${ATLAS_STRIDE.toFixed(1)} ) * ${ATLAS_STRIDE.toFixed(1)} + ${ATLAS_PADDING.toFixed(1)};
-		vec2 atlasInTile = atlasPx - atlasTile;
-		atlasInTile.y = mod( atlasInTile.y - floor( atlasVoxelLight.w * 3.0 ), ${ATLAS_RAW_TILE_SIZE.toFixed(1)} );
-		atlasPx = atlasTile + atlasInTile;
-		atlasMapUv = vec2( atlasPx.x / atlasSize.x, 1.0 - atlasPx.y / atlasSize.y );
-	}
-	#endif
-	vec4 sampledDiffuseColor = texture2D( map, atlasMapUv );
+	vec4 sampledDiffuseColor = texture2D( map, vMapUv );
 	#ifdef ATLAS_VOXEL_CUTOUT
 	sampledDiffuseColor.a = sampledDiffuseColor.a >= 0.5 ? 1.0 : 0.0;
 	sampledDiffuseColor.rgb *= sampledDiffuseColor.a;
@@ -146,9 +141,12 @@ const FRAGMENT_MAP = /* glsl */`
 	// 0..1, and pow() of a negative number is NaN (which bloom would smear).
 	atlasSkyLight = clamp( vColor.r, 0.0, 1.0 );
 	atlasBlockLight = clamp( vColor.g, 0.0, 1.0 );
-	atlasAo = 0.5 + 0.5 * clamp( vColor.b, 0.0, 1.0 );
-	// The sun and moon only reach surfaces that are open to the sky.
-	atlasVoxelKeyGate = smoothstep( 0.5, 0.95, atlasSkyLight );
+	float atlasOpenness = clamp( vColor.b, 0.0, 1.0 );
+	atlasAo = 0.5 + 0.5 * atlasOpenness;
+	// The old mesher's AO: 14% darker per occluding neighbour.
+	atlasClassicAo = 1.0 - 0.42 * ( 1.0 - atlasOpenness );
+	atlasFaceShade = vVoxelFaceShade;
+${worldLightPrepare('ATLAS_CLASSIC_FLOOR')}
 `;
 
 const FRAGMENT_NORMAL = /* glsl */`
@@ -162,28 +160,72 @@ const FRAGMENT_NORMAL = /* glsl */`
 #endif
 `;
 
-const FRAGMENT_LIGHTS_END = /* glsl */`
-	// Ambient: how open the sky is, AO, and the per-axis face shade.
-	float atlasSkyVisibility = atlasSkyLight * atlasSkyLight;
-	irradiance *= atlasSkyVisibility * atlasAo * vVoxelFaceShade;
-	// Torches, lava and lamps: warm near a strong source, fading to a neutral
-	// glow further out (so faint lights like glow lichen don't tint a cave
-	// orange). Like the floor below, it reads the same day or night.
-	vec3 atlasTorchTint = mix( vec3( 0.86, 0.84, 0.8 ), atlasTorchColor, smoothstep( 0.4, 0.9, atlasBlockLight ) );
-	irradiance += atlasTorchTint * ( pow( atlasBlockLight, 2.2 ) * atlasAo * atlasVoxelLight.y * atlasVoxelLight.z * PI );
-	// The Brightness option: a cool slate floor where the sky can't reach (caves).
-	irradiance += vec3( 0.55, 0.62, 0.78 ) * ( atlasVoxelLight.x * atlasVoxelLight.z * ( 1.0 - atlasSkyVisibility ) * atlasAo * vVoxelFaceShade * PI );
-#include <lights_fragment_end>
-	// Light-emitting blocks: only their bright texels glow.
-	float atlasLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
-	totalEmissiveRadiance += diffuseColor.rgb * ( vVoxelEmission * ( 1.2 / 15.0 ) * atlasVoxelLight.z * smoothstep( 0.2, 0.55, atlasLuma ) );
-#if defined( ATLAS_VOXEL_FOLIAGE ) && NUM_DIR_LIGHTS > 0
-	// Leaves and plants glow when the sun or moon is behind them.
-	if ( vVoxelClass > 0.5 && vVoxelClass < 2.5 ) {
-		float atlasBacklight = pow( saturate( dot( - geometryViewDir, directionalLights[ 0 ].direction ) ), 4.0 );
-		reflectedLight.directDiffuse += BRDF_Lambert( diffuseColor.rgb ) * directionalLights[ 0 ].color * ( atlasBacklight * 0.6 * atlasVoxelKeyGate );
+// The Pixel shadow style. three picks BasicShadowMap for it, so this is decided
+// at compile time: Soft keeps three's filtered lookup untouched.
+const PIXEL_SHADOW_FUNCTIONS = /* glsl */`
+#include <shadowmap_pars_fragment>
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+	uniform mat4 directionalShadowMatrix[ NUM_DIR_LIGHT_SHADOWS ];
+	float atlasDirectionalShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowBias, float shadowRadius, vec4 shadowCoord, mat4 shadowMatrix ) {
+	#if defined( SHADOWMAP_TYPE_BASIC ) && defined( USE_FOG )
+		// Look the shadow up at the centre of this fragment's texture pixel, moved
+		// only across the face (never off it), so a pixel is lit or shaded whole.
+		vec3 atlasWorld = cameraPosition + vAtlasFogOffset;
+		vec3 atlasSnapped = ( floor( atlasWorld * 16.0 ) + 0.5 ) / 16.0;
+		shadowCoord += shadowMatrix * vec4( ( atlasSnapped - atlasWorld ) * ( 1.0 - abs( vVoxelNormal ) ), 0.0 );
+		shadowCoord.xyz /= shadowCoord.w;
+		shadowCoord.z += shadowBias;
+		if ( shadowCoord.x < 0.0 || shadowCoord.x > 1.0 || shadowCoord.y < 0.0 || shadowCoord.y > 1.0 || shadowCoord.z > 1.0 ) return 1.0;
+		// Four texels, bilinearly weighted, then thresholded: the edge lands where
+		// the true shadow edge crosses the pixel grid, as a clean stair-step.
+		vec2 atlasTexel = 1.0 / shadowMapSize;
+		vec2 atlasSt = shadowCoord.xy * shadowMapSize - 0.5;
+		vec2 atlasF = fract( atlasSt );
+		vec2 atlasBase = ( floor( atlasSt ) + 0.5 ) * atlasTexel;
+		float atlasS00 = texture2DCompare( shadowMap, atlasBase, shadowCoord.z );
+		float atlasS10 = texture2DCompare( shadowMap, atlasBase + vec2( atlasTexel.x, 0.0 ), shadowCoord.z );
+		float atlasS01 = texture2DCompare( shadowMap, atlasBase + vec2( 0.0, atlasTexel.y ), shadowCoord.z );
+		float atlasS11 = texture2DCompare( shadowMap, atlasBase + atlasTexel, shadowCoord.z );
+		float atlasShadow = step( 0.5, mix( mix( atlasS00, atlasS10, atlasF.x ), mix( atlasS01, atlasS11, atlasF.x ), atlasF.y ) );
+		// The same fade at the edge of the shadowed area as three's (shadows.ts).
+		vec2 atlasEdge = abs( shadowCoord.xy - 0.5 ) * 2.0;
+		return mix( atlasShadow, 1.0, smoothstep( 0.82, 0.98, max( atlasEdge.x, atlasEdge.y ) ) );
+	#else
+		return getShadow( shadowMap, shadowMapSize, shadowBias, shadowRadius, shadowCoord );
+	#endif
 	}
 #endif
+`;
+
+const DIRECTIONAL_SHADOW_CALL = 'getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] )';
+
+/** The shared key-gated light loop, with the voxel shadow lookup for directional lights. */
+function voxelLightsFragmentBegin(): string {
+    const chunk = keyGatedLightsFragmentBegin();
+    if (!chunk.includes(DIRECTIONAL_SHADOW_CALL)) {
+        console.warn('[voxelMaterial] three changed the directional shadow call; pixel shadows fall back to soft');
+        return chunk;
+    }
+    return chunk.replace(
+        DIRECTIONAL_SHADOW_CALL,
+        'atlasDirectionalShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ], directionalShadowMatrix[ i ] )',
+    );
+}
+
+const FRAGMENT_LIGHTS_END = /* glsl */`
+${WORLD_LIGHT_END}
+	if ( atlasClassic.x < 0.5 ) {
+		// Light-emitting blocks: only their bright texels glow.
+		float atlasLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+		totalEmissiveRadiance += diffuseColor.rgb * ( vVoxelEmission * ( 1.2 / 15.0 ) * atlasVoxelLight.z * smoothstep( 0.2, 0.55, atlasLuma ) );
+#if defined( ATLAS_VOXEL_FOLIAGE ) && NUM_DIR_LIGHTS > 0
+		// Leaves and plants glow when the sun or moon is behind them.
+		if ( vVoxelClass > 0.5 && vVoxelClass < 2.5 ) {
+			float atlasBacklight = pow( saturate( dot( - geometryViewDir, directionalLights[ 0 ].direction ) ), 4.0 );
+			reflectedLight.directDiffuse += BRDF_Lambert( diffuseColor.rgb ) * directionalLights[ 0 ].color * ( atlasBacklight * 0.6 * atlasVoxelKeyGate );
+		}
+#endif
+	}
 `;
 
 const FRAGMENT_REFLECTIONS = /* glsl */`
@@ -221,18 +263,6 @@ const FRAGMENT_REFLECTIONS = /* glsl */`
 #include <opaque_fragment>
 `;
 
-const DIRECTIONAL_INFO = 'getDirectionalLightInfo( directionalLight, directLight );';
-
-/** three's light loop with the key light gated by sky light (dynamic lights are not gated). */
-function voxelLightsFragmentBegin(): string {
-    const chunk = THREE.ShaderChunk.lights_fragment_begin;
-    if (!chunk.includes(DIRECTIONAL_INFO)) {
-        console.warn('[voxelMaterial] three changed lights_fragment_begin; key light is not sky-gated');
-        return chunk;
-    }
-    return chunk.replace(DIRECTIONAL_INFO, `${DIRECTIONAL_INFO}\n\t\tdirectLight.color *= atlasVoxelKeyGate;`);
-}
-
 interface VoxelMaterialOptions {
     variant: VoxelVariant;
     fade: boolean;
@@ -250,9 +280,7 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
     if (options.fade) material.userData.atlasFade = { value: 0 };
 
     material.onBeforeCompile = (shader) => {
-        shader.uniforms.atlasTorchColor = VOXEL_UNIFORMS.atlasTorchColor;
-        shader.uniforms.atlasVoxelLight = VOXEL_UNIFORMS.atlasVoxelLight;
-        shader.uniforms.atlasVoxelStyle = VOXEL_UNIFORMS.atlasVoxelStyle;
+        Object.assign(shader.uniforms, VOXEL_UNIFORMS);
         if (options.fade) shader.uniforms.atlasVoxelFade = material.userData.atlasFade;
 
         shader.vertexShader = shader.vertexShader
@@ -261,7 +289,8 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
             .replace('#include <begin_vertex>', VERTEX_WIND);
 
         shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>\n${FRAGMENT_DECLARATIONS}`)
+            .replace('#include <common>', `#include <common>\n${FRAGMENT_DECLARATIONS}\n${CLASSIC_FLOOR}`)
+            .replace('#include <shadowmap_pars_fragment>', PIXEL_SHADOW_FUNCTIONS)
             .replace('#include <map_fragment>', FRAGMENT_MAP)
             .replace('#include <color_fragment>', '')
             .replace('#include <normal_fragment_begin>', FRAGMENT_NORMAL)
@@ -270,7 +299,7 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
             .replace('#include <opaque_fragment>', FRAGMENT_REFLECTIONS);
     };
     // One program per variant, however many clones share it.
-    const cacheKey = `atlas-voxel-v2:${options.variant}${options.fade ? ':fade' : ''}`;
+    const cacheKey = `atlas-voxel-v3:${options.variant}${options.fade ? ':fade' : ''}`;
     material.customProgramCacheKey = () => cacheKey;
     material.needsUpdate = true;
 }

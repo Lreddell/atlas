@@ -29,17 +29,20 @@ export interface PipelinePlan {
     bloom: BloomQuality;
     godRays: boolean;
     motionBlur: boolean;
+    /** The Classic style: tone map only, no colour grade or vignette (the old look had none). */
+    neutralGrade: boolean;
 }
 
 export function planPipeline(config: GraphicsConfig, caps: PipelineCaps): PipelinePlan {
     const active = config.bloom !== 'off' || config.godRays || config.motionBlur;
+    const neutralGrade = config.visualStyle === 'classic';
     if (!active) {
-        return { active: false, msaaSamples: 0, fxaa: false, bloom: 'off', godRays: false, motionBlur: false };
+        return { active: false, msaaSamples: 0, fxaa: false, bloom: 'off', godRays: false, motionBlur: false, neutralGrade };
     }
     const msaaSamples = config.antialiasing === 'msaa' && caps.maxSamples >= 2 ? Math.min(4, caps.maxSamples) : 0;
     const fxaa = config.antialiasing === 'fxaa' || config.antialiasing === 'smaa'
         || (config.antialiasing === 'msaa' && msaaSamples === 0);
-    return { active, msaaSamples, fxaa, bloom: config.bloom, godRays: config.godRays, motionBlur: config.motionBlur };
+    return { active, msaaSamples, fxaa, bloom: config.bloom, godRays: config.godRays, motionBlur: config.motionBlur, neutralGrade };
 }
 
 /**

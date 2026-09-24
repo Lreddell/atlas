@@ -20,6 +20,10 @@ import { usePlayerSkin, type PlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
 import { WALK_SPEED } from '../systems/player/playerConstants';
+import { createBodyTurn, gaitKnee, springPose, stepBodyTurn, wrapAngle } from '../systems/player/bodyMotion';
+import { applyEntityLighting, createEntityLight } from '../systems/graphics/materials/entityLighting';
+import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
+import { worldLightReader } from '../systems/graphics/worldLightReader';
 
 // The player's own body, drawn only in third person: a blocky explorer with
 // jointed limbs, animated procedurally from the physics pose every frame (no
@@ -30,15 +34,26 @@ import { WALK_SPEED } from '../systems/player/playerConstants';
 // this backwards is why an earlier pass ran the character in reverse.
 //
 // Animation: every clip writes into one target pose (a flat set of joint
-// angles), and the rig damps the live pose toward it each frame. Nothing snaps
-// between states; a sprint that becomes a roll that becomes a wall climb reads
-// as one continuous body. The only un-damped channel is the roll tumble, which
-// is an absolute spin rather than a target to ease toward.
+// angles), and the rig springs the live pose toward it each frame (critically
+// damped, so a new pose eases in as well as out). Nothing snaps between states;
+// a sprint that becomes a roll that becomes a wall climb reads as one
+// continuous body. The only un-sprung channel is the roll tumble, which is an
+// absolute spin rather than a target to ease toward.
 //
-// Clips: idle breathing, walk, sprint (longer stride, forward lean, pumping
-// arms), sneak, rise/fall, landing squash, dodge roll (a real somersault about
-// the axis across the roll), magnetic dash (arms forward, body flat along the
-// pull), repel leap, magnetic wall walking, attack/placement swings, and a hurt flinch.
+// The body turns after the aim rather than with it (bodyMotion.ts): standing,
+// the head looks around first and the body steps round once the neck runs out
+// of reach, feet shuffling; on the move the hips angle into a strafe while the
+// chest and head keep facing the aim.
+//
+// Clips: idle breathing, walk and sprint (knees lifting through the swing,
+// weight shifting side to side, a forward lean and pumping arms at a sprint),
+// sneak, rise/fall, landing squash, swimming (a crawl stroke on the move,
+// treading water otherwise), dodge roll (a real somersault about the axis
+// across the roll), magnetic dash (arms forward, body flat along the pull),
+// repel leap, magnetic wall walking, attack/placement swings, and a hurt flinch.
+//
+// Light: the model is lit like the blocks around it (entityLighting.ts), from
+// the voxel light sampled smoothly at its chest.
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -51,6 +66,7 @@ const _quat = new THREE.Quaternion();
 const _mat = new THREE.Matrix4();
 const _axis = new THREE.Vector3();
 const _rollDir = new THREE.Vector3();
+const _lightSample: SmoothLight = { sky: 1, block: 0 };
 
 /** Height (blocks) of the body's centre of mass: the tumble pivots here. */
 const PIVOT_Y = 0.95;
@@ -118,7 +134,13 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
     const legRLowerRef = useRef<THREE.Group>(null);
 
     const live = useRef<Pose>(newPose());
+    const liveVelocity = useRef<Pose>(Object.fromEntries(POSE_KEYS.map(key => [key, 0])) as unknown as Pose);
     const target = useRef<Pose>(newPose());
+    const bodyTurn = useRef(createBodyTurn());
+    const swimPhase = useRef(0);
+    // The world light at the chest, shared by every part of the body.
+    const bodyLight = useMemo(() => createEntityLight(), []);
+    const bodyLightLevel = useRef<SmoothLight>({ sky: 1, block: 0 });
     /** Roll direction, latched when the roll starts (its velocity decays to nothing). */
     const rollAxis = useRef({ along: 0, across: 0 });
     const wasRolling = useRef(false);
@@ -176,6 +198,24 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         const speed = Math.hypot(pose.vx, pose.attached ? pose.vy : 0, pose.vz);
         const now = Date.now();
         const hurt = now < hurtUntil.current;
+        const action = pose.attached ? 'none' : motionStatus.action;
+
+        // --- Light: the voxel light at the chest, eased so walking past a torch
+        //     or out of a cave never steps.
+        sampleSmoothLight(worldLightReader, pose.x, pose.y + 1.1, pose.z, _lightSample);
+        const level = easeLight(bodyLightLevel.current, _lightSample, dt, 10);
+        bodyLight.value.x = level.sky;
+        bodyLight.value.y = level.block;
+
+        // --- Facing: the body trails the aim (bodyMotion.ts), except where a
+        //     move drives it directly.
+        const turn = stepBodyTurn(bodyTurn.current, {
+            dt, aimYaw: pose.yaw, vx: pose.vx, vz: pose.vz,
+            locked: pose.attached || action === 'roll' || action === 'dash' || action === 'leap',
+        });
+        const bodyYaw = turn.yaw;
+        // How far the aim is ahead of the hips: the chest takes some, the head the rest.
+        const aimLag = pose.attached ? 0 : wrapAngle(pose.yaw - bodyYaw);
 
         // --- Orientation. The body's up is the wall normal while latched, so a
         //     climber stands on the tower face instead of hanging off it.
@@ -184,7 +224,7 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             _forward.set(pose.wallForward.x, pose.wallForward.y, pose.wallForward.z);
         } else {
             _up.set(0, 1, 0);
-            _forward.set(-Math.sin(pose.yaw), 0, -Math.cos(pose.yaw));
+            _forward.set(-Math.sin(bodyYaw), 0, -Math.cos(bodyYaw));
         }
         _right.crossVectors(_forward, _up).normalize();
         _forward.crossVectors(_up, _right).normalize();
@@ -217,7 +257,6 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
 
         const p = target.current;
         resetPose(p);
-        const action = pose.attached ? 'none' : motionStatus.action;
         const progress = motionStatus.progress;
         // Most joints ease; a few clips want to arrive almost immediately.
         let blendRate = 14;
@@ -255,14 +294,32 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             p.legLLower = -1.2; p.legRLower = -0.7;
             blendRate = 20;
         } else if (pose.inWater && !pose.grounded) {
-            // Tread/kick in water rather than hanging in the jump pose.
-            const stroke = Math.sin(t * 3);
-            p.bodyLean = -0.2;
-            p.armLUpper = 0.35 + stroke * 0.15; p.armRUpper = 0.35 - stroke * 0.15;
-            p.armLLower = 0.3; p.armRLower = 0.3;
-            p.armLOut = -0.3; p.armROut = 0.3;
-            p.legLUpper = stroke * 0.22; p.legRUpper = -stroke * 0.22;
-            p.legLLower = -0.2; p.legRLower = -0.2;
+            const horizontal = Math.hypot(pose.vx, pose.vz);
+            const swim = Math.max(0, Math.min(1, (horizontal - 1.2) / 1.6));
+            // Only a real swim gets the stroke (the springs blend in and out of it).
+            if (swim > 0.3) {
+                // Swimming: a crawl stroke, body stretched out along the water, a flutter kick.
+                swimPhase.current += dt * (3.2 + horizontal * 0.9);
+                const s = swimPhase.current;
+                p.bodyLean = -0.25 - 1.05 * swim;
+                p.bodyY = 0.1 * swim;
+                p.bodyRoll = Math.sin(s) * 0.12 * swim;
+                p.armLUpper = 1.25 + 1.6 * Math.sin(s); p.armRUpper = 1.25 + 1.6 * Math.sin(s + Math.PI);
+                p.armLLower = 0.3 + 0.35 * Math.max(0, Math.cos(s)); p.armRLower = 0.3 + 0.35 * Math.max(0, -Math.cos(s));
+                p.armLOut = -0.18; p.armROut = 0.18;
+                p.legLUpper = Math.sin(s * 2.3) * 0.3; p.legRUpper = -Math.sin(s * 2.3) * 0.3;
+                p.legLLower = -0.25; p.legRLower = -0.25;
+                blendRate = 16;
+            } else {
+                // Treading water rather than hanging in the jump pose.
+                const stroke = Math.sin(t * 3);
+                p.bodyLean = -0.2;
+                p.armLUpper = 0.35 + stroke * 0.15; p.armRUpper = 0.35 - stroke * 0.15;
+                p.armLLower = 0.3; p.armRLower = 0.3;
+                p.armLOut = -0.3; p.armROut = 0.3;
+                p.legLUpper = stroke * 0.22; p.legRUpper = -stroke * 0.22;
+                p.legLLower = -0.2; p.legRLower = -0.2;
+            }
         } else if (!pose.grounded && !pose.attached) {
             const air = airbornePose(pose.vy);
             p.armLUpper = air.shoulder; p.armRUpper = air.shoulder + 0.12;
@@ -277,24 +334,31 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             const along = speed > 0.1 ? (pose.vx * _forward.x + pose.vy * _forward.y + pose.vz * _forward.z) / speed : 0;
             const across = speed > 0.1 ? (pose.vx * _right.x + pose.vy * _right.y + pose.vz * _right.z) / speed : 0;
             walkPhase.current += speed * dt * (pose.sprint ? 2.6 : 2.2) * (along < -0.2 ? -1 : 1);
-            const swing = Math.sin(walkPhase.current);
-            const lift = Math.cos(walkPhase.current);
+            const phase = walkPhase.current;
+            const swing = Math.sin(phase);
+            const lift = Math.cos(phase);
             const amp = (pose.sprint ? 1.15 : 0.8) * stride;
             p.legLUpper = swing * amp * Math.max(0.25, Math.abs(along));
             p.legRUpper = -p.legLUpper;
             p.legLOut = swing * amp * across * 0.45;
             p.legROut = -p.legLOut;
-            // Knees only bend on the back half of the stride (a real gait).
-            p.legLLower = -Math.max(0, -swing) * amp * 1.5;
-            p.legRLower = -Math.max(0, swing) * amp * 1.5;
+            // Knees lift through the forward swing, straighten for the heel strike
+            // and bend a little to push off (bodyMotion.ts).
+            const kneeAmp = amp * (pose.sprint ? 1.35 : 1.15);
+            p.legLLower = gaitKnee(phase, kneeAmp);
+            p.legRLower = gaitKnee(phase + Math.PI, kneeAmp);
             p.armLUpper = -swing * amp * 0.85;
             p.armRUpper = swing * amp * 0.85;
-            p.armLLower = Math.max(0, -swing) * amp * 0.7 + 0.15 * stride;
-            p.armRLower = Math.max(0, swing) * amp * 0.7 + 0.15 * stride;
+            // Elbows: a loose bend walking, bent and pumping at a sprint.
+            const elbow = (pose.sprint ? 1.05 : 0.18) * Math.min(1, stride);
+            p.armLLower = elbow + Math.max(0, -swing) * amp * (pose.sprint ? 0.35 : 0.6);
+            p.armRLower = elbow + Math.max(0, swing) * amp * (pose.sprint ? 0.35 : 0.6);
+            // Highest as the legs pass, lowest at full stride; the weight shifts
+            // onto each planted foot in turn.
             p.bodyY = Math.abs(lift) * 0.045 * stride;
             p.bodyTwist = -swing * 0.16 * stride;
             p.bodyLean = -(pose.sprint ? 0.22 : 0.06 * stride) * along;
-            p.bodyRoll = -across * stride * 0.06;
+            p.bodyRoll = -across * stride * 0.06 + lift * 0.035 * Math.min(1, stride);
 
             if (pose.sneak) {
                 const crouch = crouchPose();
@@ -321,6 +385,16 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                 p.armLLower = 0.12; p.armRLower = 0.12;
                 p.armLOut = -0.08; p.armROut = 0.08;
             }
+            if (turn.shuffle > 0.01 && speed < 0.6) {
+                // Turning on the spot: small steps round instead of pivoting on frozen feet.
+                const sh = turn.shuffle;
+                const step = Math.sin(turn.shufflePhase);
+                p.legLUpper += step * 0.32 * sh;
+                p.legRUpper -= step * 0.32 * sh;
+                p.legLLower += gaitKnee(turn.shufflePhase, 0.5 * sh);
+                p.legRLower += gaitKnee(turn.shufflePhase + Math.PI, 0.5 * sh);
+                p.bodyY += (Math.abs(Math.cos(turn.shufflePhase)) - 0.5) * 0.02 * sh;
+            }
         }
 
         // Landing squash rides on top of whatever clip is playing.
@@ -339,8 +413,12 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         p.headPitch += action === 'roll' ? -pose.pitch * 0.55 : headLookPitch(pose.pitch, p.bodyLean + p.torsoLean);
         // In the free view the body and the aim come apart, so the head makes up
         // the difference (as far as a neck goes) and the character keeps watching
-        // where you are looking while it runs somewhere else.
-        if (action !== 'roll') p.headYaw += headLookYaw(pose.lookYaw - pose.yaw);
+        // where you are looking while it runs somewhere else. The hips trailing
+        // the aim are made up the same way, the chest taking a share of it.
+        if (action !== 'roll') {
+            p.bodyTwist += aimLag * 0.35;
+            p.headYaw += Math.max(-1.3, Math.min(1.3, aimLag * 0.65 + headLookYaw(pose.lookYaw - pose.yaw)));
+        }
 
         // A hit knocks the chest back for a beat.
         if (hurt) {
@@ -398,10 +476,9 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             blendRate = 20;
         }
 
-        // --- Blend the live pose toward the target and write it to the rig.
-        const k = 1 - Math.exp(-blendRate * dt);
+        // --- Spring the live pose toward the target and write it to the rig.
         const l = live.current;
-        for (const key of POSE_KEYS) l[key] += (p[key] - l[key]) * k;
+        springPose(l, liveVelocity.current, p, POSE_KEYS, blendRate, dt);
 
         pivot.position.set(0, PIVOT_Y, 0);
         body.position.set(0, -PIVOT_Y + l.bodyY, l.bodyZ);
@@ -449,6 +526,8 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                 if (!original) {
                     original = { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite, alphaTest: material.alphaTest };
                     fadeMaterials.current.set(material, original);
+                    // First sight of this part (armor and items swap in): world light it.
+                    applyEntityLighting(material, { kind: 'uniform', light: bodyLight });
                 }
                 const fading = opacity < 0.999;
                 if (material.alphaHash !== fading) {

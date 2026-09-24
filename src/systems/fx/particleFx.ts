@@ -28,6 +28,11 @@ export interface FxBurst {
     gravity: number;
     /** Per-second velocity damping (0..1 retained-per-second-ish). */
     drag: number;
+    /**
+     * HDR brightness (1 = as authored). The Magnetic Warden's effects run hot so
+     * the bloom catches them; Resonant effects never raise it (no-glow rule).
+     */
+    glow: number;
 }
 
 type Listener = (b: FxBurst) => void;
@@ -54,6 +59,7 @@ class ParticleFx {
             life: 0.8,
             gravity: 6,
             drag: 0.6,
+            glow: 1,
             ...b,
         };
         for (const fn of this.listeners) fn(full);

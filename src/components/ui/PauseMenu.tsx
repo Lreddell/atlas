@@ -13,6 +13,7 @@ import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/gr
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
     type CloudQuality, type GraphicsConfig, type GraphicsPresetId, type GraphicsQuality, type ShadowQuality,
+    type ShadowStyle, type VisualStyle,
 } from '../../systems/graphics/graphicsSettings';
 
 const TUTORIAL_SCREEN_SEEN_KEY = 'atlas.tutorial.screenSeen.v2';
@@ -23,6 +24,8 @@ const QUALITY_LABELS: Record<GraphicsQuality, string> = {
 const SHADOW_LABELS: Record<ShadowQuality, string> = { off: 'OFF', low: 'Low', medium: 'Medium', high: 'High' };
 const SHADOW_CYCLE: readonly ShadowQuality[] = ['off', 'low', 'medium', 'high'];
 const PIXEL_RATIO_CYCLE: readonly GraphicsConfig['maxPixelRatio'][] = [1, 1.5, 2];
+const VISUAL_STYLE_LABELS: Record<VisualStyle, string> = { luminous: 'Luminous', classic: 'Classic' };
+const SHADOW_STYLE_LABELS: Record<ShadowStyle, string> = { soft: 'Soft', pixel: 'Pixel' };
 
 const nextInCycle = <T,>(cycle: readonly T[], current: T): T => cycle[(cycle.indexOf(current) + 1) % cycle.length];
 const nextPresetAfter = (preset: GraphicsPresetId): GraphicsPresetId => nextInCycle(GRAPHICS_PRESET_ORDER, preset);
@@ -264,6 +267,18 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                         ? `Custom, based on ${QUALITY_LABELS[graphics.state.preset]}. Click to pick a preset again.`
                         : 'Low, Medium, High or Ultra. Changing an option below switches to Custom.'}
                 </p>
+                {/* A look, not a cost: it sits beside the presets and never makes them Custom. */}
+                <MenuButton
+                    label={`Visual Style: ${VISUAL_STYLE_LABELS[gfx.visualStyle]}`}
+                    tooltip="Luminous is the new lighting, sky and effects; Classic is how Atlas looked before them"
+                    onClick={() => graphicsSettings.setOption('visualStyle', gfx.visualStyle === 'classic' ? 'luminous' : 'classic')}
+                    width="w-[33rem]"
+                />
+                <p className="text-xs font-pixel text-gray-300 text-shadow-md">
+                    {gfx.visualStyle === 'classic'
+                        ? 'The original look: flat light, the old sky and fog, no glow or post effects.'
+                        : 'Warm light, cool shadows, sky-matched haze and glow.'}
+                </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -299,6 +314,13 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     label={`Shadows: ${SHADOW_LABELS[gfx.shadows]}`}
                     onClick={() => graphicsSettings.setOption('shadows', nextInCycle(SHADOW_CYCLE, gfx.shadows))}
                     width="w-64"
+                />
+                <MenuButton
+                    label={`Shadow Style: ${SHADOW_STYLE_LABELS[gfx.shadowStyle]}`}
+                    tooltip="Soft edges, or crisp shadows stepped on the same 16-pixel grid as the textures"
+                    onClick={() => graphicsSettings.setOption('shadowStyle', gfx.shadowStyle === 'pixel' ? 'soft' : 'pixel')}
+                    width="w-64"
+                    disabled={gfx.shadows === 'off'}
                 />
                 <MCToggle
                     label="Clouds" value={gfx.clouds !== 'off'} width="w-64"

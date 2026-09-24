@@ -29,6 +29,13 @@ import { dynamicLights, type DynamicLight } from '../systems/graphics/dynamicLig
 // sector is the Lash cone, the Draw disc is the Repel radius, the Charge lane is
 // the lunge lane, the plunge disc is the impact radius, and the beat ring counts
 // the metronome down.
+//
+// Glow: every effect is drawn in scene-linear HDR (its colour times a GLOW
+// level), so the post pipeline's bloom haloes it: the core, eye and shards,
+// the tower beams, columns and crystals, the shield and every telegraph. Lines
+// and rings add light (additive), filled telegraphs stay painted over the
+// floor so they read on any ground. (The Warden is magnetic, not Resonant: the
+// vault's no-glow rule doesn't apply to it.)
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -47,6 +54,27 @@ const _polarity = new THREE.Color();
 
 const ease = (t: number): number => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 const polarityHex = (p: number): number => (p > 0 ? POLARITY_RED : POLARITY_BLUE);
+
+// HDR brightness of each kind of effect (1 = plain colour, no bloom).
+const GLOW = {
+    eye: 5,
+    core: 3.2,
+    shard: 2.2,
+    beam: 2.6,
+    column: 1.8,
+    crystal: 3,
+    shield: 2.4,
+    aura: 2.2,
+    ring: 2.6,
+    fill: 1.7,
+    lane: 1.25,
+    tip: 2.4,
+} as const;
+
+/** Sets an effect material's colour at an HDR glow level. */
+const setGlow = (material: THREE.Material, hex: number, level: number): void => {
+    (material as THREE.MeshBasicMaterial).color.setHex(hex).multiplyScalar(level);
+};
 
 function drawBeam(m: THREE.Mesh, fx: number, fy: number, fz: number, tx: number, ty: number, tz: number, thickness: number, opacity: number): void {
     _dir.set(tx - fx, ty - fy, tz - fz);
@@ -98,7 +126,7 @@ export const MagneticWardenRenderer: React.FC = () => {
         chiseled: new THREE.MeshLambertMaterial({ color: CHISELED }),
         shard: new THREE.MeshLambertMaterial({ color: CHISELED, emissive: new THREE.Color(CHARGED), emissiveIntensity: 0.35 }),
         core: new THREE.MeshLambertMaterial({ color: 0x1a1426, emissive: new THREE.Color(POLARITY_RED), emissiveIntensity: 1.2 }),
-        eye: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+        eye: new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(GLOW.eye) }),
     }), []);
     useEffect(() => () => { for (const m of Object.values(materials)) m.dispose(); }, [materials]);
     // The core glow is a registry light (no scene light, so no shader recompiles
@@ -150,9 +178,9 @@ export const MagneticWardenRenderer: React.FC = () => {
         materials.plate.color.copy(_color);
         materials.core.emissive.copy(_polarity);
         const corePulse = 0.85 + 0.35 * Math.sin(t * (action === 'spiral' ? 9 : 4));
-        materials.core.emissiveIntensity = reeling ? 0.25 + 0.2 * (Math.sin(t * 23) > 0 ? 1 : 0) : corePulse * (snap.drawActive ? 1.6 : 1);
+        materials.core.emissiveIntensity = GLOW.core * (reeling ? 0.25 + 0.2 * (Math.sin(t * 23) > 0 ? 1 : 0) : corePulse * (snap.drawActive ? 1.6 : 1));
         materials.shard.emissive.copy(_polarity);
-        materials.shard.emissiveIntensity = action === 'spiral' ? 0.9 : 0.35;
+        materials.shard.emissiveIntensity = GLOW.shard * (action === 'spiral' ? 0.9 : 0.35);
         if (coreLightRef.current) {
             coreLightRef.current.color.copy(_polarity);
             coreLightRef.current.intensity = reeling ? 0.6 : 2.4 + corePulse * 0.8;
@@ -323,7 +351,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 glow.position.set(entity.pos.x, snap.floorY + 0.04, entity.pos.z);
                 glow.scale.setScalar(WARDEN_TIMING.form3.shardRadius + 0.6);
                 const gm = glow.material as THREE.MeshBasicMaterial;
-                gm.color.setHex(polarityHex(snap.polarity));
+                setGlow(gm, polarityHex(snap.polarity), GLOW.fill);
                 gm.opacity = 0.12 + 0.08 * Math.sin(t * 5);
             }
         }
@@ -337,7 +365,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 sector.rotation.set(-Math.PI / 2, 0, entity.yaw);
                 sector.scale.setScalar(WARDEN_TIMING.lash.range);
                 const sm = sector.material as THREE.MeshBasicMaterial;
-                sm.color.setHex(0xffffff);
+                setGlow(sm, 0xffffff, GLOW.fill);
                 sm.opacity = action.endsWith('_active') ? 0.7 : 0.18 + 0.4 * raw + 0.05 * Math.sin(t * 14);
             }
         }
@@ -353,15 +381,17 @@ export const MagneticWardenRenderer: React.FC = () => {
                 lane.rotation.set(0, c.yaw + Math.PI, 0);
                 laneMesh.scale.set(c.halfWidth * 2, c.length, 1);
                 const lm = laneMesh.material as THREE.MeshBasicMaterial;
-                lm.color.setHex(0xffffff);
+                // Tinted by the Warden's polarity and kept translucent: a solid slab
+                // (white, then red) covered the floor it is warning about.
+                setGlow(lm, polarityHex(snap.polarity), GLOW.lane);
                 const flash = 0.5 + 0.5 * Math.sin(t * (6 + 24 * c.progress));
-                lm.opacity = c.phase === 'lunge' ? 0.55 : 0.12 + 0.35 * c.progress * flash;
+                lm.opacity = c.phase === 'lunge' ? 0.38 : 0.08 + 0.24 * c.progress * flash;
                 // A bright end cap creeps out to the lane's end as the windup fills.
                 const reach = c.phase === 'lunge' ? c.length : c.length * (0.2 + 0.8 * c.progress);
                 tip.position.set(0, 0.01, c.length * 0.5 - reach);
                 tip.scale.set(c.halfWidth * 2, 0.6, 1);
                 const tm = tip.material as THREE.MeshBasicMaterial;
-                tm.color.setHex(0xffffff);
+                setGlow(tm, 0xffffff, GLOW.tip);
                 tm.opacity = c.phase === 'lunge' ? 0.9 : 0.45 + 0.4 * flash;
             }
         }
@@ -375,7 +405,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 drawDisc.position.set(entity.pos.x, snap.floorY + 0.05, entity.pos.z);
                 drawDisc.scale.setScalar(WARDEN_TIMING.draw.repelRadius);
                 const dm = drawDisc.material as THREE.MeshBasicMaterial;
-                dm.color.setHex(polarityHex(snap.polarity));
+                setGlow(dm, polarityHex(snap.polarity), GLOW.fill);
                 dm.opacity = action === 'draw_active' ? 0.3 + 0.35 * pulse : 0.12 + 0.3 * raw;
                 drawRange.position.set(entity.pos.x, snap.floorY + 0.06, entity.pos.z);
                 // The field's reach contracts toward the Repel radius as the pull runs out.
@@ -384,7 +414,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                     : WARDEN_TIMING.draw.range;
                 drawRange.scale.setScalar(reach);
                 const rm = drawRange.material as THREE.MeshBasicMaterial;
-                rm.color.setHex(polarityHex(snap.polarity));
+                setGlow(rm, polarityHex(snap.polarity), GLOW.ring);
                 rm.opacity = 0.22 + 0.15 * pulse;
             }
         }
@@ -397,7 +427,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 plungeDisc.scale.setScalar(WARDEN_TIMING.plunge.impactRadius);
                 const pm = plungeDisc.material as THREE.MeshBasicMaterial;
                 const locked = action === 'plunge_drop' || snap.actionDuration - snap.actionTime <= WARDEN_TIMING.form3.slam.lockLead;
-                pm.color.setHex(locked ? 0xffffff : polarityHex(snap.polarity));
+                setGlow(pm, locked ? 0xffffff : polarityHex(snap.polarity), GLOW.fill);
                 const flash = 0.5 + 0.5 * Math.sin(t * (8 + 30 * raw));
                 pm.opacity = action === 'plunge_drop' ? 0.85 : locked ? 0.75 : 0.2 + 0.5 * raw * flash;
             }
@@ -411,7 +441,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 beatRing.position.set(entity.pos.x, snap.floorY + 0.06, entity.pos.z);
                 beatRing.scale.setScalar(2 + 4.5 * k);
                 const bm = beatRing.material as THREE.MeshBasicMaterial;
-                bm.color.setHex(polarityHex(snap.nextPolarity));
+                setGlow(bm, polarityHex(snap.nextPolarity), GLOW.ring);
                 bm.opacity = 0.3 + 0.6 * (1 - k);
             }
             const showSecond = snap.form === 3 && snap.doublePending;
@@ -421,7 +451,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 beatRing2.position.set(entity.pos.x, snap.floorY + 0.07, entity.pos.z);
                 beatRing2.scale.setScalar(2 + 4.5 * k);
                 const bm = beatRing2.material as THREE.MeshBasicMaterial;
-                bm.color.setHex(polarityHex(snap.nextPolarity));
+                setGlow(bm, polarityHex(snap.nextPolarity), GLOW.ring);
                 bm.opacity = 0.35 + 0.6 * (1 - k);
             }
         }
@@ -450,7 +480,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 const base = snap.drawActive ? 3.4 : entity.width * 1.5;
                 aura.scale.setScalar(base * (1 + 0.06 * Math.sin(t * 5) + flash * 0.7));
                 const am = aura.material as THREE.MeshBasicMaterial;
-                am.color.setHex(polarityHex(snap.polarity));
+                setGlow(am, polarityHex(snap.polarity), GLOW.aura);
                 am.opacity = 0.2 + flash * 0.4;
             }
         }
@@ -470,7 +500,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                 if (live && tower) {
                     const c = tower.crystal;
                     const flicker = tower.flux ? (Math.sin(t * 28) > 0 ? 1 : -1) : 1;
-                    (beam.material as THREE.MeshBasicMaterial).color.setHex(tower.flux ? polarityHex(tower.flux.polarity * flicker) : CHARGED);
+                    setGlow(beam.material as THREE.Material, tower.flux ? polarityHex(tower.flux.polarity * flicker) : CHARGED, GLOW.beam);
                     // The Aegis crystals feed separate wings; the active volley
                     // pulses its source beam so the route choice is visible.
                     const wing = snap.form === 2 ? (index === 1 ? -1 : 1) * 1.8 : 0;
@@ -492,10 +522,10 @@ export const MagneticWardenRenderer: React.FC = () => {
                     if (tower.flux) {
                         const k = Math.max(0, Math.min(1, (tower.flux.until - snap.fightClock) / Math.max(0.001, tower.flux.until - tower.flux.opensAt)));
                         const flicker = Math.sin(t * (10 + 30 * (1 - k))) > 0 ? tower.flux.polarity : -tower.flux.polarity;
-                        cm.color.setHex(polarityHex(flicker));
+                        setGlow(cm, polarityHex(flicker), GLOW.column);
                         cm.opacity = 0.5 + 0.35 * Math.abs(Math.sin(t * 20));
                     } else {
-                        cm.color.setHex(polarityHex(tower.polarity));
+                        setGlow(cm, polarityHex(tower.polarity), GLOW.column);
                         cm.opacity = tower.contested ? 0.4 : 0.22 + 0.06 * Math.sin(t * 3 + index);
                     }
                 }
@@ -506,7 +536,7 @@ export const MagneticWardenRenderer: React.FC = () => {
                     crystalGlow.position.set(tower.crystal.x + 0.5, tower.crystal.y + 0.5, tower.crystal.z + 0.5);
                     crystalGlow.rotation.set(t * 0.8, t * 1.1, 0);
                     crystalGlow.scale.setScalar(1.1 + 0.12 * Math.sin(t * 5 + index));
-                    (crystalGlow.material as THREE.MeshBasicMaterial).color.setHex(tower.flux ? polarityHex(tower.flux.polarity) : CHARGED);
+                    setGlow(crystalGlow.material as THREE.Material, tower.flux ? polarityHex(tower.flux.polarity) : CHARGED, GLOW.crystal);
                 }
             }
         }
@@ -583,7 +613,7 @@ export const MagneticWardenRenderer: React.FC = () => {
             </mesh>
             <mesh ref={drawRangeRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <ringGeometry args={[0.965, 1, 72]} />
-                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
+                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
             <mesh ref={plungeDiscRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <circleGeometry args={[1, 40]} />
@@ -591,35 +621,35 @@ export const MagneticWardenRenderer: React.FC = () => {
             </mesh>
             <mesh ref={beatRingRef} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <ringGeometry args={[0.9, 1, 64]} />
-                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
+                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
             <mesh ref={beatRing2Ref} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={3}>
                 <ringGeometry args={[0.9, 1, 64]} />
-                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} />
+                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.5} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
             {/* Shield shimmer, field aura */}
             <mesh ref={shieldRef} visible={false}>
                 <sphereGeometry args={[1, 16, 12]} />
-                <meshBasicMaterial color={SHIELD} wireframe transparent opacity={0.3} />
+                <meshBasicMaterial color={new THREE.Color(SHIELD).multiplyScalar(GLOW.shield)} wireframe transparent opacity={0.3} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
             <mesh ref={auraRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
                 <ringGeometry args={[0.82, 1, 40]} />
-                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
+                <meshBasicMaterial color={POLARITY_RED} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
             {/* The towers: crystal beams, charged columns, crystal glows */}
             {Array.from({ length: ARENA_PILLAR_COUNT }).map((_, index) => (
                 <React.Fragment key={`tower-${index}`}>
                     <mesh ref={(m) => { beamRefs.current[index] = m; }} visible={false}>
                         <cylinderGeometry args={[0.32, 0.32, 1, 10, 1, true]} />
-                        <meshBasicMaterial color={CHARGED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+                        <meshBasicMaterial color={CHARGED} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
                     </mesh>
                     <mesh ref={(m) => { towerRefs.current[index] = m; }} visible={false}>
                         <boxGeometry args={[1, 1, 1]} />
-                        <meshBasicMaterial color={POLARITY_RED} wireframe transparent opacity={0.25} depthWrite={false} />
+                        <meshBasicMaterial color={POLARITY_RED} wireframe transparent opacity={0.25} depthWrite={false} blending={THREE.AdditiveBlending} />
                     </mesh>
                     <mesh ref={(m) => { crystalGlowRefs.current[index] = m; }} visible={false}>
                         <octahedronGeometry args={[0.9, 0]} />
-                        <meshBasicMaterial color={CHARGED} wireframe transparent opacity={0.7} depthWrite={false} />
+                        <meshBasicMaterial color={CHARGED} wireframe transparent opacity={0.7} depthWrite={false} blending={THREE.AdditiveBlending} />
                     </mesh>
                 </React.Fragment>
             ))}

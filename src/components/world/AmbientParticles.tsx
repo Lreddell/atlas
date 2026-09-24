@@ -71,7 +71,7 @@ void main() {
         wiggle = vec3( sin( t * 3.1 + phase.x ), sin( t * 2.3 + phase.y ) * 0.6, cos( t * 2.7 + phase.z ) ) * 0.8;
         size = 0.06;
         alpha = step( 0.35, fract( t * 1.7 + aRand.w ) );
-        color = aRand.w > 0.5 ? vec3( 1.8, 0.32, 0.3 ) : vec3( 0.35, 0.7, 1.9 );
+        color = aRand.w > 0.5 ? vec3( 1.45, 0.28, 0.26 ) : vec3( 0.3, 0.6, 1.5 );
     }
 #else
     if ( kind < 0.5 ) {

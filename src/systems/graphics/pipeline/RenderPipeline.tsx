@@ -105,7 +105,11 @@ export const RenderPipeline: React.FC<{ plan: PipelinePlan }> = ({ plan }) => {
         composite: pass(COMPOSITE_FRAGMENT, {
             tColor: { value: null }, tBloom: { value: null }, tRays: { value: null },
             uExposure: { value: 1 }, uBloomStrength: { value: BLOOM_STRENGTH }, uRays: { value: new THREE.Vector3() },
-            uGrade: { value: new THREE.Vector4(GRADE.saturation, GRADE.contrast, GRADE.vignette, GRADE.splitTone) },
+            uGrade: {
+                value: plan.neutralGrade
+                    ? new THREE.Vector4(1, 1, 0, 0)
+                    : new THREE.Vector4(GRADE.saturation, GRADE.contrast, GRADE.vignette, GRADE.splitTone),
+            },
             uShadowTint: { value: GRADE.shadowTint }, uHighlightTint: { value: GRADE.highlightTint },
             uTime: { value: 0 },
         }, {
@@ -115,7 +119,7 @@ export const RenderPipeline: React.FC<{ plan: PipelinePlan }> = ({ plan }) => {
         }),
         fxaa: pass(FXAA_FRAGMENT, { tColor: { value: null }, uTexel: { value: new THREE.Vector2() } }),
         copy: pass(COPY_FRAGMENT, { tColor: { value: null } }),
-    }), [bloomLevels, plan.godRays]);
+    }), [bloomLevels, plan.godRays, plan.neutralGrade]);
 
     const quad = useMemo(() => {
         const geometry = new THREE.BufferGeometry();

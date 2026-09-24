@@ -9,7 +9,6 @@ import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
 import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
-import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { isMagneticMetalItem } from '../systems/registry/metalItems';
 import {
@@ -19,6 +18,7 @@ import {
     type MagnetSource,
 } from '../systems/player/magneticField';
 import { applyMagneticFieldToVelocity } from '../systems/player/dropMagnetism';
+import { applyEntityLighting } from '../systems/graphics/materials/entityLighting';
 import {
     PICKUP_FLIGHT_MS,
     PICKUP_TARGET_HEIGHT,
@@ -38,16 +38,15 @@ interface DropManagerProps {
     /** performance.now() before which pickup and pull stay off (respawn grace). */
     pickupLockUntilRef?: React.MutableRefObject<number>;
     isPaused: boolean;
-    brightness: number;
+    /** Unused: the Brightness option reaches drops through the shared world light. */
+    brightness?: number;
 }
 
-// Shader injection for Drops - Matching HeldItem/Entity logic
+// Drops carry their voxel light in the instance colour (r sky, g block) and are
+// lit like the blocks around them (entityLighting.ts); b < 0.9 marks a drop
+// burning in lava, tinted red.
 const setupDropMaterial = (mat: THREE.MeshLambertMaterial) => {
     mat.onBeforeCompile = (shader) => {
-        // Uniforms for lighting control
-        shader.uniforms.uSunlight = { value: 1.0 };
-        shader.uniforms.uBrightness = { value: 0.5 };
-        
         shader.vertexShader = shader.vertexShader.replace(
             '#include <color_vertex>',
             `#include <color_vertex>
@@ -55,49 +54,16 @@ const setupDropMaterial = (mat: THREE.MeshLambertMaterial) => {
                 vColor = instanceColor;
             #endif`
         );
-
-        shader.fragmentShader = `
-            uniform float uSunlight;
-            uniform float uBrightness;
-            vec3 myTorchBaseColor;
-            ${shader.fragmentShader}
-        `;
-
-        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '');
-
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <map_fragment>',
-            `#ifdef USE_MAP
-                vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-                diffuseColor *= sampledDiffuseColor;
-            #endif
-
-            // Apply Burning Red Tint if vColor.b < 0.9
+            `#include <map_fragment>
             if (vColor.b < 0.9) {
                  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.2, 0.2), 0.7);
-            }
-
-            myTorchBaseColor = diffuseColor.rgb;
-
-            // Light Calculation (Entity Style)
-            float minLight = 0.05 + (uBrightness * 0.25);
-            float skyFactor = max(vColor.r * uSunlight, minLight);
-            diffuseColor.rgb *= skyFactor;
-            `
+            }`
         );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <lights_fragment_end>',
-            `#include <lights_fragment_end>
-            
-            float torchIntensity = clamp(vColor.g, 0.0, 1.0);
-            float torchGlow = pow(torchIntensity, 1.8);
-            reflectedLight.directDiffuse += myTorchBaseColor * (torchGlow * 0.85);
-            `
-        );
-
-        mat.userData.shader = shader;
     };
+    mat.customProgramCacheKey = () => 'atlas-drop-v2';
+    applyEntityLighting(mat, { kind: 'instance' });
 };
 
 const MAX_DROPS_PER_TYPE = 128; // Buffer size for instances
@@ -126,7 +92,7 @@ function poseDrop(dummy: THREE.Object3D, time: number, phase: number, is2D: bool
     dummy.position.y += Math.sin(time * 2.6 + phase) * 0.08 * hover;
 }
 
-const DropGroup: React.FC<{ type: BlockType, drops: Drop[], ghosts: PickupGhost[], playerPos: THREE.Vector3, burningDrops: React.MutableRefObject<Map<string, number>>, isPaused: boolean, brightness: number }> = ({ type, drops, ghosts, playerPos, burningDrops, isPaused, brightness }) => {
+const DropGroup: React.FC<{ type: BlockType, drops: Drop[], ghosts: PickupGhost[], playerPos: THREE.Vector3, burningDrops: React.MutableRefObject<Map<string, number>>, isPaused: boolean }> = ({ type, drops, ghosts, playerPos, burningDrops, isPaused }) => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -213,16 +179,6 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], ghosts: PickupGhost[
     useFrame((state, _) => {
         if (isPaused) return; // Pause rendering updates for drops
         if (!meshRef.current || !material) return;
-        
-        // Update Sunlight Uniform
-        if (material.userData.shader) {
-            if (material.userData.shader.uniforms.uSunlight) {
-                material.userData.shader.uniforms.uSunlight.value = globalSunlightValue;
-            }
-            if (material.userData.shader.uniforms.uBrightness) {
-                material.userData.shader.uniforms.uBrightness.value = brightness;
-            }
-        }
 
         let i = 0;
         const now = Date.now();
@@ -316,7 +272,7 @@ interface MagnetSourceCacheEntry {
     sources: MagnetSource[];
 }
 
-export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, pickupsBlocked = false, pickupLockUntilRef, isPaused, brightness }) => {
+export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCollect, onDestroy, pickupsBlocked = false, pickupLockUntilRef, isPaused }) => {
     // Map of ID -> Timestamp when burning started
     const burningDrops = useRef<Map<string, number>>(new Map());
     const magnetSourceCache = useRef<Map<string, MagnetSourceCacheEntry>>(new Map());
@@ -515,7 +471,7 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
     return (
         <group>
             {[...groupTypes].map(t => (
-                <DropGroup key={t} type={t} drops={dropsByType[t] ?? NO_DROPS} ghosts={pickupGhosts.current} playerPos={playerPos} burningDrops={burningDrops} isPaused={isPaused} brightness={brightness} />
+                <DropGroup key={t} type={t} drops={dropsByType[t] ?? NO_DROPS} ghosts={pickupGhosts.current} playerPos={playerPos} burningDrops={burningDrops} isPaused={isPaused} />
             ))}
         </group>
     );

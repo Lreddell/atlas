@@ -560,7 +560,7 @@ class MagneticWardenEncounter {
                 if (entityManager.tryDamagePlayer(WARDEN_TIMING.charge.damage, fx, fz, 'attack')) {
                     entityManager.impulsePlayer(fx * 11, 7, fz * 11);
                     addTrauma(0.6);
-                    particleFx.burst({ x: player.x, y: player.y + 1, z: player.z, color: polarityFxColor(s.polarity), color2: [1, 1, 1], count: 24, speed: 8, upBias: 3, spread: 1, size: 0.26, life: 0.6, gravity: 5, drag: 1.1 });
+                    particleFx.burst({ glow: 1.8, x: player.x, y: player.y + 1, z: player.z, color: polarityFxColor(s.polarity), color2: [1, 1, 1], count: 24, speed: 8, upBias: 3, spread: 1, size: 0.26, life: 0.6, gravity: 5, drag: 1.1 });
                     gameEvents.emit('boss:charge', { bossId: MAGNETIC_WARDEN_BOSS_ID, entityId: entity.id, phase: 'hit' });
                 }
             }
@@ -574,7 +574,7 @@ class MagneticWardenEncounter {
                     this.shardCooldown = WARDEN_TIMING.form3.shardCooldown;
                     const d = Math.hypot(dx, dz) || 1;
                     if (entityManager.tryDamagePlayer(WARDEN_TIMING.form3.shardDamage, dx / d, dz / d, 'contact')) {
-                        particleFx.burst({ x: shard.x, y: shard.y, z: shard.z, color: polarityFxColor(s.polarity), color2: [1, 1, 1], count: 12, speed: 6, upBias: 2, spread: 1, size: 0.22, life: 0.5, gravity: 5, drag: 1.2 });
+                        particleFx.burst({ glow: 1.8, x: shard.x, y: shard.y, z: shard.z, color: polarityFxColor(s.polarity), color2: [1, 1, 1], count: 12, speed: 6, upBias: 2, spread: 1, size: 0.22, life: 0.5, gravity: 5, drag: 1.2 });
                     }
                     break;
                 }
@@ -634,7 +634,7 @@ class MagneticWardenEncounter {
                     }
                     if (event.action === 'charge_active') {
                         gameEvents.emit('boss:charge', { bossId, entityId, phase: 'lunge' });
-                        particleFx.burst({ x: entity.pos.x, y: entity.pos.y + 0.6, z: entity.pos.z, color: polarityFxColor(this.state.polarity), color2: FX_CHARGED, count: 26, speed: 7, upBias: 1, spread: 0.7, dir: [-Math.sin(this.facingYaw), 0.2, -Math.cos(this.facingYaw)], size: 0.26, life: 0.6, gravity: 4, drag: 1.2 });
+                        particleFx.burst({ glow: 1.8, x: entity.pos.x, y: entity.pos.y + 0.6, z: entity.pos.z, color: polarityFxColor(this.state.polarity), color2: FX_CHARGED, count: 26, speed: 7, upBias: 1, spread: 0.7, dir: [-Math.sin(this.facingYaw), 0.2, -Math.cos(this.facingYaw)], size: 0.26, life: 0.6, gravity: 4, drag: 1.2 });
                     }
                     if (event.action === 'swap_windup') {
                         // The towers destabilise with the Warden: their window opens now.
@@ -750,6 +750,7 @@ class MagneticWardenEncounter {
                     entity.hp = this.state.hp;
                     entity.hurtUntil = Date.now() + 180;
                     particleFx.burst({
+                        glow: 1.8,
                         x: entity.pos.x, y: entity.pos.y + entity.height * 0.6, z: entity.pos.z,
                         color: FX_CHARGED, color2: [1, 1, 1], count: event.slam ? 40 : event.punish ? 22 : 12, speed: event.slam ? 10 : 6, upBias: 2, spread: 1, size: 0.24, life: 0.6, gravity: 5, drag: 1,
                     });
@@ -764,6 +765,7 @@ class MagneticWardenEncounter {
                         const d = Math.hypot(dx, dz) || 1;
                         entityManager.impulsePlayer((dx / d) * 7, 2.5, (dz / d) * 7);
                         particleFx.burst({
+                            glow: 1.8,
                             x: entity.pos.x + (dx / d) * entity.width * 0.6, y: entity.pos.y + entity.height * 0.55, z: entity.pos.z + (dz / d) * entity.width * 0.6,
                             color: polarityFxColor(this.state.polarity), color2: [1, 1, 1], count: 14, speed: 5, upBias: 1, spread: 0.6, dir: [dx / d, 0.3, dz / d], size: 0.22, life: 0.45, gravity: 3, drag: 1.3,
                         });
@@ -817,8 +819,8 @@ class MagneticWardenEncounter {
         }
         this.crashTarget = null;
         addTrauma(0.8);
-        particleFx.burst({ x: entity.pos.x, y: entity.pos.y + entity.height * 0.6, z: entity.pos.z, color: polarityFxColor(this.state.polarity), color2: [1, 1, 1], count: 60, speed: 12, upBias: 5, spread: 1, size: 0.32, life: 1.1, gravity: 4, drag: 0.7 });
-        particleFx.burst({ x: entity.pos.x, y: entity.pos.y + entity.height * 0.6, z: entity.pos.z, color: FX_CHARGED, color2: [1, 0.9, 1], count: 40, speed: 7, upBias: 6, spread: 1, size: 0.28, life: 1.5, gravity: 2, drag: 0.6 });
+        particleFx.burst({ glow: 1.8, x: entity.pos.x, y: entity.pos.y + entity.height * 0.6, z: entity.pos.z, color: polarityFxColor(this.state.polarity), color2: [1, 1, 1], count: 60, speed: 12, upBias: 5, spread: 1, size: 0.32, life: 1.1, gravity: 4, drag: 0.7 });
+        particleFx.burst({ glow: 1.8, x: entity.pos.x, y: entity.pos.y + entity.height * 0.6, z: entity.pos.z, color: FX_CHARGED, color2: [1, 0.9, 1], count: 40, speed: 7, upBias: 6, spread: 1, size: 0.28, life: 1.5, gravity: 2, drag: 0.6 });
         this.emitForm(entity, form);
         gameEvents.emit('boss:phase', { bossId: MAGNETIC_WARDEN_BOSS_ID, entityId: entity.id, phase: form });
     }
@@ -856,7 +858,7 @@ class MagneticWardenEncounter {
                 homing: spec.homing,
             });
         }
-        particleFx.burst({ x: ox, y: oy, z: oz, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 14, speed: 4, upBias: 1, spread: 0.5, dir: [dx / d, dy / d, dz / d], size: 0.22, life: 0.4, gravity: 2, drag: 1.5 });
+        particleFx.burst({ glow: 1.8, x: ox, y: oy, z: oz, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 14, speed: 4, upBias: 1, spread: 0.5, dir: [dx / d, dy / d, dz / d], size: 0.22, life: 0.4, gravity: 2, drag: 1.5 });
     }
 
     private fireSpiralBolt(entity: Entity, spec: { angle: number; speed: number; damage: number; ttl: number; homing: number; polarity: WardenPolarity }): void {
@@ -885,7 +887,7 @@ class MagneticWardenEncounter {
                 vx: (dx / d) * spec.speed, vy: (dy / d) * spec.speed, vz: (dz / d) * spec.speed,
                 ttl: spec.ttl, damage: spec.damage, polarity: spec.polarity, sourceId: entity.id, kind: 'spiral', homing: spec.homing,
             });
-            particleFx.burst({ x: shard.x, y: shard.y, z: shard.z, color: polarityFxColor(spec.polarity), color2: [1, 1, 1], count: 8, speed: 4, upBias: 0.5, spread: 0.6, dir: [dx / d, dy / d, dz / d], size: 0.2, life: 0.4, gravity: 2, drag: 1.5 });
+            particleFx.burst({ glow: 1.8, x: shard.x, y: shard.y, z: shard.z, color: polarityFxColor(spec.polarity), color2: [1, 1, 1], count: 8, speed: 4, upBias: 0.5, spread: 0.6, dir: [dx / d, dy / d, dz / d], size: 0.2, life: 0.4, gravity: 2, drag: 1.5 });
         }
     }
 
@@ -895,6 +897,7 @@ class MagneticWardenEncounter {
         for (let index = 0; index < 8; index += 1) {
             const a = entity.yaw + (index / 7 - 0.5) * halfAngle * 2;
             particleFx.burst({
+                glow: 1.8,
                 x: entity.pos.x + Math.sin(a) * 1.4, y: entity.pos.y + 1.2, z: entity.pos.z + Math.cos(a) * 1.4,
                 color: col, color2: [1, 1, 1], count: 4, speed: 9, upBias: 0.5, spread: 0.3, dir: [Math.sin(a), 0.1, Math.cos(a)], size: 0.24, life: 0.45, gravity: 4, drag: 1.4,
             });
@@ -910,6 +913,7 @@ class MagneticWardenEncounter {
         for (let index = 0; index < 16; index += 1) {
             const a = (index / 16) * Math.PI * 2;
             particleFx.burst({
+                glow: 1.8,
                 x: entity.pos.x + Math.cos(a) * 1.2, y: entity.pos.y + 1.0, z: entity.pos.z + Math.sin(a) * 1.2,
                 color: col, color2: [1, 1, 1], count: 4, speed: 10, upBias: 1.5, spread: 0.4, dir: [Math.cos(a), 0.3, Math.sin(a)], size: 0.26, life: 0.6, gravity: 6, drag: 1.2,
             });
@@ -1021,11 +1025,11 @@ class MagneticWardenEncounter {
                 const centre = this.centre(entity);
                 climbSurfaces.setFlux({ id: this.zoneId(index), min: bounds.min, max: bounds.max, polarity, opensAt: -1, until: -1, safeTarget: { x: centre.x, z: centre.z } });
             }
-            particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: [1, 1, 1], color2: FX_CHARGED, count: 40, speed: 8, upBias: 3, spread: 1, size: 0.3, life: 0.9, gravity: 5, drag: 0.8 });
+            particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: [1, 1, 1], color2: FX_CHARGED, count: 40, speed: 8, upBias: 3, spread: 1, size: 0.3, life: 0.9, gravity: 5, drag: 0.8 });
             // A streak of charged motes leaving the Warden toward the tower.
             const dx = c.x - entity.pos.x, dy = c.y - entity.pos.y, dz = c.z - entity.pos.z;
             const d = Math.hypot(dx, dy, dz) || 1;
-            particleFx.burst({ x: entity.pos.x, y: entity.pos.y + 1.5, z: entity.pos.z, color: FX_CHARGED, color2: [1, 1, 1], count: 16, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
+            particleFx.burst({ glow: 1.8, x: entity.pos.x, y: entity.pos.y + 1.5, z: entity.pos.z, color: FX_CHARGED, color2: [1, 1, 1], count: 16, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
         }
         if (edits.length > 0) worldManager.setBlocks(edits);
     }
@@ -1046,7 +1050,7 @@ class MagneticWardenEncounter {
             if (!zone) continue;
             climbSurfaces.setFlux({ ...zone, polarity, opensAt: now, until: now + seconds });
             const c = this.arena.crystals[index];
-            if (c) particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 18, speed: 5, upBias: 2, spread: 1, size: 0.24, life: 0.7, gravity: 2, drag: 1 });
+            if (c) particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 18, speed: 5, upBias: 2, spread: 1, size: 0.24, life: 0.7, gravity: 2, drag: 1 });
         }
         gameEvents.emit('boss:towers', { bossId: MAGNETIC_WARDEN_BOSS_ID, entityId: entity.id, towers: towers.slice(), polarity, phase: 'flux', until: now + seconds });
     }
@@ -1065,7 +1069,7 @@ class MagneticWardenEncounter {
                 climbSurfaces.setFlux({ ...zone, polarity, opensAt, until });
             }
             const c = this.arena.crystals[index];
-            if (c) particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 30, speed: 8, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 3, drag: 0.9 });
+            if (c) particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: polarityFxColor(polarity), color2: [1, 1, 1], count: 30, speed: 8, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 3, drag: 0.9 });
         }
         const zone = climbSurfaces.get(this.zoneId(towers[0]));
         gameEvents.emit('boss:towers', { bossId: MAGNETIC_WARDEN_BOSS_ID, entityId: entity.id, towers: towers.slice(), polarity, phase: 'flipped', until: zone ? zone.until : climbSurfaces.clock });
@@ -1074,11 +1078,11 @@ class MagneticWardenEncounter {
     private crystalLostFx(index: number, entity: Entity): void {
         const c = this.arena?.crystals[index];
         if (!c) return;
-        particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 44, speed: 10, upBias: 4, spread: 1, size: 0.3, life: 0.9, gravity: 5, drag: 1 });
+        particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 44, speed: 10, upBias: 4, spread: 1, size: 0.3, life: 0.9, gravity: 5, drag: 1 });
         // The shield's light snaps back from the tower into the core.
         const dx = entity.pos.x - c.x, dy = entity.pos.y - c.y, dz = entity.pos.z - c.z;
         const d = Math.hypot(dx, dy, dz) || 1;
-        particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 14, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
+        particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 14, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
     }
 
     /** A felled tower goes dark once the climber is clear of it (never from under their feet). */
@@ -1112,11 +1116,11 @@ class MagneticWardenEncounter {
             if (worldManager.hasChunk(Math.floor(c.x / 16), Math.floor(c.z / 16))
                 && worldManager.getBlock(c.x, c.y, c.z, false) === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
                 edits.push({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR });
-                particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 30, speed: 7, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 4, drag: 0.9 });
+                particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 30, speed: 7, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 4, drag: 0.9 });
                 if (entity) {
                     const dx = entity.pos.x - c.x, dy = entity.pos.y - c.y, dz = entity.pos.z - c.z;
                     const d = Math.hypot(dx, dy, dz) || 1;
-                    particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 14, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
+                    particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 14, speed: 18, upBias: 0, spread: 0.08, dir: [dx / d, dy / d, dz / d], size: 0.26, life: 2.2, gravity: 0, drag: 0 });
                 }
             }
         }
@@ -1264,6 +1268,7 @@ class MagneticWardenEncounter {
         for (let index = 0; index < count; index += 1) {
             const a = (index / count) * Math.PI * 2;
             particleFx.burst({
+                glow: 1.8,
                 x: x + Math.cos(a) * 1.4, y: y + 0.3, z: z + Math.sin(a) * 1.4,
                 color: col, color2: [1, 1, 1], count: 5, speed: 8, upBias: 1.5, spread: 0.5,
                 dir: [Math.cos(a), 0.25, Math.sin(a)], size: 0.3, life: 0.7, gravity: 9, drag: 1.4,
@@ -1273,6 +1278,7 @@ class MagneticWardenEncounter {
 
     private polarityFx(entity: Entity, polarity: number): void {
         particleFx.burst({
+            glow: 1.8,
             x: entity.pos.x, y: entity.pos.y + entity.height * 0.5, z: entity.pos.z,
             color: polarityFxColor(polarity), color2: [1, 1, 1], count: 36, speed: 9, upBias: 2, spread: 1, size: 0.26, life: 0.8, gravity: 2, drag: 0.9,
         });
@@ -1281,6 +1287,7 @@ class MagneticWardenEncounter {
     private drawFx(entity: Entity): void {
         // Motes drawn inward: the field lines converging on the Warden.
         particleFx.burst({
+            glow: 1.8,
             x: entity.pos.x, y: entity.pos.y + entity.height * 0.5, z: entity.pos.z,
             color: polarityFxColor(this.state.polarity), color2: FX_CHARGED, count: 40, speed: 9, upBias: 0, spread: 1, size: 0.22, life: 1.4, gravity: -1, drag: 2.2,
         });
@@ -1292,7 +1299,7 @@ class MagneticWardenEncounter {
         const origin = player ?? { x: entity.pos.x, y: entity.pos.y, z: entity.pos.z };
         const x = (origin.x + entity.pos.x) * 0.5, y = entity.pos.y + entity.height * 0.5, z = (origin.z + entity.pos.z) * 0.5;
         entityManager.spawnShockwave({ x, y: this.floorY(entity), z, polarity, maxRadius: landed ? 6 : 3, speed: 22, damage: 0, kind: 'slam', radius: 0.4 });
-        particleFx.burst({ x, y, z, color: [1, 1, 1], color2: polarityFxColor(polarity), count: landed ? 70 : 24, speed: landed ? 12 : 6, upBias: 3, spread: 1, size: 0.3, life: 0.9, gravity: 3, drag: 0.9 });
+        particleFx.burst({ glow: 1.8, x, y, z, color: [1, 1, 1], color2: polarityFxColor(polarity), count: landed ? 70 : 24, speed: landed ? 12 : 6, upBias: 3, spread: 1, size: 0.3, life: 0.9, gravity: 3, drag: 0.9 });
         addTrauma(landed ? 0.7 : 0.3);
         gameEvents.emit('player:slam', { x, y, z, polarity, landed, punish });
     }

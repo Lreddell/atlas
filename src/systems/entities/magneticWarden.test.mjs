@@ -687,13 +687,14 @@ test('the World Editor surfaces the Magnetic Fields boss biome + boss-field laye
     assert.match(editor, /findNearestMagneticField/);
 });
 
-test('the Magnetic Fields biome has a thick purple haze, suppressed in the cutscene', () => {
+test('the Magnetic Fields biome has a thick steel-blue haze, suppressed in the cutscene', () => {
     const dn = read('src/components/world/DayNightCycle.tsx');
-    // The haze colour and density live in the atmosphere model; DayNightCycle
-    // feeds it the biome blend and the storm.
+    // The haze colour and thickness live in the atmosphere model; DayNightCycle
+    // feeds it the biome blend and the storm. The biome pulls the haze's
+    // visibility distance in (and the storm pulls it closer still).
     const atmosphere = read('src/systems/graphics/atmosphere.ts');
     assert.match(atmosphere, /MAGNETIC_FOG_TINT/);
-    assert.match(atmosphere, /haze \+= mag \* \(/);
+    assert.match(atmosphere, /haze = mix\(haze, mix\(50, 26, clamp01\(input\.storm\)\), mag\)/);
     assert.match(dn, /magnetic: magneticFogBlendRef\.current/);
     assert.match(dn, /magneticFogBlendRef/);
     assert.match(dn, /MAGNETIC_FIELDS_BIOME_ID/);

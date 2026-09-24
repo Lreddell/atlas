@@ -11,12 +11,14 @@ import { MAGNETIC_FIELDS_BIOME_ID } from '../../systems/world/magneticFields';
 import { bossSummon } from '../../systems/boss/bossSummon';
 import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
-import { SHADOW_QUALITY_SETTINGS, type ShadowQuality } from '../../systems/graphics/graphicsSettings';
+import { SHADOW_QUALITY_SETTINGS, type ShadowQuality, type VisualStyle } from '../../systems/graphics/graphicsSettings';
 import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
+import { sampleClassicAtmosphere } from '../../systems/graphics/classicAtmosphere';
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
 import { BlockType } from '../../types';
-import { createPixelMoonTexture, createPixelSunTexture } from '../../systems/graphics/celestialSprites';
+import { createGlowTexture, createMoonPhaseTexture, createSunTexture } from '../../utils/textures';
 import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
+import { setClassicLighting, setClassicLightLevels } from '../../systems/graphics/materials/worldLighting';
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { snapShadowCenter } from '../../systems/graphics/shadows';
 import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
@@ -28,6 +30,9 @@ import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipe
 // and colour-space chunks, exactly like lit materials. The fog of every
 // material is the same atlasSkyRadiance the dome paints, so distant terrain
 // dissolves into the sky behind it with no seam.
+//
+// The Classic visual style swaps in the pre-overhaul sky, fog and lights
+// (classicAtmosphere.ts); the square sun and moon are the originals in both.
 
 // Sky dome: the shared sky function, plus a faint galaxy band that turns with the stars.
 const SKY_VERTEX = /* glsl */`
@@ -64,7 +69,7 @@ const SKY_FRAGMENT = /* glsl */`
     void main() {
         vec3 dir = normalize(vDir);
         vec3 color = atlasSkyRadiance(dir);
-        if (uStarVisibility > 0.001 && dir.y > -0.1) {
+        if (uStarVisibility > 0.001 && dir.y > -0.1 && atlasClassicSky.w < 0.5) {
             // A faint milky band around a tilted great circle, turning with the stars.
             vec3 local = uStarRotation * dir;
             float band = exp(-pow(dot(local, normalize(vec3(0.35, 0.2, 0.92))) / 0.16, 2.0));
@@ -365,12 +370,32 @@ export interface DayNightCycleRef {
     setPhase: (phaseIndex: number) => void;
 }
 
-const COL_WHITE = new THREE.Color(0xffffff);
-// Sun and moon discs, scene-linear HDR (they will feed bloom once the post
-// pipeline exists; tone mapping keeps them from clipping today).
-const SUN_DISC_COLOR = new THREE.Color(3.0, 2.7, 2.2);
-const MOON_DISC_COLOR = new THREE.Color(1.25, 1.3, 1.45);
-const BLOOD_MOON_DISC_COLOR = new THREE.Color(0.5, 0.03, 0.02);
+// The original sun and moon: tilted pixel squares with a soft glow. Their cores
+// run bright enough in Luminous to catch the bloom; Classic keeps them level
+// with the old look.
+const SUN_CORE_LUMINOUS = 2.4;
+const SUN_CORE_CLASSIC = 1.35;
+const MOON_CORE_LUMINOUS = 1.5;
+const MOON_CORE_CLASSIC = 1.1;
+const CELESTIAL_TILT = Math.PI / 8;
+const scratchGlowColor = new THREE.Color();
+
+// The old moon textures, one per phase (drawn once, not on every phase change).
+const moonPhaseTextures = new Map<number, THREE.Texture>();
+function moonPhaseTexture(phase: number): THREE.Texture | null {
+    const cached = moonPhaseTextures.get(phase);
+    if (cached) return cached;
+    const texture = createMoonPhaseTexture(phase);
+    if (!texture) return null;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    moonPhaseTextures.set(phase, texture);
+    return texture;
+}
+
+function srgbCanvasTexture(texture: THREE.Texture | null): THREE.Texture | null {
+    if (texture) texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+}
 
 // The stars turn about the axis the sun's tilted orbit turns about.
 const STAR_AXIS = new THREE.Vector3(0, -Math.sin(SUN_ORBIT_TILT), Math.cos(SUN_ORBIT_TILT)).normalize();
@@ -421,9 +446,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     isPaused: boolean,
     renderDistance: number,
     shadowQuality: ShadowQuality,
-    brightness: number // Add Brightness prop
+    brightness: number,
+    visualStyle?: VisualStyle,
 }>(({
-    isPaused, renderDistance, shadowQuality, brightness
+    isPaused, renderDistance, shadowQuality, brightness, visualStyle = 'luminous'
 }, ref) => {
     const shadowsEnabled = shadowQuality !== 'off';
     const shadowSettings = SHADOW_QUALITY_SETTINGS[shadowQuality === 'off' ? 'low' : shadowQuality];
@@ -497,7 +523,11 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         return () => { scene.onBeforeRender = previous; };
     }, [scene]);
 
-    const sunTexture = useMemo(() => createPixelSunTexture(), []);
+    const sunTexture = useMemo(() => srgbCanvasTexture(createSunTexture()), []);
+    const sunGlowTexture = useMemo(() => srgbCanvasTexture(createGlowTexture('#FFD54F')), []);
+    const moonGlowTexture = useMemo(() => srgbCanvasTexture(createGlowTexture('#FFFFFF')), []);
+    const sunGlowRef = useRef<THREE.Sprite>(null);
+    const moonGlowRef = useRef<THREE.Sprite>(null);
 
     const skyMat = useMemo(() => new THREE.ShaderMaterial({
         uniforms: {
@@ -618,12 +648,12 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const isBloodMoon = lunarEvent.isBloodMoon;
         if (isBloodMoon !== bloodMoonActive) setBloodMoonActive(isBloodMoon);
 
-        // A blood moon always shows a full red disc, whatever the phase.
+        // The moon shows its phase; a blood moon is always full, its whole face burning red.
         const shownPhase = isBloodMoon ? 4 : phaseIndex;
         if (moonCoreRef.current && moonCoreRef.current.userData.lastPhase !== shownPhase) {
             moonCoreRef.current.userData.lastPhase = shownPhase;
             const material = moonCoreRef.current.material as THREE.MeshBasicMaterial;
-            material.map = createPixelMoonTexture(shownPhase);
+            material.map = moonPhaseTexture(shownPhase);
             material.needsUpdate = true;
         }
 
@@ -654,15 +684,27 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         stormBlendRef.current = THREE.MathUtils.damp(stormBlendRef.current, stormTarget, 1.2, delta);
 
         // --- One sampled atmosphere drives the sky, fog, lights and exposure. ---
-        const state = sampleAtmosphere({
-            ticks,
-            lunar: { phaseIndex, isBloodMoon },
-            magnetic: magneticFogBlendRef.current,
-            storm: stormBlendRef.current,
-            renderDistanceChunks: renderDistance,
-            chunkSize: CHUNK_SIZE,
-        }, atmosphere);
+        const classic = visualStyle === 'classic';
+        const state = classic
+            ? sampleClassicAtmosphere({
+                ticks,
+                lunar: lunarEvent,
+                magnetic: magneticFogBlendRef.current,
+                storm: stormBlendRef.current,
+                renderDistanceChunks: renderDistance,
+                chunkSize: CHUNK_SIZE,
+            }, atmosphere)
+            : sampleAtmosphere({
+                ticks,
+                lunar: { phaseIndex, isBloodMoon },
+                magnetic: magneticFogBlendRef.current,
+                storm: stormBlendRef.current,
+                renderDistanceChunks: renderDistance,
+                chunkSize: CHUNK_SIZE,
+            }, atmosphere);
         applyAtmosphereUniforms(state);
+        setClassicLighting(classic);
+        setClassicLightLevels(state.classicSunlight, brightness);
         const exposure = state.exposure * TONE_MAPPING_EXPOSURE_TRIM;
         gl.toneMappingExposure = exposure;
 
@@ -671,9 +713,12 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const inLava = cellType === BlockType.LAVA;
         const inFluid = inLava || cellType === BlockType.WATER;
         if (inFluid) mediumIsLavaRef.current = inLava;
-        mediumBlendRef.current = THREE.MathUtils.damp(mediumBlendRef.current, inFluid ? 1 : 0, 14, delta);
+        mediumBlendRef.current = THREE.MathUtils.damp(mediumBlendRef.current, inFluid && !classic ? 1 : 0, 14, delta);
         const medium = mediumBlendRef.current < 0.001 ? 0 : mediumBlendRef.current;
-        if (mediumIsLavaRef.current) {
+        if (classic) {
+            // Classic tints the screen instead (App's overlay), as it always did.
+            applyMediumUniforms(0, scratchMedium, 0.06);
+        } else if (mediumIsLavaRef.current) {
             applyMediumUniforms(medium, LAVA_MEDIUM_COLOR, 0.9);
         } else {
             // Water takes the sky's light: bright teal by day, deep navy at night, murky red under a blood moon.
@@ -690,7 +735,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // factor stays at 1 and only the Brightness floor passes through.
         updateChunkMaterials(1.0, brightness);
         updateVoxelLighting(brightness, exposure, clock.elapsedTime);
-        updateCloudColor(dayFactor);
+        updateCloudColor(dayFactor, classic);
 
         scene.background = scratchBackground.setRGB(state.skyHorizon[0], state.skyHorizon[1], state.skyHorizon[2]);
 
@@ -701,7 +746,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const radius = 400;
         const sunDir = state.sunDir;
         const moonDir = state.moonDir;
-        const sunFade = THREE.MathUtils.smoothstep(sunDir[1], -0.08, 0.06) * (1 - medium);
+        const sunFade = state.sunVisibility * (1 - medium);
 
         if (sunGroupRef.current && sunCoreRef.current) {
             sunGroupRef.current.position.set(
@@ -709,8 +754,13 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 camera.position.y + sunDir[1] * radius,
                 camera.position.z + sunDir[2] * radius,
             );
+            // Face the camera, tilted an eighth of a turn: the original square sun.
+            sunGroupRef.current.up.set(0, 0, 1);
             sunGroupRef.current.lookAt(camera.position);
-            (sunCoreRef.current.material as THREE.MeshBasicMaterial).color.copy(SUN_DISC_COLOR).multiplyScalar(sunFade);
+            sunGroupRef.current.rotateZ(CELESTIAL_TILT);
+            (sunCoreRef.current.material as THREE.MeshBasicMaterial).color.setScalar((classic ? SUN_CORE_CLASSIC : SUN_CORE_LUMINOUS) * sunFade);
+            // A soft glow (the old one was mostly lost in its fog); Luminous leaves the rest to the bloom.
+            if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade);
             sunGroupRef.current.visible = sunFade > 0.001;
         }
 
@@ -721,11 +771,18 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 camera.position.y + moonDir[1] * radius,
                 camera.position.z + moonDir[2] * radius,
             );
+            moonGroupRef.current.up.set(0, 0, 1);
             moonGroupRef.current.lookAt(camera.position);
-            // A blood moon hangs larger and burns red.
-            moonGroupRef.current.scale.setScalar(isBloodMoon ? 1.45 : 1);
+            moonGroupRef.current.rotateZ(CELESTIAL_TILT);
+            // Tinted by the night's lunar event: white, or the blood moon's deep red.
             (moonCoreRef.current.material as THREE.MeshBasicMaterial).color
-                .copy(isBloodMoon ? BLOOD_MOON_DISC_COLOR : MOON_DISC_COLOR).multiplyScalar(moonFade);
+                .set(lunarEvent.moonColorHex).multiplyScalar((classic ? MOON_CORE_CLASSIC : MOON_CORE_LUMINOUS) * moonFade);
+            if (moonGlowRef.current) {
+                // Only the lit part of the moon glows: none at new moon, softest at full.
+                const lit = isBloodMoon ? 1 : 1 - Math.abs(phaseIndex - 4) / 4;
+                (moonGlowRef.current.material as THREE.SpriteMaterial).color
+                    .copy(scratchGlowColor.set(lunarEvent.moonGlowHex)).multiplyScalar((classic ? 0.16 : 0.12) * lit * moonFade);
+            }
             moonGroupRef.current.visible = moonFade > 0.001;
         }
 
@@ -867,19 +924,25 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 <ShootingStar dayFactor={currentDayFactor} isPaused={isPaused} isBloodMoon={bloodMoonActive} />
             </group>
 
-            {/* Sun and moon: pixel discs facing the camera. Their glow is part of the
-                sky function (Mie halo), so there are no extra sprites. */}
+            {/* The original sun and moon: tilted pixel squares facing the camera,
+                each over a soft additive glow drawn just before it. */}
             <group ref={sunGroupRef}>
+                <sprite ref={sunGlowRef} scale={[120, 120, 1]} renderOrder={-980}>
+                    <spriteMaterial map={sunGlowTexture} fog={false} transparent={false} blending={THREE.AdditiveBlending} depthWrite={false} />
+                </sprite>
                 <mesh ref={sunCoreRef} renderOrder={-970}>
-                    <planeGeometry args={[34, 34]} />
-                    <meshBasicMaterial map={sunTexture} fog={false} transparent depthWrite={false} />
+                    <planeGeometry args={[40, 40]} />
+                    <meshBasicMaterial map={sunTexture} fog={false} alphaTest={0.5} depthWrite={false} />
                 </mesh>
             </group>
 
             <group ref={moonGroupRef}>
+                <sprite ref={moonGlowRef} scale={[140, 140, 1]} renderOrder={-980}>
+                    <spriteMaterial map={moonGlowTexture} fog={false} transparent={false} blending={THREE.AdditiveBlending} depthWrite={false} />
+                </sprite>
                 <mesh ref={moonCoreRef} renderOrder={-970}>
-                    <planeGeometry args={[26, 26]} />
-                    <meshBasicMaterial fog={false} transparent depthWrite={false} color={COL_WHITE} />
+                    <planeGeometry args={[30, 30]} />
+                    <meshBasicMaterial fog={false} alphaTest={0.5} depthWrite={false} />
                 </mesh>
             </group>
 

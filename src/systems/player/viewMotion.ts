@@ -110,8 +110,8 @@ export function cameraBob(state: StepCycle, enabled: boolean, out: CameraBob): C
     const strength = state.amount * (1 + 0.45 * state.sprint) * (1 - 0.5 * state.sneak);
     // landY bottoms out near -0.05 on a hard fall: a dip of about 6.5 cm for the
     // eye, about 2.5 cm after an ordinary jump.
-    out.up = -Math.abs(Math.sin(state.phase)) * 0.05 * strength + state.landY * 1.3;
-    out.side = Math.sin(state.phase) * 0.028 * strength;
-    out.roll = Math.sin(state.phase) * 0.006 * strength;
+    out.up = -Math.abs(Math.sin(state.phase)) * 0.04 * strength + state.landY * 1.3;
+    out.side = Math.sin(state.phase) * 0.022 * strength;
+    out.roll = Math.sin(state.phase) * 0.0048 * strength;
     return out;
 }

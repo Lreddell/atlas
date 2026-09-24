@@ -95,12 +95,32 @@ test('fog always finishes inside the render distance edge', () => {
     }
 });
 
-test('the Magnetic Fields haze thickens with the storm but stays readable before it', () => {
+// The haze curve the fog shader uses (atmosphereUniforms.ts), at sea level.
+const haze = (s, distance) => 1 - Math.exp(-((distance / s.hazeDistance) ** 2));
+
+test('the haze keeps the near distance clear and closes in with distance', () => {
+    const day = sample(6000);
+    assert.ok(haze(day, 32) < 0.02, `crisp nearby (${haze(day, 32)})`);
+    assert.ok(haze(day, 96) < 0.12, `light at mid range (${haze(day, 96)})`);
+    assert.ok(haze(day, 400) > 0.7, `thick far out (${haze(day, 400)})`);
+    // An increasing scale: each further stretch hazes more than the one before.
+    const steps = [0, 50, 100, 150, 200].map(d => haze(day, d));
+    for (let i = 2; i < steps.length; i++) assert.ok(steps[i] - steps[i - 1] > steps[i - 1] - steps[i - 2]);
+    // Golden hour and dusk are hazier than noon, never murky nearby.
+    for (const ticks of [0, 11600, 12400]) assert.ok(sample(ticks).hazeDistance < day.hazeDistance);
+    for (let ticks = 0; ticks < 24000; ticks += 400) assert.ok(haze(sample(ticks), 32) < 0.05, `murky nearby at ${ticks}`);
+});
+
+test('the Magnetic Fields haze is thick and steel-blue, closing in with the storm', () => {
     const clear = sample(6000);
     const calm = sample(6000, { magnetic: 1, storm: 0 });
     const frenzy = sample(6000, { magnetic: 1, storm: 1 });
-    assert.ok(calm.hazeDensity > clear.hazeDensity);
-    assert.ok(frenzy.hazeDensity > calm.hazeDensity * 3);
-    // At arena range (60 blocks) the calm haze leaves most of the scene visible.
-    assert.ok(1 - Math.exp(-calm.hazeDensity * 60) < 0.45);
+    assert.ok(calm.hazeDistance < clear.hazeDistance * 0.25);
+    assert.ok(frenzy.hazeDistance < calm.hazeDistance * 0.6);
+    // Readable across the arena, thick past it (the old biome fog was opaque by 55 blocks).
+    assert.ok(haze(calm, 30) < 0.4, `readable at 30 blocks (${haze(calm, 30)})`);
+    assert.ok(haze(calm, 60) > 0.65, `thick at 60 blocks (${haze(calm, 60)})`);
+    // Cool steel blue, not violet: blue over red, green close behind blue.
+    const [r, g, b] = calm.fogGround;
+    assert.ok(b > r * 1.4 && g > r, `steel-blue fog ${calm.fogGround}`);
 });

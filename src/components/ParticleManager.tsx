@@ -8,8 +8,8 @@ import { isSpriteRenderedType } from '../data/spriteBlocks';
 import { worldManager } from '../systems/WorldManager';
 import { getAtlasDimensions } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
-import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { applyEntityLighting } from '../systems/graphics/materials/entityLighting';
 import { blockChips, blockDust } from '../systems/fx/blockChips';
 
 interface Particle {
@@ -23,13 +23,11 @@ interface Particle {
     uvRegion?: [number, number, number, number]; // [u, v, w, h] for pixel particles
 }
 
-// Shader injection for Particles
+// Shader injection for Particles: their texture (a pixel of the block's art for
+// 2D sprites), lit like the blocks around them (entityLighting.ts) from the
+// voxel light each instance carries in its colour.
 const setupParticleMaterial = (mat: THREE.MeshLambertMaterial, is2D: boolean) => {
     mat.onBeforeCompile = (shader) => {
-        // Uniforms for lighting control
-        shader.uniforms.uSunlight = { value: 1.0 };
-        shader.uniforms.uBrightness = { value: 0.5 };
-        
         // --- Vertex Shader ---
         let vs = shader.vertexShader;
         
@@ -60,14 +58,9 @@ const setupParticleMaterial = (mat: THREE.MeshLambertMaterial, is2D: boolean) =>
         let fs = shader.fragmentShader;
         
         fs = `
-            uniform float uSunlight;
-            uniform float uBrightness;
-            vec3 myTorchBaseColor;
             ${is2D ? 'varying vec4 vAtlasRegion;' : ''}
             ${fs}
         `;
-
-        fs = fs.replace('#include <color_fragment>', '');
 
         if (is2D) {
             // Use custom UV mapping for pixels
@@ -95,30 +88,12 @@ const setupParticleMaterial = (mat: THREE.MeshLambertMaterial, is2D: boolean) =>
             );
         }
 
-        // Apply Lighting & Torch Glow
-        fs = fs.replace(
-            '#include <lights_fragment_end>',
-            `
-            myTorchBaseColor = diffuseColor.rgb;
-
-            float minLight = 0.05 + (uBrightness * 0.25);
-            float skyFactor = max(vColor.r * uSunlight, minLight);
-            diffuseColor.rgb *= skyFactor;
-
-            #include <lights_fragment_end>
-            
-            float torchIntensity = clamp(vColor.g, 0.0, 1.0);
-            float torchGlow = pow(torchIntensity, 1.8);
-            reflectedLight.directDiffuse += myTorchBaseColor * (torchGlow * 0.85);
-            `
-        );
-
         shader.fragmentShader = fs;
-        mat.userData.shader = shader;
     };
-    
+
     // Ensure uniqueness so three.js recompiles this specific variant
     mat.customProgramCacheKey = () => is2D ? 'particle_2d' : 'particle_3d';
+    applyEntityLighting(mat, { kind: 'instance' });
 };
 
 const MAX_PARTICLES_PER_GROUP = 300;
@@ -217,7 +192,7 @@ const getPixelRegion = (type: BlockType): [number, number, number, number] => {
     return [u, v, pxW - 2*inset, pxH - 2*inset];
 };
 
-const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<Particle[]>, isPaused: boolean, brightness: number }> = ({ type, store, isPaused, brightness }) => {
+const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<Particle[]>, isPaused: boolean }> = ({ type, store, isPaused }) => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -297,15 +272,6 @@ const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<P
 
     useFrame((_, _delta) => {
         if (isPaused || !meshRef.current || !material) return;
-        
-        if (material.userData.shader) {
-            if (material.userData.shader.uniforms.uSunlight) {
-                material.userData.shader.uniforms.uSunlight.value = globalSunlightValue;
-            }
-            if (material.userData.shader.uniforms.uBrightness) {
-                material.userData.shader.uniforms.uBrightness.value = brightness;
-            }
-        }
 
         let i = 0;
         const regionAttr = is2D ? (meshRef.current.geometry.attributes.aAtlasRegion as THREE.InstancedBufferAttribute) : null;
@@ -336,13 +302,15 @@ const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<P
              }
 
              const bx = Math.floor(p.position[0]);
-             const by = Math.floor(p.position[1]); 
+             const by = Math.floor(p.position[1]);
              const bz = Math.floor(p.position[2]);
-             
+
+             // Debris that has settled into the ground reads the light just above it.
              const light = worldManager.getLight(bx, by, bz);
-             const r = light.sky / 15.0;
-             const g = light.block / 15.0;
-             
+             const above = worldManager.getLight(bx, by + 1, bz);
+             const r = Math.max(light.sky, above.sky) / 15.0;
+             const g = Math.max(light.block, above.block) / 15.0;
+
              colorScratch.setRGB(r, g, 1.0);
              meshRef.current!.setColorAt(i, colorScratch);
              i++;
@@ -362,7 +330,8 @@ const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<P
     );
 };
 
-export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }> = ({ isPaused, brightness }) => {
+// `brightness` is no longer read here: the Brightness option reaches particles through the shared world light.
+export const ParticleManager: React.FC<{ isPaused: boolean, brightness?: number }> = ({ isPaused }) => {
     const particlesRef = useRef<Particle[]>([]);
     // One instanced group per block type in flight; React only re-renders when
     // that set changes, never per particle.
@@ -531,7 +500,6 @@ export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }
                     type={t}
                     store={particlesRef}
                     isPaused={isPaused}
-                    brightness={brightness}
                 />
             ))}
         </group>

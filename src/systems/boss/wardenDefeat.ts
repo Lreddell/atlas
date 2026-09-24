@@ -163,6 +163,7 @@ class WardenDefeat {
                 addTrauma(0.1 + 0.25 * k);
                 soundManager.playAt('entity.magnetic_warden.hurt', this.corePos, { volume: 0.4 + 0.3 * k, pitch: 0.7 + 0.5 * k });
                 particleFx.burst({
+                    glow: 1.8,
                     x: this.corePos.x, y: this.corePos.y, z: this.corePos.z,
                     color: polarityFxColor(this.polarity), color2: [1, 1, 1],
                     count: 14 + Math.round(20 * k), speed: 5 + 8 * k, upBias: 2, spread: 1,
@@ -179,10 +180,10 @@ class WardenDefeat {
                 addTrauma(1.0);
                 soundManager.play('entity.magnetic_warden.defeat', { volume: 1.0 });
                 const { x, y, z } = this.corePos;
-                particleFx.burst({ x, y, z, color: [1, 1, 1], color2: FX_CHARGED, count: 150, speed: 22, upBias: 6, spread: 1, size: 0.42, life: 1.4, gravity: 9, drag: 0.6 });
-                particleFx.burst({ x, y, z, color: polarityFxColor(this.polarity), color2: polarityFxColor(-this.polarity), count: 110, speed: 13, upBias: 8, spread: 1, size: 0.3, life: 2.2, gravity: 3, drag: 0.5 });
+                particleFx.burst({ glow: 1.8, x, y, z, color: [1, 1, 1], color2: FX_CHARGED, count: 150, speed: 22, upBias: 6, spread: 1, size: 0.42, life: 1.4, gravity: 9, drag: 0.6 });
+                particleFx.burst({ glow: 1.8, x, y, z, color: polarityFxColor(this.polarity), color2: polarityFxColor(-this.polarity), count: 110, speed: 13, upBias: 8, spread: 1, size: 0.3, life: 2.2, gravity: 3, drag: 0.5 });
                 // A last ring of the Warden's own colour sweeping the platform.
-                particleFx.burst({ x, y: p.floorY + 0.4, z, color: polarityFxColor(this.polarity), color2: [1, 1, 1], count: 90, speed: 26, upBias: 0.2, spread: 1, size: 0.28, life: 1.1, gravity: 1, drag: 0.9 });
+                particleFx.burst({ glow: 1.8, x, y: p.floorY + 0.4, z, color: polarityFxColor(this.polarity), color2: [1, 1, 1], count: 90, speed: 26, upBias: 0.2, spread: 1, size: 0.28, life: 1.1, gravity: 1, drag: 0.9 });
             }
             const k = smooth((t - T_ORBIT) / (T_RISE - T_ORBIT));
             this.flash = Math.max(0, 1 - (t - T_ORBIT) / 0.9);

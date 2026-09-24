@@ -1,4 +1,5 @@
 import { MOTION_BLUR_MIN_PIXELS, MOTION_BLUR_SAMPLES } from '../../render/motionBlur';
+import { VIEWMODEL_DEPTH_RANGE } from '../viewmodel';
 
 // The post-processing passes (RenderPipeline.tsx). Every pass is one fullscreen
 // triangle; everything before the composite works in scene-linear HDR, and the
@@ -18,7 +19,9 @@ void main() {
  * Camera motion blur by reprojection: rebuild each pixel's world position from
  * depth, project it with last frame's view-projection, gather along the
  * difference. A still camera gives a zero vector and an identical image. Far
- * plane pixels (sky) have no surface that moved and are passed through.
+ * plane pixels (sky) have no surface that moved and are passed through, and so
+ * is the first-person hand (the nearest sliver of depth, viewmodel.ts): it moves
+ * with the camera, so it never smears.
  */
 export const MOTION_BLUR_FRAGMENT = /* glsl */`
 varying vec2 vUv;
@@ -34,6 +37,7 @@ const int SAMPLES = ${MOTION_BLUR_SAMPLES};
 
 vec4 gatherAlongMotion( float depth ) {
     vec4 color = texture2D( tColor, vUv );
+    if ( depth < ${VIEWMODEL_DEPTH_RANGE.toFixed(4)} ) return color;
     vec4 clip = vec4( vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0 );
     vec4 world = uInverseViewProjection * clip;
     world /= world.w;

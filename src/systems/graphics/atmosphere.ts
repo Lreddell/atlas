@@ -7,6 +7,10 @@
 //
 // Colours are authored as sRGB hex and converted once to linear light; the
 // renderer tone-maps the final image, so every value here is scene-linear.
+// The daytime horizon is authored as it should look on screen (onScreen), so
+// the tone map can't wash it out to grey-white.
+
+import { onScreen } from './toneCurve';
 
 export type Vec3 = [number, number, number];
 
@@ -61,6 +65,7 @@ interface SkyKey {
     sunLight: Vec3;
     hemiSky: Vec3;
     hemiGround: Vec3;
+    /** Haze visibility distance (blocks): the haze reaches 63% here, and rises steeply past it. */
     haze: number;
     exposure: number;
 }
@@ -77,43 +82,43 @@ const SKY_KEYS: readonly SkyKey[] = [
         h: -0.3,
         zenith: linear(0x060c1c), horizon: linear(0x101b36), horizonSun: linear(0x101b36),
         sunGlow: linear(0x000000), sunLight: linear(0x000000),
-        hemiSky: linear(0x4a6aa8, 0.27), hemiGround: linear(0x1c2030, 0.08), haze: 0.0012, exposure: 1.9,
+        hemiSky: linear(0x4a6aa8, 0.27), hemiGround: linear(0x1c2030, 0.08), haze: 240, exposure: 1.9,
     },
     {   // late twilight
         h: -0.12,
         zenith: linear(0x0c173a), horizon: linear(0x1c2448), horizonSun: linear(0x3a2448),
         sunGlow: linear(0x6a3048, 0.25), sunLight: linear(0x000000),
-        hemiSky: linear(0x4a5896, 0.27), hemiGround: linear(0x201e2c, 0.08), haze: 0.0015, exposure: 1.75,
+        hemiSky: linear(0x4a5896, 0.27), hemiGround: linear(0x201e2c, 0.08), haze: 220, exposure: 1.75,
     },
     {   // just after sunset
         h: -0.03,
         zenith: linear(0x1d2c62), horizon: linear(0x4b4674), horizonSun: linear(0xc0584a),
         sunGlow: linear(0xff7040, 0.9), sunLight: linear(0x000000),
-        hemiSky: linear(0x6e6caa, 0.28), hemiGround: linear(0x3a2c30, 0.09), haze: 0.0022, exposure: 1.45,
+        hemiSky: linear(0x6e6caa, 0.28), hemiGround: linear(0x3a2c30, 0.09), haze: 200, exposure: 1.45,
     },
     {   // sun on the horizon
         h: 0.02,
         zenith: linear(0x30498a), horizon: linear(0x8c7ca2), horizonSun: linear(0xff8e52),
         sunGlow: linear(0xffa060, 1.7), sunLight: linear(0xff9a5a, 0.4),
-        hemiSky: linear(0x8a90c2, 0.42), hemiGround: linear(0x6a4c3c, 0.2), haze: 0.0024, exposure: 1.2,
+        hemiSky: linear(0x8a90c2, 0.42), hemiGround: linear(0x6a4c3c, 0.2), haze: 190, exposure: 1.2,
     },
     {   // golden hour
         h: 0.1,
         zenith: linear(0x2f5eb4), horizon: linear(0xa2b4da), horizonSun: linear(0xffc27e),
         sunGlow: linear(0xffd090, 1.3), sunLight: linear(0xffc58a, 0.95),
-        hemiSky: linear(0x9fb6e0, 0.8), hemiGround: linear(0x735a42, 0.32), haze: 0.0018, exposure: 1.05,
+        hemiSky: linear(0x9fb6e0, 0.8), hemiGround: linear(0x735a42, 0.32), haze: 240, exposure: 1.05,
     },
     {   // morning
         h: 0.25,
-        zenith: linear(0x2d6cd0), horizon: linear(0x9fc0ea), horizonSun: linear(0xf2d8b0),
+        zenith: linear(0x2d6cd0), horizon: onScreen(0x86bff0, 1.05), horizonSun: onScreen(0xecdcc0, 1.05),
         sunGlow: linear(0xffe4bc, 0.9), sunLight: linear(0xffe2bc, 1.2),
-        hemiSky: linear(0xa8c8f0, 0.95), hemiGround: linear(0x786650, 0.38), haze: 0.0013, exposure: 1.05,
+        hemiSky: linear(0xa8c8f0, 0.95), hemiGround: linear(0x786650, 0.38), haze: 300, exposure: 1.05,
     },
     {   // full day
         h: 0.5,
-        zenith: linear(0x2a70da), horizon: linear(0xa6c8f0), horizonSun: linear(0xd6e8f8),
+        zenith: linear(0x2a70da), horizon: onScreen(0x7ec4f0, 1.05), horizonSun: onScreen(0xb4dcf4, 1.05),
         sunGlow: linear(0xfff6e6, 0.8), sunLight: linear(0xfff1dc, 1.3),
-        hemiSky: linear(0xb0d0f8, 1.05), hemiGround: linear(0x7c6c54, 0.42), haze: 0.0011, exposure: 1.05,
+        hemiSky: linear(0xb0d0f8, 1.05), hemiGround: linear(0x7c6c54, 0.42), haze: 340, exposure: 1.05,
     },
 ];
 
@@ -162,15 +167,27 @@ export interface AtmosphereState {
     fogGround: Vec3;
     fogStart: number;
     fogEnd: number;
-    /** Exponential haze density at sea level, per block. */
-    hazeDensity: number;
+    /**
+     * Haze visibility distance at sea level (blocks). The haze is
+     * 1 - exp(-(d / hazeDistance)^2): next to nothing close by, rising steeply
+     * with distance.
+     */
+    hazeDistance: number;
     /** Haze scale height in blocks: how fast it thins with altitude. */
     hazeHeight: number;
     exposure: number;
+    /** 0..1: how much of the sun disc shows (it sinks below the horizon). */
+    sunVisibility: number;
+    /** The Classic style (classicAtmosphere.ts): its flat fog colour and old sky-light factor. */
+    classic: boolean;
+    classicFog: Vec3;
+    classicSunlight: number;
 }
 
-const MAGNETIC_FOG_TINT = linear(0x4b4464);
-const MAGNETIC_TINT_ZENITH = linear(0x3a3c5e);
+// A charged steel-blue haze: the old Magnetic Fields fog's teal-grey, kept a
+// little cooler and darker so the arena's red and blue still read through it.
+const MAGNETIC_FOG_TINT = linear(0x557893);
+const MAGNETIC_TINT_ZENITH = linear(0x3e5474);
 const BLOOD_ZENITH = linear(0x2a0609);
 const BLOOD_HORIZON = linear(0x4c0c12);
 const BLOOD_GROUND = linear(0x1c0508);
@@ -186,7 +203,8 @@ export function createAtmosphereState(): AtmosphereState {
         sunDir: v(), moonDir: v(), sunHeight: 0, dayFactor: 0, twilight: 0, starVisibility: 0, moonVisibility: 0,
         keyDir: v(), keyColor: v(), keyIsMoon: false, hemiSky: v(), hemiGround: v(),
         skyZenith: v(), skyHorizon: v(), skyHorizonSun: v(), sunGlow: v(), moonGlow: v(), fogGround: v(),
-        fogStart: 0, fogEnd: 0, hazeDensity: 0, hazeHeight: 0, exposure: 1,
+        fogStart: 0, fogEnd: 0, hazeDistance: 1e6, hazeHeight: 0, exposure: 1,
+        sunVisibility: 0, classic: false, classicFog: v(), classicSunlight: 1,
     };
 }
 
@@ -211,6 +229,9 @@ export function sampleAtmosphere(input: AtmosphereInput, out: AtmosphereState = 
     out.twilight = 1 - smoothstep(0.02, 0.22, Math.abs(h - 0.02));
     out.starVisibility = 1 - smoothstep(-0.14, 0.04, h);
     out.moonVisibility = smoothstep(-0.12, 0.06, -h);
+    out.sunVisibility = smoothstep(-0.08, 0.06, h);
+    out.classic = false;
+    out.classicSunlight = 1;
 
     // Interpolate the sky keys by sun height.
     let lower = SKY_KEYS[0];
@@ -287,26 +308,29 @@ export function sampleAtmosphere(input: AtmosphereInput, out: AtmosphereState = 
         mixVec(out.skyHorizonSun, out.skyHorizonSun, BLOOD_HORIZON, blood * 0.6);
         mixVec(out.fogGround, out.fogGround, BLOOD_GROUND, blood * 0.85);
         mixVec(out.hemiSky, out.hemiSky, BLOOD_HEMI, blood * 0.8);
-        haze += 0.0012 * blood;
+        haze *= 1 - 0.3 * blood;
     }
 
-    // The Magnetic Fields are hazy and charged: a steel-violet haze that stays
-    // readable at arena range, thickening with the Warden's storm.
+    // The Magnetic Fields are hazy and charged: a thick steel-blue haze (close to
+    // the original biome fog) that still leaves the arena readable, closing in
+    // with the Warden's storm.
     const mag = clamp01(input.magnetic);
     if (mag > 0) {
-        mixVec(out.skyHorizon, out.skyHorizon, MAGNETIC_FOG_TINT, mag * 0.55);
-        mixVec(out.skyHorizonSun, out.skyHorizonSun, MAGNETIC_FOG_TINT, mag * 0.4);
+        mixVec(out.skyHorizon, out.skyHorizon, MAGNETIC_FOG_TINT, mag * 0.7);
+        mixVec(out.skyHorizonSun, out.skyHorizonSun, MAGNETIC_FOG_TINT, mag * 0.55);
         mixVec(out.skyZenith, out.skyZenith, MAGNETIC_TINT_ZENITH, mag * 0.35);
-        mixVec(out.fogGround, out.fogGround, MAGNETIC_FOG_TINT, mag * 0.6);
-        haze += mag * (0.006 + 0.024 * clamp01(input.storm));
+        mixVec(out.fogGround, out.fogGround, MAGNETIC_FOG_TINT, mag * 0.75);
+        haze = mix(haze, mix(50, 26, clamp01(input.storm)), mag);
     }
 
     // The render-distance veil only covers the last stretch before the loading
-    // edge; atmospheric depth nearer in comes from the height haze.
+    // edge; atmospheric depth nearer in comes from the haze.
     const edge = input.renderDistanceChunks * input.chunkSize;
     out.fogEnd = Math.max(24, edge - 4);
-    out.fogStart = Math.max(16, Math.min(out.fogEnd - 16, edge * 0.72));
-    out.hazeDensity = haze;
-    out.hazeHeight = mix(56, 30, mag);
+    out.fogStart = Math.max(16, Math.min(out.fogEnd - 12, edge * 0.8));
+    out.hazeDistance = haze;
+    // Open-air haze thins with altitude; the Magnetic Fields haze fills the
+    // biome at any height (its arena stands high), as the old biome fog did.
+    out.hazeHeight = mix(56, 4000, mag);
     return out;
 }

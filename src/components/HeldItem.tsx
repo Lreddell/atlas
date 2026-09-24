@@ -4,14 +4,12 @@ import { useFrame, useThree, createPortal } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ItemStack } from '../types';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
-import { worldManager } from '../systems/WorldManager';
 import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
 import { playerAttack, playerMining, playerInteraction, attackBusy, attackPose } from '../systems/combat/playerAttack';
 import { viewRig, firstPersonHandOpacity } from '../systems/player/viewRig';
 import { placementPose } from '../systems/player/playerAnimation';
 import { inputState } from '../systems/player/playerInput';
-import { globalSunlightValue } from './chunkLightingState';
 import { usePlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
@@ -19,64 +17,23 @@ import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { graphicsSettings } from '../systems/graphics/graphicsStore';
 import { viewMotion } from '../systems/player/viewMotion';
 import { createViewmodelPose, createViewmodelState, stepViewmodel } from '../systems/player/viewmodelMotion';
+import { applyEntityLighting, createEntityLight } from '../systems/graphics/materials/entityLighting';
+import { applyViewmodelProjection, updateViewmodelProjection } from '../systems/graphics/viewmodel';
+import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
+import { worldLightReader } from '../systems/graphics/worldLightReader';
 
 const _viewDir = new THREE.Vector3();
+const _lightSample: SmoothLight = { sky: 1, block: 0 };
 
 interface HeldItemProps {
     selectedSlot: number;
     inventory: (ItemStack | null)[];
     isLocked: boolean;
-    brightness: number;
+    /** Unused: the Brightness option reaches the hand through the shared world light. */
+    brightness?: number;
 }
 
-const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
-    mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uSunlight = { value: 1.0 };
-        shader.uniforms.uSkyLight = { value: 1.0 };
-        shader.uniforms.uBlockLight = { value: 0.0 };
-        shader.uniforms.uBrightness = { value: 0.5 };
-
-        shader.fragmentShader = `
-            uniform float uSunlight;
-            uniform float uSkyLight;
-            uniform float uBlockLight;
-            uniform float uBrightness;
-            vec3 myTorchBaseColor;
-            ${shader.fragmentShader}
-        `;
-
-        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '');
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <map_fragment>',
-            `#ifdef USE_MAP
-                vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-                diffuseColor *= sampledDiffuseColor;
-            #endif
-
-            myTorchBaseColor = diffuseColor.rgb;
-
-            float minLight = 0.05 + (uBrightness * 0.25);
-            float skyFactor = max(uSkyLight * uSunlight, minLight);
-            diffuseColor.rgb *= skyFactor;
-            `
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <lights_fragment_end>',
-            `#include <lights_fragment_end>
-            
-            float torchIntensity = clamp(uBlockLight, 0.0, 1.0);
-            float torchGlow = pow(torchIntensity, 1.8);
-            reflectedLight.directDiffuse += myTorchBaseColor * (torchGlow * 0.85);
-            `
-        );
-        
-        mat.userData.shader = shader;
-    };
-};
-
-export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked, brightness }) => {
+export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked }) => {
     const skin = usePlayerSkin();
     const skinTexture = useSkinTexture(skin);
     const { camera } = useThree();
@@ -88,6 +45,10 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const viewmodelState = useRef(createViewmodelState());
     const viewmodelPose = useRef(createViewmodelPose());
     const alphaTests = useRef(new WeakMap<THREE.Material, number>());
+    // The world light at the eye, shared by every part of the viewmodel: the
+    // hand is lit like the blocks it is held among.
+    const eyeLight = useMemo(() => createEntityLight(), []);
+    const eyeLightLevel = useRef<SmoothLight>({ sky: 1, block: 0 });
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
@@ -101,24 +62,22 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             alphaTest: 0.5,
             side: THREE.DoubleSide,
             // Depth-test/write enabled so multi-box shapes (slabs/stairs) self-occlude
-            // instead of drawing back/interior faces over front ones. The held model
-            // sits ~0.8u from the camera (closer than world geometry) so it still
-            // renders on top (only clips when the player is face-planted into a block).
+            // instead of drawing back/interior faces over front ones. The viewmodel's
+            // depth sits in front of the whole world (viewmodel.ts), so it never
+            // clips into a block, even with the player pressed against one.
             depthTest: true,
             depthWrite: true
         });
-        setupEntityMaterial(mat);
         return mat;
     }, [texture]);
 
     const handMaterial = useMemo(() => {
-        const mat = new THREE.MeshLambertMaterial({ 
+        const mat = new THREE.MeshLambertMaterial({
             color: skin.palette.skin,
             depthTest: false,
             depthWrite: false,
-            transparent: true 
+            transparent: true
         });
-        setupEntityMaterial(mat);
         return mat;
     }, [skin.palette.skin]);
 
@@ -135,29 +94,22 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                 if (!(object instanceof THREE.Mesh)) return;
                 const materials = Array.isArray(object.material) ? object.material : [object.material];
                 for (const material of materials) {
-                    if (!alphaTests.current.has(material)) alphaTests.current.set(material, material.alphaTest);
+                    if (!alphaTests.current.has(material)) {
+                        alphaTests.current.set(material, material.alphaTest);
+                        // Every part of the viewmodel: world light, and its own lens and depth.
+                        applyEntityLighting(material, { kind: 'uniform', light: eyeLight });
+                        applyViewmodelProjection(material);
+                    }
                     material.opacity = opacity;
                     material.alphaTest = alphaTests.current.get(material)! * opacity;
                 }
             });
-            const light = worldManager.getLight(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z));
-            const uSky = light.sky / 15.0;
-            const uBlock = light.block / 15.0;
-            
-            if (itemMaterial && itemMaterial.userData.shader) {
-                const s = itemMaterial.userData.shader;
-                if(s.uniforms.uSunlight) s.uniforms.uSunlight.value = globalSunlightValue;
-                if(s.uniforms.uSkyLight) s.uniforms.uSkyLight.value = uSky;
-                if(s.uniforms.uBlockLight) s.uniforms.uBlockLight.value = uBlock;
-                if(s.uniforms.uBrightness) s.uniforms.uBrightness.value = brightness;
-            }
-            if (handMaterial && handMaterial.userData.shader) {
-                const s = handMaterial.userData.shader;
-                if(s.uniforms.uSunlight) s.uniforms.uSunlight.value = globalSunlightValue;
-                if(s.uniforms.uSkyLight) s.uniforms.uSkyLight.value = uSky;
-                if(s.uniforms.uBlockLight) s.uniforms.uBlockLight.value = uBlock;
-                if(s.uniforms.uBrightness) s.uniforms.uBrightness.value = brightness;
-            }
+            const perspective = camera as THREE.PerspectiveCamera;
+            updateViewmodelProjection(perspective.aspect);
+            sampleSmoothLight(worldLightReader, camera.position.x, camera.position.y, camera.position.z, _lightSample);
+            const level = easeLight(eyeLightLevel.current, _lightSample, delta, 12);
+            eyeLight.value.x = level.sky;
+            eyeLight.value.y = level.block;
 
             // Since we are a child of the camera, we do not copy position/quaternion.
             // We render in local space relative to the camera.

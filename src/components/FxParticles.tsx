@@ -19,6 +19,7 @@ interface FxParticle {
     life: number; maxLife: number;
     size: number;
     r: number; g: number; b: number;
+    glow: number;
     gravity: number; drag: number;
     // Ambient biome motes (vs one-shot combat FX). Only these orbit the player
     // column during the boss frenzy, so existing motes adapt into the spiral
@@ -64,6 +65,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
         g.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(MAX_FX * 3), 3).setUsage(THREE.DynamicDrawUsage));
         g.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(MAX_FX), 1).setUsage(THREE.DynamicDrawUsage));
         g.setAttribute('aAlpha', new THREE.BufferAttribute(new Float32Array(MAX_FX), 1).setUsage(THREE.DynamicDrawUsage));
+        g.setAttribute('aGlow', new THREE.BufferAttribute(new Float32Array(MAX_FX), 1).setUsage(THREE.DynamicDrawUsage));
         g.setDrawRange(0, 0);
         return g;
     }, []);
@@ -77,11 +79,14 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
             attribute vec3 aColor;
             attribute float aSize;
             attribute float aAlpha;
+            attribute float aGlow;
             varying vec3 vColor;
             varying float vAlpha;
+            varying float vGlow;
             void main() {
                 vColor = aColor;
                 vAlpha = aAlpha;
+                vGlow = aGlow;
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 gl_PointSize = aSize * (320.0 / -mv.z);
                 gl_Position = projectionMatrix * mv;
@@ -91,13 +96,14 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
             uniform sampler2D uTex;
             varying vec3 vColor;
             varying float vAlpha;
+            varying float vGlow;
             void main() {
                 float a = texture2D(uTex, gl_PointCoord).a;
                 if (a < 0.01) discard;
                 // FX colours are authored as display (sRGB) values: decode to scene-linear
                 // so they go through the same tone map as the rest of the frame.
                 vec3 linearColor = pow(vColor, vec3(2.2));
-                gl_FragColor = vec4(linearColor * (0.6 + vAlpha) * 1.25, a * vAlpha);
+                gl_FragColor = vec4(linearColor * (0.6 + vAlpha) * 1.25 * vGlow, a * vAlpha);
                 #include <tonemapping_fragment>
                 #include <colorspace_fragment>
             }
@@ -134,6 +140,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
                     r: b.color[0] * (1 - t) + c2[0] * t,
                     g: b.color[1] * (1 - t) + c2[1] * t,
                     b: b.color[2] * (1 - t) + c2[2] * t,
+                    glow: b.glow,
                     gravity: b.gravity, drag: b.drag,
                 });
             }
@@ -182,6 +189,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
                         maxLife: 5.5,
                         size: THREE.MathUtils.lerp((0.07 + Math.random() * 0.08) * (1 + 0.5 * storm), (0.09 + Math.random() * 0.09) * 1.6, fb),
                         r: col[0], g: col[1], b: col[2],
+                        glow: 1,
                         gravity: THREE.MathUtils.lerp(-0.4, -0.7, fb),
                         drag: THREE.MathUtils.lerp(0.2, 0.05, fb),
                         ambient: true,
@@ -195,6 +203,8 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
         const colAttr = pointsRef.current.geometry.attributes.aColor as THREE.BufferAttribute;
         const sizeAttr = pointsRef.current.geometry.attributes.aSize as THREE.BufferAttribute;
         const alphaAttr = pointsRef.current.geometry.attributes.aAlpha as THREE.BufferAttribute;
+        const glowAttr = pointsRef.current.geometry.attributes.aGlow as THREE.BufferAttribute;
+        const glowA = glowAttr.array as Float32Array;
         const posA = posAttr.array as Float32Array;
         const colA = colAttr.array as Float32Array;
         const sizeA = sizeAttr.array as Float32Array;
@@ -226,6 +236,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
                 posA[o3] = p.px; posA[o3 + 1] = p.py; posA[o3 + 2] = p.pz;
                 colA[o3] = p.r; colA[o3 + 1] = p.g; colA[o3 + 2] = p.b;
                 sizeA[n] = p.size;
+                glowA[n] = p.glow;
                 // Fade in fast, out slow over the back half of its life.
                 alphaA[n] = Math.min(1, (p.life / p.maxLife) * 1.6);
                 n++;
@@ -237,6 +248,7 @@ export const FxParticles: React.FC<{ isPaused: boolean }> = ({ isPaused }) => {
         colAttr.needsUpdate = true;
         sizeAttr.needsUpdate = true;
         alphaAttr.needsUpdate = true;
+        glowAttr.needsUpdate = true;
     });
 
     return <points ref={pointsRef} geometry={geometry} material={material} frustumCulled={false} />;

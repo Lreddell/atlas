@@ -57,11 +57,11 @@ const leavingCloudFrontMaterial = new THREE.MeshLambertMaterial({
 // Clouds pick up the sky around them (the same atlasSkyRadiance the dome and
 // fog use): silver near the sun, gold at sunset, moonlit blue-grey at night and
 // red under a blood moon, instead of turning into dark slabs when the scene
-// lights dim.
+// lights dim. The Classic style keeps the old plain-lit clouds.
 const CLOUD_SKY_SCATTER = /* glsl */`
 #include <lights_fragment_end>
 #ifdef USE_FOG
-	totalEmissiveRadiance += diffuseColor.rgb * atlasSkyRadiance( normalize( vAtlasFogOffset ) ) * 1.5;
+	if ( atlasClassicSky.w < 0.5 ) totalEmissiveRadiance += diffuseColor.rgb * atlasSkyRadiance( normalize( vAtlasFogOffset ) ) * 1.5;
 #endif
 `;
 
@@ -72,7 +72,7 @@ for (const material of [
     material.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', CLOUD_SKY_SCATTER);
     };
-    material.customProgramCacheKey = () => 'atlas-cloud-v1';
+    material.customProgramCacheKey = () => 'atlas-cloud-v2';
 }
 
 // Tracks the natural (day/night-adjusted) opacity before any fade multiplier
@@ -88,9 +88,13 @@ let leavingCloudMultiplier = 0.0;
 // Clouds are a constant soft white: the scene's key and sky lights colour them
 // (gold at sunset, moonlit blue at night), and the atmosphere fogs them.
 const CLOUD_ALBEDO = new THREE.Color(0xf3f5fb);
+// Classic: white by day, dimmed to a dark blue-grey at night.
+const CLASSIC_CLOUD_NIGHT = new THREE.Color(0x1a1a2e).multiplyScalar(0.4);
+const CLASSIC_CLOUD_DAY = new THREE.Color(0xffffff);
 
-const updateCloudColor = (dayFactor: number) => {
-    cloudBackMaterial.color.copy(CLOUD_ALBEDO);
+const updateCloudColor = (dayFactor: number, classic = false) => {
+    if (classic) cloudBackMaterial.color.lerpColors(CLASSIC_CLOUD_NIGHT, CLASSIC_CLOUD_DAY, dayFactor);
+    else cloudBackMaterial.color.copy(CLOUD_ALBEDO);
     cloudFrontMaterial.color.copy(cloudBackMaterial.color);
     newCloudBackMaterial.color.copy(cloudBackMaterial.color);
     newCloudFrontMaterial.color.copy(cloudBackMaterial.color);
@@ -98,7 +102,7 @@ const updateCloudColor = (dayFactor: number) => {
     leavingCloudFrontMaterial.color.copy(cloudBackMaterial.color);
     // Thinner at night, when they can only show as dark shapes against the stars;
     // respect the current fade multipliers.
-    cloudNaturalOpacity = 0.35 + (0.45 * dayFactor);
+    cloudNaturalOpacity = classic ? 0.6 + 0.2 * dayFactor : 0.35 + (0.45 * dayFactor);
     cloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     cloudFrontMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier;
     newCloudBackMaterial.opacity = cloudNaturalOpacity * cloudFadeMultiplier * newCloudFadeMultiplier;

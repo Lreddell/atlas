@@ -3,7 +3,7 @@ import test from 'node:test';
 import { loadTs } from '../world/storage/bundleTs.mjs';
 
 const {
-    GRAPHICS_PRESETS, GRAPHICS_PRESET_ORDER, DEFAULT_GRAPHICS_STATE, resolveGraphicsConfig,
+    GRAPHICS_PRESETS, GRAPHICS_PRESET_ORDER, DEFAULT_GRAPHICS_STATE, DEFAULT_GRAPHICS_PREFERENCES, resolveGraphicsConfig,
     graphicsQuality, withPreset, withOption, parseGraphicsState, migrateLegacyGraphics,
     detectPreset, lowerPreset,
 } = await loadTs(`export * from './src/systems/graphics/graphicsSettings';`);
@@ -38,6 +38,47 @@ test('overrides sit on top of the preset, and matching the preset drops them', (
     // Choosing a preset discards every override.
     state = withPreset(withOption(state, 'clouds', 'off'), 'low');
     assert.deepEqual(state.overrides, {});
+});
+
+test('preferences sit beside the presets and never make the quality custom', () => {
+    let state = withPreset(DEFAULT_GRAPHICS_STATE, 'high');
+    state = withOption(state, 'viewBobbing', false);
+    state = withOption(state, 'shadowStyle', 'pixel');
+    state = withOption(state, 'visualStyle', 'classic');
+    assert.equal(graphicsQuality(state), 'high');
+    assert.deepEqual(state.overrides, {});
+    const config = resolveGraphicsConfig(state);
+    assert.equal(config.viewBobbing, false);
+    assert.equal(config.shadowStyle, 'pixel');
+    // Classic is the pre-overhaul renderer: none of the Luminous effects run under it...
+    assert.equal(config.bloom, 'off');
+    assert.equal(config.godRays, false);
+    assert.equal(config.foliageWind, false);
+    assert.equal(config.water, 'simple');
+    assert.equal(config.ambientParticles, 'off');
+    // ...while the options it doesn't touch still follow the preset.
+    assert.equal(config.shadows, GRAPHICS_PRESETS.high.shadows);
+    assert.equal(config.maxPixelRatio, GRAPHICS_PRESETS.high.maxPixelRatio);
+    // A new preset keeps the preferences.
+    state = withPreset(state, 'low');
+    assert.equal(resolveGraphicsConfig(state).visualStyle, 'classic');
+    assert.equal(resolveGraphicsConfig(state).viewBobbing, false);
+    // Back to Luminous, the preset's effects return.
+    state = withOption(withPreset(state, 'high'), 'visualStyle', 'luminous');
+    assert.equal(resolveGraphicsConfig(state).bloom, GRAPHICS_PRESETS.high.bloom);
+});
+
+test('stored preferences are validated, and an old view-bobbing override moves over', () => {
+    const migrated = parseGraphicsState(JSON.stringify({
+        version: 1, preset: 'high', detected: true, overrides: { viewBobbing: false, bloom: 'off' },
+    }));
+    assert.deepEqual(migrated.overrides, { bloom: 'off' });
+    assert.equal(migrated.preferences.viewBobbing, false);
+    const partial = parseGraphicsState(JSON.stringify({
+        version: 1, preset: 'high', preferences: { visualStyle: 'retro', shadowStyle: 'pixel' },
+    }));
+    assert.deepEqual(partial.preferences, { ...DEFAULT_GRAPHICS_PREFERENCES, shadowStyle: 'pixel' });
+    assert.deepEqual(parseGraphicsState(JSON.stringify({ version: 1, preset: 'low' })).preferences, DEFAULT_GRAPHICS_PREFERENCES);
 });
 
 test('stored state is validated field by field', () => {

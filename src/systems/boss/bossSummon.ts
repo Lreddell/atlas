@@ -246,6 +246,7 @@ class BossSummon {
                 addTrauma(0.04 + 0.18 * this.ballScale);
                 // Crackling arcs swirling into the swelling ball (inward = -gravity).
                 particleFx.burst({
+                    glow: 1.8,
                     x: this.altar.x, y: this.altar.y, z: this.altar.z,
                     color: FX_CHARGED, color2: [1, 1, 1],
                     count: 8 + Math.round(10 * this.ballScale), speed: 3 + 4 * this.ballScale,
@@ -270,13 +271,13 @@ class BossSummon {
             const ax = this.altar.x, ay = this.altar.y, az = this.altar.z;
             // A blinding two-tone shock: a fast white/purple core + slow red & blue
             // polarity sparks raining out of the explosion.
-            particleFx.burst({ x: ax, y: ay, z: az, color: [1, 1, 1], color2: FX_CHARGED, count: 120, speed: 18, upBias: 5, spread: 1, size: 0.4, life: 1.2, gravity: 8, drag: 0.7 });
-            particleFx.burst({ x: ax, y: ay, z: az, color: FX_POSITIVE, color2: FX_NEGATIVE, count: 90, speed: 10, upBias: 7, spread: 1, size: 0.3, life: 1.8, gravity: 3, drag: 0.5 });
+            particleFx.burst({ glow: 1.8, x: ax, y: ay, z: az, color: [1, 1, 1], color2: FX_CHARGED, count: 120, speed: 18, upBias: 5, spread: 1, size: 0.4, life: 1.2, gravity: 8, drag: 0.7 });
+            particleFx.burst({ glow: 1.8, x: ax, y: ay, z: az, color: FX_POSITIVE, color2: FX_NEGATIVE, count: 90, speed: 10, upBias: 7, spread: 1, size: 0.3, life: 1.8, gravity: 3, drag: 0.5 });
             // The four crystals are consumed into the Warden (it is forged from
             // them); the Aegis form expels them back onto the towers later.
             worldManager.setBlocks(this.crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
             for (const c of this.crystals) {
-                particleFx.burst({ x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 30, speed: 7, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 4, drag: 0.9 });
+                particleFx.burst({ glow: 1.8, x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5, color: FX_CHARGED, color2: [1, 1, 1], count: 30, speed: 7, upBias: 3, spread: 1, size: 0.28, life: 0.8, gravity: 4, drag: 0.9 });
             }
             flattenArenaDais(p.centerX, p.centerZ, p.baseY, (edits) => worldManager.setBlocks(edits));
             // Drop the four causeways into the lava, the player is now sealed on
@@ -294,6 +295,7 @@ class BossSummon {
         this.lastAmbientPulse = t;
         // Energy motes drawn UP into the altar (negative gravity = they rise/gather).
         particleFx.burst({
+            glow: 1.8,
             x: this.altar.x, y: this.altar.y - 1, z: this.altar.z,
             color, color2: FX_CHARGED, count: 10, speed: 2.5, upBias: 2, spread: 1,
             size: 0.18, life: 1.1, gravity: -2, drag: 0.5,
@@ -311,6 +313,7 @@ class BossSummon {
         // the crystals when the Warden's Aegis form re-forms them mid-fight.)
         // An explosion of light at the tower: a white core + violet sparks.
         particleFx.burst({
+            glow: 1.8,
             x: c.x + 0.5, y: c.y + 0.5, z: c.z + 0.5,
             color: [1, 1, 1], color2: FX_CHARGED,
             count: 50, speed: 9, upBias: 3, spread: 1, size: 0.32, life: 1.0, gravity: 6, drag: 0.8,

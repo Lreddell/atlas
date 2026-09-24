@@ -42,7 +42,8 @@ export function ambientMix(env: AmbientEnvironment): AmbientMix {
     return {
         fireflies: FIREFLY_BIOMES.has(env.biomeId) ? 0.35 * night * openSky : 0,
         embers: env.biomeId === 'volcanic' && env.skyLight >= 8 ? 0.7 : 0,
-        sparks: env.biomeId === MAGNETIC_FIELDS ? 0.55 : 0,
+        // Kept sparse: the Magnetic Fields read mostly through their haze, as they always did.
+        sparks: env.biomeId === MAGNETIC_FIELDS ? 0.35 : 0,
         pollen: POLLEN_BIOMES.has(env.biomeId) ? 0.25 * day * openSky : 0,
         snow: (SNOW_BIOMES.has(env.biomeId) || env.snowyTag) && env.skyLight >= 10 ? 0.85 : 0,
         // Dust hangs in the dark underground, and shows best near a light.

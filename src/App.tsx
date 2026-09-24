@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
-import { Canvas, useFrame, type RootState } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
 import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
 import { Analytics } from '@vercel/analytics/react';
@@ -185,6 +185,26 @@ const readBooleanSetting = (key: string, fallback: boolean) => {
     const raw = window.localStorage.getItem(key);
     if (raw == null) return fallback;
     return raw === 'true';
+};
+
+// --- Shadow style switches ---
+// three builds each material's shader for the shadow map type it first sees and
+// keeps it (it only rebuilds for VSM), so switching Soft and Pixel shadows has
+// to ask every material in the scene to recompile.
+const ShadowTypeSync: React.FC<{ type: THREE.ShadowMapType }> = ({ type }) => {
+    const { scene, gl } = useThree();
+    const applied = useRef(type);
+    useEffect(() => {
+        if (applied.current === type) return;
+        applied.current = type;
+        scene.traverse((object) => {
+            const material = (object as THREE.Mesh).material;
+            if (!material) return;
+            for (const each of Array.isArray(material) ? material : [material]) each.needsUpdate = true;
+        });
+        gl.shadowMap.needsUpdate = true;
+    }, [type, scene, gl]);
+    return null;
 };
 
 // --- Streaming Loop Component ---
@@ -388,6 +408,12 @@ const App: React.FC = () => {
     const pipelinePlan = useMemo(() => planPipeline(graphics.config, { maxSamples: 4 }), [graphics.config]);
     const antialiasing = wantsContextAntialias(graphics.config, pipelinePlan);
     const chunkFadeEnabled = graphics.config.chunkFade;
+    // Pixel shadows (the Shadow Style option) take one hard lookup per texture
+    // pixel (voxelMaterial.ts); Soft filters them, lighter-weight on Low.
+    const shadowMapType = graphics.config.shadowStyle === 'pixel'
+        ? THREE.BasicShadowMap
+        : graphics.config.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    const classicStyle = graphics.config.visualStyle === 'classic';
     // Wind and water detail are uniforms on the shared chunk materials: no recompile.
     const foliageWind = graphics.config.foliageWind;
     const fancyWater = graphics.config.water === 'fancy';
@@ -3086,7 +3112,10 @@ const App: React.FC = () => {
   // Under water the world itself fogs blue-green (DayNightCycle), so the overlay
   // only darkens the edges; lava keeps its strong orange as a damage cue.
   let overlayStyle: React.CSSProperties = { backgroundColor: 'transparent' };
-  if (headBlockType === BlockType.WATER) overlayStyle = { background: 'radial-gradient(ellipse at center, rgba(3, 18, 36, 0) 55%, rgba(3, 18, 36, 0.5) 100%)' };
+  // Classic tints the whole screen blue under water, as the old renderer did; Luminous fogs the world instead.
+  if (headBlockType === BlockType.WATER) overlayStyle = classicStyle
+      ? { backgroundColor: 'rgba(0, 0, 100, 0.4)' }
+      : { background: 'radial-gradient(ellipse at center, rgba(3, 18, 36, 0) 55%, rgba(3, 18, 36, 0.5) 100%)' };
   else if (headBlockType === BlockType.LAVA) overlayStyle = { backgroundColor: 'rgba(255, 50, 0, 0.8)' };
 
       const hideGameplayCursor =
@@ -3339,7 +3368,7 @@ const App: React.FC = () => {
             <Canvas 
                 key={canvasKey} 
                 onCreated={state => { gameRendererRef.current = state; }}
-                shadows={shadowsEnabled ? { type: graphics.config.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap } : false}
+                shadows={shadowsEnabled ? { type: shadowMapType } : false}
                 gl={{
                     antialias: contextAntialias, alpha: false, preserveDrawingBuffer: isElectron,
                     toneMapping: TONE_MAPPING === 'agx' ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping,
@@ -3349,6 +3378,7 @@ const App: React.FC = () => {
                 frameloop={canvasFrameloop}
             >
                 {!isNativeLoop && <FPSLimiter limit={effectiveMaxFps} />}
+                <ShadowTypeSync type={shadowMapType} />
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
                 {import.meta.env.DEV && <DevQaProbe />}
                 {/* Scene-only motion blur. Unmounted when off, which restores R3F's
@@ -3361,7 +3391,7 @@ const App: React.FC = () => {
                 <ChunkFadeTicker />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
-                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} />
+                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
                 <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
                 {graphics.config.ambientParticles !== 'off' && appState === 'game' && (
                     <AmbientParticles density={graphics.config.ambientParticles} isPaused={worldPaused} />
