@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import '../atmosphereUniforms';
 import '../dynamicLights';
 import '../shadows';
+import { ATLAS_COLS } from '../../../data/blocks';
+import { ATLAS_PADDING, ATLAS_RAW_TILE_SIZE, ATLAS_STRIDE, getAtlasDimensions } from '../../../utils/textures';
+import { FACE_DATA } from '../../world/worldConstants';
 import {
     WORLD_LIGHT_DECLARATIONS,
     WORLD_LIGHT_END,
@@ -53,8 +56,18 @@ export function setVoxelStyle(options: { wind: boolean; fancyWater: boolean }): 
 /** The floor light (the least light anywhere) for the Brightness option (0..1). */
 export const floorLight = (brightness: number): number => 0.015 + Math.max(0, Math.min(1, brightness)) * 0.14;
 
+/** Where the tiles sit in the atlas, for faces the shader tiles itself (geometry.ts packTile). */
+const VOXEL_ATLAS_UNIFORMS = {
+    /** x atlas columns, y cell stride, z padding, w tile size (texels). */
+    atlasTiles: { value: new THREE.Vector4(ATLAS_COLS, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE) },
+    /** The atlas's size in texels. */
+    atlasTexSize: { value: new THREE.Vector2(1, 1) },
+};
+
 /** Per-frame lighting inputs: the Brightness option (0..1), tone-map exposure and a clock. */
 export function updateVoxelLighting(brightness: number, exposure: number, timeSeconds: number): void {
+    const atlas = getAtlasDimensions();
+    VOXEL_ATLAS_UNIFORMS.atlasTexSize.value.set(atlas.width, atlas.height);
     const light = VOXEL_UNIFORMS.atlasVoxelLight.value;
     light.x = floorLight(brightness);
     const flicker = Math.sin(timeSeconds * 7.3) * 0.6 + Math.sin(timeSeconds * 13.1 + 1.7) * 0.4;
@@ -64,6 +77,22 @@ export function updateVoxelLighting(brightness: number, exposure: number, timeSe
     light.w = timeSeconds % 3600;
 }
 
+// A face direction's UV axes in the world, as the mesher lays them out
+// (FACE_DATA: u runs corner 0 -> 1, v runs corner 0 -> 3), for tiled faces.
+const TILE_AXES_GLSL = (() => {
+    const vec3 = (v: number[]) => `vec3( ${v.map(c => c.toFixed(1)).join(', ')} )`;
+    const faces = (['right', 'left', 'top', 'bottom', 'front', 'back'] as const).map((name, i, all) => {
+        const { dir, corners: c } = FACE_DATA[name];
+        const axis = dir[0] !== 0 ? 0 : dir[1] !== 0 ? 1 : 2;
+        const test = `n.${'xyz'[axis]} ${dir[axis] > 0 ? '>' : '<'} ${dir[axis] > 0 ? '0.5' : '-0.5'}`;
+        const u = [0, 1, 2].map(a => c[1][a] - c[0][a]);
+        const v = [0, 1, 2].map(a => c[3][a] - c[0][a]);
+        const branch = i === 0 ? `if ( ${test} )` : i === all.length - 1 ? 'else' : `else if ( ${test} )`;
+        return `\t${branch} { u = ${vec3(u)}; v = ${vec3(v)}; }`;
+    });
+    return `void atlasTileAxes( vec3 n, out vec3 u, out vec3 v ) {\n${faces.join('\n')}\n}`;
+})();
+
 const VERTEX_DECLARATIONS = /* glsl */`
 uniform vec4 atlasVoxelLight;
 uniform vec4 atlasVoxelStyle;
@@ -71,6 +100,15 @@ varying float vVoxelClass;
 varying float vVoxelEmission;
 varying float vVoxelFaceShade;
 varying vec3 vVoxelNormal;
+#ifdef ATLAS_VOXEL_TILED
+attribute float atlasTile;
+// Not flat: a tiled quad's four corners carry the same values, so these
+// interpolate to them anyway, and flat varyings are costly under ANGLE's D3D11
+// backend (it rewrites every indexed draw to emulate GL's provoking vertex).
+varying float vAtlasTile;
+varying vec3 vAtlasTileCell;
+${TILE_AXES_GLSL}
+#endif
 `;
 
 const VERTEX_DECODE = /* glsl */`
@@ -82,6 +120,15 @@ const VERTEX_DECODE = /* glsl */`
 	vVoxelEmission = atlasPacked - vVoxelClass * 16.0;
 	// Chunks are never rotated, so the object normal is the world normal.
 	vVoxelNormal = normal;
+#ifdef ATLAS_VOXEL_TILED
+	vAtlasTile = atlasTile;
+	// A tiled face's first block (its UV origin's), as the world centre of that
+	// block: the fragment steps whole blocks from here by its UV's integer part.
+	vec3 atlasTu, atlasTv;
+	atlasTileAxes( normal, atlasTu, atlasTv );
+	vAtlasTileCell = ( modelMatrix * vec4( position - atlasTu * uv.x - atlasTv * uv.y, 1.0 ) ).xyz
+		+ 0.5 * ( atlasTu + atlasTv - normal );
+#endif
 	// Stylised per-axis shade on the ambient light: tops, east/west, north/south, bottoms.
 	vVoxelFaceShade = normal.y > 0.5 ? 1.0 : ( normal.y < -0.5 ? 0.62 : ( abs( normal.x ) > 0.5 ? 0.86 : 0.78 ) );
 `;
@@ -123,6 +170,28 @@ varying float vVoxelFaceShade;
 varying vec3 vVoxelNormal;
 float atlasBayer2( vec2 a ) { a = floor( a ); return fract( a.x / 2.0 + a.y * a.y * 0.75 ); }
 float atlasBayer4( vec2 a ) { return atlasBayer2( 0.5 * a ) * 0.25 + atlasBayer2( a ); }
+#ifdef ATLAS_VOXEL_TILED
+varying float vAtlasTile;
+varying vec3 vAtlasTileCell;
+uniform vec4 atlasTiles;
+uniform vec2 atlasTexSize;
+${TILE_AXES_GLSL}
+
+// voxelVertex.ts hashFace, in 32-bit unsigned arithmetic.
+uint atlasHashFace( ivec3 p, int face ) {
+	uint h = ( uint( p.x ) * 0x27d4eb2du ) ^ ( uint( p.y ) * 0x165667b1u ) ^ ( uint( p.z ) * 0x9e3779b1u ) ^ ( uint( face + 1 ) * 0x85ebca6bu );
+	h ^= h >> 15u;
+	h *= 0x2c1b3c6du;
+	h ^= h >> 12u;
+	h *= 0x297a2d39u;
+	h ^= h >> 15u;
+	return h;
+}
+
+vec2 atlasTileCorner( int i ) {
+	return vec2( ( i == 1 || i == 2 ) ? 1.0 : 0.0, i >= 2 ? 1.0 : 0.0 );
+}
+#endif
 `;
 
 // The pre-overhaul water was lit a little brighter in the dark than solid blocks.
@@ -136,7 +205,11 @@ const CLASSIC_FLOOR = /* glsl */`
 
 const FRAGMENT_MAP = /* glsl */`
 #ifdef USE_MAP
+	#ifdef ATLAS_VOXEL_TILED
+	vec4 sampledDiffuseColor = atlasSampleVoxel( vMapUv );
+	#else
 	vec4 sampledDiffuseColor = texture2D( map, vMapUv );
+	#endif
 	#ifdef ATLAS_VOXEL_CUTOUT
 	sampledDiffuseColor.a = sampledDiffuseColor.a >= 0.5 ? 1.0 : 0.0;
 	sampledDiffuseColor.rgb *= sampledDiffuseColor.a;
@@ -157,6 +230,64 @@ const FRAGMENT_MAP = /* glsl */`
 	atlasClassicAo = 1.0 - 0.42 * ( 1.0 - atlasOpenness );
 	atlasFaceShade = vVoxelFaceShade;
 ${worldLightPrepare('ATLAS_CLASSIC_FLOOR')}
+`;
+
+// Needs the map sampler, so it goes in after three declares it, just before main().
+const VOXEL_SAMPLE_FUNCTION = /* glsl */`
+#if defined( USE_MAP ) && defined( ATLAS_VOXEL_TILED )
+// A solid face's texel. Most faces carry atlas UVs; a tiled face (a greedy run
+// of full blocks, geometry.ts) carries UVs in blocks, so the tile repeats once
+// per block, turned by its quarter turns and each block's own texture variant
+// (the same hash the mesher used to bake it, voxelVertex.ts). The mip level
+// comes from the unwrapped UV, so it holds steady across block seams.
+//
+// The derivatives are taken first, outside the branch, and both kinds of face
+// share one explicit-gradient fetch: a branch holding a derivative (or a
+// plain texture() call) gets flattened on some backends, running both sides
+// for every pixel.
+vec4 atlasSampleVoxel( vec2 uv ) {
+	vec2 gradX = dFdx( uv );
+	vec2 gradY = dFdy( uv );
+	vec2 coord = uv;
+	if ( vAtlasTile < 32767.5 ) {
+		int tile = int( vAtlasTile + 0.5 );
+		int texIdx = tile & 1023;
+		int turnsBase = ( tile >> 10 ) & 3;
+		int mode = ( tile >> 12 ) & 3;
+		int variant = 0;
+		if ( mode != 0 ) {
+			vec3 n = vVoxelNormal;
+			int face = n.x > 0.5 ? 0 : n.x < -0.5 ? 1 : n.y > 0.5 ? 2 : n.y < -0.5 ? 3 : n.z > 0.5 ? 4 : 5;
+			vec3 tu, tv;
+			atlasTileAxes( n, tu, tv );
+			// The block this texel belongs to, from the UV's whole part: the same
+			// number the tile position below takes the fraction of, so the two
+			// never disagree along a seam.
+			ivec3 block = ivec3( floor( vAtlasTileCell + tu * floor( uv.x ) + tv * floor( uv.y ) ) );
+			int h = int( atlasHashFace( block, face ) & 7u );
+			// Grass-like blocks only mirror their sides.
+			variant = ( mode == 2 && face != 2 && face != 3 ) ? ( h & 4 ) : h;
+		}
+		// Corner k of the face shows tile corner ((((k + turns) & 3) ^ mirror) + base turns) & 3.
+		int turns = variant & 3;
+		int mirror = ( variant >> 2 ) & 1;
+		vec2 q0 = atlasTileCorner( ( ( turns ^ mirror ) + turnsBase ) & 3 );
+		vec2 q1 = atlasTileCorner( ( ( ( ( 1 + turns ) & 3 ) ^ mirror ) + turnsBase ) & 3 );
+		vec2 q3 = atlasTileCorner( ( ( ( ( 3 + turns ) & 3 ) ^ mirror ) + turnsBase ) & 3 );
+		mat2 orient = mat2( q1 - q0, q3 - q0 );
+		float columns = atlasTiles.x;
+		vec2 cell = vec2( mod( float( texIdx ), columns ), floor( float( texIdx ) / columns ) );
+		vec2 tileSize = vec2( atlasTiles.w ) / atlasTexSize;
+		vec2 texel = cell * atlasTiles.y + atlasTiles.z;
+		// v runs up the atlas: a tile's bottom edge sits at 1 - (top + size) / height.
+		vec2 origin = vec2( texel.x / atlasTexSize.x, 1.0 - ( texel.y + atlasTiles.w ) / atlasTexSize.y );
+		coord = origin + ( q0 + orient * fract( uv ) ) * tileSize;
+		gradX = ( orient * gradX ) * tileSize;
+		gradY = ( orient * gradY ) * tileSize;
+	}
+	return textureGrad( map, coord, gradX, gradY );
+}
+#endif
 `;
 
 const FRAGMENT_NORMAL = /* glsl */`
@@ -287,12 +418,14 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
         defines.ATLAS_VOXEL_FOLIAGE = '';
     }
     if (options.variant === 'transparent') defines.ATLAS_VOXEL_TRANSPARENT = '';
+    // Only solid chunks hold tiled faces (geometry.ts): the others sample as before.
+    if (options.variant === 'solid') defines.ATLAS_VOXEL_TILED = '';
     if (options.fade) defines.ATLAS_VOXEL_FADE = '';
     material.defines = defines;
     if (options.fade) material.userData.atlasFade = { value: 0 };
 
     material.onBeforeCompile = (shader) => {
-        Object.assign(shader.uniforms, VOXEL_UNIFORMS);
+        Object.assign(shader.uniforms, VOXEL_UNIFORMS, VOXEL_ATLAS_UNIFORMS);
         if (options.fade) shader.uniforms.atlasVoxelFade = material.userData.atlasFade;
 
         shader.vertexShader = shader.vertexShader
@@ -308,10 +441,12 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
             .replace('#include <normal_fragment_begin>', FRAGMENT_NORMAL)
             .replace('#include <lights_fragment_begin>', voxelLightsFragmentBegin())
             .replace('#include <lights_fragment_end>', FRAGMENT_LIGHTS_END)
-            .replace('#include <opaque_fragment>', FRAGMENT_REFLECTIONS);
+            .replace('#include <opaque_fragment>', FRAGMENT_REFLECTIONS)
+            .replace('#include <clipping_planes_pars_fragment>', `#include <clipping_planes_pars_fragment>
+${VOXEL_SAMPLE_FUNCTION}`);
     };
     // One program per variant, however many clones share it.
-    const cacheKey = `atlas-voxel-v3:${options.variant}${options.fade ? ':fade' : ''}`;
+    const cacheKey = `atlas-voxel-v5:${options.variant}${options.fade ? ':fade' : ''}`;
     material.customProgramCacheKey = () => cacheKey;
     material.needsUpdate = true;
 }

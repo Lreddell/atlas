@@ -17,15 +17,21 @@ const { generateGeometryData, CHUNK_SIZE, MIN_Y, MAX_Y, index3D, BlockType } = m
 const H = MAX_Y - MIN_Y + 1;
 const CELLS = CHUNK_SIZE * CHUNK_SIZE * H;
 
-// Count opaque quads whose first vertex sits at worldY facing up (+Y normal).
-// The mesher always emits 4 vertices per quad.
+// Block tops meshed at worldY (opaque, facing up), counted by area: the mesher
+// merges flat runs of faces into one quad, so this counts the faces they stand for.
 const countTopFacesAt = (res, worldY) => {
     const { positions, normals } = res.opaque;
-    let quads = 0;
+    let area = 0;
     for (let v = 0; v * 3 < positions.length; v += 4) {
-        if (normals[v * 3 + 1] === 1 && positions[v * 3 + 1] === worldY) quads++;
+        if (normals[v * 3 + 1] !== 1 || positions[v * 3 + 1] !== worldY) continue;
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let k = 0; k < 4; k++) {
+            minX = Math.min(minX, positions[(v + k) * 3]); maxX = Math.max(maxX, positions[(v + k) * 3]);
+            minZ = Math.min(minZ, positions[(v + k) * 3 + 2]); maxZ = Math.max(maxZ, positions[(v + k) * 3 + 2]);
+        }
+        area += (maxX - minX) * (maxZ - minZ);
     }
-    return quads;
+    return area;
 };
 
 test('far-chunk dark culling keeps deep-ocean floors visible through water', () => {

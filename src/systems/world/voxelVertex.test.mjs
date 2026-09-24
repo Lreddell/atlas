@@ -63,17 +63,20 @@ test('blocks get the material class and glow the shader expects', () => {
     assert.ok(unpackVoxelAlpha(voxelAlphaOf(BlockType.ECHO_CRYSTAL)).emission <= 3);
 });
 
-// Finds the quad whose four vertices lie on the top of block (x, y, z), returning its colour bytes.
+// Finds the quad covering the top of block (x, y, z) (a merged face covers many), returning its colour bytes.
 const topFaceBytes = (buffer, x, y, z) => {
     const { positions, normals, colors } = buffer;
     for (let v = 0; v * 3 < positions.length; v += 4) {
         if (normals[v * 3 + 1] !== 1) continue;
-        let inside = true;
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, flat = true;
         for (let k = 0; k < 4; k++) {
             const px = positions[(v + k) * 3], py = positions[(v + k) * 3 + 1], pz = positions[(v + k) * 3 + 2];
-            if (py !== y + 1 || px < x || px > x + 1 || pz < z || pz > z + 1) inside = false;
+            if (py !== y + 1) flat = false;
+            minX = Math.min(minX, px); maxX = Math.max(maxX, px); minZ = Math.min(minZ, pz); maxZ = Math.max(maxZ, pz);
         }
-        if (inside) return [0, 1, 2, 3].map(k => [...colors.slice((v + k) * 4, (v + k) * 4 + 4)]);
+        if (flat && minX <= x && maxX >= x + 1 && minZ <= z && maxZ >= z + 1) {
+            return [0, 1, 2, 3].map(k => [...colors.slice((v + k) * 4, (v + k) * 4 + 4)]);
+        }
     }
     return null;
 };

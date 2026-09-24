@@ -236,6 +236,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
             geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
             geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 4, true));
+            // How each face is textured: an atlas UV as is, or a tile repeated per block (geometry.ts).
+            geo.setAttribute('atlasTile', new THREE.BufferAttribute(buff.tiles, 1));
             if (buff.indices && buff.indices.length > 0) {
                 geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }

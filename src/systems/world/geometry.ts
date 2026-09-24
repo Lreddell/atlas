@@ -5,11 +5,11 @@ import { BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { CROSS_RENDERED_BLOCKS } from '../../data/spriteBlocks';
 import { index3D } from './worldCoords';
-import { resolveTexture } from './textureResolver';
+import { resolveTexture, resolveTile } from './textureResolver';
 import { getOpacity } from './blockProps';
 import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
-import { AO_BYTES, FACE_INDEX, SWAY_BIT, VoxelClass, applyUvVariant, isFluidBlock, lightByte, uvVariantFor, voxelAlphaOf, voxelClassOf } from './voxelVertex';
+import { AO_BYTES, FACE_INDEX, SWAY_BIT, VoxelClass, applyUvVariant, isFluidBlock, lightByte, uvVariantFor, uvVariationMode, voxelAlphaOf, voxelClassOf } from './voxelVertex';
 
 export interface NeighborData {
     left?: Uint8Array;
@@ -29,11 +29,25 @@ export interface NeighborLight {
 export interface GeometryAttributes {
     positions: Float32Array;
     normals: Float32Array;
+    /** Atlas UVs; on a tiled face (see tiles), UVs in blocks across the face. */
     uvs: Float32Array;
     /** Four bytes a vertex: sky light, block light, AO, class | emission | sway (see voxelVertex.ts). */
     colors: Uint8Array;
+    /** One a vertex: TILE_RAW, or a tiled face's packed tile (packTile). */
+    tiles: Uint16Array;
     indices: Uint32Array;
 }
+
+/** A face whose uvs are atlas UVs already: sprites, fluids, beds, slabs and stairs. */
+export const TILE_RAW = 0x8000;
+
+/**
+ * A tiled face (a greedy-merged run of full blocks): its atlas slot (10 bits),
+ * quarter turns (2 bits) and texture variation mode (2 bits, voxelVertex.ts).
+ * The shader repeats the tile once per block across the face.
+ */
+export const packTile = (texIdx: number, uvRot: number, variation: number): number =>
+    (texIdx & 1023) | ((uvRot & 3) << 10) | ((variation & 3) << 12);
 
 export interface GeometryResult {
     opaque: GeometryAttributes;
@@ -54,6 +68,7 @@ class GeometryBuffer {
     normals = new Float32Array(this.capacityVerts * 3);
     uvs = new Float32Array(this.capacityVerts * 2);
     colors = new Uint8Array(this.capacityVerts * 4);
+    tiles = new Uint16Array(this.capacityVerts);
     indices = new Uint32Array((this.capacityVerts / 4) * 6);
 
     vCount = 0;
@@ -85,6 +100,9 @@ class GeometryBuffer {
         const nextColors = new Uint8Array(newCapacity * 4);
         nextColors.set(this.colors);
         this.colors = nextColors;
+        const nextTiles = new Uint16Array(newCapacity);
+        nextTiles.set(this.tiles);
+        this.tiles = nextTiles;
         const nextIndices = new Uint32Array((newCapacity / 4) * 6);
         nextIndices.set(this.indices);
         this.indices = nextIndices;
@@ -137,6 +155,8 @@ class GeometryBuffer {
         colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaTop;
         this.uvs[up] = uMin; this.uvs[up+1] = vMax; // 0,1
 
+        this.tiles.fill(TILE_RAW, vBase, vBase + 4);
+
         // Indices (0, 1, 2,  0, 2, 3)
         this.indices[ip] = vBase;
         this.indices[ip+1] = vBase + 1;
@@ -156,6 +176,7 @@ class GeometryBuffer {
             normals: this.normals.slice(0, this.vCount * 3),
             uvs: this.uvs.slice(0, this.vCount * 2),
             colors: this.colors.slice(0, this.vCount * 4),
+            tiles: this.tiles.slice(0, this.vCount),
             indices: this.indices.slice(0, this.iCount)
         };
     }
@@ -165,7 +186,9 @@ class GeometryBuffer {
 const opaqueBuffer = new GeometryBuffer();
 const cutoutBuffer = new GeometryBuffer();
 const transparentBuffer = new GeometryBuffer();
-const greedyVisitedScratch = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+// One slice's merge keys for the greedy pass, sized for the tallest slice (a side
+// face runs the chunk's width by its full height).
+const greedyKeys = new Float64Array(CHUNK_SIZE * WORLD_HEIGHT);
 
 const MAX_BLOCK_ID = Math.max(
     ...Object.values(BlockType).filter((v): v is number => typeof v === 'number')
@@ -213,6 +236,44 @@ function isOpaqueGreedyCandidate(type: BlockType): boolean {
     const def = BLOCKS[type];
     return !!def && !def.transparent;
 }
+
+/** Full opaque cubes: every face of one is drawn by the greedy pass (a byte a block id). */
+const IS_GREEDY = new Uint8Array(Math.max(256, MAX_BLOCK_ID + 1));
+for (let id = 0; id <= MAX_BLOCK_ID; id++) {
+    if (isOpaqueGreedyCandidate(id as BlockType)) IS_GREEDY[id] = 1;
+}
+
+type FaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
+
+/**
+ * How a face direction's quads lie in the chunk: the axis it faces along (n),
+ * the axes its BL->BR (u) and BL->TL (v) edges run along, and each corner's
+ * 0/1 offset on those three axes, so a merged run of w x h faces is the same
+ * quad stretched.
+ */
+interface GreedyLayout {
+    name: FaceName;
+    dir: number[];
+    nAxis: number;
+    uAxis: number;
+    vAxis: number;
+    corners: number[][];
+    aoVectors: number[][][];
+}
+
+const axisOf = (v: readonly number[]): number => (v[0] !== 0 ? 0 : v[1] !== 0 ? 1 : 2);
+const GREEDY_LAYOUTS: GreedyLayout[] = (['right', 'left', 'top', 'bottom', 'front', 'back'] as const).map((name) => {
+    const face = FACE_DATA[name];
+    const c = face.corners;
+    const nAxis = axisOf(face.dir);
+    const uAxis = axisOf([c[1][0] - c[0][0], c[1][1] - c[0][1], c[1][2] - c[0][2]]);
+    const vAxis = axisOf([c[3][0] - c[0][0], c[3][1] - c[0][1], c[3][2] - c[0][2]]);
+    return {
+        name, dir: face.dir, nAxis, uAxis, vAxis,
+        corners: c.map(k => [k[nAxis], k[uAxis], k[vAxis]]),
+        aoVectors: face.aoVectors,
+    };
+});
 
 // Face descriptors for the partial-box (slab/stair) emitter.
 const SHAPED_FACES: { name: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back', dx: number, dy: number, dz: number }[] = [
@@ -337,6 +398,26 @@ export function generateGeometryData(
         buffer.colors[cp + 3] = cornerScratch[offset + 3];
     };
 
+    // A quad's two triangles, split along its brighter diagonal (corners from
+    // the colours just written at vBase). A lone dark corner then shades only
+    // its own triangle instead of streaking across the face along whichever
+    // diagonal the split happened to take.
+    const writeQuadIndices = (buffer: GeometryBuffer, vBase: number) => {
+        const c = buffer.colors;
+        const o = vBase * 4;
+        const diagonal02 = c[o] + c[o + 1] + c[o + 2] + c[o + 8] + c[o + 9] + c[o + 10];
+        const diagonal13 = c[o + 4] + c[o + 5] + c[o + 6] + c[o + 12] + c[o + 13] + c[o + 14];
+        const ip = buffer.iCount;
+        const first = diagonal02 >= diagonal13 ? 0 : 1;
+        buffer.indices[ip] = vBase + first;
+        buffer.indices[ip + 1] = vBase + first + 1;
+        buffer.indices[ip + 2] = vBase + first + 2;
+        buffer.indices[ip + 3] = vBase + first;
+        buffer.indices[ip + 4] = vBase + ((first + 2) & 3);
+        buffer.indices[ip + 5] = vBase + ((first + 3) & 3);
+        buffer.iCount += 6;
+    };
+
     // Emits a slab/stairs block as a set of partial boxes. Each box face is drawn
     // unless it lies flush on the cell boundary against a full opaque cube. UVs are
     // sub-sampled from the parent block's texture so a half-height side shows the
@@ -398,7 +479,6 @@ export function generateGeometryData(
                 let vp = opaqueBuffer.vCount * 3;
                 let up = opaqueBuffer.vCount * 2;
                 let cp = opaqueBuffer.vCount * 4;
-                const ip = opaqueBuffer.iCount;
                 const vBase = opaqueBuffer.vCount;
                 const alpha = voxelAlphaOf(type);
 
@@ -445,173 +525,134 @@ export function generateGeometryData(
                     copyCorner(opaqueBuffer, cp, 0);
                     opaqueBuffer.uvs[up] = u;
                     opaqueBuffer.uvs[up + 1] = v;
+                    opaqueBuffer.tiles[vBase + k] = TILE_RAW;
                     vp += 3; up += 2; cp += 4;
                 }
 
-                opaqueBuffer.indices[ip] = vBase;
-                opaqueBuffer.indices[ip + 1] = vBase + 1;
-                opaqueBuffer.indices[ip + 2] = vBase + 2;
-                opaqueBuffer.indices[ip + 3] = vBase;
-                opaqueBuffer.indices[ip + 4] = vBase + 2;
-                opaqueBuffer.indices[ip + 5] = vBase + 3;
+                writeQuadIndices(opaqueBuffer, vBase);
                 opaqueBuffer.vCount += 4;
-                opaqueBuffer.iCount += 6;
             }
         }
     };
 
-    const emitGreedySurface = (y: number, topFace: boolean) => {
-        const visited = greedyVisitedScratch;
-        visited.fill(0);
-        const nY = topFace ? y + 1 : y - 1;
-        const dirName = topFace ? 'top' : 'bottom';
-        const face = FACE_DATA[dirName];
-        const normalY = topFace ? 1 : -1;
+    // Writes one quad of a tiled face: `w` faces along the layout's u axis by `h`
+    // along v, from cell (u0, v0) of slice s, with corner bytes from cornerScratch.
+    const emitTiledQuad = (layout: GreedyLayout, s: number, u0: number, v0: number, w: number, h: number, tile: number) => {
+        if (!opaqueBuffer.ensureCapacity(1)) return;
+        const vBase = opaqueBuffer.vCount;
+        let vp = vBase * 3;
+        let up = vBase * 2;
+        let cp = vBase * 4;
+        const { nAxis, uAxis, vAxis, corners, dir } = layout;
+        for (let k = 0; k < 4; k++) {
+            const corner = corners[k];
+            opaqueBuffer.positions[vp + nAxis] = s + corner[0];
+            opaqueBuffer.positions[vp + uAxis] = u0 + corner[1] * w;
+            opaqueBuffer.positions[vp + vAxis] = v0 + corner[2] * h;
+            opaqueBuffer.normals[vp] = dir[0];
+            opaqueBuffer.normals[vp + 1] = dir[1];
+            opaqueBuffer.normals[vp + 2] = dir[2];
+            copyCorner(opaqueBuffer, cp, k * 4);
+            // In blocks: BL (0, 0), BR (w, 0), TR (w, h), TL (0, h).
+            opaqueBuffer.uvs[up] = k === 1 || k === 2 ? w : 0;
+            opaqueBuffer.uvs[up + 1] = k >= 2 ? h : 0;
+            opaqueBuffer.tiles[vBase + k] = tile;
+            vp += 3; up += 2; cp += 4;
+        }
+        writeQuadIndices(opaqueBuffer, vBase);
+        opaqueBuffer.vCount += 4;
+    };
 
-        for (let z = 0; z < CHUNK_SIZE; z++) {
-            for (let x = 0; x < CHUNK_SIZE; x++) {
-                const visitIndex = z * CHUNK_SIZE + x;
-                if (visited[visitIndex]) continue;
+    // --- Greedy meshing: every face of a full opaque cube -------------------
+    // Faces are gathered a slice at a time in each of the six directions. A face
+    // whose four corners share one light and AO value (most faces in the open,
+    // and most in deep shade) merges with its neighbours into one quad when they
+    // show the same tile, turned the same way, under that same flat light, so the
+    // merged quad looks exactly like the faces it replaces. Its UVs run in
+    // blocks: the shader repeats the tile once per block and gives each block its
+    // own texture variant (voxelMaterial.ts). A face with any light or AO gradient
+    // stays a quad of its own, so shading never smears across a merge.
+    const emitGreedyFaces = (meshMinY: number, meshMaxY: number) => {
+        const lo = [0, meshMinY, 0];
+        const hi = [CHUNK_SIZE - 1, meshMaxY, CHUNK_SIZE - 1];
+        const cell = [0, 0, 0];
+        for (const layout of GREEDY_LAYOUTS) {
+            const { nAxis, uAxis, vAxis, aoVectors } = layout;
+            const dx = layout.dir[0], dy = layout.dir[1], dz = layout.dir[2];
+            const uLo = lo[uAxis], vLo = lo[vAxis];
+            const U = hi[uAxis] - uLo + 1;
+            const V = hi[vAxis] - vLo + 1;
+            for (let s = lo[nAxis]; s <= hi[nAxis]; s++) {
+                cell[nAxis] = s;
+                let mergeable = false;
+                for (let j = 0; j < V; j++) {
+                    cell[vAxis] = vLo + j;
+                    const row = j * U;
+                    for (let i = 0; i < U; i++) {
+                        greedyKeys[row + i] = 0;
+                        cell[uAxis] = uLo + i;
+                        const x = cell[0], y = cell[1], z = cell[2];
+                        const index = index3D(x, y, z);
+                        const type = chunk[index] as BlockType;
+                        if (IS_GREEDY[type] !== 1) continue;
+                        const nx = x + dx, ny = y + dy, nz = z + dz;
+                        const nType = getTypeFast(nx, ny, nz);
+                        if (IS_GREEDY[nType] === 1) continue;
+                        // Only dark AIR is safely invisible from outside: dark water
+                        // (a deep ocean floor) is seen through the water above it.
+                        if (cullDarkFaces && nType === BlockType.AIR && getLightFast(nx, ny, nz) === 0) continue;
 
-                const type = getTypeFast(x, y, z);
-                if (!isOpaqueGreedyCandidate(type)) continue;
-
-                const baseRotation = metaData ? metaData[index3D(x, y, z)] : 0;
-
-                const nType = getTypeFast(x, nY, z);
-                if (isOpaqueGreedyCandidate(nType)) continue;
-
-                let width = 1;
-                while (x + width < CHUNK_SIZE) {
-                    const tx = x + width;
-                    const tVisit = z * CHUNK_SIZE + tx;
-                    if (visited[tVisit]) break;
-                    const tType = getTypeFast(tx, y, z);
-                    if (tType !== type) break;
-                    const tRotation = metaData ? metaData[index3D(tx, y, z)] : 0;
-                    if (tRotation !== baseRotation) break;
-                    if (isOpaqueGreedyCandidate(getTypeFast(tx, nY, z))) break;
-                    width++;
-                }
-
-                let depth = 1;
-                outer: while (z + depth < CHUNK_SIZE) {
-                    const tz = z + depth;
-                    for (let ix = 0; ix < width; ix++) {
-                        const tx = x + ix;
-                        const tVisit = tz * CHUNK_SIZE + tx;
-                        if (visited[tVisit]) break outer;
-                        const tType = getTypeFast(tx, y, tz);
-                        if (tType !== type) break outer;
-                        const tRotation = metaData ? metaData[index3D(tx, y, tz)] : 0;
-                        if (tRotation !== baseRotation) break outer;
-                        if (isOpaqueGreedyCandidate(getTypeFast(tx, nY, tz))) break outer;
-                    }
-                    depth++;
-                }
-
-                for (let dz = 0; dz < depth; dz++) {
-                    for (let dx = 0; dx < width; dx++) {
-                        visited[(z + dz) * CHUNK_SIZE + (x + dx)] = 1;
-                    }
-                }
-
-                const { uvs } = resolveTexture(type, dirName, 0, normalY, 0, baseRotation);
-
-                const c0 = face.corners[0];
-                const c1 = face.corners[1];
-                const c2 = face.corners[2];
-                const c3 = face.corners[3];
-
-                const alpha = voxelAlphaOf(type);
-                const faceIndex = topFace ? FACE_INDEX.top : FACE_INDEX.bottom;
-                const writeCellCorner = (cornerIndex: number, tx: number, tz: number) => {
-                    const ax1 = face.aoVectors[cornerIndex][0];
-                    const ax2 = face.aoVectors[cornerIndex][1];
-                    writeCorner(
-                        cornerScratch, cornerIndex * 4, alpha, tx, y + normalY, tz,
-                        ax1[0], ax1[1], ax1[2], true,
-                        ax2[0], ax2[1], ax2[2], true,
-                    );
-                };
-
-                for (let dz = 0; dz < depth; dz++) {
-                    for (let dx = 0; dx < width; dx++) {
-                        const tx = x + dx;
-                        const tz = z + dz;
-
-                        // Dark-cull only against enclosed dark AIR (cave interiors).
-                        // A zero-light facing cell holding water is still visible
-                        // THROUGH the water column above (deep ocean floors), so it
-                        // must keep its face or distant oceans render see-through.
-                        if (cullDarkFaces && getLightFast(tx, nY, tz) === 0
-                            && getTypeFast(tx, nY, tz) === BlockType.AIR) continue;
-
-                        const p0x = tx + c0[0];
-                        const p0y = y + c0[1];
-                        const p0z = tz + c0[2];
-
-                        const p1x = tx + c1[0];
-                        const p1y = y + c1[1];
-                        const p1z = tz + c1[2];
-
-                        const p2x = tx + c2[0];
-                        const p2y = y + c2[1];
-                        const p2z = tz + c2[2];
-
-                        const p3x = tx + c3[0];
-                        const p3y = y + c3[1];
-                        const p3z = tz + c3[2];
-
-                        writeCellCorner(0, tx, tz);
-                        writeCellCorner(1, tx, tz);
-                        writeCellCorner(2, tx, tz);
-                        writeCellCorner(3, tx, tz);
-
-                        // Every cell is its own quad, so each gets its own texture variant.
-                        const variant = uvVariantFor(type, faceIndex, worldX0 + tx, y, worldZ0 + tz);
-                        const cellUvs = variant === 0 ? uvs : (applyUvVariant(uvs, variant, uvScratch), uvScratch);
-
-                        if (opaqueBuffer.ensureCapacity(1)) {
-                            let vp = opaqueBuffer.vCount * 3;
-                            let up = opaqueBuffer.vCount * 2;
-                            let cp = opaqueBuffer.vCount * 4;
-                            let ip = opaqueBuffer.iCount;
-                            const vBase = opaqueBuffer.vCount;
-
-                            opaqueBuffer.positions[vp] = p0x; opaqueBuffer.positions[vp + 1] = p0y; opaqueBuffer.positions[vp + 2] = p0z;
-                            opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            copyCorner(opaqueBuffer, cp, 0);
-                            opaqueBuffer.uvs[up] = cellUvs[0]; opaqueBuffer.uvs[up + 1] = cellUvs[1];
-
-                            vp += 3; up += 2; cp += 4;
-                            opaqueBuffer.positions[vp] = p1x; opaqueBuffer.positions[vp + 1] = p1y; opaqueBuffer.positions[vp + 2] = p1z;
-                            opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            copyCorner(opaqueBuffer, cp, 4);
-                            opaqueBuffer.uvs[up] = cellUvs[2]; opaqueBuffer.uvs[up + 1] = cellUvs[3];
-
-                            vp += 3; up += 2; cp += 4;
-                            opaqueBuffer.positions[vp] = p2x; opaqueBuffer.positions[vp + 1] = p2y; opaqueBuffer.positions[vp + 2] = p2z;
-                            opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            copyCorner(opaqueBuffer, cp, 8);
-                            opaqueBuffer.uvs[up] = cellUvs[4]; opaqueBuffer.uvs[up + 1] = cellUvs[5];
-
-                            vp += 3; up += 2; cp += 4;
-                            opaqueBuffer.positions[vp] = p3x; opaqueBuffer.positions[vp + 1] = p3y; opaqueBuffer.positions[vp + 2] = p3z;
-                            opaqueBuffer.normals[vp] = 0; opaqueBuffer.normals[vp + 1] = normalY; opaqueBuffer.normals[vp + 2] = 0;
-                            copyCorner(opaqueBuffer, cp, 12);
-                            opaqueBuffer.uvs[up] = cellUvs[6]; opaqueBuffer.uvs[up + 1] = cellUvs[7];
-
-                            opaqueBuffer.indices[ip] = vBase;
-                            opaqueBuffer.indices[ip + 1] = vBase + 1;
-                            opaqueBuffer.indices[ip + 2] = vBase + 2;
-                            opaqueBuffer.indices[ip + 3] = vBase;
-                            opaqueBuffer.indices[ip + 4] = vBase + 2;
-                            opaqueBuffer.indices[ip + 5] = vBase + 3;
-
-                            opaqueBuffer.vCount += 4;
-                            opaqueBuffer.iCount += 6;
+                        const alpha = voxelAlphaOf(type);
+                        for (let k = 0; k < 4; k++) {
+                            const a1 = aoVectors[k][0], a2 = aoVectors[k][1];
+                            writeCorner(cornerScratch, k * 4, alpha, nx, ny, nz, a1[0], a1[1], a1[2], true, a2[0], a2[1], a2[2], true);
                         }
+                        const choice = resolveTile(type, layout.name, dx, dy, dz, metaData ? metaData[index] : 0);
+                        const tile = packTile(choice.texIdx, choice.uvRot, uvVariationMode(type));
+                        const sky = cornerScratch[0], block = cornerScratch[1], ao = cornerScratch[2];
+                        if (cornerScratch[4] === sky && cornerScratch[8] === sky && cornerScratch[12] === sky
+                            && cornerScratch[5] === block && cornerScratch[9] === block && cornerScratch[13] === block
+                            && cornerScratch[6] === ao && cornerScratch[10] === ao && cornerScratch[14] === ao) {
+                            // Flat: tile, class and the one light value, all in one key (exact in a double).
+                            greedyKeys[row + i] = 1 + tile + alpha * 0x10000 + sky * 0x1000000 + block * 0x100000000 + ao * 0x10000000000;
+                            mergeable = true;
+                        } else {
+                            emitTiledQuad(layout, s, uLo + i, vLo + j, 1, 1, tile);
+                        }
+                    }
+                }
+                if (!mergeable) continue;
+
+                // Grow each run along u, then down v while the whole row matches.
+                for (let j = 0; j < V; j++) {
+                    const row = j * U;
+                    for (let i = 0; i < U;) {
+                        const key = greedyKeys[row + i];
+                        if (key === 0) { i++; continue; }
+                        let w = 1;
+                        while (i + w < U && greedyKeys[row + i + w] === key) w++;
+                        let h = 1;
+                        grow: while (j + h < V) {
+                            const next = (j + h) * U + i;
+                            for (let t = 0; t < w; t++) if (greedyKeys[next + t] !== key) break grow;
+                            h++;
+                        }
+                        for (let t = 0; t < h; t++) greedyKeys.fill(0, (j + t) * U + i, (j + t) * U + i + w);
+
+                        const packed = key - 1;
+                        const tile = packed % 0x10000;
+                        const alpha = Math.floor(packed / 0x10000) % 0x100;
+                        const sky = Math.floor(packed / 0x1000000) % 0x100;
+                        const block = Math.floor(packed / 0x100000000) % 0x100;
+                        const ao = Math.floor(packed / 0x10000000000) % 0x100;
+                        for (let k = 0; k < 16; k += 4) {
+                            cornerScratch[k] = sky;
+                            cornerScratch[k + 1] = block;
+                            cornerScratch[k + 2] = ao;
+                            cornerScratch[k + 3] = alpha;
+                        }
+                        emitTiledQuad(layout, s, uLo + i, vLo + j, w, h, tile);
+                        i += w;
                     }
                 }
             }
@@ -650,10 +691,7 @@ export function generateGeometryData(
     const meshMinY = MIN_Y + minOccY;
     const meshMaxY = MIN_Y + maxOccY;
 
-    for (let y = meshMinY; y <= meshMaxY; y++) {
-        emitGreedySurface(y, true);
-        emitGreedySurface(y, false);
-    }
+    emitGreedyFaces(meshMinY, meshMaxY);
 
     for (let y = meshMinY; y <= meshMaxY; y++) {
       for (let z = 0; z < CHUNK_SIZE; z++) {
@@ -666,6 +704,8 @@ export function generateGeometryData(
           const def = BLOCKS[type];
 
           if (!def) continue;
+          // Full opaque cubes: the greedy pass drew every face.
+          if (IS_GREEDY[type] === 1) continue;
 
           if (IS_SHAPED[type] === 1) {
               emitShapedBlock(x, y, z, type, metaData ? metaData[index] : 0);
@@ -729,7 +769,6 @@ export function generateGeometryData(
           const rotation = metaData ? metaData[index] : 0;
           const isFluid = type === BlockType.WATER || type === BlockType.LAVA;
           const isBed = type === BlockType.BED_FOOT || type === BlockType.BED_HEAD;
-          const isGreedyOpaque = isOpaqueGreedyCandidate(type);
           
           let blockHeight = 1.0;
           
@@ -756,7 +795,6 @@ export function generateGeometryData(
 
           for (const dir of directions) {
              if (isBed && dir === 'bottom') continue;
-                 if (isGreedyOpaque && (dir === 'top' || dir === 'bottom')) continue;
 
              const face = FACE_DATA[dir];
              const dx = face.dir[0]; const dy = face.dir[1]; const dz = face.dir[2];
@@ -881,7 +919,6 @@ export function generateGeometryData(
                      let vp = targetBuffer.vCount * 3;
                      let up = targetBuffer.vCount * 2;
                      let cp = targetBuffer.vCount * 4;
-                     let ip = targetBuffer.iCount;
                      const vBase = targetBuffer.vCount;
 
                      // V0
@@ -911,16 +948,9 @@ export function generateGeometryData(
                      copyCorner(targetBuffer, cp, 12);
                      targetBuffer.uvs[up] = u3; targetBuffer.uvs[up+1] = v3;
 
-                     // Indices
-                     targetBuffer.indices[ip] = vBase;
-                     targetBuffer.indices[ip+1] = vBase+1;
-                     targetBuffer.indices[ip+2] = vBase+2;
-                     targetBuffer.indices[ip+3] = vBase;
-                     targetBuffer.indices[ip+4] = vBase+2;
-                     targetBuffer.indices[ip+5] = vBase+3;
-
+                     targetBuffer.tiles.fill(TILE_RAW, vBase, vBase + 4);
+                     writeQuadIndices(targetBuffer, vBase);
                      targetBuffer.vCount += 4;
-                     targetBuffer.iCount += 6;
                  }
              }
           }

@@ -3,17 +3,33 @@ import { BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
 
-export function resolveTexture(
-    type: BlockType, 
-    _dir: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back', 
-    dx: number, 
-    dy: number, 
-    dz: number, 
-    rotation: number = 0
-): { texIdx: number, uvs: number[] } {
+export type FaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
+
+export interface TileChoice {
+    texIdx: number;
+    /** Quarter turns of the tile on the face: 0=0, 1=90, 2=180, 3=270 degrees. */
+    uvRot: number;
+}
+
+const tileScratch: TileChoice = { texIdx: 0, uvRot: 0 };
+
+/**
+ * Which atlas tile a face of a full block shows, and how it is turned. Writes
+ * into `out` (a shared scratch object by default: read it before the next call).
+ * Beds dress their faces further in resolveTexture.
+ */
+export function resolveTile(
+    type: BlockType,
+    _dir: FaceName,
+    dx: number,
+    dy: number,
+    dz: number,
+    rotation: number = 0,
+    out: TileChoice = tileScratch,
+): TileChoice {
     const def = BLOCKS[type];
     let texIdx = def.textureSlot || 0;
-    
+
     // UV Rotation: 0=0, 1=90, 2=180, 3=270
     let uvRot = 0; 
 
@@ -138,7 +154,24 @@ export function resolveTexture(
         else if (dy === -1) texIdx = 124; // Bottom
         else texIdx = 21; // Side
     }
-    
+
+    out.texIdx = texIdx;
+    out.uvRot = uvRot;
+    return out;
+}
+
+export function resolveTexture(
+    type: BlockType,
+    dir: FaceName,
+    dx: number,
+    dy: number,
+    dz: number,
+    rotation: number = 0
+): { texIdx: number, uvs: number[] } {
+    const tile = resolveTile(type, dir, dx, dy, dz, rotation);
+    let texIdx = tile.texIdx;
+    const uvRot = tile.uvRot;
+
     // --- UV Calculation with PADDING ---
     const { width, height } = getAtlasDimensions();
     

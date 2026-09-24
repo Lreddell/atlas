@@ -51,6 +51,7 @@ ctx.onmessage = (e) => {
             if (geo.normals.buffer) buffers.push(geo.normals.buffer);
             if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
             if (geo.colors.buffer) buffers.push(geo.colors.buffer);
+            if (geo.tiles.buffer) buffers.push(geo.tiles.buffer);
             if (geo.indices.buffer) buffers.push(geo.indices.buffer);
         });
 

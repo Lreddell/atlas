@@ -130,6 +130,11 @@ for (const type of [
     BlockType.MEADOW_GRASS, BlockType.SAVANNA_GRASS, BlockType.JUNGLE_GRASS, BlockType.PODZOL,
 ]) UV_VARIATION[type] = VARY_TOP;
 
+/** 0 none, 1 any rotation or mirror on every face, 2 vary the top and bottom, only mirror the sides. */
+export function uvVariationMode(type: BlockType): number {
+    return type <= MAX_BLOCK_ID ? UV_VARIATION[type] : 0;
+}
+
 /** Face indices, matching the mesher's direction order. */
 export const FACE_INDEX = { right: 0, left: 1, top: 2, bottom: 3, front: 4, back: 5 } as const;
 
