@@ -80,13 +80,32 @@ test('boat placement is a traversal exception to the sealed-region edit policy',
 test('riding drives the entity; sneak dismounts and parks it', () => {
     assert.match(player, /boating && intent\.sneak && onExitBoat/);
     assert.match(player, /entityManager\.getEntity\(ridingBoatId\)/);
-    assert.match(player, /boat\.yaw = camera\.rotation\.y/);
+    // The hull points where the body faces (the aim, or the free view's walk
+    // heading), never simply the camera, which orbits freely in the free view.
+    assert.match(player, /boat\.yaw = playerPose\.yaw/);
+    assert.doesNotMatch(player, /boat\.yaw = camera\.rotation\.y/);
     // Riding disables block magnetism and wall adhesion (a wooden hull).
     assert.match(player, /magneticMode !== 'none' && !isFlying\.current && !boating/);
     // Dismount keeps the boat in the world (setRidden(false), no despawn).
     assert.match(app, /entityManager\.setRidden\(riding, false\)/);
     // Destroying the ridden boat force-dismounts.
     assert.match(app, /type !== 'boat'/);
+});
+
+test('riding: the boat is part of the rider, who sits and rows, and third person can board', () => {
+    // A ridden boat is never a target: looking down must not punch it apart.
+    assert.match(manager, /e\.hp <= 0 \|\| e\.ridden\) continue;/);
+    // The third-person crosshair sees entities as well as blocks, so aiming at a
+    // boat from behind the player boards it instead of aiming past it.
+    assert.match(interaction, /entityManager\.raycastEntity\(_sweepOrigin, _sweepDir, block \?\? maxDist/);
+    assert.match(interaction, /sweepAimTarget,\s*64,/);
+    // Seated: a lower eye, and a body that sits, faces the hull and rows.
+    assert.match(player, /boating \? EYE_HEIGHT_SEATED/);
+    assert.match(player, /playerPose\.riding = boating;/);
+    assert.match(read('src/components/PlayerModel.tsx'), /\} else if \(pose\.riding\) \{/);
+    // The oars turn on the rider's stroke.
+    assert.match(renderer, /name=\{side < 0 \? 'oarL' : 'oarR'\}/);
+    assert.match(renderer, /poseBoatOars\(mesh, e\.ridden\)/);
 });
 
 test('boats persist per world and cannot leak across worlds', () => {

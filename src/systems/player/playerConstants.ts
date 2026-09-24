@@ -5,6 +5,8 @@ export const PLAYER_HEIGHT = 1.8;
 export const PLAYER_HEIGHT_SNEAK = 1.5;
 export const EYE_HEIGHT_STANDING = 1.62;
 export const EYE_HEIGHT_SNEAKING = 1.27;
+/** Sitting in a boat: the eye of the seated body (PlayerModel's riding pose). */
+export const EYE_HEIGHT_SEATED = 1.3;
 
 // Physics constants (Units: Blocks/sec)
 export const GRAVITY = 32; 

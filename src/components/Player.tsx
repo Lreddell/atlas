@@ -47,7 +47,7 @@ import { resetMotionBlurHistory } from '../systems/render/motionBlur';
 import { gameEvents } from '../systems/events/GameEvents';
 import { particleFx, polarityFxColor } from '../systems/fx/particleFx';
 import {
-    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
+    EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING, EYE_HEIGHT_SEATED,
     FIXED_DT, MAX_SUBSTEPS, MAX_BREATH,
     PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, PLAYER_WIDTH,
     GRAVITY, TERMINAL_VELOCITY, GROUND_EPS, CONTACT_EPS, WALK_SPEED,
@@ -163,7 +163,7 @@ export const PlayerRefUpdater: React.FC<{ playerPosRef: React.MutableRefObject<V
     // there is no frame in which a stale cutscene camera leaks into the saved pos.
     if (cinematicMode || bossSummon.isActive()) return;
     // The EYE, not the camera: in third person the camera hangs behind the body.
-    const eyeHeight = inputState.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
+    const eyeHeight = playerPose.riding ? EYE_HEIGHT_SEATED : inputState.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
     playerPosRef.current.set(viewRig.eye.x, viewRig.eye.y - eyeHeight, viewRig.eye.z);
   });
   return null;
@@ -1153,21 +1153,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     const alpha = Math.max(0, Math.min(1, timeAccumulator.current / FIXED_DT));
     renderPos.current.lerpVectors(prevPos.current, pos.current, alpha);
 
-    // Carry the ridden boat: the entity's body tracks the rider's feet and the
-    // hull yaws to the camera so the bow always points where you steer.
-    if (boating && ridingBoatId !== null) {
-        const boat = entityManager.getEntity(ridingBoatId);
-        if (boat) {
-            boat.pos.set(renderPos.current.x, renderPos.current.y - 0.05, renderPos.current.z);
-            boat.yaw = camera.rotation.y;
-            boat.vel.set(vel.current.x, 0, vel.current.z);
-        }
-    }
-
     setBreath(breathRef.current);
     setIsOnFire(fireTicks.current > 0);
 
-    const targetHeight = intent.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
+    const targetHeight = boating ? EYE_HEIGHT_SEATED : intent.sneak ? EYE_HEIGHT_SNEAKING : EYE_HEIGHT_STANDING;
     const smoothing = 1 - Math.exp(-15 * dt);
     currentEyeHeight.current = MathUtils.lerp(currentEyeHeight.current, targetHeight, smoothing);
 
@@ -1360,6 +1349,30 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
     playerPose.attached = aCam.active;
     playerPose.polarity = magneticMode === 'controlled' ? inputState.magneticPolarity : 0;
     playerPose.time = simTime.current;
+
+    // Seated in a boat. The rower's arms and the boat's oars share one stroke:
+    // it runs while paddling (backwards when backing up) and eases to rest,
+    // hands still on the oars, when the hull only drifts.
+    playerPose.riding = boating;
+    if (boating) {
+        const paddling = intent.forward || intent.backward || intent.left || intent.right;
+        playerPose.rowStrength += ((paddling ? 1 : 0) - playerPose.rowStrength) * (1 - Math.exp(-5 * dt));
+        playerPose.rowPhase += dt * 5.2 * playerPose.rowStrength * (intent.backward && !intent.forward ? -1 : 1);
+    } else {
+        playerPose.rowStrength = 0;
+    }
+
+    // Carry the ridden boat: the hull tracks the rider's feet and points where
+    // the body faces. That is the aim in first and third person, and the walk
+    // heading in the free view, so orbiting the camera no longer spins the boat.
+    if (boating && ridingBoatId !== null) {
+        const boat = entityManager.getEntity(ridingBoatId);
+        if (boat) {
+            boat.pos.set(renderPos.current.x, renderPos.current.y - 0.05, renderPos.current.z);
+            boat.yaw = playerPose.yaw;
+            boat.vel.set(vel.current.x, 0, vel.current.z);
+        }
+    }
 
     // Which tower (if any) the climber clings to, for the HUD's flip warning,
     // and the kit's live status (the damage gate, the F prompt, the HUD).

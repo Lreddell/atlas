@@ -2840,6 +2840,11 @@ const App: React.FC = () => {
       });
   }, []);
 
+  // The QA bridge boards boats directly: a hidden pane can't take pointer lock to right-click one.
+  useEffect(() => {
+      if (import.meta.env.DEV) registerDevQaHandles({ enterBoat: handleEnterBoat });
+  }, [handleEnterBoat]);
+
   const handleExitBoat = useCallback(() => {
       setRidingBoatId((riding) => {
           if (riding === null) return riding;

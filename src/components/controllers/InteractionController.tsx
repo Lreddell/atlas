@@ -55,6 +55,25 @@ const sweepVoxels = (ox: number, oy: number, oz: number, dx: number, dy: number,
     return hit ? hit.distance : null;
 };
 
+const _sweepOrigin = new THREE.Vector3();
+const _sweepDir = new THREE.Vector3();
+
+/**
+ * What the third-person crosshair is on: the camera ray's first block or
+ * entity past the player's eye. Blocks alone let the ray slip past a mob or a
+ * boat to the ground behind it, and the aim from the eye then missed what the
+ * crosshair covered (boarding a boat from third person rarely worked).
+ */
+const sweepAimTarget = (ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): number | null => {
+    const block = sweepVoxels(ox, oy, oz, dx, dy, dz, maxDist);
+    // Anything nearer than the eye is beside or behind the player, not aimed at.
+    const pastEye = (viewRig.eye.x - ox) * dx + (viewRig.eye.y - oy) * dy + (viewRig.eye.z - oz) * dz;
+    _sweepOrigin.set(ox, oy, oz);
+    _sweepDir.set(dx, dy, dz);
+    const entity = entityManager.raycastEntity(_sweepOrigin, _sweepDir, block ?? maxDist, undefined, Math.max(0, pastEye + 0.3));
+    return entity ? entity.dist : block;
+};
+
 /**
  * The aim ray into _camPos/_camDir: from the player's EYE toward the point
  * under the crosshair. In first person that is the camera ray itself; in third
@@ -77,7 +96,7 @@ function aimFromCamera(camera: THREE.Camera): void {
         { x: _camPos.x, y: _camPos.y, z: _camPos.z },
         viewRig.eye,
         { x: _camDir.x, y: _camDir.y, z: _camDir.z },
-        sweepVoxels,
+        sweepAimTarget,
         64,
     );
     _camPos.set(ray.origin.x, ray.origin.y, ray.origin.z);

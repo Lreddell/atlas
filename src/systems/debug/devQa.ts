@@ -3,6 +3,7 @@ import { advance } from '@react-three/fiber';
 import { VISUAL_TOUR_SEED, VISUAL_TOUR_SHOTS, type VisualTourShot } from './visualTour';
 import { graphicsSettings } from '../graphics/graphicsStore';
 import type { GraphicsConfig, GraphicsPresetId } from '../graphics/graphicsSettings';
+import { entityManager } from '../entities/EntityManager';
 
 // DEV-only QA bridge for scripted screenshot and performance passes.
 //
@@ -34,6 +35,7 @@ export interface DevQaHandles {
     vsync: (enabled: boolean) => void;
     getBlock: (x: number, y: number, z: number) => number;
     setBlock: (x: number, y: number, z: number, type: number) => void;
+    enterBoat: (entityId: number) => void;
 }
 
 export interface PerfReport {
@@ -368,6 +370,15 @@ async function perfSweep(distances: readonly number[] = [8, 16, 32], seconds = 8
     return out;
 }
 
+function ride(): number | null {
+    const at = need('position')();
+    const near = entityManager.getEntities().find(e => e.kind === 'boat' && !e.ridden && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) < 3);
+    const boat = near ?? entityManager.spawn('boat', at.x, at.y + 0.1, at.z);
+    if (!boat) return null;
+    need('enterBoat')(boat.id);
+    return boat.id;
+}
+
 /** Frames one tour shot: position, look, time of day, event overrides, then settle. */
 async function stageShot(shot: VisualTourShot): Promise<StreamingStatus> {
     const command = need('command');
@@ -444,6 +455,12 @@ export interface AtlasQaApi {
     vsync(enabled: boolean): void;
     getBlock(x: number, y: number, z: number): number;
     setBlock(x: number, y: number, z: number, type: number): void;
+    /**
+     * Boards the nearest free boat within 3 blocks, or launches one at the
+     * player's feet (stand in or over water) and boards it; the boat's id.
+     * Paddle by setting inputState's movement keys.
+     */
+    ride(): number | null;
     streaming(): StreamingStatus;
     waitForChunks(timeoutMs?: number): Promise<StreamingStatus>;
     snapshot(): Promise<string>;
@@ -480,6 +497,7 @@ export function createDevQaApi(): AtlasQaApi {
         vsync: enabled => need('vsync')(enabled),
         getBlock: (x, y, z) => need('getBlock')(x, y, z),
         setBlock: (x, y, z, type) => need('setBlock')(x, y, z, type),
+        ride,
         streaming: () => need('streaming')(),
         waitForChunks,
         snapshot: captureNextFrame,

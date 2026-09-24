@@ -299,6 +299,12 @@ export interface PlayerPose {
     polarity: number;
     /** Seconds of simulated time, for the idle animation. */
     time: number;
+    /** Seated in a boat: the body sits in the hull, faces its heading and rows. */
+    riding: boolean;
+    /** The oar stroke (radians), shared by the rower's arms and the boat's oars. */
+    rowPhase: number;
+    /** 0 at rest (hands on the oars) to 1 paddling hard. */
+    rowStrength: number;
 }
 
 export const playerPose: PlayerPose = {
@@ -316,6 +322,9 @@ export const playerPose: PlayerPose = {
     wallRight: { x: 1, y: 0, z: 0 },
     polarity: 0,
     time: 0,
+    riding: false,
+    rowPhase: 0,
+    rowStrength: 0,
 };
 
 // --- The detached camera (F7) -----------------------------------------------

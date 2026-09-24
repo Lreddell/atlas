@@ -71,6 +71,11 @@ const _lightSample: SmoothLight = { sky: 1, block: 0 };
 
 /** Height (blocks) of the body's centre of mass: the tumble pivots here. */
 const PIVOT_Y = 0.95;
+/**
+ * Seated in a boat, the hips drop from 0.75 onto the seat plank (EntityRenderer's
+ * BoatModel): the eye lands at EYE_HEIGHT_SEATED.
+ */
+const SEATED_BODY_DROP = -0.45;
 
 /** Every joint angle the rig blends. Radians unless noted. */
 interface Pose {
@@ -216,7 +221,9 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         //     move drives it directly.
         const turn = stepBodyTurn(bodyTurn.current, {
             dt, aimYaw: pose.yaw, vx: pose.vx, vz: pose.vz,
-            locked: pose.attached || action === 'roll' || action === 'dash' || action === 'leap',
+            // Seated, the body faces the hull's heading (Player points the boat
+            // where the body faces), with no lag or foot shuffle.
+            locked: pose.attached || pose.riding || action === 'roll' || action === 'dash' || action === 'leap',
         });
         const bodyYaw = turn.yaw;
         // How far the aim is ahead of the hips: the chest takes some, the head the rest.
@@ -251,14 +258,16 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         }
 
         // --- Landing squash: remember the impact speed as the feet touch down.
-        if (!pose.grounded && !pose.attached && !pose.inWater) fallSpeed.current = Math.max(fallSpeed.current, -pose.vy);
-        if (pose.grounded && !pose.attached && !pose.inWater && !wasGrounded.current) {
+        // (A bobbing hull is no landing.)
+        const footloose = pose.attached || pose.inWater || pose.riding;
+        if (!pose.grounded && !footloose) fallSpeed.current = Math.max(fallSpeed.current, -pose.vy);
+        if (pose.grounded && !footloose && !wasGrounded.current) {
             const impact = Math.min(1, fallSpeed.current / 18);
             if (impact > 0.12) { landUntil.current = now + 260; landStrength.current = impact; }
             fallSpeed.current = 0;
         }
-        wasGrounded.current = pose.grounded || pose.attached || pose.inWater;
-        if (pose.attached || pose.inWater) { fallSpeed.current = 0; landUntil.current = 0; }
+        wasGrounded.current = pose.grounded || footloose;
+        if (footloose) { fallSpeed.current = 0; landUntil.current = 0; }
 
         const p = target.current;
         resetPose(p);
@@ -298,6 +307,23 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             p.legLUpper = 1.0; p.legRUpper = 0.5;
             p.legLLower = -1.2; p.legRLower = -0.7;
             blendRate = 20;
+        } else if (pose.riding) {
+            // Seated in the hull, legs out toward the bow, hands on the oar
+            // handles. The boat's oars turn on the same stroke (EntityRenderer):
+            // the hands push forward as the blades sweep back through the water,
+            // the chest leaning into each push. At rest the hands wait on the oars.
+            // (A bobbing hull used to throw the body between the jump, swim and
+            // walk poses.)
+            const stroke = Math.sin(pose.rowPhase) * pose.rowStrength;
+            p.bodyY = SEATED_BODY_DROP;
+            p.legLUpper = 1.35; p.legRUpper = 1.35;
+            p.legLLower = -0.05; p.legRLower = -0.05;
+            p.legLOut = 0.1; p.legROut = -0.1;
+            p.torsoLean = -0.06 - 0.16 * stroke;
+            p.armLUpper = 1.0 + 0.38 * stroke; p.armRUpper = p.armLUpper;
+            p.armLLower = 0.55 - 0.3 * stroke; p.armRLower = p.armLLower;
+            p.armLOut = 0.06; p.armROut = -0.06;
+            blendRate = 12;
         } else if (pose.inWater && !pose.grounded) {
             const horizontal = Math.hypot(pose.vx, pose.vz);
             const swim = Math.max(0, Math.min(1, (horizontal - 1.2) / 1.6));
@@ -436,7 +462,8 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
         // Carry the selected item in a relaxed forward grip. Combat takes priority
         // over locomotion in the upper body; evade poses remain untouched.
         if (action === 'none') {
-            if (itemType !== null && !pose.sneak) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
+            // (Rowing, the hand stays on its oar.)
+            if (itemType !== null && !pose.sneak && !pose.riding) { p.armRUpper = Math.max(0.18, p.armRUpper * 0.35); p.armRLower = 0.28; }
             const attack = attackPose(playerAttack);
             if (attack.weight && getPlayerWeaponProfile(itemType) && playerAttack.kind === 'crossbow') {
                 const recoil = Math.sin(Math.max(0, (playerAttack.elapsed / playerAttack.duration - 0.5) * 2) * Math.PI);

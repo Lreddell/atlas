@@ -686,11 +686,15 @@ class EntityManager {
         this.notifyStructure();
     }
 
-    /** Ray vs entity AABBs. Returns the nearest entity id within maxDist, or null. */
-    raycastEntity(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, excludeId?: number): { id: number; dist: number; hitZone?: string } | null {
+    /**
+     * Ray vs entity AABBs: the nearest entity between minDist and maxDist, or
+     * null. A ridden boat is never hit: it is part of the rider (looking down
+     * must not punch it apart underneath you, nor a bolt fired from it strike it).
+     */
+    raycastEntity(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number, excludeId?: number, minDist = 0): { id: number; dist: number; hitZone?: string } | null {
         let best: { id: number; dist: number; hitZone?: string } | null = null;
         for (const e of this.entities.values()) {
-            if (e.id === excludeId || e.hp <= 0) continue;
+            if (e.id === excludeId || e.hp <= 0 || e.ridden) continue;
             const hx = e.width / 2;
             const minX = e.pos.x - hx, maxX = e.pos.x + hx;
             const minY = e.pos.y, maxY = e.pos.y + e.height;
@@ -700,7 +704,7 @@ class EntityManager {
                 ? raycastBellTitanCore(origin, dir, e.pos, e.yaw, maxDist)
                 : null;
             const distance = coreDistance ?? t;
-            if (distance !== null && distance <= maxDist && (!best || distance < best.dist)) {
+            if (distance !== null && distance >= minDist && distance <= maxDist && (!best || distance < best.dist)) {
                 const hitZone = coreDistance !== null
                     ? 'core'
                     : e.kind === 'bell_titan' && t !== null

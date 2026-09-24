@@ -6,6 +6,10 @@ import { ENTITY_KINDS } from '../systems/entities/Entity';
 import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
 import { MagneticWardenRenderer } from './MagneticWardenRenderer';
 import { BossCompassTracker } from './BossCompassTracker';
+import { playerPose } from '../systems/player/viewRig';
+import { applyEntityLightingTo, createEntityLight, type EntityLight } from '../systems/graphics/materials/entityLighting';
+import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
+import { worldLightReader } from '../systems/graphics/worldLightReader';
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -24,6 +28,8 @@ const CUSTOM_RENDERED_ENTITY_KINDS = new Set([
 const BOAT_HULL = 0x8d6e63;
 const BOAT_TRIM = 0x6d4c33;
 const BOAT_SEAT = 0xc9a877;
+/** Resting, an oar's blade lies on the water (radians of droop from level). */
+const OAR_REST_DIP = 0.4;
 
 // The boat's world model: a wooden hull built from boxes, centered on the
 // entity's mid-height origin (the shared position update places every entity
@@ -56,13 +62,64 @@ const BoatModel: React.FC = () => {
                 <boxGeometry args={[0.5, 0.22, 0.24]} />
                 <meshLambertMaterial color={BOAT_TRIM} />
             </mesh>
-            <mesh position={[0, 0.22 + dy, 0.55]}>
+            {/* The thwart the rider sits on (PlayerModel's riding pose). */}
+            <mesh position={[0, 0.22 + dy, 0.08]}>
                 <boxGeometry args={[1.0, 0.08, 0.35]} />
                 <meshLambertMaterial color={BOAT_SEAT} />
             </mesh>
+            {/* Oars in their locks on the gunwales, handles inboard. */}
+            {[-1, 1].map((side) => (
+                <group key={side} name={side < 0 ? 'oarL' : 'oarR'} position={[side * 0.62, 0.46 + dy, -0.35]} rotation={[0, 0, -side * OAR_REST_DIP]}>
+                    <mesh position={[side * 0.23, 0, 0]} castShadow>
+                        <boxGeometry args={[1.2, 0.05, 0.05]} />
+                        <meshLambertMaterial color={BOAT_TRIM} />
+                    </mesh>
+                    <mesh position={[side * 0.68, 0, 0]} castShadow>
+                        <boxGeometry args={[0.3, 0.035, 0.16]} />
+                        <meshLambertMaterial color={BOAT_HULL} />
+                    </mesh>
+                </group>
+            ))}
         </group>
     );
 };
+
+const _boatLightSample: SmoothLight = { sky: 1, block: 0 };
+
+/**
+ * A boat takes the world's light where it floats (entityLighting.ts), as the
+ * player does: its shaded walls stay readable instead of going black, and it
+ * darkens under cover and warms by a torch like the blocks around it.
+ */
+function lightBoat(boat: THREE.Object3D, x: number, y: number, z: number, dt: number): void {
+    let state = boat.userData.atlasLight as { light: EntityLight; level: SmoothLight } | undefined;
+    if (!state) {
+        state = { light: createEntityLight(), level: { sky: 1, block: 0 } };
+        boat.userData.atlasLight = state;
+        applyEntityLightingTo(boat, state.light);
+    }
+    sampleSmoothLight(worldLightReader, x, y + 0.5, z, _boatLightSample);
+    const level = easeLight(state.level, _boatLightSample, dt, 10);
+    state.light.value.x = level.sky;
+    state.light.value.y = level.block;
+}
+
+/**
+ * Rowed, the oars turn on the rider's stroke (the one the seated body's arms
+ * follow): handles pushed forward sweep the blades back, dipped in the water
+ * on the drive and lifted on the return. Otherwise they rest, blades down.
+ */
+function poseBoatOars(boat: THREE.Object3D, ridden: boolean): void {
+    const oars = (boat.userData.oars ??= [boat.getObjectByName('oarL'), boat.getObjectByName('oarR')]) as (THREE.Object3D | undefined)[];
+    const strength = ridden ? playerPose.rowStrength : 0;
+    const sweep = 0.55 * strength * Math.sin(playerPose.rowPhase);
+    const dip = OAR_REST_DIP + 0.15 * strength * Math.cos(playerPose.rowPhase);
+    oars.forEach((oar, index) => {
+        if (!oar) return;
+        const side = index === 0 ? -1 : 1;
+        oar.rotation.set(0, -side * sweep, -side * dip);
+    });
+}
 
 // Renders all entities owned by the EntityManager. The React list is rebuilt only
 // on structural changes (spawn/despawn); per-frame position/flash/projectile
@@ -80,8 +137,9 @@ export const EntityRenderer: React.FC = () => {
         return entityManager.onStructureChange(sync);
     }, []);
 
-    useFrame(() => {
+    useFrame((_, delta) => {
         const now = Date.now();
+        const dt = Math.min(0.1, delta);
         for (const e of entityManager.getEntities()) {
             const kind = ENTITY_KINDS[e.kind];
             const mesh = meshRefs.current.get(e.id);
@@ -92,6 +150,10 @@ export const EntityRenderer: React.FC = () => {
                 // Passive props (boats) are multi-mesh groups: a hit reads as
                 // a quick scale pop instead of a material flash.
                 mesh.scale.setScalar(now < e.hurtUntil ? 1.07 : 1);
+                if (e.kind === 'boat') {
+                    poseBoatOars(mesh, e.ridden);
+                    lightBoat(mesh, e.pos.x, e.pos.y, e.pos.z, dt);
+                }
             } else {
                 const mat = (mesh as THREE.Mesh).material as THREE.MeshLambertMaterial;
                 mat.color.setHex(now < e.hurtUntil ? 0xffffff : kind.color);
