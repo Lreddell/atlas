@@ -28,6 +28,23 @@ let cachedAtlasCanvas: HTMLCanvasElement | null = null;
 let cachedDirtBG: string | null = null;
 
 export const ATLAS_UPDATED_EVENT = 'atlas:textures-updated';
+
+/**
+ * The procedural art's noise, seeded (mulberry32), so every launch draws the
+ * same textures: one sequence a tile, from its slot, so a tile's look never
+ * depends on which tiles were drawn before it or which ones a PNG replaced.
+ */
+const ATLAS_ART_SEED = 0x41544c53;
+const seededRandom = (seed: number): (() => number) => {
+    let state = seed >>> 0;
+    return () => {
+        state = (state + 0x6d2b79f5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
 export const getAtlasURL = () => cachedAtlasURL;
 export const getAtlasCanvas = () => cachedAtlasCanvas;
 
@@ -132,12 +149,13 @@ export const getDirtBackground = () => {
     ctx.fillRect(0, 0, 64, 64);
     
     // Noise
+    const random = seededRandom(ATLAS_ART_SEED ^ 0x64697274);
     for (let i = 0; i < 60; i++) {
-        const x = Math.floor(Math.random() * 64);
-        const y = Math.floor(Math.random() * 64);
-        const w = Math.random() * 4 + 2;
-        const h = Math.random() * 4 + 2;
-        ctx.fillStyle = Math.random() > 0.5 ? '#2d1e17' : '#0e0806';
+        const x = Math.floor(random() * 64);
+        const y = Math.floor(random() * 64);
+        const w = random() * 4 + 2;
+        const h = random() * 4 + 2;
+        ctx.fillStyle = random() > 0.5 ? '#2d1e17' : '#0e0806';
         ctx.fillRect(x, y, w, h);
     }
     
@@ -167,6 +185,8 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
 
     // Hard guarantee no bleed: disable smoothing and use integer-only drawing where possible
     ctx.imageSmoothingEnabled = false;
+    // Reseeded per tile in withTile.
+    let random = seededRandom(ATLAS_ART_SEED);
 
     /**
      * TILE WRAPPER
@@ -191,6 +211,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
             ctx.drawImage(externalImages[idx], 0, 0, size, size);
         } else {
             // Fallback to procedural
+            random = seededRandom(ATLAS_ART_SEED ^ Math.imul(idx + 1, 0x9e3779b1));
             fn();
         }
         
@@ -205,8 +226,8 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     const noise = (opacity: number = 0.1, density: number = 1.0) => {
         for(let py = 0; py < size; py++) {
             for(let px = 0; px < size; px++) {
-                if(Math.random() > density) continue;
-                const val = Math.random();
+                if(random() > density) continue;
+                const val = random();
                 ctx.fillStyle = val > 0.5 ? `rgba(255, 255, 255, ${opacity})` : `rgba(0, 0, 0, ${opacity / 2})`;
                 ctx.fillRect(px, py, 1, 1);
             }
@@ -264,7 +285,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         }
     };
 
-    const tilePainter = { ctx, withTile, fill, noise };
+    const tilePainter = { ctx, withTile, fill, noise, random: () => random() };
     drawWoodFamilyTiles(tilePainter);
     drawFoliageFamilyTiles(tilePainter);
     drawOreFamilyTiles(tilePainter);
@@ -278,9 +299,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(1, () => {
         fill('#4caf50'); // Solid green base
         ctx.fillStyle = '#43a047';
-        for(let i=0; i<30; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        for(let i=0; i<30; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
         ctx.fillStyle = '#81c784';
-        for(let i=0; i<20; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        for(let i=0; i<20; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
     });
 
     // 2: Stone
@@ -327,9 +348,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(26, () => {
         fill('#2e203c'); 
         ctx.fillStyle = '#4b3660'; 
-        for(let i=0; i<40; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        for(let i=0; i<40; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
         ctx.fillStyle = '#1a1224'; 
-        for(let i=0; i<20; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        for(let i=0; i<20; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
     });
 
     // 18: Sandstone Side
@@ -688,8 +709,8 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // Lava
     withTile(17, () => {
         fill('#f44336'); // Hot red base
-        ctx.fillStyle = '#ff5722'; for(let i=0; i<40; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
-        ctx.fillStyle = '#b71c1c'; for(let i=0; i<20; i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+        ctx.fillStyle = '#ff5722'; for(let i=0; i<40; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
+        ctx.fillStyle = '#b71c1c'; for(let i=0; i<20; i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16), 1, 1);
     });
 
     // Wheat Seeds
@@ -785,7 +806,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(169, () => {
         fill('#b3e5fc');
         ctx.fillStyle = '#81d4fa';
-        for (let i = 0; i < 24; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 24; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#4fc3f7';
         // Diagonal crystalline streaks
         for (let i = 0; i < 16; i++) {
@@ -803,19 +824,19 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         withTile(slot, () => {
             fill(base);
             ctx.fillStyle = light;
-            for (let i = 0; i < 30; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 30; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
             ctx.fillStyle = dark;
-            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         });
     };
     const grassSideFallback = (slot: number, grassCol: string) => {
         withTile(slot, () => {
             fill('#5d4037');
             ctx.fillStyle = '#3e2723';
-            for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
             // grass fringe top 3 rows
             ctx.fillStyle = grassCol;
-            for (let x = 0; x < 16; x++) { ctx.fillRect(x, 0, 1, 1); ctx.fillRect(x, 1, 1, 1); if (Math.random() < 0.6) ctx.fillRect(x, 2, 1, 1); }
+            for (let x = 0; x < 16; x++) { ctx.fillRect(x, 0, 1, 1); ctx.fillRect(x, 1, 1, 1); if (random() < 0.6) ctx.fillRect(x, 2, 1, 1); }
         });
     };
     grassTopFallback(170, '#568b48', '#7ab06a', '#3a6b30'); grassSideFallback(171, '#568b48');  // Mossy Grass
@@ -825,18 +846,18 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     grassTopFallback(178, '#b0a83c', '#c8c060', '#827a28'); grassSideFallback(179, '#b0a83c');  // Savanna Grass
     grassTopFallback(180, '#3c8c32', '#5ab04a', '#2a6a22'); grassSideFallback(181, '#3c8c32');  // Jungle Grass
     // Podzol
-    withTile(182, () => { fill('#6e5037'); ctx.fillStyle = '#4a3525'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<6;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
-    withTile(183, () => { fill('#5d4037'); ctx.fillStyle='#3e2723'; for (let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#6e5037'; for(let i=0;i<8;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(182, () => { fill('#6e5037'); ctx.fillStyle = '#4a3525'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<6;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); });
+    withTile(183, () => { fill('#5d4037'); ctx.fillStyle='#3e2723'; for (let i=0;i<14;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#6e5037'; for(let i=0;i<8;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); });
     // Stone variants
-    withTile(184, () => { fill('#8c8a86'); ctx.fillStyle='#6e6c68'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#aeaca8'; for(let i=0;i<20;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Andesite
-    withTile(185, () => { fill('#e1e1de'); ctx.fillStyle='#555'; for (let i=0;i<32;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Diorite
-    withTile(186, () => { fill('#af6e5f'); ctx.fillStyle='#8c5040'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#d29a8a'; for(let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); }); // Granite
+    withTile(184, () => { fill('#8c8a86'); ctx.fillStyle='#6e6c68'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#aeaca8'; for(let i=0;i<20;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); }); // Andesite
+    withTile(185, () => { fill('#e1e1de'); ctx.fillStyle='#555'; for (let i=0;i<32;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); }); // Diorite
+    withTile(186, () => { fill('#af6e5f'); ctx.fillStyle='#8c5040'; for (let i=0;i<28;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#d29a8a'; for(let i=0;i<18;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); }); // Granite
     // Coarse Dirt
-    withTile(187, () => { fill('#6e5541'); ctx.fillStyle='#503c28'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#8c7050'; for(let i=0;i<12;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(187, () => { fill('#6e5541'); ctx.fillStyle='#503c28'; for (let i=0;i<18;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#8c7050'; for(let i=0;i<12;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); });
     // Mud
-    withTile(188, () => { fill('#3c3026'); ctx.fillStyle='#2a2018'; for (let i=0;i<16;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); ctx.fillStyle='#504030'; for(let i=0;i<10;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(188, () => { fill('#3c3026'); ctx.fillStyle='#2a2018'; for (let i=0;i<16;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); ctx.fillStyle='#504030'; for(let i=0;i<10;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); });
     // Mossy Cobblestone
-    withTile(189, () => { fill('#787878'); ctx.fillStyle='#3a3a3a'; for (let x=0;x<16;x++) for (let y=0;y<16;y++) if ((x%8===0||y%8===0) && Math.random()<0.5) ctx.fillRect(x,y,1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<14;i++) ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16),1,1); });
+    withTile(189, () => { fill('#787878'); ctx.fillStyle='#3a3a3a'; for (let x=0;x<16;x++) for (let y=0;y<16;y++) if ((x%8===0||y%8===0) && random()<0.5) ctx.fillRect(x,y,1,1); ctx.fillStyle='#4a7a3c'; for(let i=0;i<14;i++) ctx.fillRect(Math.floor(random()*16), Math.floor(random()*16),1,1); });
 
     // --- New wood family fallbacks (Task ID 6) ---
     const shadeHex = (hex: string, amount: number): string => {
@@ -863,7 +884,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
             ctx.fillStyle = shadeHex(bark, -25);
             for (let x = 0; x < 16; x += 3) ctx.fillRect(x, 0, 1, 16);
             ctx.fillStyle = shadeHex(bark, 15);
-            for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 10; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         });
     };
     const planksFallback = (slot: number, col: string) => {
@@ -872,16 +893,16 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
             ctx.fillStyle = shadeHex(col, -30);
             ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 4, 16, 1); ctx.fillRect(0, 8, 16, 1); ctx.fillRect(0, 12, 16, 1); ctx.fillRect(0, 15, 16, 1);
             ctx.fillStyle = shadeHex(col, 15);
-            for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         });
     };
     const leavesFallback = (slot: number, col: string) => {
         withTile(slot, () => {
             fill(col);
             ctx.fillStyle = shadeHex(col, 25);
-            for (let i = 0; i < 28; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 28; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
             ctx.fillStyle = shadeHex(col, -25);
-            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+            for (let i = 0; i < 18; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         });
     };
     const saplingFallback = (slot: number, leafCol: string, stemCol: string) => {
@@ -907,11 +928,11 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(205, () => {
         fill('#4a4a55');
         ctx.fillStyle = '#2e2e36';
-        for (let i = 0; i < 26; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 26; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#6a6a78';
-        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#5b4a78';
-        for (let i = 0; i < 6; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 6; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
     });
 
     // Crystal silhouette on a transparent background (cross-plane cutout).
@@ -942,9 +963,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(211, () => {
         fill('#5a5470');
         ctx.fillStyle = '#3a3550';
-        for (let i = 0; i < 22; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 22; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#b9a8ff';
-        for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 14; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#e6dcff';
         ctx.fillRect(3, 3, 2, 1); ctx.fillRect(10, 6, 2, 1); ctx.fillRect(6, 11, 2, 1); ctx.fillRect(12, 12, 1, 2);
     });
@@ -983,7 +1004,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         for (let y = 0; y < 16; y += 4) ctx.fillRect(0, y, 16, 1);                 // horizontal mortar
         for (let y = 0; y < 16; y += 8) { ctx.fillRect(8, y, 1, 4); ctx.fillRect(0, y + 4, 1, 4); ctx.fillRect(8, y + 4, 1, 4); }
         ctx.fillStyle = '#56566a';
-        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < 16; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
         ctx.fillStyle = '#5b4a78';
         ctx.fillRect(3, 1, 1, 1); ctx.fillRect(11, 9, 1, 1);
     });
@@ -1029,7 +1050,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     // ===== Cave content tiles (deep-stone, dripstone, lush, amethyst) =====
     const speckle = (color: string, n: number) => {
         ctx.fillStyle = color;
-        for (let i = 0; i < n; i++) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < n; i++) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
     };
 
     // 217: Deepslate, bluish deep-stone with a faint banded grain. Lightened
@@ -1046,7 +1067,7 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     withTile(218, () => {
         fill('#4c4c55');
         ctx.fillStyle = '#38383f';
-        for (let x = 0; x < 16; x++) for (let y = 0; y < 16; y++) if ((x % 8 === 0 || y % 8 === 0 || (x % 8 === 4 && y % 8 === 4)) && Math.random() < 0.6) ctx.fillRect(x, y, 1, 1);
+        for (let x = 0; x < 16; x++) for (let y = 0; y < 16; y++) if ((x % 8 === 0 || y % 8 === 0 || (x % 8 === 4 && y % 8 === 4)) && random() < 0.6) ctx.fillRect(x, y, 1, 1);
         speckle('#63636e', 16);
         speckle('#38383f', 12);
     });
@@ -1085,9 +1106,9 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
         ctx.fillStyle = '#4f8f6a';
         for (const [x, y] of dots) ctx.fillRect(x, y, 1, 1);
         ctx.fillStyle = '#6fae8a';
-        for (const [x, y] of dots) if (Math.random() < 0.6) ctx.fillRect(x, y, 1, 1);
+        for (const [x, y] of dots) if (random() < 0.6) ctx.fillRect(x, y, 1, 1);
         ctx.fillStyle = '#b6f2d4';
-        for (const [x, y] of dots) if (Math.random() < 0.28) ctx.fillRect(x, y, 1, 1);
+        for (const [x, y] of dots) if (random() < 0.28) ctx.fillRect(x, y, 1, 1);
     });
     // 223: Amethyst Block, faceted purple with bright glints.
     withTile(223, () => {

@@ -3,6 +3,8 @@ export interface AtlasTilePainter {
     withTile: (slot: number, draw: () => void) => void;
     fill: (color: string) => void;
     noise: (opacity?: number, density?: number) => void;
+    /** The tile's seeded noise, 0..1 (textures.ts): the same art every launch. */
+    random: () => number;
 }
 
 export interface CutoutTileConfig {
@@ -186,19 +188,19 @@ export const drawWoodFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePai
     });
 };
 
-export const drawFoliageFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTilePainter) => {
+export const drawFoliageFamilyTiles = ({ ctx, withTile, fill, noise, random }: AtlasTilePainter) => {
     LEAVES_SPECS.forEach(({ slot, baseColor, accentColor, accentCount = 0, density, noiseOpacity }) => {
         withTile(slot, () => {
             ctx.fillStyle = baseColor;
             for (let py = 0; py < 16; py += 1) {
                 for (let px = 0; px < 16; px += 1) {
-                    if (Math.random() < density) ctx.fillRect(px, py, 1, 1);
+                    if (random() < density) ctx.fillRect(px, py, 1, 1);
                 }
             }
             if (accentColor && accentCount > 0) {
                 ctx.fillStyle = accentColor;
                 for (let index = 0; index < accentCount; index += 1) {
-                    ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+                    ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
                 }
             }
             if (noiseOpacity > 0) noise(noiseOpacity);
@@ -211,7 +213,7 @@ export const drawFoliageFamilyTiles = ({ ctx, withTile, fill, noise }: AtlasTile
             ctx.fillStyle = grassColor;
             ctx.fillRect(0, 0, 16, 4);
             for (let x = 0; x < 16; x += 1) {
-                ctx.fillRect(x, 4, 1, Math.floor(Math.random() * 4));
+                ctx.fillRect(x, 4, 1, Math.floor(random() * 4));
             }
             noise(noiseOpacity);
         });
@@ -242,10 +244,10 @@ const DEEPSLATE_ORE_SPECS: Array<{ slot: number; oreColor: string; hiColor: stri
     { slot: 233, oreColor: '#25e070', hiColor: '#a8ffcf', deposits: ORE_SPECS[6].deposits },
 ];
 
-export const drawDeepslateOreTiles = ({ ctx, withTile, fill }: AtlasTilePainter) => {
+export const drawDeepslateOreTiles = ({ ctx, withTile, fill, random }: AtlasTilePainter) => {
     const speck = (color: string, n: number) => {
         ctx.fillStyle = color;
-        for (let i = 0; i < n; i += 1) ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+        for (let i = 0; i < n; i += 1) ctx.fillRect(Math.floor(random() * 16), Math.floor(random() * 16), 1, 1);
     };
     DEEPSLATE_ORE_SPECS.forEach(({ slot, oreColor, hiColor, deposits }) => {
         withTile(slot, () => {
