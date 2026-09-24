@@ -503,7 +503,7 @@ export const InteractionController = ({
                                 new THREE.Vector3(bx + 1, by + 1, bz + 1)
                             );
                             doubleSlabAABB.expandByScalar(-0.001);
-                            if (playerAABB.intersectsBox(doubleSlabAABB)) return;
+                            if (playerAABB.intersectsBox(doubleSlabAABB) || entityManager.bodyOverlaps(doubleSlabAABB)) return;
                             if (!canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: heldItem.type })) return;
 
                             worldManager.setBlock(bx, by, bz, heldItem.type, SLAB_DOUBLE);
@@ -581,6 +581,10 @@ export const InteractionController = ({
                     blockAABB.max.y -= 0.5;
                 }
 
+                // Nothing solid goes into an entity's body either (a boat, a boss).
+                if (!heldItemDef.noCollision && heldItem.type !== BlockType.TORCH && heldItem.type !== BlockType.BED_ITEM
+                    && entityManager.bodyOverlaps(blockAABB)) return;
+
                 if (heldItem.type === BlockType.TORCH || heldItem.type === BlockType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
                     
                     let rotation = 0;
@@ -645,7 +649,8 @@ export const InteractionController = ({
                             headAABB.max.y -= 0.5;
                             headAABB.expandByScalar(-0.001);
                             
-                            if (!playerAABB.intersectsBox(headAABB) && !playerAABB.intersectsBox(blockAABB)) {
+                            if (!playerAABB.intersectsBox(headAABB) && !playerAABB.intersectsBox(blockAABB)
+                                && !entityManager.bodyOverlaps(headAABB) && !entityManager.bodyOverlaps(blockAABB)) {
                                 if (replacingPlant) worldManager.spawnDrop(placementTarget, px, py, pz);
                                 worldManager.setBlock(px, py, pz, BlockType.BED_FOOT, rotation);
                                 worldManager.setBlock(hx, py, hz, BlockType.BED_HEAD, rotation);

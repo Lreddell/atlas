@@ -382,6 +382,20 @@ class EntityManager {
     getEntity(id: number): Entity | undefined {
         return this.entities.get(id);
     }
+    /**
+     * Whether a living entity's body overlaps the box (a block about to be
+     * placed): a block set inside a body would wall it in where it stands.
+     */
+    bodyOverlaps(box: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }): boolean {
+        for (const e of this.entities.values()) {
+            if (e.hp <= 0) continue;
+            const half = e.width / 2;
+            if (e.pos.x - half < box.max.x && e.pos.x + half > box.min.x
+                && e.pos.y < box.max.y && e.pos.y + e.height > box.min.y
+                && e.pos.z - half < box.max.z && e.pos.z + half > box.min.z) return true;
+        }
+        return false;
+    }
     registerDamageHandler(kind: string, handler: EntityDamageHandler): void {
         this.damageHandlers.set(kind, handler);
     }
