@@ -36,6 +36,8 @@ export const ATMOSPHERE_UNIFORMS = {
     atlasFogParams: { value: { x: 40, y: 120, z: 300, w: 56 } as V4 },
     /** The Classic style: xyz its flat fog colour as shown on screen (sRGB), w 1 when on (the old sky gradient and linear fog). */
     atlasClassicSky: { value: { x: 0, y: 0, z: 0, w: 0 } as V4 },
+    /** The cloud layer's own veil: x start, y end (horizontal blocks), at the edge of the layer rather than the terrain. */
+    atlasCloudFog: { value: { x: 140, y: 240 } },
     /** Camera in a fluid: x amount 0..1, y fog density per block. */
     atlasMediumParams: { value: { x: 0, y: 0.1, z: 0, w: 0 } as V4 },
     atlasMediumColor: { value: v3() },
@@ -98,6 +100,7 @@ uniform vec4 atlasFogParams;
 uniform vec4 atlasMediumParams;
 uniform vec3 atlasMediumColor;
 uniform vec4 atlasClassicSky;
+uniform vec2 atlasCloudFog;
 ${TONE_CURVE_GLSL}
 
 // Scene-linear sky radiance looking along a (normalised) world direction.
@@ -129,8 +132,13 @@ float atlasFogAmount(vec3 v) {
     // Classic: the old linear fog, by view depth, from its start distance to the edge.
     if (atlasClassicSky.w > 0.5) return smoothstep(atlasFogParams.x, atlasFogParams.y, -(viewMatrix * vec4(v, 0.0)).z);
     // Render-distance veil, by horizontal distance: terrain at the loading edge is
-    // always fully sky, but clouds and anything straight overhead are not veiled.
+    // always fully sky, but anything straight overhead is not veiled. The cloud
+    // layer reaches well past the terrain, so it fades at its own edge instead.
+#ifdef ATLAS_FOG_CLOUDS
+    float edge = smoothstep(atlasCloudFog.x, atlasCloudFog.y, length(v.xz));
+#else
     float edge = smoothstep(atlasFogParams.x, atlasFogParams.y, length(v.xz));
+#endif
     // Height haze on an increasing scale: 1 - exp(-(d / D)^2) keeps the near and
     // middle distance clear and closes in steeply further out. The ray's height
     // thins it (thick in valleys, thin up high, D at sea level y = 62); below sea

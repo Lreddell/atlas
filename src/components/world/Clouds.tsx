@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GlobalNoise } from '../../utils/noise';
 import { CHUNK_SIZE } from '../../constants';
 import { registerCloudHandlers } from './cloudState';
+import { ATMOSPHERE_UNIFORMS } from '../../systems/graphics/atmosphereUniforms';
 
 const CLOUD_LEVEL = 192;
 const CLOUD_HEIGHT = 4;
@@ -69,6 +70,8 @@ for (const material of [
     cloudBackMaterial, cloudFrontMaterial, newCloudBackMaterial,
     newCloudFrontMaterial, leavingCloudBackMaterial, leavingCloudFrontMaterial,
 ]) {
+    // The clouds fade at the edge of their own layer, not at the terrain's.
+    material.defines = { ...material.defines, ATLAS_FOG_CLOUDS: '' };
     material.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', CLOUD_SKY_SCATTER);
     };
@@ -415,6 +418,9 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
         // rebuild scan cost grows with the square of this radius.
         const viewDist = Math.min(renderDistance * 2, renderDistance + 16) * CHUNK_SIZE;
         const radius = Math.ceil(viewDist / CLOUD_SCALE) + 1; // +1 buffer
+        // Fade the layer out well before its last tiles, so it never shows an edge.
+        ATMOSPHERE_UNIFORMS.atlasCloudFog.value.x = viewDist * 0.5;
+        ATMOSPHERE_UNIFORMS.atlasCloudFog.value.y = viewDist * 0.92;
 
         const minU = centerU - radius;
         const maxU = centerU + radius;
