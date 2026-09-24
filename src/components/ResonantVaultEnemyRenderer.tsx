@@ -15,6 +15,7 @@ import { blockDust } from '../systems/fx/blockChips';
 import { BLOCKS } from '../data/blocks';
 import { BlockType } from '../types';
 import { RESONANT_ENTITY_MATERIAL_UVS } from '../systems/textures/resonantEntityTexturePixels';
+import { useEntityWorldLight } from '../systems/graphics/entityWorldLight';
 import {
     VAULT_ENEMY_MODELS,
     sampleVaultEnemyAnimation,
@@ -34,6 +35,25 @@ const MATERIAL_TINTS: Readonly<Record<VaultEnemyMaterialId, number>> = {
 
 type VaultEnemyMaterials = Readonly<Record<VaultEnemyMaterialId, THREE.MeshLambertMaterial>>;
 
+const ACCENT_EMISSIVE = 0x2b2619;
+const ACCENT_EMISSIVE_INTENSITY = 0.14;
+/**
+ * The hit flash: white, plus a soft glow of its own, because the enemies take
+ * the vault's light (entityWorldLight.ts) and a white tint alone would read
+ * as grey in a dim hall.
+ */
+const HURT_EMISSIVE = 0xffffff;
+const HURT_EMISSIVE_INTENSITY = 0.45;
+
+function setHurtLook(materials: VaultEnemyMaterials, hurt: boolean): void {
+    for (const [materialId, material] of Object.entries(materials) as [VaultEnemyMaterialId, THREE.MeshLambertMaterial][]) {
+        material.color.setHex(hurt ? 0xffffff : MATERIAL_TINTS[materialId]);
+        const accent = materialId === 'accent';
+        material.emissive.setHex(hurt ? HURT_EMISSIVE : accent ? ACCENT_EMISSIVE : 0x000000);
+        material.emissiveIntensity = hurt ? HURT_EMISSIVE_INTENSITY : accent ? ACCENT_EMISSIVE_INTENSITY : 1;
+    }
+}
+
 function useVaultEnemyMaterials(texturePath: string): VaultEnemyMaterials {
     const source = useTexture(texturePath);
     const materials = useMemo(() => {
@@ -52,8 +72,8 @@ function useVaultEnemyMaterials(texturePath: string): VaultEnemyMaterials {
             map.needsUpdate = true;
             const material = new THREE.MeshLambertMaterial({ map, color: MATERIAL_TINTS[materialId] });
             if (materialId === 'accent') {
-                material.emissive.setHex(0x2b2619);
-                material.emissiveIntensity = 0.14;
+                material.emissive.setHex(ACCENT_EMISSIVE);
+                material.emissiveIntensity = ACCENT_EMISSIVE_INTENSITY;
             }
             result[materialId] = material;
         }
@@ -121,6 +141,8 @@ function actionClip(entity: Entity): VaultEnemyAnimationClip | null {
 const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id, kind }) => {
     const model = VAULT_ENEMY_MODELS[kind];
     const materials = useVaultEnemyMaterials(model.texture);
+    // Lit by the vault around it: its lamps, its dark corners.
+    const worldLight = useEntityWorldLight(materials);
     const rootRef = useRef<THREE.Group>(null);
     const partRefs = useRef(new Map<string, THREE.Group>());
     const lastPosition = useRef<THREE.Vector3 | null>(null);
@@ -199,6 +221,7 @@ const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id
             entity.pos.z + pose.rootPosition[2],
         );
         root.rotation.set(pose.rootRotation[0], entity.yaw + pose.rootRotation[1], pose.rootRotation[2]);
+        worldLight.update(entity.pos.x, entity.pos.y + entity.height * 0.5, entity.pos.z, delta);
         const hurtScale = Date.now() < entity.hurtUntil ? 1.025 : 1;
         root.scale.set(
             model.visualScale[0] * hurtScale,
@@ -216,10 +239,7 @@ const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id
             group.rotation.set(...rotation);
             group.scale.set(...scale);
         }
-        const hurt = Date.now() < entity.hurtUntil;
-        for (const [materialId, material] of Object.entries(materials) as [VaultEnemyMaterialId, THREE.MeshLambertMaterial][]) {
-            material.color.setHex(hurt ? 0xffffff : MATERIAL_TINTS[materialId]);
-        }
+        setHurtLook(materials, Date.now() < entity.hurtUntil);
     });
 
     return (
@@ -261,6 +281,7 @@ function floorDustBlock(x: number, y: number, z: number): BlockType {
 const VaultEnemyDeathInstance: React.FC<{ visual: VaultEnemyDeathVisual }> = ({ visual }) => {
     const model = VAULT_ENEMY_MODELS[visual.kind];
     const materials = useVaultEnemyMaterials(model.texture);
+    const worldLight = useEntityWorldLight(materials);
     const rootRef = useRef<THREE.Group>(null);
     const partRefs = useRef(new Map<string, THREE.Group>());
     const childrenByParent = useMemo(() => {
@@ -280,9 +301,10 @@ const VaultEnemyDeathInstance: React.FC<{ visual: VaultEnemyDeathVisual }> = ({ 
         else partRefs.current.delete(partId);
     };
 
-    useFrame(() => {
+    useFrame((_, delta) => {
         const root = rootRef.current;
         if (!root) return;
+        worldLight.update(visual.x, visual.y + 0.5, visual.z, delta);
         const elapsed = Date.now() - visual.startedAt;
         const progress = Math.max(0, Math.min(1, elapsed / DEATH_FALL_MS));
         const pose = sampleVaultEnemyAnimation(visual.kind, 'death', progress, progress);

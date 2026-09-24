@@ -74,13 +74,3 @@ ${hook}`)
     });
     return true;
 }
-
-/** Lights every lit material under `root` from `light`; cheap to call again as parts change. */
-export function applyEntityLightingTo(root: THREE.Object3D, light: EntityLight): void {
-    root.traverse((object) => {
-        const mesh = object as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        for (const material of list) applyEntityLighting(material, { kind: 'uniform', light });
-    });
-}

@@ -7,9 +7,7 @@ import { ResonantVaultEnemyRenderer } from './ResonantVaultEnemyRenderer';
 import { MagneticWardenRenderer } from './MagneticWardenRenderer';
 import { BossCompassTracker } from './BossCompassTracker';
 import { playerPose } from '../systems/player/viewRig';
-import { applyEntityLightingTo, createEntityLight, type EntityLight } from '../systems/graphics/materials/entityLighting';
-import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
-import { worldLightReader } from '../systems/graphics/worldLightReader';
+import { EntityWorldLight } from '../systems/graphics/entityWorldLight';
 
 const POLARITY_RED = 0xe53935;
 const POLARITY_BLUE = 0x1e88e5;
@@ -84,24 +82,24 @@ const BoatModel: React.FC = () => {
     );
 };
 
-const _boatLightSample: SmoothLight = { sky: 1, block: 0 };
-
 /**
- * A boat takes the world's light where it floats (entityLighting.ts), as the
+ * A boat takes the world's light where it floats (entityWorldLight.ts), as the
  * player does: its shaded walls stay readable instead of going black, and it
  * darkens under cover and warms by a torch like the blocks around it.
  */
 function lightBoat(boat: THREE.Object3D, x: number, y: number, z: number, dt: number): void {
-    let state = boat.userData.atlasLight as { light: EntityLight; level: SmoothLight } | undefined;
-    if (!state) {
-        state = { light: createEntityLight(), level: { sky: 1, block: 0 } };
-        boat.userData.atlasLight = state;
-        applyEntityLightingTo(boat, state.light);
+    let light = boat.userData.atlasLight as EntityWorldLight | undefined;
+    if (!light) {
+        light = new EntityWorldLight();
+        boat.userData.atlasLight = light;
+        const materials: THREE.Material[] = [];
+        boat.traverse((object) => {
+            const mesh = object as THREE.Mesh;
+            if (mesh.isMesh) materials.push(...(Array.isArray(mesh.material) ? mesh.material : [mesh.material]));
+        });
+        light.apply(materials);
     }
-    sampleSmoothLight(worldLightReader, x, y + 0.5, z, _boatLightSample);
-    const level = easeLight(state.level, _boatLightSample, dt, 10);
-    state.light.value.x = level.sky;
-    state.light.value.y = level.block;
+    light.update(x, y + 0.5, z, dt);
 }
 
 /**
