@@ -23,7 +23,7 @@ const countTopFacesAt = (res, worldY) => {
     const { positions, normals } = res.opaque;
     let area = 0;
     for (let v = 0; v * 3 < positions.length; v += 4) {
-        if (normals[v * 3 + 1] !== 1 || positions[v * 3 + 1] !== worldY) continue;
+        if (normals[v * 4 + 1] !== 127 || positions[v * 3 + 1] !== worldY) continue;
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
         for (let k = 0; k < 4; k++) {
             minX = Math.min(minX, positions[(v + k) * 3]); maxX = Math.max(maxX, positions[(v + k) * 3]);

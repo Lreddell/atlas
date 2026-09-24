@@ -32,7 +32,7 @@ const countFaces = (buffer, axis, normalValue, plane) => {
     const { positions, normals } = buffer;
     let quads = 0;
     for (let v = 0; v * 3 < positions.length; v += 4) {
-        if (normals[v * 3 + axis] === normalValue && positions[v * 3 + axis] === plane) quads++;
+        if (normals[v * 4 + axis] === normalValue * 127 && positions[v * 3 + axis] === plane) quads++;
     }
     return quads;
 };

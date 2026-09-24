@@ -16,7 +16,7 @@ const { THREE, RegionBatcher, mergeRegionLayer, REGION_CHUNKS, REBUILD_DEBOUNCE_
 const quad = (x = 0, y = 0, z = 0) => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([x, y, z, x + 1, y, z, x + 1, y + 1, z, x, y + 1, z]), 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(new Int8Array([0, 0, 127, 0, 0, 0, 127, 0, 0, 0, 127, 0, 0, 0, 127, 0]), 4, true));
     geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
     geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(16).fill(255), 4, true));
     geometry.setAttribute('atlasTile', new THREE.BufferAttribute(new Uint16Array([7, 7, 7, 7]), 1));
@@ -65,6 +65,10 @@ test('merging offsets each chunk into region space and rebases its indices', () 
     assert.deepEqual(ranges.get('b'), [6, 6]);
     assert.deepEqual([...merged.attributes.atlasTile.array], [7, 7, 7, 7, 7, 7, 7, 7]);
     assert.equal(merged.attributes.color.normalized, true);
+    assert.ok(merged.attributes.normal.array instanceof Int8Array, 'normals stay signed bytes');
+    assert.equal(merged.attributes.normal.itemSize, 4);
+    assert.equal(merged.attributes.normal.normalized, true);
+    assert.deepEqual([...merged.attributes.normal.array.slice(16, 20)], [0, 0, 127, 0], 'copied in place');
     const box = merged.boundingBox;
     assert.deepEqual(box.min.toArray(), [-0.5, 4.5, -0.5], 'tight bounds, padded half a block for the wind');
     assert.deepEqual(box.max.toArray(), [19.5, 6.5, 35.5]);

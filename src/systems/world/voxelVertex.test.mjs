@@ -67,7 +67,7 @@ test('blocks get the material class and glow the shader expects', () => {
 const topFaceBytes = (buffer, x, y, z) => {
     const { positions, normals, colors } = buffer;
     for (let v = 0; v * 3 < positions.length; v += 4) {
-        if (normals[v * 3 + 1] !== 1) continue;
+        if (normals[v * 4 + 1] !== 127) continue;
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, flat = true;
         for (let k = 0; k < 4; k++) {
             const px = positions[(v + k) * 3], py = positions[(v + k) * 3 + 1], pz = positions[(v + k) * 3 + 2];

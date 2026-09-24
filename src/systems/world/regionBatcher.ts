@@ -94,7 +94,7 @@ export function mergeRegionLayer(
         indexCount += part.geometry.index ? part.geometry.index.count : 0;
     }
     const positions = new Float32Array(vertexCount * 3);
-    const normals = new Float32Array(vertexCount * 3);
+    const normals = new Int8Array(vertexCount * 4);
     const uvs = new Float32Array(vertexCount * 2);
     const colors = new Uint8Array(vertexCount * 4);
     const tiles = new Uint16Array(vertexCount);
@@ -124,7 +124,7 @@ export function mergeRegionLayer(
             if (z < minZ) minZ = z;
             if (z > maxZ) maxZ = z;
         }
-        normals.set(geometry.attributes.normal.array as Float32Array, vertexBase * 3);
+        normals.set(geometry.attributes.normal.array as Int8Array, vertexBase * 4);
         uvs.set(geometry.attributes.uv.array as Float32Array, vertexBase * 2);
         colors.set(geometry.attributes.color.array as Uint8Array, vertexBase * 4);
         tiles.set(geometry.attributes.atlasTile.array as Uint16Array, vertexBase);
@@ -141,7 +141,7 @@ export function mergeRegionLayer(
     const attribute = (array: THREE.TypedArray, itemSize: number, normalized = false) =>
         new THREE.BufferAttribute(array, itemSize, normalized).onUpload(releaseArray);
     merged.setAttribute('position', attribute(positions, 3));
-    merged.setAttribute('normal', attribute(normals, 3));
+    merged.setAttribute('normal', attribute(normals, 4, true));
     merged.setAttribute('uv', attribute(uvs, 2));
     merged.setAttribute('color', attribute(colors, 4, true));
     merged.setAttribute('atlasTile', attribute(tiles, 1));

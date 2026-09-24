@@ -264,7 +264,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             // NOTE: do NOT release the CPU arrays after GPU upload, WorldManager's
             // meshCache hands these same buffers to chunks that remount later.
             geo.setAttribute('position', new THREE.BufferAttribute(buff.positions, 3));
-            geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 3));
+            // Signed bytes, x y z and a pad (geometry.ts): four bytes a vertex instead of twelve.
+            geo.setAttribute('normal', new THREE.BufferAttribute(buff.normals, 4, true));
             geo.setAttribute('uv', new THREE.BufferAttribute(buff.uvs, 2));
             geo.setAttribute('color', new THREE.BufferAttribute(buff.colors, 4, true));
             // How each face is textured: an atlas UV as is, or a tile repeated per block (geometry.ts).

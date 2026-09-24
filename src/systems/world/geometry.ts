@@ -28,14 +28,16 @@ export interface NeighborLight {
 
 export interface GeometryAttributes {
     positions: Float32Array;
-    normals: Float32Array;
+    /** Four signed bytes a vertex, x y z and a pad (127 = 1): every chunk normal is axis-aligned. */
+    normals: Int8Array;
     /** Atlas UVs; on a tiled face (see tiles), UVs in blocks across the face. */
     uvs: Float32Array;
     /** Four bytes a vertex: sky light, block light, AO, class | emission | sway (see voxelVertex.ts). */
     colors: Uint8Array;
     /** One a vertex: TILE_RAW, or a tiled face's packed tile (packTile). */
     tiles: Uint16Array;
-    indices: Uint32Array;
+    /** 16-bit whenever the vertices fit (nearly every chunk), halving the index memory. */
+    indices: Uint16Array | Uint32Array;
 }
 
 /** A face whose uvs are atlas UVs already: sprites, fluids, beds, slabs and stairs. */
@@ -65,7 +67,7 @@ const HARD_MAX_FACES = 300000;
 class GeometryBuffer {
     capacityVerts = INITIAL_FACES * 4;
     positions = new Float32Array(this.capacityVerts * 3);
-    normals = new Float32Array(this.capacityVerts * 3);
+    normals = new Int8Array(this.capacityVerts * 4);
     uvs = new Float32Array(this.capacityVerts * 2);
     colors = new Uint8Array(this.capacityVerts * 4);
     tiles = new Uint16Array(this.capacityVerts);
@@ -95,7 +97,9 @@ class GeometryBuffer {
             return next;
         };
         this.positions = growF32(this.positions, 3);
-        this.normals = growF32(this.normals, 3);
+        const nextNormals = new Int8Array(newCapacity * 4);
+        nextNormals.set(this.normals);
+        this.normals = nextNormals;
         this.uvs = growF32(this.uvs, 2);
         const nextColors = new Uint8Array(newCapacity * 4);
         nextColors.set(this.colors);
@@ -108,6 +112,17 @@ class GeometryBuffer {
         this.indices = nextIndices;
         this.capacityVerts = newCapacity;
         return true;
+    }
+
+    /** A quad's one normal, on all four of its corners. */
+    setQuadNormal(vBase: number, nx: number, ny: number, nz: number) {
+        const normals = this.normals;
+        for (let o = vBase * 4, end = o + 16; o < end; o += 4) {
+            normals[o] = nx * 127;
+            normals[o + 1] = ny * 127;
+            normals[o + 2] = nz * 127;
+            normals[o + 3] = 0;
+        }
     }
 
     pushQuad(
@@ -130,32 +145,29 @@ class GeometryBuffer {
 
         // Vertex 1
         this.positions[vp] = p1x; this.positions[vp+1] = p1y; this.positions[vp+2] = p1z;
-        this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
         colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaBottom;
         this.uvs[up] = uMin; this.uvs[up+1] = vMin; // 0,0
 
         // Vertex 2
         vp += 3; up += 2; cp += 4;
         this.positions[vp] = p2x; this.positions[vp+1] = p2y; this.positions[vp+2] = p2z;
-        this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
         colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaBottom;
         this.uvs[up] = uMax; this.uvs[up+1] = vMin; // 1,0
 
         // Vertex 3
         vp += 3; up += 2; cp += 4;
         this.positions[vp] = p3x; this.positions[vp+1] = p3y; this.positions[vp+2] = p3z;
-        this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
         colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaTop;
         this.uvs[up] = uMax; this.uvs[up+1] = vMax; // 1,1
 
         // Vertex 4
         vp += 3; up += 2; cp += 4;
         this.positions[vp] = p4x; this.positions[vp+1] = p4y; this.positions[vp+2] = p4z;
-        this.normals[vp] = nx; this.normals[vp+1] = ny; this.normals[vp+2] = nz;
         colors[cp] = sky; colors[cp+1] = block; colors[cp+2] = ao; colors[cp+3] = alphaTop;
         this.uvs[up] = uMin; this.uvs[up+1] = vMax; // 0,1
 
         this.tiles.fill(TILE_RAW, vBase, vBase + 4);
+        this.setQuadNormal(vBase, nx, ny, nz);
 
         // Indices (0, 1, 2,  0, 2, 3)
         this.indices[ip] = vBase;
@@ -173,11 +185,13 @@ class GeometryBuffer {
     slice(): GeometryAttributes {
         return {
             positions: this.positions.slice(0, this.vCount * 3),
-            normals: this.normals.slice(0, this.vCount * 3),
+            normals: this.normals.slice(0, this.vCount * 4),
             uvs: this.uvs.slice(0, this.vCount * 2),
             colors: this.colors.slice(0, this.vCount * 4),
             tiles: this.tiles.slice(0, this.vCount),
-            indices: this.indices.slice(0, this.iCount)
+            indices: this.vCount <= 0x10000
+                ? Uint16Array.from(this.indices.subarray(0, this.iCount))
+                : this.indices.slice(0, this.iCount)
         };
     }
 }
@@ -519,9 +533,6 @@ export function generateGeometryData(
                     opaqueBuffer.positions[vp] = x + lx;
                     opaqueBuffer.positions[vp + 1] = y + ly;
                     opaqueBuffer.positions[vp + 2] = z + lz;
-                    opaqueBuffer.normals[vp] = f.dx;
-                    opaqueBuffer.normals[vp + 1] = f.dy;
-                    opaqueBuffer.normals[vp + 2] = f.dz;
                     copyCorner(opaqueBuffer, cp, 0);
                     opaqueBuffer.uvs[up] = u;
                     opaqueBuffer.uvs[up + 1] = v;
@@ -529,6 +540,7 @@ export function generateGeometryData(
                     vp += 3; up += 2; cp += 4;
                 }
 
+                opaqueBuffer.setQuadNormal(vBase, f.dx, f.dy, f.dz);
                 writeQuadIndices(opaqueBuffer, vBase);
                 opaqueBuffer.vCount += 4;
             }
@@ -549,9 +561,6 @@ export function generateGeometryData(
             opaqueBuffer.positions[vp + nAxis] = s + corner[0];
             opaqueBuffer.positions[vp + uAxis] = u0 + corner[1] * w;
             opaqueBuffer.positions[vp + vAxis] = v0 + corner[2] * h;
-            opaqueBuffer.normals[vp] = dir[0];
-            opaqueBuffer.normals[vp + 1] = dir[1];
-            opaqueBuffer.normals[vp + 2] = dir[2];
             copyCorner(opaqueBuffer, cp, k * 4);
             // In blocks: BL (0, 0), BR (w, 0), TR (w, h), TL (0, h).
             opaqueBuffer.uvs[up] = k === 1 || k === 2 ? w : 0;
@@ -559,6 +568,7 @@ export function generateGeometryData(
             opaqueBuffer.tiles[vBase + k] = tile;
             vp += 3; up += 2; cp += 4;
         }
+        opaqueBuffer.setQuadNormal(vBase, dir[0], dir[1], dir[2]);
         writeQuadIndices(opaqueBuffer, vBase);
         opaqueBuffer.vCount += 4;
     };
@@ -932,32 +942,29 @@ export function generateGeometryData(
 
                      // V0
                      targetBuffer.positions[vp] = x + c0[0]; targetBuffer.positions[vp+1] = y + cy0; targetBuffer.positions[vp+2] = z + c0[2];
-                     targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
                      copyCorner(targetBuffer, cp, 0);
                      targetBuffer.uvs[up] = u0; targetBuffer.uvs[up+1] = v0;
 
                      // V1
                      vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c1[0]; targetBuffer.positions[vp+1] = y + cy1; targetBuffer.positions[vp+2] = z + c1[2];
-                     targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
                      copyCorner(targetBuffer, cp, 4);
                      targetBuffer.uvs[up] = u1; targetBuffer.uvs[up+1] = v1;
 
                      // V2
                      vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c2[0]; targetBuffer.positions[vp+1] = y + cy2; targetBuffer.positions[vp+2] = z + c2[2];
-                     targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
                      copyCorner(targetBuffer, cp, 8);
                      targetBuffer.uvs[up] = u2; targetBuffer.uvs[up+1] = v2;
 
                      // V3
                      vp+=3; up+=2; cp+=4;
                      targetBuffer.positions[vp] = x + c3[0]; targetBuffer.positions[vp+1] = y + cy3; targetBuffer.positions[vp+2] = z + c3[2];
-                     targetBuffer.normals[vp] = dx; targetBuffer.normals[vp+1] = dy; targetBuffer.normals[vp+2] = dz;
                      copyCorner(targetBuffer, cp, 12);
                      targetBuffer.uvs[up] = u3; targetBuffer.uvs[up+1] = v3;
 
                      targetBuffer.tiles.fill(TILE_RAW, vBase, vBase + 4);
+                     targetBuffer.setQuadNormal(vBase, dx, dy, dz);
                      writeQuadIndices(targetBuffer, vBase);
                      targetBuffer.vCount += 4;
                  }

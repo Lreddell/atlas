@@ -29,7 +29,7 @@ const quadsOf = (buffer) => {
         const max = [0, 1, 2].map(a => Math.max(...corners.map(c => c[a])));
         quads.push({
             v, min, max,
-            normal: [buffer.normals[v * 3], buffer.normals[v * 3 + 1], buffer.normals[v * 3 + 2]],
+            normal: [buffer.normals[v * 4] / 127, buffer.normals[v * 4 + 1] / 127, buffer.normals[v * 4 + 2] / 127],
             colors: [0, 1, 2, 3].map(k => [...buffer.colors.slice((v + k) * 4, (v + k) * 4 + 4)]),
             uvs: [0, 1, 2, 3].map(k => [buffer.uvs[(v + k) * 2], buffer.uvs[(v + k) * 2 + 1]]),
             tiles: [0, 1, 2, 3].map(k => buffer.tiles[v + k]),
@@ -129,6 +129,8 @@ test('an open flat floor becomes a handful of quads', () => {
     const quads = quadsOf(opaque);
     // Top, bottom and the four chunk-edge sides: six quads for 256 blocks (was 256 + 256 + 64).
     assert.equal(quads.length, 6);
+    assert.ok(opaque.indices instanceof Uint16Array, 'a chunk this small indexes in 16 bits');
+    assert.ok(opaque.normals instanceof Int8Array && opaque.normals.length === quads.length * 16, 'four signed bytes a vertex');
     const top = quads.find(q => q.normal[1] === 1);
     const stoneTop = resolveTile(BlockType.STONE, 'top', 0, 1, 0, 0);
     assert.equal(top.tiles[0], packTile(stoneTop.texIdx, stoneTop.uvRot, uvVariationMode(BlockType.STONE)));
@@ -185,7 +187,7 @@ test('water leaves out faces toward an unloaded chunk, not toward loaded air', (
     const westFaces = (result) => {
         const { positions, normals } = result.transparent;
         let count = 0;
-        for (let v = 0; v * 3 < positions.length; v += 4) if (normals[v * 3] === -1 && positions[v * 3] === 0) count++;
+        for (let v = 0; v * 3 < positions.length; v += 4) if (normals[v * 4] === -127 && positions[v * 3] === 0) count++;
         return count;
     };
     const unloaded = generateGeometryData(0, 0, chunk, undefined, {}, { center: light }, false);
