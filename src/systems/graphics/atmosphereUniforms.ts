@@ -38,6 +38,14 @@ export const ATMOSPHERE_UNIFORMS = {
     atlasClassicSky: { value: { x: 0, y: 0, z: 0, w: 0 } as V4 },
     /** The cloud layer's own veil: x start, y end (horizontal blocks), at the edge of the layer rather than the terrain. */
     atlasCloudFog: { value: { x: 140, y: 240 } },
+    /**
+     * x haze density close by (per block, at sea level): the light, even veil the
+     * steep far haze builds on. y how fast the sky's bright horizon band gives
+     * way to the zenith colour (a constant, kept here to tune live). Every value
+     * in this bag is an object: three clones uniform wrappers per built-in
+     * material, and only object values stay shared.
+     */
+    atlasHazeParams: { value: { x: 0, y: 6 } },
     /** Camera in a fluid: x amount 0..1, y fog density per block. */
     atlasMediumParams: { value: { x: 0, y: 0.1, z: 0, w: 0 } as V4 },
     atlasMediumColor: { value: v3() },
@@ -75,6 +83,7 @@ export function applyAtmosphereUniforms(state: AtmosphereState): void {
     fog.y = state.fogEnd;
     fog.z = state.hazeDistance;
     fog.w = state.hazeHeight;
+    u.atlasHazeParams.value.x = state.hazeNear;
     const classic = u.atlasClassicSky.value;
     acesToneMap(state.classicFog, classicScreen);
     classic.x = linearToSrgb(classicScreen[0]);
@@ -101,6 +110,7 @@ uniform vec4 atlasMediumParams;
 uniform vec3 atlasMediumColor;
 uniform vec4 atlasClassicSky;
 uniform vec2 atlasCloudFog;
+uniform vec2 atlasHazeParams;
 ${TONE_CURVE_GLSL}
 
 // Scene-linear sky radiance looking along a (normalised) world direction.
@@ -116,7 +126,7 @@ vec3 atlasSkyRadiance(vec3 dir) {
     float towardSun = pow(clamp(cosSun * 0.5 + 0.5, 0.0, 1.0), 3.0);
     vec3 horizon = mix(atlasSkyHorizon, atlasSkyHorizonSun, towardSun);
     // A narrow bright band at the horizon, deep colour above it.
-    float zenithMix = 1.0 - exp(-up * 8.0);
+    float zenithMix = 1.0 - exp(-up * atlasHazeParams.y);
     vec3 sky = mix(horizon, atlasSkyZenith, zenithMix);
     // Mie scattering: a soft halo and a tight glow around the sun, a soft moon halo.
     float sunDot = max(cosSun, 0.0);
@@ -139,17 +149,19 @@ float atlasFogAmount(vec3 v) {
 #else
     float edge = smoothstep(atlasFogParams.x, atlasFogParams.y, length(v.xz));
 #endif
-    // Height haze on an increasing scale: 1 - exp(-(d / D)^2) keeps the near and
-    // middle distance clear and closes in steeply further out. The ray's height
-    // thins it (thick in valleys, thin up high, D at sea level y = 62); below sea
-    // level it stops thickening: the haze is open air, not cave fog.
+    // Height haze: a light, even veil close by (d * near, which lifts dark ground
+    // toward the sky) under a steep far curve ((d / D)^2), so it closes in on an
+    // increasing scale with distance. The ray's height thins it (thick in
+    // valleys, thin up high, as given at sea level y = 62); below sea level it
+    // stops thickening: the haze is open air, not cave fog.
     float scaleHeight = atlasFogParams.w;
     float dist = length(v);
     float h0 = exp(-max(cameraPosition.y - 62.0, 0.0) / scaleHeight);
     float k = v.y / scaleHeight;
     float along = abs(k) > 1e-3 ? (1.0 - exp(-k)) / k : 1.0 - 0.5 * k;
-    float depth = dist * clamp(h0 * along, 0.0, 2.0) / max(atlasFogParams.z, 1.0);
-    float haze = 1.0 - exp(-depth * depth);
+    float reach = dist * clamp(h0 * along, 0.0, 2.0);
+    float far = reach / max(atlasFogParams.z, 1.0);
+    float haze = 1.0 - exp(-(reach * atlasHazeParams.x + far * far));
     return clamp(max(edge, haze), 0.0, 1.0);
 }
 

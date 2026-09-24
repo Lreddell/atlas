@@ -12,15 +12,15 @@ import { bossSummon } from '../../systems/boss/bossSummon';
 import { bossPhaseState } from '../../systems/boss/bossPhaseState';
 import { getLunarNightEventState, getMoonCycleIndex } from '../../systems/world/celestialEvents';
 import { SHADOW_QUALITY_SETTINGS, type ShadowQuality, type VisualStyle } from '../../systems/graphics/graphicsSettings';
-import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
-import { sampleClassicAtmosphere } from '../../systems/graphics/classicAtmosphere';
+import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_AXIS, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
+import { CLASSIC_ORBIT_AXIS, sampleClassicAtmosphere } from '../../systems/graphics/classicAtmosphere';
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
 import { BlockType } from '../../types';
 import { createGlowTexture, createMoonPhaseTexture, createSunTexture } from '../../utils/textures';
 import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
 import { setClassicLighting, setClassicLightLevels } from '../../systems/graphics/materials/worldLighting';
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
-import { snapShadowCenter } from '../../systems/graphics/shadows';
+import { createShadowSnap, snapShadowCenter } from '../../systems/graphics/shadows';
 import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
 
 // The sky, the sun and moon, the stars, and the scene's two lights, all driven
@@ -409,6 +409,7 @@ const WATER_MEDIUM_TINT: readonly number[] = [0.07, 0.3, 0.38];
 const LAVA_MEDIUM_COLOR: readonly number[] = [1.5, 0.36, 0.03];
 const scratchCameraCenter: [number, number, number] = [0, 0, 0];
 const scratchShadowCenter: [number, number, number] = [0, 0, 0];
+const shadowSnap = createShadowSnap();
 
 // Moon-phase color themes (phaseIndex 0-7: 0=new, 4=full)
 // [hueA, satA, lightA, hueB, satB, lightB, hueC, satC, lightC]
@@ -789,12 +790,14 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         // --- Lights: one key (sun or moon) and one hemisphere ---
         const shadowSize = shadowDist;
         const lightDistance = shadowSize + 50;
-        // Snap the shadow camera to whole texels in the light's own frame, so
-        // shadow edges hold still while the player moves.
+        // Snap the shadow camera to whole texels in the light's own frame, turning
+        // about the player, so shadow edges hold still while the player moves and
+        // only creep as the sun does (shadows.ts). Its up is the orbit axis.
         scratchCameraCenter[0] = camera.position.x;
         scratchCameraCenter[1] = camera.position.y;
         scratchCameraCenter[2] = camera.position.z;
-        const snapped = snapShadowCenter(scratchCameraCenter, state.keyDir, (shadowSize * 2) / shadowMapSize, scratchShadowCenter);
+        const orbitAxis = state.classic ? CLASSIC_ORBIT_AXIS : SUN_ORBIT_AXIS;
+        const snapped = snapShadowCenter(scratchCameraCenter, state.keyDir, orbitAxis, (shadowSize * 2) / shadowMapSize, shadowSnap, scratchShadowCenter);
         const snappedX = snapped[0];
         const snappedY = snapped[1];
         const snappedZ = snapped[2];
@@ -805,7 +808,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             key.target.position.set(snappedX, snappedY, snappedZ);
             key.target.updateMatrixWorld();
             key.position.set(snappedX + keyDir.x * lightDistance, snappedY + keyDir.y * lightDistance, snappedZ + keyDir.z * lightDistance);
-            key.up.set(0, 0, 1);
+            // three aims the shadow camera with its own up, which must match the snap's frame.
+            key.shadow.camera.up.set(orbitAxis[0], orbitAxis[1], orbitAxis[2]);
             key.updateMatrixWorld();
             key.color.setRGB(state.keyColor[0], state.keyColor[1], state.keyColor[2]);
             key.intensity = 1;

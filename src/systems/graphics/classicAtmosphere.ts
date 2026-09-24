@@ -14,6 +14,9 @@ export { acesToneMap, inverseAcesToneMap };
 // back through an exact inverse of three's ACES curve: what reaches the screen
 // is what the old game showed.
 
+/** The axis the old sun and moon turn about: their arc runs east, overhead, west. */
+export const CLASSIC_ORBIT_AXIS: Readonly<Vec3> = [0, 0, 1];
+
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** THREE.MathUtils.smoothstep(x, min, max). */
 const smoothstep = (x: number, min: number, max: number) => {
@@ -169,6 +172,7 @@ export function sampleClassicAtmosphere(input: ClassicAtmosphereInput, out: Atmo
     out.fogStart = Math.max(0, Math.min(near, far - 1));
     out.fogEnd = far;
     out.hazeDistance = 1e6;
+    out.hazeNear = 0;
     out.hazeHeight = 56;
     out.exposure = 1;
 
