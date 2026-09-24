@@ -64,11 +64,17 @@ export interface RenderCostReport {
 
 /** What the chunk meshes in the scene hold, whether or not they are in view. */
 export interface SceneStats {
+    /** Chunk meshes drawing themselves. */
     chunkMeshes: number;
+    /** Chunk meshes hidden because their region's merged mesh draws them (regionBatcher.ts). */
+    batchedChunkMeshes: number;
+    regionMeshes: number;
+    /** Triangles the chunk meshes and region meshes would draw with everything in view. */
     triangles: number;
-    vertices: number;
-    /** Vertex and index arrays of the chunk meshes, in MB. */
+    /** The chunks' own vertex and index arrays, in MB (kept on the CPU for remounts and rebuilds). */
     geometryMB: number;
+    /** The region meshes' buffers, in MB (on the GPU; only their indices stay on the CPU). */
+    regionMB: number;
 }
 
 interface FrameSample {
@@ -316,23 +322,74 @@ function renderCost(count = 40): RenderCostReport {
     };
 }
 
+/**
+ * GPU time of `count` scene renders (shadow maps included, post-processing
+ * not), from WebGL timer queries: the median in milliseconds, or null where
+ * the browser offers no timer queries.
+ */
+async function gpuCost(count = 20): Promise<{ medianMs: number; p90Ms: number } | null> {
+    if (!renderer || !sceneRef || !cameraRef) throw new Error('gpuCost() needs a running world');
+    const gl = renderer;
+    const context = gl.getContext() as WebGL2RenderingContext;
+    const timer = context.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null;
+    if (!timer) return null;
+    const queries: WebGLQuery[] = [];
+    for (let i = 0; i < count + 4; i++) {
+        const query = context.createQuery()!;
+        context.beginQuery(timer.TIME_ELAPSED_EXT, query);
+        gl.render(sceneRef, cameraRef);
+        context.endQuery(timer.TIME_ELAPSED_EXT);
+        if (i >= 4) queries.push(query);
+        else context.deleteQuery(query);
+    }
+    // Results only arrive once control returns to the browser.
+    const times: number[] = [];
+    for (let tries = 0; tries < 100 && times.length < queries.length; tries++) {
+        await wait(20);
+        times.length = 0;
+        if (context.getParameter(timer.GPU_DISJOINT_EXT)) continue;
+        for (const query of queries) {
+            if (!context.getQueryParameter(query, context.QUERY_RESULT_AVAILABLE)) break;
+            times.push(context.getQueryParameter(query, context.QUERY_RESULT) / 1e6);
+        }
+    }
+    for (const query of queries) context.deleteQuery(query);
+    if (times.length === 0) return null;
+    times.sort((a, b) => a - b);
+    const at = (q: number) => Number(times[Math.min(times.length - 1, Math.floor(times.length * q))].toFixed(2));
+    return { medianMs: at(0.5), p90Ms: at(0.9) };
+}
+
 function sceneStats(): SceneStats {
     if (!sceneRef) throw new Error('sceneStats() needs a running world');
-    let chunkMeshes = 0;
-    let triangles = 0;
-    let vertices = 0;
-    let bytes = 0;
+    const stats: SceneStats = { chunkMeshes: 0, batchedChunkMeshes: 0, regionMeshes: 0, triangles: 0, geometryMB: 0, regionMB: 0 };
+    let chunkBytes = 0;
+    let regionBytes = 0;
     sceneRef.traverse((object) => {
-        const geometry = (object as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+        const mesh = object as THREE.Mesh;
+        const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
         // Chunk meshes are the indexed ones carrying the 4-byte voxel colour (voxelVertex.ts).
-        if (!(object as THREE.Mesh).isMesh || !geometry?.index || geometry.attributes.color?.itemSize !== 4) return;
-        chunkMeshes++;
-        triangles += geometry.index.count / 3;
-        vertices += geometry.attributes.position.count;
-        for (const attribute of Object.values(geometry.attributes)) bytes += (attribute as THREE.BufferAttribute).array.byteLength;
-        bytes += geometry.index.array.byteLength;
+        if (!mesh.isMesh || !geometry?.index || geometry.attributes.color?.itemSize !== 4) return;
+        if (mesh.name === 'chunkRegion') {
+            // A region's water back-face pass shares the front pass's geometry.
+            if (mesh.renderOrder === -1) return;
+            stats.regionMeshes++;
+            stats.triangles += geometry.index.count / 3;
+            regionBytes += geometry.userData.bytes ?? 0;
+            return;
+        }
+        for (const attribute of Object.values(geometry.attributes)) chunkBytes += (attribute as THREE.BufferAttribute).array.byteLength;
+        chunkBytes += geometry.index.array.byteLength;
+        if (!mesh.visible) {
+            stats.batchedChunkMeshes++;
+            return;
+        }
+        stats.chunkMeshes++;
+        stats.triangles += geometry.index.count / 3;
     });
-    return { chunkMeshes, triangles, vertices, geometryMB: Number((bytes / 1048576).toFixed(1)) };
+    stats.geometryMB = Number((chunkBytes / 1048576).toFixed(1));
+    stats.regionMB = Number((regionBytes / 1048576).toFixed(1));
+    return stats;
 }
 
 async function perf(seconds = 5): Promise<PerfReport> {
@@ -543,6 +600,8 @@ export interface AtlasQaApi {
     perf(seconds?: number): Promise<PerfReport>;
     /** Synchronous render timing that works in a hidden pane: see renderCost above. */
     renderCost(count?: number): RenderCostReport;
+    /** GPU time of scene renders from timer queries (null without the extension). */
+    gpuCost(count?: number): Promise<{ medianMs: number; p90Ms: number } | null>;
     /** Triangles, vertices and memory of every chunk mesh in the scene. */
     sceneStats(): SceneStats;
     perfSweep(distances?: readonly number[], seconds?: number): Promise<Record<string, PerfReport>>;
@@ -583,6 +642,7 @@ export function createDevQaApi(): AtlasQaApi {
         shot: async (phase, name) => saveShot(phase, name, await captureNextFrame()),
         perf,
         renderCost,
+        gpuCost,
         sceneStats,
         perfSweep,
         enterWorld,

@@ -83,6 +83,12 @@ const qaShotPlugin: Plugin = {
   name: 'atlas-qa-shot',
   apply: 'serve',
   configureServer(server) {
+    // Lets dev pages sample their own JS with `new Profiler(...)` (the JS
+    // Self-Profiling API), so a hidden automation pane can still be profiled.
+    server.middlewares.use((_req, res, next) => {
+      res.setHeader('Document-Policy', 'js-profiling')
+      next()
+    })
     server.middlewares.use(QA_SHOT_ROUTE, (req, res) => {
       if (req.method !== 'POST') {
         res.statusCode = 405
