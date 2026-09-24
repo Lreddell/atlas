@@ -33,7 +33,11 @@ export const GameLoop: React.FC<GameLoopProps> = ({ isPaused, foodStateRef, setH
     useFrame((_, delta) => {
         if (isPaused) return;
 
-        accumulator.current += Math.min(delta, 0.25);
+        // At most MAX_SUBSTEPS ticks of time a frame, as the player's own loop
+        // (Player.tsx) takes: a long frame slows the world down rather than
+        // banking a backlog it would fast-forward through afterwards, and the
+        // world and the player never drift apart.
+        accumulator.current += Math.min(delta, MAX_SUBSTEPS * FIXED_DT);
 
         let steps = 0;
         // Track health locally across substeps, the render-captured prop is stale
