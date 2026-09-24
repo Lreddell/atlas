@@ -14,11 +14,12 @@ export const MinecraftSkinPart: React.FC<{
     useEffect(() => () => { base.dispose(); layer.dispose(); }, [base, layer]);
     if (!texture) return null;
     return <group position={position} scale={mirrored ? [-1, 1, 1] : [1, 1, 1]}>
-        <mesh geometry={base} castShadow renderOrder={firstPerson ? 999 : 0}>
+        {/* The first-person hand casts no shadow: the body's own arm does. */}
+        <mesh geometry={base} castShadow={!firstPerson} renderOrder={firstPerson ? 999 : 0}>
             <meshLambertMaterial map={texture} transparent={firstPerson} depthTest={!firstPerson} depthWrite={!firstPerson} />
         </mesh>
         {/* A depth-free viewmodel must cull rear sleeve faces, or they paint over the hand. */}
-        {(!skin.legacy || part === 'head') && <mesh geometry={layer} castShadow renderOrder={firstPerson ? 1000 : 0}>
+        {(!skin.legacy || part === 'head') && <mesh geometry={layer} castShadow={!firstPerson} renderOrder={firstPerson ? 1000 : 0}>
             <meshLambertMaterial map={texture} transparent alphaTest={0.01} side={firstPerson ? THREE.FrontSide : THREE.DoubleSide} depthTest={!firstPerson} depthWrite={!firstPerson} />
         </mesh>}
     </group>;

@@ -244,6 +244,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
           cameraSpring.current = { distance: 0, offset: 0 };
           bodyYaw.current = camera.rotation.y;
           viewRig.showModel = false; // Wait for the first pose at the new position.
+          viewRig.showShadow = false;
           timeAccumulator.current = 0;
           vel.current.set(0, 0, 0);
           prevPos.current.copy(newPos);
@@ -1287,6 +1288,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         viewRig.armLength = 0;
         viewRig.showModel = false;
     }
+    // Whatever the camera shows, the body is there, and casts its shadow.
+    viewRig.showShadow = !isDead;
     viewRig.camera.x = camera.position.x; viewRig.camera.y = camera.position.y; viewRig.camera.z = camera.position.z;
 
     // Global camera shake (boss slams etc.) on top of the resolved eye position.

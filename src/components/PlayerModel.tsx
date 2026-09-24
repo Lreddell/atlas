@@ -24,6 +24,7 @@ import { createBodyTurn, gaitKnee, springPose, stepBodyTurn, wrapAngle } from '.
 import { applyEntityLighting, createEntityLight } from '../systems/graphics/materials/entityLighting';
 import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
 import { worldLightReader } from '../systems/graphics/worldLightReader';
+import { graphicsSettings } from '../systems/graphics/graphicsStore';
 
 // The player's own body, drawn only in third person: a blocky explorer with
 // jointed limbs, animated procedurally from the physics pose every frame (no
@@ -189,7 +190,11 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
             return;
         }
         const opacity = playerModelOpacity(viewRig.camera, playerPose, playerPose.up);
-        root.visible = viewRig.showModel && opacity > 0.001;
+        const shown = viewRig.showModel && opacity > 0.001;
+        // In first person (or with the camera inside the body) the body is still
+        // there, so it casts its whole shadow: drawn into the shadow map only.
+        const shadowOnly = !shown && viewRig.showShadow && graphicsSettings.getConfig().shadows !== 'off';
+        root.visible = shown || shadowOnly;
         // Keep the pose advancing while hidden, so switching views resumes the current action.
 
         const dt = Math.min(0.1, delta);
@@ -529,16 +534,20 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                     // First sight of this part (armor and items swap in): world light it.
                     applyEntityLighting(material, { kind: 'uniform', light: bodyLight });
                 }
-                const fading = opacity < 0.999;
+                // Shadow only: no colour and no depth on screen. The shadow pass
+                // ignores colorWrite, so it still draws the body whole.
+                const fading = !shadowOnly && opacity < 0.999;
                 if (material.alphaHash !== fading) {
                     material.alphaHash = fading;
                     material.transparent = fading ? false : original.transparent;
-                    material.depthWrite = fading || original.depthWrite;
                     material.needsUpdate = true;
                 }
+                material.colorWrite = !shadowOnly;
+                material.depthWrite = !shadowOnly && (fading || original.depthWrite);
+                const shade = shadowOnly ? 1 : opacity;
                 const baseOpacity = material === materials.bootGlow ? (pose.polarity === 0 ? 0 : 0.7 + 0.3 * Math.sin(t * 6)) : original.opacity;
-                material.opacity = baseOpacity * opacity;
-                material.alphaTest = original.alphaTest * opacity;
+                material.opacity = baseOpacity * shade;
+                material.alphaTest = original.alphaTest * shade;
             }
         });
     });

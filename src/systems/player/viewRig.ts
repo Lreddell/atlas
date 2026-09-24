@@ -247,6 +247,11 @@ export interface ViewRigState {
     camera: RigVec3;
     armLength: number;
     showModel: boolean;
+    /**
+     * The body stands in the world at its current pose, so it casts its whole
+     * shadow even when the camera shows none of it (first person).
+     */
+    showShadow: boolean;
 }
 
 export const viewRig: ViewRigState = {
@@ -258,6 +263,7 @@ export const viewRig: ViewRigState = {
     camera: { x: 0, y: 0, z: 0 },
     armLength: 0,
     showModel: false,
+    showShadow: false,
 };
 
 /** The player's body as the third-person model sees it, written every frame by the player physics. */

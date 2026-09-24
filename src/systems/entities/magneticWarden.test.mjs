@@ -329,9 +329,12 @@ test('the Warden renders its three-form body, the tower shield, and every telegr
     assert.match(wardenRenderer, /snap\.shards\[index\]/);
     assert.match(wardenRenderer, /snap\.towers\.find\(\(tw\) => tw\.index === index\)/);
     assert.doesNotMatch(wardenRenderer, /tether|snap\.flux|snap\.stunned/);
-    // The player body is a procedurally animated voxel model shown only in third person.
+    // The player body is a procedurally animated voxel model shown only in third
+    // person; in first person it only casts its shadow (no colour on screen).
     const model = read('src/components/PlayerModel.tsx');
-    assert.match(model, /root\.visible = viewRig\.showModel && opacity > 0\.001;/);
+    assert.match(model, /const shown = viewRig\.showModel && opacity > 0\.001;/);
+    assert.match(model, /root\.visible = shown \|\| shadowOnly;/);
+    assert.match(model, /material\.colorWrite = !shadowOnly;/);
     for (const pose of ["action === 'roll'", "action === 'dash'", 'pose.attached', 'pose.sprint', 'pose.sneak']) {
         assert.ok(model.includes(pose), `player model animates ${pose}`);
     }
