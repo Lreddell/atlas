@@ -381,9 +381,10 @@ export const MagneticWardenRenderer: React.FC = () => {
                 lane.rotation.set(0, c.yaw + Math.PI, 0);
                 laneMesh.scale.set(c.halfWidth * 2, c.length, 1);
                 const lm = laneMesh.material as THREE.MeshBasicMaterial;
-                // Tinted by the Warden's polarity and kept translucent: a solid slab
-                // (white, then red) covered the floor it is warning about.
-                setGlow(lm, polarityHex(snap.polarity), GLOW.lane);
+                // White: the charge is a non-polarity attack, and the colour is how the
+                // player reads that. Kept translucent, so it glows over the floor it is
+                // warning about instead of covering it as a solid slab.
+                setGlow(lm, 0xffffff, GLOW.lane);
                 const flash = 0.5 + 0.5 * Math.sin(t * (6 + 24 * c.progress));
                 lm.opacity = c.phase === 'lunge' ? 0.38 : 0.08 + 0.24 * c.progress * flash;
                 // A bright end cap creeps out to the lane's end as the windup fills.
