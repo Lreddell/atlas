@@ -73,6 +73,9 @@ import { DevQaProbe } from './components/DevQaProbe';
 import { useGraphicsSettings } from './systems/graphics/graphicsStore';
 import { setVoxelStyle } from './systems/graphics/materials/voxelMaterial';
 import { AmbientParticles } from './components/world/AmbientParticles';
+import { CRACK_STAGES, crackStage, createCrackMaterial } from './systems/fx/crackMaterial';
+import { MINING_STRIKE_AT, MINING_SWING_SECONDS } from './systems/fx/blockChips';
+import { playerMining } from './systems/combat/playerAttack';
 import { lowerPreset } from './systems/graphics/graphicsSettings';
 import { installDevQa, registerDevQaHandles } from './systems/debug/devQa';
 import { isEditableElement } from './utils/dom';
@@ -205,14 +208,16 @@ const setBreakingVisualDirect: React.Dispatch<React.SetStateAction<BreakingVisua
 const BREAKING_COLOR_NORMAL = new THREE.Color('#000000');
 const BREAKING_COLOR_NO_DROP = new THREE.Color('#4b0000');
 
+// Pixel cracks that spread across the block in ten stages as it weakens, and
+// flare for an instant each time a swing lands (systems/fx/crackMaterial.ts).
 const BreakingVisualMesh: React.FC<{ suspended: boolean }> = ({ suspended }) => {
     const meshRef = useRef<THREE.Mesh>(null);
-    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const material = useMemo(() => createCrackMaterial(), []);
+    useEffect(() => () => material.dispose(), [material]);
 
     useFrame(() => {
         const mesh = meshRef.current;
-        const mat = matRef.current;
-        if (!mesh || !mat) return;
+        if (!mesh) return;
         const v = suspended ? null : breakingVisualStore.value;
         if (!v) {
             mesh.visible = false;
@@ -220,14 +225,18 @@ const BreakingVisualMesh: React.FC<{ suspended: boolean }> = ({ suspended }) => 
         }
         mesh.visible = true;
         mesh.position.set(v.pos[0] + 0.5, v.pos[1] + 0.5, v.pos[2] + 0.5);
-        mat.color.copy(v.noDrop ? BREAKING_COLOR_NO_DROP : BREAKING_COLOR_NORMAL);
-        mat.opacity = v.progress * 0.7;
+        const u = material.uniforms;
+        u.uTint.value.copy(v.noDrop ? BREAKING_COLOR_NO_DROP : BREAKING_COLOR_NORMAL);
+        u.uStage.value = crackStage(v.progress) / CRACK_STAGES;
+        u.uSeed.value.set(v.pos[0], v.pos[1], v.pos[2]);
+        // The flare peaks as the chop lands (halfway through each swing) and fades.
+        const swing = (playerMining.elapsed % MINING_SWING_SECONDS) / MINING_SWING_SECONDS;
+        u.uStrike.value = playerMining.active ? Math.max(0, 1 - Math.abs(swing - MINING_STRIKE_AT - 0.08) / 0.18) : 0;
     });
 
     return (
-        <mesh ref={meshRef} visible={false}>
+        <mesh ref={meshRef} visible={false} material={material}>
             <boxGeometry args={[1.01, 1.01, 1.01]} />
-            <meshBasicMaterial ref={matRef} transparent opacity={0} depthTest={true} depthWrite={false} />
         </mesh>
     );
 };
@@ -3233,7 +3242,7 @@ const App: React.FC = () => {
                     {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={overlayStyle} />}
                     {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
-                    {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
+                    {isSleeping && <div className="absolute inset-0 z-[100] bg-black atlas-fade-in-sleep flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
                     {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}

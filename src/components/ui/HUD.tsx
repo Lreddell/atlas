@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ItemStack, BlockType, EquipmentSlot } from '../../types';
 import { Slot } from './Slot';
 import { BLOCKS } from '../../data/blocks';
@@ -93,6 +93,14 @@ const HUNGER_FILLED: PipPath[] = [
     { d: DRUM_GLINT_D, fill: '#f0a35a' },
 ];
 
+// Which way each heart jolts on a hit, so they scatter instead of moving as one.
+const HEART_JOLT = [1, -0.5, 0.5, -1, 1, -1, 0.5, -0.5, 1, -1];
+// Uneasy pips twitch on their own clocks.
+const jitterStyle = (i: number): React.CSSProperties => ({
+    animationDelay: `${-((i * 0.37) % 0.9).toFixed(2)}s`,
+    animationDuration: `${(0.8 + ((i * 0.13) % 0.3)).toFixed(2)}s`,
+});
+
 const statFill = (value: number, index: number) => {
     const full = index < Math.floor(value / 2);
     if (full) return 1;
@@ -129,10 +137,9 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
 };
 
 export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment, magnetic = false }) => {
-    const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
-    const [isFlashing, setIsFlashing] = useState(false);
-    const [hungerShake, setHungerShake] = useState<number[]>(Array(10).fill(0));
     const [showItemName, setShowItemName] = useState(true);
+    const hotbarRef = useRef<HTMLDivElement>(null);
+    const [selectionFrame, setSelectionFrame] = useState<{ x: number; y: number; size: number } | null>(null);
     const selectedType = inventory[selectedSlot]?.type;
     useEffect(() => {
         setShowItemName(true);
@@ -140,37 +147,21 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
         return () => window.clearTimeout(timer);
     }, [selectedSlot, selectedType]);
 
-    useEffect(() => {
-        if (lastDamageTime > 0) {
-            setIsFlashing(true);
-            
-            // Generate random shakes for hearts
-            const interval = setInterval(() => {
-                if (Date.now() - lastDamageTime > 250) {
-                    setShakeOffset(Array(10).fill(0));
-                    setIsFlashing(false);
-                    clearInterval(interval);
-                } else {
-                    setShakeOffset(prev => prev.map(() => Math.floor(Math.random() * 3) - 1)); // Random -1, 0, 1
-                }
-            }, 50);
+    // The hotbar's selection frame glides between slots. Measured from the
+    // slots themselves so it always lines up with them.
+    useLayoutEffect(() => {
+        const slot = hotbarRef.current?.children[selectedSlot] as HTMLElement | undefined;
+        if (!slot) return;
+        const next = { x: slot.offsetLeft - 4, y: slot.offsetTop - 4, size: slot.offsetWidth + 8 };
+        setSelectionFrame(prev => (prev && prev.x === next.x && prev.y === next.y && prev.size === next.size ? prev : next));
+    }, [selectedSlot, gameMode]);
 
-            return () => clearInterval(interval);
-        }
-    }, [lastDamageTime]);
-
-    // Saturation Shake (Jitter Hunger Bar when Saturation is 0)
-    useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
-        if (saturation <= 0 && gameMode === 'survival' && hunger < 20) {
-             interval = setInterval(() => {
-                 setHungerShake(prev => prev.map(() => (Math.random() < 0.2 ? (Math.random() > 0.5 ? 1 : -1) : 0)));
-             }, 50);
-        } else {
-             setHungerShake(Array(10).fill(0));
-        }
-        return () => clearInterval(interval);
-    }, [saturation, gameMode, hunger]);
+    // Hearts flash and jolt for a quarter second after a hit (a CSS animation,
+    // replayed by keying the hearts to the hit), and twitch while health is low.
+    // The hunger shanks twitch while saturation is spent. No timers, no re-renders.
+    const heartsHit = lastDamageTime > 0 && Date.now() - lastDamageTime < 250;
+    const heartsUneasy = health <= 4;
+    const hungerUneasy = saturation <= 0 && gameMode === 'survival' && hunger < 20;
 
     return (
         <>
@@ -201,19 +192,17 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                         )}
                          {/* Health Bar */}
                         <div className="flex gap-1 h-7">
-                            {Array.from({length: 10}).map((_, i) => {
-                                const offsetY = shakeOffset[i] || 0;
-                                const flashClass = isFlashing ? 'brightness-150 contrast-125' : '';
-                                return (
-                                    <div
-                                        key={i}
-                                        className={`transition-transform duration-75 ${flashClass}`}
-                                        style={{ transform: `translateY(${offsetY}px)` }}
-                                    >
-                                        <StatPip empty={HEART_EMPTY} filled={HEART_FILLED} fill={statFill(health, i)} half="left" />
-                                    </div>
-                                );
-                            })}
+                            {Array.from({length: 10}).map((_, i) => (
+                                <div
+                                    key={heartsHit ? `${i}:${lastDamageTime}` : i}
+                                    className={heartsHit ? 'atlas-heart-hit' : heartsUneasy ? 'atlas-jitter' : undefined}
+                                    style={heartsHit
+                                        ? ({ '--atlas-jolt': HEART_JOLT[i] } as React.CSSProperties)
+                                        : heartsUneasy ? jitterStyle(i) : undefined}
+                                >
+                                    <StatPip empty={HEART_EMPTY} filled={HEART_FILLED} fill={statFill(health, i)} half="left" />
+                                </div>
+                            ))}
                         </div>
                     </div>
 
@@ -236,8 +225,8 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             {Array.from({length: 10}).map((_, i) => (
                                 <div
                                     key={i}
-                                    className="transition-transform duration-75"
-                                    style={{ transform: `translateY(${hungerShake[i] || 0}px)` }}
+                                    className={hungerUneasy ? 'atlas-jitter' : undefined}
+                                    style={hungerUneasy ? jitterStyle(i + 3) : undefined}
                                 >
                                     <StatPip empty={HUNGER_EMPTY} filled={HUNGER_FILLED} fill={statFill(hunger, i)} half="right" />
                                 </div>
@@ -270,15 +259,27 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Hotbar */}
             {gameMode !== 'spectator' && (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
-                    <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
+                    <div ref={hotbarRef} className="relative flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
                         {inventory.slice(0, 9).map((it, i) => (
                             <Slot
                                 key={i}
                                 item={it}
                                 selected={selectedSlot === i}
                                 animateChanges
+                                selectionFrame={false}
                             />
                         ))}
+                        {selectionFrame && (
+                            <span
+                                aria-hidden
+                                className="atlas-hotbar-frame absolute left-0 top-0 z-30 pointer-events-none border-4 border-white shadow-lg"
+                                style={{
+                                    width: selectionFrame.size,
+                                    height: selectionFrame.size,
+                                    transform: `translate(${selectionFrame.x}px, ${selectionFrame.y}px)`,
+                                }}
+                            />
+                        )}
                     </div>
                 </div>
             )}

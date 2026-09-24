@@ -1,5 +1,5 @@
 
-import React, { useRef, useMemo, useEffect, useState } from 'react';
+import React, { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BlockType } from '../types';
@@ -10,6 +10,7 @@ import { getAtlasDimensions } from '../utils/textures';
 import { resolveTexture } from '../systems/world/textureResolver';
 import { globalSunlightValue } from './chunkLightingState';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { blockChips, blockDust } from '../systems/fx/blockChips';
 
 interface Particle {
     id: string;
@@ -216,7 +217,7 @@ const getPixelRegion = (type: BlockType): [number, number, number, number] => {
     return [u, v, pxW - 2*inset, pxH - 2*inset];
 };
 
-const ParticleGroup: React.FC<{ type: BlockType, particles: Particle[], isPaused: boolean, brightness: number }> = ({ type, particles, isPaused, brightness }) => {
+const ParticleGroup: React.FC<{ type: BlockType, store: React.MutableRefObject<Particle[]>, isPaused: boolean, brightness: number }> = ({ type, store, isPaused, brightness }) => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -309,14 +310,15 @@ const ParticleGroup: React.FC<{ type: BlockType, particles: Particle[], isPaused
         let i = 0;
         const regionAttr = is2D ? (meshRef.current.geometry.attributes.aAtlasRegion as THREE.InstancedBufferAttribute) : null;
 
-        // Cap at Max
-        const count = Math.min(particles.length, MAX_PARTICLES_PER_GROUP);
-
-        for (let j = 0; j < count; j++) {
-             const p = particles[j];
+        // Every live particle of this group's type, straight from the shared list
+        // (no React state per particle), capped at the instance budget.
+        for (const p of store.current) {
+             if (p.type !== type) continue;
+             if (i >= MAX_PARTICLES_PER_GROUP) break;
              
              dummy.position.set(p.position[0], p.position[1], p.position[2]);
-             dummy.scale.setScalar(p.scale);
+             // Shrink away over the last third of life instead of popping out.
+             dummy.scale.setScalar(p.scale * Math.min(1, p.life / (p.maxLife * 0.35)));
              
              // Rotate pixels randomly for confetti effect
              dummy.rotation.set(
@@ -345,8 +347,8 @@ const ParticleGroup: React.FC<{ type: BlockType, particles: Particle[], isPaused
              meshRef.current!.setColorAt(i, colorScratch);
              i++;
         }
-        
-        meshRef.current.count = count;
+
+        meshRef.current.count = i;
         meshRef.current.instanceMatrix.needsUpdate = true;
         if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
         if (regionAttr) regionAttr.needsUpdate = true;
@@ -362,7 +364,70 @@ const ParticleGroup: React.FC<{ type: BlockType, particles: Particle[], isPaused
 
 export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }> = ({ isPaused, brightness }) => {
     const particlesRef = useRef<Particle[]>([]);
-    const [, setRenderTrigger] = useState(0);
+    // One instanced group per block type in flight; React only re-renders when
+    // that set changes, never per particle.
+    const [types, setTypes] = useState<BlockType[]>([]);
+    const typesKey = useRef('');
+    const syncTypes = useCallback(() => {
+        const present = [...new Set(particlesRef.current.map(p => p.type))].sort((a, b) => a - b);
+        const key = present.join(',');
+        if (key === typesKey.current) return;
+        typesKey.current = key;
+        setTypes(present);
+    }, []);
+
+    useEffect(() => blockChips.subscribe((type, x, y, z, nx, ny, nz) => {
+        const count = 3 + Math.floor(Math.random() * 3);
+        const region = is2DBlock(type) ? getPixelRegion(type) : undefined;
+        for (let i = 0; i < count; i++) {
+            // Scattered over the struck face, kicked out along its normal.
+            const u = Math.random() - 0.5;
+            const v = Math.random() - 0.5;
+            const life = 0.3 + Math.random() * 0.25;
+            particlesRef.current.push({
+                id: Math.random().toString(),
+                type,
+                position: [
+                    x + 0.5 + nx * 0.52 + (nx === 0 ? u * 0.8 : 0),
+                    y + 0.5 + ny * 0.52 + (ny === 0 ? (nx === 0 ? v : u) * 0.8 : 0),
+                    z + 0.5 + nz * 0.52 + (nz === 0 ? v * 0.8 : 0),
+                ],
+                velocity: [
+                    nx * (1.2 + Math.random() * 1.2) + (Math.random() - 0.5) * 1.4,
+                    ny * (1.2 + Math.random() * 1.2) + 1.2 + Math.random() * 1.6,
+                    nz * (1.2 + Math.random() * 1.2) + (Math.random() - 0.5) * 1.4,
+                ],
+                life,
+                maxLife: life,
+                scale: 0.035 + Math.random() * 0.035,
+                uvRegion: region,
+            });
+        }
+        syncTypes();
+    }), [syncTypes]);
+
+    useEffect(() => blockDust.subscribe((type, x, y, z, radius) => {
+        const count = 8 + Math.floor(radius * 10 + Math.random() * 4);
+        const region = is2DBlock(type) ? getPixelRegion(type) : undefined;
+        for (let i = 0; i < count; i++) {
+            // A ring of floor dust thrown low and outward.
+            const angle = Math.random() * Math.PI * 2;
+            const reach = radius * Math.sqrt(Math.random());
+            const out = 0.8 + Math.random() * 1.4;
+            const life = 0.35 + Math.random() * 0.3;
+            particlesRef.current.push({
+                id: Math.random().toString(),
+                type,
+                position: [x + Math.cos(angle) * reach, y + 0.06, z + Math.sin(angle) * reach],
+                velocity: [Math.cos(angle) * out, 1.4 + Math.random() * 1.8, Math.sin(angle) * out],
+                life,
+                maxLife: life,
+                scale: 0.04 + Math.random() * 0.05,
+                uvRegion: region,
+            });
+        }
+        syncTypes();
+    }), [syncTypes]);
 
     useEffect(() => {
         const unsub = worldManager.subscribeToParticles((type, x, y, z) => {
@@ -375,6 +440,7 @@ export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }
 
                 // Precompute UV region for 2D particles
                 const region = is2D ? getPixelRegion(type) : undefined;
+                const life = 0.5 + Math.random() * 0.5;
 
                 particlesRef.current.push({
                     id: Math.random().toString(),
@@ -389,17 +455,17 @@ export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }
                         Math.random() * 3 + 2, 
                         (Math.random() - 0.5) * 4
                     ],
-                    life: 0.5 + Math.random() * 0.5,
-                    maxLife: 1.0,
+                    life,
+                    maxLife: life,
                     scale: scale,
                     uvRegion: region
                 });
             }
-            // Trigger render to ensure new groups are created if needed
-            setRenderTrigger(prev => prev + 1);
+            // New groups mount only if a new block type appeared.
+            syncTypes();
         });
         return unsub;
-    }, []);
+    }, [syncTypes]);
 
     useFrame((_, delta) => {
         if (isPaused) return;
@@ -454,26 +520,18 @@ export const ParticleManager: React.FC<{ isPaused: boolean, brightness: number }
             }
         }
         
-        if (died) {
-             setRenderTrigger(prev => prev + 1);
-        }
-    });
-
-    const particlesByType: Record<number, Particle[]> = {};
-    particlesRef.current.forEach((particle) => {
-        if (!particlesByType[particle.type]) particlesByType[particle.type] = [];
-        particlesByType[particle.type].push(particle);
+        if (died) syncTypes();
     });
 
     return (
         <group>
-            {Object.keys(particlesByType).map(t => (
-                <ParticleGroup 
-                    key={t} 
-                    type={Number(t)} 
-                    particles={particlesByType[Number(t)]} 
-                    isPaused={isPaused} 
-                    brightness={brightness} 
+            {types.map(t => (
+                <ParticleGroup
+                    key={t}
+                    type={t}
+                    store={particlesRef}
+                    isPaused={isPaused}
+                    brightness={brightness}
                 />
             ))}
         </group>

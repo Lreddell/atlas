@@ -637,7 +637,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
     return (
         <div 
-            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center"
+            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center atlas-fade-in"
             onPointerMove={handlePointerMove}
             onClick={handleBackdropClick} 
             onMouseDown={(e) => { if(e.button !== 0 && !isDragging) e.stopPropagation(); }}
@@ -646,7 +646,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={handleBackdropContextMenu}
         >
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
+            <div className={`flex flex-col gap-0 relative atlas-panel-in ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
                 
                 {openContainer.type === 'creative' && (
                     <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">

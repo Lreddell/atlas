@@ -18,3 +18,149 @@
         transform-origin: 50% 75%;
     }
 }
+
+/* ---- UI motion ------------------------------------------------------------
+   Small and quick. Anything that only moves is skipped for players whose OS
+   asks for reduced motion; nothing waits on an animation to finish. */
+
+@keyframes atlas-fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* Panels rise into place. Uses the individual translate/scale properties, which
+   stack with (never replace) a panel's own Tailwind transform such as scale-110. */
+@keyframes atlas-panel-in {
+    from {
+        opacity: 0;
+        translate: 0 8px;
+        scale: 0.985;
+    }
+
+    to {
+        opacity: 1;
+        translate: none;
+        scale: none;
+    }
+}
+
+/* A hit: the hearts flash and jolt for a quarter of a second. --atlas-jolt
+   (per heart) sends neighbouring hearts different ways. */
+@keyframes atlas-heart-hit {
+    0% {
+        transform: translateY(calc(var(--atlas-jolt, 1) * -2px));
+        filter: brightness(1.6) contrast(1.25);
+    }
+
+    25% {
+        transform: translateY(calc(var(--atlas-jolt, 1) * 1px));
+    }
+
+    50% {
+        transform: translateY(calc(var(--atlas-jolt, 1) * -1px));
+        filter: brightness(1.45) contrast(1.2);
+    }
+
+    75% {
+        transform: translateY(calc(var(--atlas-jolt, 1) * 2px));
+    }
+
+    100% {
+        transform: none;
+        filter: none;
+    }
+}
+
+/* Uneasy pips (low health, no saturation left): mostly still, the odd 1px twitch. */
+@keyframes atlas-jitter {
+    0%, 18%, 53%, 84%, 100% {
+        transform: none;
+    }
+
+    12% {
+        transform: translateY(-1px);
+    }
+
+    47% {
+        transform: translateY(1px);
+    }
+
+    78% {
+        transform: translateY(-1px);
+    }
+}
+
+/* A chat line: in, ten seconds on screen, then a one second fade. */
+@keyframes atlas-chat-line {
+    0% {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    2% {
+        opacity: 1;
+        transform: none;
+    }
+
+    90.9% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+@keyframes atlas-chat-line-still {
+    0%, 90.9% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* The fade is information (the line is old), so it runs either way. */
+.atlas-chat-line {
+    animation: atlas-chat-line-still 11s linear forwards;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .atlas-fade-in {
+        animation: atlas-fade-in 160ms ease-out both;
+    }
+
+    .atlas-fade-in-slow {
+        animation: atlas-fade-in 900ms ease-out both;
+    }
+
+    .atlas-fade-in-sleep {
+        animation: atlas-fade-in 3000ms ease-in both;
+    }
+
+    .atlas-panel-in {
+        animation: atlas-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+
+    .atlas-heart-hit {
+        animation: atlas-heart-hit 250ms steps(1, end);
+    }
+
+    .atlas-jitter {
+        animation: atlas-jitter 0.9s steps(1, end) infinite;
+    }
+
+    .atlas-chat-line {
+        animation-name: atlas-chat-line;
+    }
+
+    .atlas-hotbar-frame {
+        transition: transform 90ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}

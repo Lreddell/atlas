@@ -31,6 +31,8 @@ export interface GraphicsConfig {
     mipmaps: boolean;
     motionBlur: boolean;
     chunkFade: boolean;
+    /** The first-person view sways gently with each step (and dips on landing). */
+    viewBobbing: boolean;
 }
 
 export type GraphicsOverrides = Partial<GraphicsConfig>;
@@ -42,22 +44,22 @@ export const GRAPHICS_PRESETS: Readonly<Record<GraphicsPresetId, Readonly<Graphi
     low: {
         shadows: 'off', bloom: 'off', godRays: false, water: 'simple', foliageWind: false,
         ambientParticles: 'off', clouds: 'fast', antialiasing: 'msaa', maxPixelRatio: 1,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, viewBobbing: true,
     },
     medium: {
         shadows: 'low', bloom: 'half', godRays: false, water: 'fancy', foliageWind: true,
         ambientParticles: 'low', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 1.5,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, viewBobbing: true,
     },
     high: {
         shadows: 'medium', bloom: 'half', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'medium', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, viewBobbing: true,
     },
     ultra: {
         shadows: 'high', bloom: 'full', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'high', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, viewBobbing: true,
     },
 };
 
@@ -117,6 +119,7 @@ const CONFIG_VALIDATORS: { [K in keyof GraphicsConfig]: (v: unknown) => v is Gra
     mipmaps: (v): v is boolean => typeof v === 'boolean',
     motionBlur: (v): v is boolean => typeof v === 'boolean',
     chunkFade: (v): v is boolean => typeof v === 'boolean',
+    viewBobbing: (v): v is boolean => typeof v === 'boolean',
 };
 
 /** Parses stored JSON; anything unknown or malformed falls back field by field. */

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 export interface ChatMessage {
     id: number;
@@ -20,6 +20,29 @@ interface ChatProps {
     showSuggestions?: boolean;
     interactionsDisabled?: boolean;
 }
+
+// One line of chat: slides in, stays ten seconds, then fades (a CSS timeline, so
+// it fades on time whether or not anything else re-renders). With the chat open
+// every line shows; closing it picks each line's timeline up at its real age.
+const ChatLine: React.FC<{
+    msg: ChatMessage;
+    open: boolean;
+    className: string;
+    onClick: (e: React.MouseEvent) => void;
+    children: React.ReactNode;
+}> = ({ msg, open, className, onClick, children }) => {
+    // Read once as the line appears or the chat closes, never mid-fade.
+    const age = useMemo(() => (open ? 0 : Math.max(0, Date.now() - msg.timestamp)), [open, msg.timestamp]);
+    return (
+        <div
+            className={`${className} ${open ? '' : 'atlas-chat-line'}`}
+            style={open ? undefined : { animationDelay: `${-age}ms` }}
+            onClick={onClick}
+        >
+            {children}
+        </div>
+    );
+};
 
 export const Chat: React.FC<ChatProps> = ({
     messages, showInput, inputValue, setInputValue, onSubmitInput,
@@ -58,17 +81,15 @@ export const Chat: React.FC<ChatProps> = ({
         >
             <div className="flex flex-col gap-0.5 justify-end max-h-[300px] overflow-hidden mask-fade-top pb-1">
                 {messages.map((msg) => (
-                    <div
+                    <ChatLine
                         key={msg.id}
+                        msg={msg}
+                        open={showInput}
                         className={`
                             px-2 py-0.5 rounded text-shadow-sm font-medium bg-black/40 backdrop-blur-[1px]
                             ${msg.type === 'error' ? 'text-red-400' : msg.type === 'success' ? 'text-green-400' : 'text-white'}
                             ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-black/60 pointer-events-auto' : ''}
                         `}
-                        style={{
-                            opacity: (Date.now() - msg.timestamp) > 10000 && !showInput ? 0 : 1,
-                            transition: 'opacity 1s ease-out',
-                        }}
                         onClick={(e) => {
                             if (!interactionsDisabled && msg.clickAction && onMessageClick) {
                                 e.stopPropagation();
@@ -80,7 +101,7 @@ export const Chat: React.FC<ChatProps> = ({
                         {msg.clickAction && (
                             <span className="ml-2 text-yellow-400 text-xs uppercase font-bold">[Click to TP]</span>
                         )}
-                    </div>
+                    </ChatLine>
                 ))}
                 <div ref={bottomRef} />
             </div>

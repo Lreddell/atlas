@@ -15,6 +15,7 @@ import { BLOCKS } from '../data/blocks';
 import { inputState } from '../systems/player/playerInput';
 import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
 import { headLookPitch, headLookYaw, eatingPose, crouchPose, airbornePose, placementPose } from '../systems/player/playerAnimation';
+import { chopCurve } from '../systems/player/viewmodelMotion';
 import { usePlayerSkin, type PlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
@@ -378,10 +379,13 @@ export const PlayerModel: React.FC<{ itemType: BlockType | null; equipment: Equi
                 p.armROut = -0.08;
                 blendRate = 24;
             } else if (playerMining.active || (playerInteraction.leftHeld && !getPlayerWeaponProfile(itemType))) {
-                const arc = 0.5 + Math.sin((playerMining.active ? playerMining.elapsed : t) * 12) * 0.5;
-                p.armRUpper = 0.45 + arc * 1.25 - p.torsoLean;
-                p.armRLower = 0.25 + arc * 0.4;
-                p.bodyTwist += arc * 0.12;
+                // The same chop as the first-person hand: raise, strike down, recover.
+                const chop = chopCurve(((playerMining.active ? playerMining.elapsed : t) % 0.25) / 0.25);
+                p.armRUpper = 1.3 - chop * 0.95 - p.torsoLean;
+                p.armRLower = 0.5 - chop * 0.3;
+                p.bodyTwist -= chop * 0.12;
+                p.headPitch += chop * 0.06;
+                blendRate = 30;
             }
         }
 

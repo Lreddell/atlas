@@ -16,6 +16,11 @@ import { usePlayerSkin } from '../systems/player/playerSkins';
 import { MinecraftSkinPart } from './MinecraftSkinPart';
 import { useSkinTexture } from '../hooks/useSkinTexture';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { graphicsSettings } from '../systems/graphics/graphicsStore';
+import { viewMotion } from '../systems/player/viewMotion';
+import { createViewmodelPose, createViewmodelState, stepViewmodel } from '../systems/player/viewmodelMotion';
+
+const _viewDir = new THREE.Vector3();
 
 interface HeldItemProps {
     selectedSlot: number;
@@ -80,7 +85,8 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
     const itemType = itemStack ? itemStack.type : null;
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
 
-    const moveSway = useRef(0);
+    const viewmodelState = useRef(createViewmodelState());
+    const viewmodelPose = useRef(createViewmodelPose());
     const alphaTests = useRef(new WeakMap<THREE.Material, number>());
 
     useEffect(() => {
@@ -156,28 +162,28 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             // Since we are a child of the camera, we do not copy position/quaternion.
             // We render in local space relative to the camera.
 
-            const isMoving = isLocked && (inputState.forward || inputState.backward || inputState.left || inputState.right);
-
-            const targetSway = isMoving ? 1 : 0;
-            moveSway.current = THREE.MathUtils.lerp(moveSway.current, targetSway, 1 - Math.exp(-10 * delta));
-
             // Viewmodel motion uses render time, never the 20 Hz physics clock.
             const time = state.clock.elapsedTime;
-            const bobX = Math.sin(time * 10) * 0.02 * moveSway.current;
-            const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
+            camera.getWorldDirection(_viewDir);
+            const lookYaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+            const lookPitch = Math.asin(Math.max(-1, Math.min(1, _viewDir.y)));
 
+            // Mining and eating repeat while held; a use/place pushes once on success.
             const genericAction = isLocked && (playerMining.active || inputState.eating || (playerInteraction.leftHeld && !getPlayerWeaponProfile(itemType)));
+            const eating = genericAction && inputState.eating;
             const actionTime = playerMining.active ? playerMining.elapsed : time;
-            const swingVal = genericAction ? Math.sin((actionTime % 0.25) / 0.25 * Math.PI) : placementPose(playerInteraction.placementElapsed).weight;
-            const swingRot = swingVal * -0.8;
-            const swingPos = swingVal * -0.2;
-            
-            // Set local position relative to camera
-            groupRef.current.position.set(0.5 + bobX, -0.5 + bobY + swingPos, -0.8);
+            const swing = genericAction && !eating ? (actionTime % 0.25) / 0.25 : null;
+            const motion = stepViewmodel(viewmodelState.current, viewMotion, {
+                dt: delta, time, yaw: lookYaw, pitch: lookPitch,
+                itemKey: itemType ?? 'hand', eating, swing,
+                cameraBobbing: graphicsSettings.getConfig().viewBobbing,
+            }, viewmodelPose.current);
+            const place = placementPose(playerInteraction.placementElapsed).weight;
 
-            // Set local rotation relative to camera
-            groupRef.current.rotation.set(0.2 + swingRot, -0.2 + (swingRot * 0.3), 0);
-            
+            // Set local position and rotation relative to camera: rest pose plus motion.
+            groupRef.current.position.set(0.5 + motion.x, -0.5 + motion.y - place * 0.2, -0.8 + motion.z - place * 0.06);
+            groupRef.current.rotation.set(0.2 + motion.rx - place * 0.8, -0.2 + motion.ry - place * 0.24, motion.rz);
+
             const is2D = itemType && isSpriteRenderedType(itemType);
 
             if (itemType && !is2D) {
@@ -187,14 +193,14 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
 
             if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind !== 'crossbow') {
                 const pose = attackPose(playerAttack);
-                groupRef.current.position.set(0.45 + bobX + pose.sweep * 0.20, -0.48 + bobY + pose.shoulder * 0.10, -0.8 - pose.thrust * 0.3);
-                groupRef.current.rotation.set(0.2 - pose.shoulder * 0.55, -0.2 + pose.twist, pose.sweep);
+                groupRef.current.position.set(0.45 + motion.x + pose.sweep * 0.20, -0.48 + motion.y + pose.shoulder * 0.10, -0.8 + motion.z - pose.thrust * 0.3);
+                groupRef.current.rotation.set(0.2 + motion.rx - pose.shoulder * 0.55, -0.2 + motion.ry + pose.twist, motion.rz + pose.sweep);
                 return;
             }
             if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind === 'crossbow' && !playerAttack.cancelled) {
                 const recoil = Math.sin(Math.max(0, (playerAttack.elapsed / playerAttack.duration - 0.5) * 2) * Math.PI);
-                groupRef.current.position.set(0.42 + bobX, -0.45 + bobY - recoil * 0.06, -0.82 + recoil * 0.17);
-                groupRef.current.rotation.set(0.12 + recoil * 0.19, -0.13, -0.02);
+                groupRef.current.position.set(0.42 + motion.x, -0.45 + motion.y - recoil * 0.06, -0.82 + motion.z + recoil * 0.17);
+                groupRef.current.rotation.set(0.12 + motion.rx + recoil * 0.19, -0.13 + motion.ry, motion.rz - 0.02);
             }
         }
     });

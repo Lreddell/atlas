@@ -31,6 +31,8 @@ interface SlotProps {
   bare?: boolean;
   /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
   animateChanges?: boolean;
+  /** Draw the white selection frame on this slot (the hotbar draws one sliding frame instead). */
+  selectionFrame?: boolean;
   cooldownFraction?: number;
 }
 
@@ -132,7 +134,7 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, ta
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
     onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
-    bare = false, animateChanges = false, cooldownFraction = 0,
+    bare = false, animateChanges = false, cooldownFraction = 0, selectionFrame = true,
 }) => {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
@@ -382,7 +384,7 @@ export const Slot: React.FC<SlotProps> = ({
             />
         )}
 
-        {selected && !bare && (
+        {selected && !bare && selectionFrame && (
             <span className="absolute -inset-1 z-30 pointer-events-none border-4 border-white shadow-lg" />
         )}
 

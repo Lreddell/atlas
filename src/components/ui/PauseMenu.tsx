@@ -319,6 +319,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 {/* Scene only: the 3D world blurs, the HUD never does. Off in every preset. */}
                 <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-64"
                     onChange={(on) => graphicsSettings.setOption('motionBlur', on)} />
+                <MCToggle label="View Bobbing" value={gfx.viewBobbing} width="w-64"
+                    onChange={(on) => graphicsSettings.setOption('viewBobbing', on)} />
 
                 {/* Custom Environment */}
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
@@ -415,7 +417,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
     return (
         <div 
-            className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px]' : ''}`}
+            className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px] atlas-fade-in' : ''}`}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
@@ -438,10 +440,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             `}</style>
             
             {/* Dirt Background Container only if NOT Main Menu (pause menu style) */}
-            <div className="relative flex flex-col items-center p-2">
+            <div className="relative flex flex-col items-center p-2 atlas-panel-in">
                 {!isMainMenu && <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />}
-                
-                <div className={`relative z-10 flex flex-col items-center ${screen === 'skins' ? 'p-4' : 'py-6 px-10 min-w-[400px]'}`}>
+
+                {/* Each screen fades in as you move between them. */}
+                <div key={screen} className={`relative z-10 flex flex-col items-center atlas-fade-in ${screen === 'skins' ? 'p-4' : 'py-6 px-10 min-w-[400px]'}`}>
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}

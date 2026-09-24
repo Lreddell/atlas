@@ -15,6 +15,8 @@ import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type Ma
 import { entityManager } from '../systems/entities/EntityManager';
 import { bossSummon } from '../systems/boss/bossSummon';
 import { sampleShake, addTrauma } from '../systems/player/cameraShake';
+import { advanceStepCycle, cameraBob, viewMotion, type CameraBob } from '../systems/player/viewMotion';
+import { graphicsSettings } from '../systems/graphics/graphicsStore';
 import { findUnstuckPosition } from '../systems/player/unstuck';
 import { checkCollision, getSupportTop, isSolid as isSolidCell } from '../systems/player/playerCollision';
 import {
@@ -48,7 +50,7 @@ import {
     EYE_HEIGHT_STANDING, EYE_HEIGHT_SNEAKING,
     FIXED_DT, MAX_SUBSTEPS, MAX_BREATH,
     PLAYER_HEIGHT, PLAYER_HEIGHT_SNEAK, PLAYER_WIDTH,
-    GRAVITY, TERMINAL_VELOCITY, GROUND_EPS, CONTACT_EPS,
+    GRAVITY, TERMINAL_VELOCITY, GROUND_EPS, CONTACT_EPS, WALK_SPEED,
 } from '../systems/player/playerConstants';
 import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/player/playerFood';
 import { soundManager } from '../systems/sound/SoundManager';
@@ -74,6 +76,7 @@ const _tmpEuler = new Euler(0, 0, 0, 'YXZ');
 const _viewDir = new Vector3();
 const _camRight = new Vector3();
 const _camUp = new Vector3();
+const _cameraBob: CameraBob = { up: 0, side: 0, roll: 0 };
 
 const _shakeOffset = { x: 0, y: 0, z: 0 };
 
@@ -1173,6 +1176,19 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         damageTilt.current = 0;
     }
 
+    // The step cycle behind the head bob and the hand's bob (presentation only).
+    advanceStepCycle(viewMotion, {
+        dt: delta,
+        speed: Math.hypot(vel.current.x, vel.current.z),
+        walkSpeed: WALK_SPEED,
+        grounded: grounded.current || adhesion.current.active,
+        verticalSpeed: vel.current.y,
+        sprinting: intent.sprint && !intent.sneak,
+        sneaking: intent.sneak,
+        suspended: isFlying.current || boating || playerPose.inWater,
+    });
+    const bob = cameraBob(viewMotion, graphicsSettings.getConfig().viewBobbing && !isDead, _cameraBob);
+
     // Camera orientation. While latched to a magnetic wall the "up" vector rolls
     // to the surface normal and look is around that normal; on detach it eases
     // back to world-up before handing control back to the FPS mouse-look. Only a
@@ -1208,7 +1224,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
             camera.rotation.set(_tmpEuler.x, _tmpEuler.y, 0);
         }
     } else {
-        camera.rotation.z = damageTilt.current;
+        camera.rotation.z = damageTilt.current + (viewRig.mode === 'first' ? bob.roll : 0);
     }
     // Whatever branch owned the look this frame, remember it: releasing the tripod
     // has to hand back the look the player actually has, not the shot's.
@@ -1259,6 +1275,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
         viewRig.showModel = viewRig.third && !isDead; // The model fades by camera proximity instead of popping off.
     } else {
         camera.position.set(eyeX, eyeY, eyeZ);
+        // First person: the head bobs with each step and dips on landing.
+        if (bob.up !== 0 || bob.side !== 0) {
+            _camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+            _camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+            camera.position.addScaledVector(_camUp, bob.up).addScaledVector(_camRight, bob.side);
+        }
         cameraSpring.current.distance = 0; cameraSpring.current.offset = 0;
         viewRig.third = false;
         viewRig.detached = false;

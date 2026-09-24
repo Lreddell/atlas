@@ -19,6 +19,14 @@ import {
     type MagnetSource,
 } from '../systems/player/magneticField';
 import { applyMagneticFieldToVelocity } from '../systems/player/dropMagnetism';
+import {
+    PICKUP_FLIGHT_MS,
+    PICKUP_TARGET_HEIGHT,
+    dropPhase,
+    pickupFlight,
+    spawnPop,
+    type PickupFlight,
+} from '../systems/fx/dropMotion';
 
 interface DropManagerProps {
     drops: Drop[];
@@ -93,8 +101,32 @@ const setupDropMaterial = (mat: THREE.MeshLambertMaterial) => {
 };
 
 const MAX_DROPS_PER_TYPE = 128; // Buffer size for instances
+const NO_DROPS: Drop[] = [];
 
-const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.MutableRefObject<Map<string, number>>, isPaused: boolean, brightness: number }> = ({ type, drops, burningDrops, isPaused, brightness }) => {
+/** An item that was just collected, drawn flying into the player (it has already left `drops`). */
+interface PickupGhost {
+    type: BlockType;
+    x: number;
+    y: number;
+    z: number;
+    start: number;
+    phase: number;
+}
+
+const _flight: PickupFlight = { pull: 0, arc: 0, scale: 1, hover: 1 };
+
+/** Idle spin, tilt and bob for a drop (or a collected item on its way in). */
+function poseDrop(dummy: THREE.Object3D, time: number, phase: number, is2D: boolean, hover: number): void {
+    dummy.rotation.set(0, time * 1.8 + phase, 0);
+    if (!is2D) {
+        // Mini blocks rock gently as they turn instead of tumbling.
+        dummy.rotation.x = Math.sin(time * 1.3 + phase) * 0.2;
+        dummy.rotation.z = Math.cos(time * 1.1 + phase) * 0.2;
+    }
+    dummy.position.y += Math.sin(time * 2.6 + phase) * 0.08 * hover;
+}
+
+const DropGroup: React.FC<{ type: BlockType, drops: Drop[], ghosts: PickupGhost[], playerPos: THREE.Vector3, burningDrops: React.MutableRefObject<Map<string, number>>, isPaused: boolean, brightness: number }> = ({ type, drops, ghosts, playerPos, burningDrops, isPaused, brightness }) => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -194,68 +226,65 @@ const DropGroup: React.FC<{ type: BlockType, drops: Drop[], burningDrops: React.
 
         let i = 0;
         const now = Date.now();
-        
+        const time = state.clock.elapsedTime;
+        const mesh = meshRef.current;
+        const is2D = isSpriteRenderedType(type);
+
+        const writeInstance = (x: number, y: number, z: number, isBurning: boolean) => {
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+            const light = worldManager.getLight(Math.floor(x), Math.floor(y + 0.5), Math.floor(z));
+            colorScratch.setRGB(light.sky / 15.0, light.block / 15.0, isBurning ? 0.0 : 1.0);
+            mesh.setColorAt(i, colorScratch);
+            i++;
+        };
+
         // Count limits to avoid overflow
         const count = Math.min(drops.length, MAX_DROPS_PER_TYPE);
 
         for (let j = 0; j < count; j++) {
              const drop = drops[j];
-             
+
              dummy.position.set(drop.position[0], drop.position[1], drop.position[2]);
-             
+
              // Check if burning
              const timeOfDeath = burningDrops.current.get(drop.id);
-             let scale = 1.0;
+             // New drops pop up to size instead of appearing at once.
+             let scale = spawnPop(now - drop.createdAt);
              let isBurning = false;
 
              if (timeOfDeath) {
                  const startTime = timeOfDeath - 500;
                  const progress = Math.min(1, (now - startTime) / 500);
-                 scale = Math.max(0, 1.0 - progress);
+                 scale *= Math.max(0, 1.0 - progress);
                  isBurning = true;
-                 
+
                  // Jitter while burning
                  dummy.position.x += (Math.random() - 0.5) * 0.1;
                  dummy.position.y += (Math.random() - 0.5) * 0.1;
                  dummy.position.z += (Math.random() - 0.5) * 0.1;
              }
 
-             // Spin effect
-             const time = state.clock.elapsedTime;
-             dummy.rotation.set(0, time * 2 + (drop.id.charCodeAt(0)), 0);
-             
-             // If block is 2D item, face camera mostly or just spin around Y
-             const is2D = isSpriteRenderedType(type);
-
-             if (!is2D) {
-                 dummy.rotation.x = Math.sin(time) * 0.5;
-                 dummy.rotation.z = Math.cos(time) * 0.5;
-             }
-
-             // Hover
-             dummy.position.y += Math.sin(time * 3 + (drop.id.charCodeAt(0))) * 0.1;
-
+             poseDrop(dummy, time, dropPhase(drop.id), is2D, 1);
              dummy.scale.setScalar(scale);
-             dummy.updateMatrix();
-             meshRef.current!.setMatrixAt(i, dummy.matrix);
-             
-             const bx = Math.floor(drop.position[0]);
-             const by = Math.floor(drop.position[1] + 0.5); 
-             const bz = Math.floor(drop.position[2]);
-             
-             const light = worldManager.getLight(bx, by, bz);
-             
-             const r = light.sky / 15.0;
-             const g = light.block / 15.0;
-             const b = isBurning ? 0.0 : 1.0;
-             
-             colorScratch.setRGB(r, g, b);
-             meshRef.current!.setColorAt(i, colorScratch);
-             
-             i++;
+             writeInstance(drop.position[0], drop.position[1], drop.position[2], isBurning);
         }
-        
-        meshRef.current.count = count;
+
+        // Items just collected fly into the player, shrinking as they go.
+        for (const ghost of ghosts) {
+             if (ghost.type !== type || i >= MAX_DROPS_PER_TYPE) continue;
+             const flight = pickupFlight(now - ghost.start, _flight);
+             if (!flight) continue;
+             const x = ghost.x + (playerPos.x - ghost.x) * flight.pull;
+             const y = ghost.y + (playerPos.y + PICKUP_TARGET_HEIGHT - ghost.y) * flight.pull + flight.arc;
+             const z = ghost.z + (playerPos.z - ghost.z) * flight.pull;
+             dummy.position.set(x, y, z);
+             poseDrop(dummy, time, ghost.phase, is2D, flight.hover);
+             dummy.scale.setScalar(flight.scale);
+             writeInstance(x, y, z, false);
+        }
+
+        meshRef.current.count = i;
         meshRef.current.instanceMatrix.needsUpdate = true;
         if(meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
     });
@@ -291,6 +320,8 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
     // Map of ID -> Timestamp when burning started
     const burningDrops = useRef<Map<string, number>>(new Map());
     const magnetSourceCache = useRef<Map<string, MagnetSourceCacheEntry>>(new Map());
+    // Collected items still flying in; they have already left `drops`.
+    const pickupGhosts = useRef<PickupGhost[]>([]);
     const nextMagnetCachePrune = useRef(0);
     const accumulator = useRef(0);
 
@@ -311,6 +342,11 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                 if (entry.expiresAt < now) magnetSourceCache.current.delete(key);
             });
             nextMagnetCachePrune.current = now + MAGNET_SOURCE_CACHE_PRUNE_MS;
+        }
+
+        const ghosts = pickupGhosts.current;
+        for (let k = ghosts.length - 1; k >= 0; k--) {
+            if (now - ghosts[k].start >= PICKUP_FLIGHT_MS) ghosts.splice(k, 1);
         }
 
         // Process Burning Queues (Time check only, cheap)
@@ -428,6 +464,14 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
                             instance: drop.instance ? structuredClone(drop.instance) : undefined,
                         });
                         if (fullyCollected) {
+                            pickupGhosts.current.push({
+                                type: drop.type,
+                                x: newPos.x,
+                                y: newPos.y,
+                                z: newPos.z,
+                                start: now,
+                                phase: dropPhase(drop.id),
+                            });
                             newPos.set(0, -5000, 0);
                         } else {
                             drop.pickupDelay = now + 250;
@@ -463,10 +507,15 @@ export const DropManager: React.FC<DropManagerProps> = ({ drops, playerPos, onCo
         return groups;
     }, [drops]);
 
+    // A group stays mounted while its last item is still flying in: collecting
+    // it removes it from `drops` in the same update that starts the flight.
+    const groupTypes = new Set(Object.keys(dropsByType).map(Number));
+    for (const ghost of pickupGhosts.current) groupTypes.add(ghost.type);
+
     return (
         <group>
-            {Object.keys(dropsByType).map(t => (
-                <DropGroup key={t} type={Number(t)} drops={dropsByType[Number(t)]} burningDrops={burningDrops} isPaused={isPaused} brightness={brightness} />
+            {[...groupTypes].map(t => (
+                <DropGroup key={t} type={t} drops={dropsByType[t] ?? NO_DROPS} ghosts={pickupGhosts.current} playerPos={playerPos} burningDrops={burningDrops} isPaused={isPaused} brightness={brightness} />
             ))}
         </group>
     );

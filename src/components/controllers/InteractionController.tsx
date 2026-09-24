@@ -37,6 +37,7 @@ import { resonantVaultRuntime, type VaultPlayerEdit } from '../../systems/world/
 import { getPlayerWeaponProfile, getVaultWeaponProfile, resolveVaultMeleeHit } from '../../systems/combat/vaultWeapons';
 import { vaultProjectileSystem } from '../../systems/combat/VaultProjectileSystem';
 import { particleFx } from '../../systems/fx/particleFx';
+import { blockChips, swingStruck } from '../../systems/fx/blockChips';
 import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../systems/player/viewRig';
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
 import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
@@ -946,9 +947,12 @@ export const InteractionController = ({
             const targetType = worldManager.tryGetBlock(bx, by, bz);
 
             if (targetType !== null && targetType !== BlockType.AIR && targetType !== BlockType.WATER && targetType !== BlockType.LAVA) {
-                // Keyed by target AND hotbar slot: switching tools mid-break resets
                 playerMining.active = true;
+                const swingBefore = playerMining.elapsed;
                 playerMining.elapsed += Math.min(delta, 0.1);
+                // Each chop that lands knocks a few chips off the struck face.
+                if (swingStruck(swingBefore, playerMining.elapsed)) blockChips.emit(targetType, bx, by, bz, hit.nx, hit.ny, hit.nz);
+                // Keyed by target AND hotbar slot: switching tools mid-break resets
                 // progress, so the harvest check + durability cost at completion
                 // always charge the tool that actually did the mining (no switching
                 // to an empty slot on the last frame to mine for free).
