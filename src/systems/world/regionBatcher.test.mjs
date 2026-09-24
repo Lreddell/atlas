@@ -66,7 +66,8 @@ test('merging offsets each chunk into region space and rebases its indices', () 
     assert.deepEqual([...merged.attributes.atlasTile.array], [7, 7, 7, 7, 7, 7, 7, 7]);
     assert.equal(merged.attributes.color.normalized, true);
     const box = merged.boundingBox;
-    assert.ok(box.min.x <= 0 && box.max.x >= 19 && box.min.z <= 0 && box.max.z >= 35, 'bounds cover both chunks');
+    assert.deepEqual(box.min.toArray(), [-0.5, 4.5, -0.5], 'tight bounds, padded half a block for the wind');
+    assert.deepEqual(box.max.toArray(), [19.5, 6.5, 35.5]);
 });
 
 test('settled chunks merge after the debounce and hide their own meshes', () => {
@@ -141,7 +142,7 @@ test('re-offering new geometry replaces the old one at the next rebuild', () => 
     assert.equal(second.mesh.visible, false);
     assert.equal(first.mesh.visible, true, 'the replaced mesh is left to its owner');
     const x = regionMeshes(root)[0].geometry.boundingBox.min.x;
-    assert.equal(x, (REGION_CHUNKS - 1) * 16 + 4 + 0.5 - Math.sqrt(2) / 2 * 1, 'rebuilt from the new geometry');
+    assert.equal(x, (REGION_CHUNKS - 1) * 16 + 4 - 0.5, 'rebuilt from the new geometry');
 });
 
 test('shadow flags follow the setting, and detach hands every chunk back', () => {

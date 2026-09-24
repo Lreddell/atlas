@@ -99,20 +99,30 @@ export function mergeRegionLayer(
     const colors = new Uint8Array(vertexCount * 4);
     const tiles = new Uint16Array(vertexCount);
     const indices = new Uint32Array(indexCount);
-    const bounds = new THREE.Box3();
-    const partBounds = new THREE.Box3();
+    // Tight bounds, gathered while copying: they decide which regions the view
+    // and the shadow map draw, and a chunk's bounding sphere spans its whole
+    // column (caves to peaks), far wider than its 16 blocks.
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
 
     let vertexBase = 0;
     let indexBase = 0;
     for (const { key, geometry, offsetX, offsetZ } of parts) {
         const count = geometry.attributes.position.count;
         const source = geometry.attributes.position.array as Float32Array;
-        positions.set(source, vertexBase * 3);
-        if (offsetX !== 0 || offsetZ !== 0) {
-            for (let i = vertexBase * 3, end = (vertexBase + count) * 3; i < end; i += 3) {
-                positions[i] += offsetX;
-                positions[i + 2] += offsetZ;
-            }
+        for (let i = 0, o = vertexBase * 3, end = count * 3; i < end; i += 3, o += 3) {
+            const x = source[i] + offsetX;
+            const y = source[i + 1];
+            const z = source[i + 2] + offsetZ;
+            positions[o] = x;
+            positions[o + 1] = y;
+            positions[o + 2] = z;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
         }
         normals.set(geometry.attributes.normal.array as Float32Array, vertexBase * 3);
         uvs.set(geometry.attributes.uv.array as Float32Array, vertexBase * 2);
@@ -124,12 +134,6 @@ export function mergeRegionLayer(
             ranges.set(key, [indexBase, index.length]);
             indexBase += index.length;
         }
-        // The chunk's bounding sphere (ChunkMesh computes it) is a cheap, safe stand-in for its box.
-        if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-        const sphere = geometry.boundingSphere!;
-        partBounds.min.set(sphere.center.x - sphere.radius + offsetX, sphere.center.y - sphere.radius, sphere.center.z - sphere.radius + offsetZ);
-        partBounds.max.set(sphere.center.x + sphere.radius + offsetX, sphere.center.y + sphere.radius, sphere.center.z + sphere.radius + offsetZ);
-        bounds.union(partBounds);
         vertexBase += count;
     }
 
@@ -142,6 +146,8 @@ export function mergeRegionLayer(
     merged.setAttribute('color', attribute(colors, 4, true));
     merged.setAttribute('atlasTile', attribute(tiles, 1));
     merged.setIndex(new THREE.BufferAttribute(indices, 1));
+    // Wind sways leaves and plants by up to ~0.2 blocks: pad the bounds for it.
+    const bounds = new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ)).expandByScalar(0.5);
     merged.boundingBox = bounds;
     merged.boundingSphere = bounds.getBoundingSphere(new THREE.Sphere());
     merged.userData.bytes = positions.byteLength + normals.byteLength + uvs.byteLength + colors.byteLength + tiles.byteLength + indices.byteLength;
