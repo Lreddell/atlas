@@ -12,12 +12,17 @@ const CLOUD_HEIGHT = 4;
 const CLOUD_SCALE = 12; // 1 pixel = 12x12 blocks
 const CLOUD_SPEED = 1.0;
 
-// Two-pass transparent materials: backfaces first, then frontfaces.
+// Two-pass transparent materials: backfaces first, then frontfaces, so every
+// cloud shows its far sides through its near ones. Neither pass may write depth
+// (as the clouds were first written): with depth writes on, whichever faces come
+// first in the buffer hide the ones after them, and which those are depends on
+// the view direction, so the clouds lost faces looking one way and kept them
+// looking the other. The depth goes down in a pass of its own afterwards.
 const cloudMaterialSettings: THREE.MeshLambertMaterialParameters = {
     color: 0xFFFFFF,
     transparent: true,
     opacity: 0.8,
-    depthWrite: true,
+    depthWrite: false,
     depthTest: true
 };
 
@@ -42,6 +47,16 @@ const newCloudFrontMaterial = new THREE.MeshLambertMaterial({
     ...cloudMaterialSettings,
     side: THREE.FrontSide,
     opacity: 0
+});
+
+// Depth only, drawn after both colour passes: water, particles and effects drawn
+// later still stay behind the clouds (why depth writes were once turned on).
+const cloudDepthMaterial = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthWrite: true,
+    transparent: true,
+    side: THREE.DoubleSide,
+    fog: false,
 });
 
 // Separate materials for tiles leaving the view that fade out independently.
@@ -506,31 +521,28 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                 // Bottom (Y-)
                 push(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, 0, -1, 0);
 
+                // Sides only face open sky, so neighbouring tiles make one shell.
+                // A cloud cut off by the edge of the covered area is closed there
+                // too. Every side faces outward, edge caps included (they used to
+                // face inward, lit as the opposite side): the two passes draw
+                // each face from both sides anyway.
                 // Right (X+)
-                if (u === maxU) {
-                    push(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0, -1, 0, 0);
-                } else if (data[dv * width + ((du + 1) % width)] === 0) {
+                if (u === maxU || data[dv * width + ((du + 1) % width)] === 0) {
                     push(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, 1, 0, 0);
                 }
 
                 // Left (X-)
-                if (u === minU) {
-                    push(x0, y0, z1, x0, y0, z0, x0, y1, z0, x0, y1, z1, 1, 0, 0);
-                } else if (data[dv * width + ((du - 1 + width) % width)] === 0) {
+                if (u === minU || data[dv * width + ((du - 1 + width) % width)] === 0) {
                     push(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, -1, 0, 0);
                 }
 
                 // Front (Z+)
-                if (v === maxV) {
-                    push(x1, y0, z1, x0, y0, z1, x0, y1, z1, x1, y1, z1, 0, 0, -1);
-                } else if (data[((dv + 1) % height) * width + du] === 0) {
+                if (v === maxV || data[((dv + 1) % height) * width + du] === 0) {
                     push(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, 0, 0, 1);
                 }
 
                 // Back (Z-)
-                if (v === minV) {
-                    push(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, 0, 0, 1);
-                } else if (data[((dv - 1 + height) % height) * width + du] === 0) {
+                if (v === minV || data[((dv - 1 + height) % height) * width + du] === 0) {
                     push(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, 0, 0, -1);
                 }
             }
@@ -695,6 +707,12 @@ export const Clouds: React.FC<{ isPaused: boolean, renderDistance: number, fadeI
                     geometry={cloudState.existingGeo}
                     material={cloudFrontMaterial}
                     renderOrder={-100}
+                    frustumCulled={false}
+                />
+                <mesh
+                    geometry={cloudState.existingGeo}
+                    material={cloudDepthMaterial}
+                    renderOrder={-99}
                     frustumCulled={false}
                 />
             </>}
