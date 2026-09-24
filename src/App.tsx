@@ -893,6 +893,15 @@ const App: React.FC = () => {
           setFatalError(event.message || "Unknown Error");
       };
       const handleRejection = (event: PromiseRejectionEvent) => {
+          // The browser may refuse a pointer lock (just after Escape, in a window
+          // without focus); requestPointerLock's promise then rejects. That is no
+          // failure: the game stays unlocked until the next click.
+          const reason = event.reason as { name?: string; message?: string } | undefined;
+          if (reason?.name && /pointer lock|exited the lock/i.test(reason.message ?? '')) {
+              console.warn("Pointer lock refused:", reason.message);
+              event.preventDefault();
+              return;
+          }
           console.error("Unhandled Rejection:", event.reason);
           setFatalError(typeof event.reason === 'string' ? event.reason : (event.reason?.message || "Promise Rejected"));
       };
