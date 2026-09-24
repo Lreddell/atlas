@@ -17,7 +17,9 @@ import { CLASSIC_ORBIT_AXIS, sampleClassicAtmosphere } from '../../systems/graph
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
 import { BlockType } from '../../types';
 import { createGlowTexture, createMoonPhaseTexture, createSunTexture } from '../../utils/textures';
-import { updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
+import { floorLight, updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
+import { sampleSmoothLight, type SmoothLight } from '../../systems/graphics/smoothLight';
+import { worldLightReader } from '../../systems/graphics/worldLightReader';
 import { setClassicLighting, setClassicLightLevels } from '../../systems/graphics/materials/worldLighting';
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { createShadowSnap, snapShadowCenter } from '../../systems/graphics/shadows';
@@ -161,6 +163,14 @@ const scratchBackground = new THREE.Color();
 const scratchMedium: [number, number, number] = [0, 0, 0];
 // Under water, the fog is the sky's ambient light filtered through blue-green water.
 const WATER_MEDIUM_TINT: readonly number[] = [0.07, 0.3, 0.38];
+// Deep underground the eye settles to this exposure, whatever the time of day.
+const CAVE_EXPOSURE = 1.4;
+// Cave air: the floor light's slate on a middling wall.
+const CAVE_AIR_TINT: readonly number[] = [0.55, 0.62, 0.78];
+const CAVE_WATER_TINT: readonly number[] = [0.35, 0.8, 0.9];
+const eyeLight: SmoothLight = { sky: 1, block: 0 };
+// Shadows reach this far toward the light: a low sun throws a far hill's shadow a long way.
+const SHADOW_REACH_TOWARD_LIGHT = 250;
 const LAVA_MEDIUM_COLOR: readonly number[] = [1.5, 0.36, 0.03];
 const scratchCameraCenter: [number, number, number] = [0, 0, 0];
 const scratchShadowCenter: [number, number, number] = [0, 0, 0];
@@ -251,6 +261,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const atmosphere = useMemo(() => createAtmosphereState(), []);
     const mediumBlendRef = useRef(0);
     const mediumIsLavaRef = useRef(false);
+    // How enclosed the eye is: 0 in open air, 1 deep underground (eased, like an eye adapting).
+    const caveRef = useRef(0);
 
     const TICK_CYCLE = 24000;
 
@@ -439,8 +451,24 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         applyAtmosphereUniforms(state);
         setClassicLighting(classic);
         setClassicLightLevels(state.classicSunlight, brightness);
-        const exposure = state.exposure * TONE_MAPPING_EXPOSURE_TRIM;
+
+        // Eye adaptation: how enclosed the eye is, from the voxel sky light where it
+        // stands, eased over a second or so. Enclosed, the exposure settles to one
+        // cave value and fog fades to a dim cave air, so a cave reads the same by
+        // day and by night; looking out of its mouth, the day outside is as bright
+        // as it should be from in there.
+        sampleSmoothLight(worldLightReader, camera.position.x, camera.position.y, camera.position.z, eyeLight);
+        caveRef.current = THREE.MathUtils.damp(caveRef.current, 1 - THREE.MathUtils.smoothstep(eyeLight.sky, 0.2, 0.75), 2.5, delta);
+        const cave = caveRef.current;
+        const exposure = THREE.MathUtils.lerp(state.exposure, classic ? 1 : CAVE_EXPOSURE, cave) * TONE_MAPPING_EXPOSURE_TRIM;
         gl.toneMappingExposure = exposure;
+        // Steady on screen: undo the exposure, as the floor light does.
+        const caveAir = floorLight(brightness) * 0.35 / Math.max(0.05, exposure);
+        ATMOSPHERE_UNIFORMS.atlasHazeParams.value.z = cave;
+        const caveFog = ATMOSPHERE_UNIFORMS.atlasCaveFog.value;
+        caveFog.x = CAVE_AIR_TINT[0] * caveAir;
+        caveFog.y = CAVE_AIR_TINT[1] * caveAir;
+        caveFog.z = CAVE_AIR_TINT[2] * caveAir;
 
         // --- The fluid the camera is in (water or lava) fogs everything in its colour. ---
         const cellType = worldManager.getBlock(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z), false);
@@ -455,10 +483,11 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         } else if (mediumIsLavaRef.current) {
             applyMediumUniforms(medium, LAVA_MEDIUM_COLOR, 0.9);
         } else {
-            // Water takes the sky's light: bright teal by day, deep navy at night, murky red under a blood moon.
-            scratchMedium[0] = state.hemiSky[0] * WATER_MEDIUM_TINT[0];
-            scratchMedium[1] = state.hemiSky[1] * WATER_MEDIUM_TINT[1];
-            scratchMedium[2] = state.hemiSky[2] * WATER_MEDIUM_TINT[2];
+            // Water takes the sky's light: bright teal by day, deep navy at night, murky
+            // red under a blood moon; underground, the cave's dim air, day or night.
+            for (let i = 0; i < 3; i++) {
+                scratchMedium[i] = THREE.MathUtils.lerp(state.hemiSky[i] * WATER_MEDIUM_TINT[i], CAVE_WATER_TINT[i] * caveAir, cave);
+            }
             applyMediumUniforms(medium, scratchMedium, 0.06);
         }
 
@@ -523,7 +552,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
 
         // --- Lights: one key (sun or moon) and one hemisphere ---
         const shadowSize = shadowDist;
-        const lightDistance = shadowSize + 50;
+        const lightDistance = shadowSize + SHADOW_REACH_TOWARD_LIGHT;
         // Snap the shadow camera to whole texels in the light's own frame, turning
         // about the player, so shadow edges hold still while the player moves and
         // only creep as the sun does (shadows.ts). Its up is the orbit axis.
@@ -630,7 +659,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 shadow-mapSize={[shadowMapSize, shadowMapSize]} shadow-bias={-0.0002} shadow-normalBias={0.045}
                 shadow-camera-left={-shadowDist} shadow-camera-right={shadowDist}
                 shadow-camera-top={shadowDist} shadow-camera-bottom={-shadowDist}
-                shadow-camera-near={0.1} shadow-camera-far={shadowDist * 2 + 100}
+                shadow-camera-near={0.1} shadow-camera-far={shadowDist * 2 + SHADOW_REACH_TOWARD_LIGHT + 50}
             />
         </>
     );

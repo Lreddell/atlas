@@ -50,10 +50,13 @@ export function setVoxelStyle(options: { wind: boolean; fancyWater: boolean }): 
     style.y = options.fancyWater ? 1 : 0;
 }
 
+/** The floor light (the least light anywhere) for the Brightness option (0..1). */
+export const floorLight = (brightness: number): number => 0.015 + Math.max(0, Math.min(1, brightness)) * 0.14;
+
 /** Per-frame lighting inputs: the Brightness option (0..1), tone-map exposure and a clock. */
 export function updateVoxelLighting(brightness: number, exposure: number, timeSeconds: number): void {
     const light = VOXEL_UNIFORMS.atlasVoxelLight.value;
-    light.x = 0.015 + Math.max(0, Math.min(1, brightness)) * 0.14;
+    light.x = floorLight(brightness);
     const flicker = Math.sin(timeSeconds * 7.3) * 0.6 + Math.sin(timeSeconds * 13.1 + 1.7) * 0.4;
     light.y = 1.25 * (1 + 0.035 * flicker);
     light.z = 1 / Math.max(0.05, exposure);
@@ -83,13 +86,14 @@ const VERTEX_DECODE = /* glsl */`
 	vVoxelFaceShade = normal.y > 0.5 ? 1.0 : ( normal.y < -0.5 ? 0.62 : ( abs( normal.x ) > 0.5 ? 0.86 : 0.78 ) );
 `;
 
-const VERTEX_WIND = /* glsl */`
-#include <begin_vertex>
-#ifdef ATLAS_VOXEL_CUTOUT
-	// Wind: leaves drift a little as whole blocks, plants bend from the root.
-	// The offset depends only on world position, so blocks that share a corner
-	// move together and never crack apart.
-	float atlasSwayAmount = ( vVoxelClass > 0.5 && vVoxelClass < 1.5 ) ? 0.035 : atlasSwayBit * 0.1;
+/**
+ * Wind: leaves drift a little as whole blocks, plants bend from the root. The
+ * offset depends only on world position, so blocks that share a corner move
+ * together and never crack apart. Shared by the chunk material and the depth
+ * material foliage casts its shadows with, so a leaf and its shadow sway as one.
+ */
+const windGlsl = (voxelClass: string, swayBit: string) => /* glsl */`
+	float atlasSwayAmount = ( ${voxelClass} > 0.5 && ${voxelClass} < 1.5 ) ? 0.035 : ${swayBit} * 0.1;
 	if ( atlasSwayAmount > 0.0 && atlasVoxelStyle.x > 0.0 ) {
 		vec3 atlasWindPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
 		float atlasWindTime = atlasVoxelLight.w;
@@ -99,6 +103,12 @@ const VERTEX_WIND = /* glsl */`
 		);
 		transformed.xz += atlasGust * ( atlasSwayAmount * atlasVoxelStyle.x );
 	}
+`;
+
+const VERTEX_WIND = /* glsl */`
+#include <begin_vertex>
+#ifdef ATLAS_VOXEL_CUTOUT
+${windGlsl('vVoxelClass', 'atlasSwayBit')}
 #endif
 `;
 
@@ -219,10 +229,12 @@ ${WORLD_LIGHT_END}
 		float atlasLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
 		totalEmissiveRadiance += diffuseColor.rgb * ( vVoxelEmission * ( 1.2 / 15.0 ) * atlasVoxelLight.z * smoothstep( 0.2, 0.55, atlasLuma ) );
 #if defined( ATLAS_VOXEL_FOLIAGE ) && NUM_DIR_LIGHTS > 0
-		// Leaves and plants glow when the sun or moon is behind them.
+		// Leaves and plants glow when the sun or moon is behind them: in the light
+		// that actually reaches them (directLight is the key light after the sky
+		// gate and its shadow), never through the hill the sun has set behind.
 		if ( vVoxelClass > 0.5 && vVoxelClass < 2.5 ) {
 			float atlasBacklight = pow( saturate( dot( - geometryViewDir, directionalLights[ 0 ].direction ) ), 4.0 );
-			reflectedLight.directDiffuse += BRDF_Lambert( diffuseColor.rgb ) * directionalLights[ 0 ].color * ( atlasBacklight * 0.6 * atlasVoxelKeyGate );
+			reflectedLight.directDiffuse += BRDF_Lambert( diffuseColor.rgb ) * directLight.color * ( atlasBacklight * 0.6 );
 		}
 #endif
 	}
@@ -325,6 +337,30 @@ export interface VoxelMaterials {
     solid: THREE.MeshLambertMaterial;
     cutout: THREE.MeshLambertMaterial;
     transparent: THREE.MeshLambertMaterial;
+}
+
+/**
+ * What leaves and plants cast their shadows with: three's packed depth, cut out
+ * by the atlas like the chunk material, and swaying with the same wind, so a
+ * leaf and its shadow move as one (no shimmer where foliage shadows itself).
+ */
+export function createCutoutDepthMaterial(map: THREE.Texture | null): THREE.MeshDepthMaterial {
+    const material = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 });
+    // The packed voxel bytes ride in the colour attribute (voxelVertex.ts).
+    material.vertexColors = true;
+    material.onBeforeCompile = (shader) => {
+        shader.uniforms.atlasVoxelLight = VOXEL_UNIFORMS.atlasVoxelLight;
+        shader.uniforms.atlasVoxelStyle = VOXEL_UNIFORMS.atlasVoxelStyle;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nuniform vec4 atlasVoxelLight;\nuniform vec4 atlasVoxelStyle;')
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+	float atlasPacked = floor( color.a * 255.0 + 0.5 );
+	float atlasSwayBit = step( 127.5, atlasPacked );
+	float atlasVoxelClassHere = floor( ( atlasPacked - atlasSwayBit * 128.0 ) / 16.0 );
+${windGlsl('atlasVoxelClassHere', 'atlasSwayBit')}`);
+    };
+    material.customProgramCacheKey = () => 'atlas-voxel-cutout-depth-v1';
+    return material;
 }
 
 /** The three shared chunk materials. */

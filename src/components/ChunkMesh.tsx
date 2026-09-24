@@ -6,6 +6,7 @@ import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import {
   createVoxelFadeMaterials,
+  createCutoutDepthMaterial,
   createVoxelMaterials,
   disposeVoxelMaterials,
   setVoxelFade,
@@ -31,6 +32,8 @@ interface ChunkMeshProps {
 // 3 materials alive instead of 3 per chunk (~21,000 at render distance 48).
 // The voxel lighting itself lives in systems/graphics/materials/voxelMaterial.ts.
 const sharedMaterials = createVoxelMaterials(getChunkTexture());
+// Leaves and plants cast (and now receive) shadows through this, swaying with the wind.
+const cutoutDepthMaterial = createCutoutDepthMaterial(getChunkTexture());
 
 type FadeMaterials = VoxelMaterials;
 
@@ -300,7 +303,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       onUpdate={(g) => g.updateMatrix()}
     >
         {geometries.opaque && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} castShadow={shadowsEnabled} receiveShadow={false} />}
+        {geometries.cutout && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
         {geometries.transparent && <mesh name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
     </group>
   );

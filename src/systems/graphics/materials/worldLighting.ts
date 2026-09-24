@@ -13,8 +13,8 @@ import * as THREE from 'three';
 //   atlasFaceShade   the stylised per-axis shade on the ambient light
 //
 // Two styles share these inputs. Luminous: hemisphere ambient scaled by sky
-// openness, the sun or moon gated to open sky, warm torch light and a cool
-// floor where the sky can't reach. Classic: the pre-overhaul model, where the
+// openness, the sun or moon gated to open sky, warm torch light, and a cool
+// floor (the Brightness option) as the least light anywhere. Classic: the pre-overhaul model, where the
 // surface colour itself is darkened by its sky light and torches add a neutral
 // glow. The style is a uniform, so switching it never recompiles a shader.
 
@@ -63,6 +63,10 @@ vec3 atlasAlbedo;
  */
 export const worldLightPrepare = (classicFloor = '0.05') => /* glsl */`
 	atlasAlbedo = diffuseColor.rgb;
+#ifdef USE_FOG
+	// The fog takes the sky's colour only where the sky reaches.
+	atlasFogSky = smoothstep( 0.15, 0.7, atlasSkyLight );
+#endif
 	// The sun and moon only reach surfaces that are open to the sky (Classic
 	// needs no gate: its sky light already darkens the surface itself).
 	atlasVoxelKeyGate = atlasClassic.x > 0.5 ? 1.0 : smoothstep( 0.5, 0.95, atlasSkyLight );
@@ -85,16 +89,25 @@ export function keyGatedLightsFragmentBegin(chunk = THREE.ShaderChunk.lights_fra
 /** Replaces #include <lights_fragment_end>: ambient, torch and floor light, per style. */
 export const WORLD_LIGHT_END = /* glsl */`
 	if ( atlasClassic.x < 0.5 ) {
-		// Ambient: how open the sky is, AO, and the per-axis face shade.
-		float atlasSkyVisibility = atlasSkyLight * atlasSkyLight;
-		irradiance *= atlasSkyVisibility * atlasAo * atlasFaceShade;
+		// Ambient: the sky's light, as far as the sky is open.
+		irradiance *= atlasSkyLight * atlasSkyLight;
+		// The Brightness option: a cool slate floor, the least light anywhere (deep
+		// in a cave, or out on a dark night). The sky's light is topped up to the
+		// floor rather than added to it: added, the floor lit any place the sky
+		// only half reached (block edges, corners, overhangs) brighter than open
+		// ground whenever it outshone the sky, as at night. It reads the same by
+		// day and by night (atlasVoxelLight.z undoes the exposure).
+		vec3 atlasFloor = vec3( 0.55, 0.62, 0.78 ) * ( atlasVoxelLight.x * atlasVoxelLight.z * PI );
+		float atlasFloorLuma = dot( atlasFloor, vec3( 0.2126, 0.7152, 0.0722 ) );
+		float atlasSkyLuma = dot( irradiance, vec3( 0.2126, 0.7152, 0.0722 ) );
+		irradiance += atlasFloor * ( max( atlasFloorLuma - atlasSkyLuma, 0.0 ) / max( atlasFloorLuma, 1e-6 ) );
+		// AO and the per-axis face shade.
+		irradiance *= atlasAo * atlasFaceShade;
 		// Torches, lava and lamps: warm near a strong source, fading to a neutral
 		// glow further out (so faint lights like glow lichen don't tint a cave
-		// orange). Like the floor below, it reads the same day or night.
+		// orange). Like the floor, it reads the same day or night.
 		vec3 atlasTorchTint = mix( vec3( 0.86, 0.84, 0.8 ), atlasTorchColor, smoothstep( 0.4, 0.9, atlasBlockLight ) );
 		irradiance += atlasTorchTint * ( pow( atlasBlockLight, 2.2 ) * atlasAo * atlasVoxelLight.y * atlasVoxelLight.z * PI );
-		// The Brightness option: a cool slate floor where the sky can't reach (caves).
-		irradiance += vec3( 0.55, 0.62, 0.78 ) * ( atlasVoxelLight.x * atlasVoxelLight.z * ( 1.0 - atlasSkyVisibility ) * atlasAo * atlasFaceShade * PI );
 	}
 #include <lights_fragment_end>
 	if ( atlasClassic.x > 0.5 ) {

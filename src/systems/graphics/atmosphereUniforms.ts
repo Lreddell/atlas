@@ -41,11 +41,14 @@ export const ATMOSPHERE_UNIFORMS = {
     /**
      * x haze density close by (per block, at sea level): the light, even veil the
      * steep far haze builds on. y how fast the sky's bright horizon band gives
-     * way to the zenith colour (a constant, kept here to tune live). Every value
-     * in this bag is an object: three clones uniform wrappers per built-in
+     * way to the zenith colour (a constant, kept here to tune live). z how
+     * enclosed the camera is (0 open air, 1 deep underground). Every value in
+     * this bag is an object: three clones uniform wrappers per built-in
      * material, and only object values stay shared.
      */
-    atlasHazeParams: { value: { x: 0, y: 6 } },
+    atlasHazeParams: { value: { x: 0, y: 6, z: 0, w: 0 } as V4 },
+    /** What fog fades to where the sky can't reach: a dim air that never changes with the time of day. */
+    atlasCaveFog: { value: v3() },
     /** Camera in a fluid: x amount 0..1, y fog density per block. */
     atlasMediumParams: { value: { x: 0, y: 0.1, z: 0, w: 0 } as V4 },
     atlasMediumColor: { value: v3() },
@@ -110,11 +113,18 @@ uniform vec4 atlasMediumParams;
 uniform vec3 atlasMediumColor;
 uniform vec4 atlasClassicSky;
 uniform vec2 atlasCloudFog;
-uniform vec2 atlasHazeParams;
+uniform vec4 atlasHazeParams;
+uniform vec3 atlasCaveFog;
 ${TONE_CURVE_GLSL}
 
-// Scene-linear sky radiance looking along a (normalised) world direction.
-vec3 atlasSkyRadiance(vec3 dir) {
+// How open to the sky the surface being fogged is: 0 in a cave, 1 in open air.
+// World-lit shaders (blocks, and whatever is lit like them) set it from their
+// own sky light; anything else goes by where the camera stands.
+float atlasFogSky = -1.0;
+
+// The sky's colour looking along a (normalised) world direction, without the
+// sun's halo (atlasSunHalo): scene-linear.
+vec3 atlasSkyGradient(vec3 dir) {
     if (atlasClassicSky.w > 0.5) {
         // Classic: the old two-horizon gradient, warmer toward the sun.
         vec3 classicHorizon = mix(atlasSkyHorizon, atlasSkyHorizonSun, smoothstep(-0.4, 0.8, dot(dir, atlasSunDir)));
@@ -128,17 +138,28 @@ vec3 atlasSkyRadiance(vec3 dir) {
     // A narrow bright band at the horizon, deep colour above it.
     float zenithMix = 1.0 - exp(-up * atlasHazeParams.y);
     vec3 sky = mix(horizon, atlasSkyZenith, zenithMix);
-    // Mie scattering: a soft halo and a tight glow around the sun, a soft moon halo.
-    float sunDot = max(cosSun, 0.0);
-    sky += atlasSunGlow * (pow(sunDot, 14.0) * 0.12 + pow(sunDot, 96.0) * 0.7);
+    // A soft halo round the moon.
     float moonDot = max(dot(dir, atlasMoonDir), 0.0);
     sky += atlasMoonGlow * (pow(moonDot, 16.0) * 0.35 + pow(moonDot, 128.0) * 0.9);
     // Below the horizon the sky settles into a dim ground haze.
     return mix(sky, atlasFogGround, clamp(-dir.y * 3.0, 0.0, 1.0));
 }
 
-// How much of the fragment at world offset v (from the camera) is fog.
-float atlasFogAmount(vec3 v) {
+// Mie scattering round the sun: a soft halo and a tight glow.
+vec3 atlasSunHalo(vec3 dir) {
+    if (atlasClassicSky.w > 0.5) return vec3(0.0);
+    float sunDot = max(dot(dir, atlasSunDir), 0.0);
+    return atlasSunGlow * ((pow(sunDot, 14.0) * 0.12 + pow(sunDot, 96.0) * 0.7) * (1.0 - clamp(-dir.y * 3.0, 0.0, 1.0)));
+}
+
+// Scene-linear sky radiance looking along a (normalised) world direction.
+vec3 atlasSkyRadiance(vec3 dir) {
+    return atlasSkyGradient(dir) + atlasSunHalo(dir);
+}
+
+// How much of the fragment at world offset v (from the camera) is fog, for a
+// surface this open to the sky (atlasFogSky).
+float atlasFogAmount(vec3 v, float open) {
     // Classic: the old linear fog, by view depth, from its start distance to the edge.
     if (atlasClassicSky.w > 0.5) return smoothstep(atlasFogParams.x, atlasFogParams.y, -(viewMatrix * vec4(v, 0.0)).z);
     // Render-distance veil, by horizontal distance: terrain at the loading edge is
@@ -162,16 +183,27 @@ float atlasFogAmount(vec3 v) {
     float reach = dist * clamp(h0 * along, 0.0, 2.0);
     float far = reach / max(atlasFogParams.z, 1.0);
     float haze = 1.0 - exp(-(reach * atlasHazeParams.x + far * far));
+    // Where the sky can't reach, a constant dim air instead of the day's haze,
+    // so a cave reads the same by day and by night.
+    haze = mix(1.0 - exp(-dist * 0.006), haze, open);
     return clamp(max(edge, haze), 0.0, 1.0);
 }
 
 vec3 atlasApplyFog(vec3 color, vec3 v) {
+    float open = atlasFogSky >= 0.0 ? atlasFogSky : 1.0 - atlasHazeParams.z;
+    float amount = atlasFogAmount(v, open);
     vec3 fogged;
     if (atlasClassicSky.w > 0.5) {
         // The old renderer mixed its fog in on screen, after the tone map.
-        fogged = atlasFromScreen(mix(atlasToScreen(color), atlasClassicSky.xyz, atlasFogAmount(v)));
+        fogged = atlasFromScreen(mix(atlasToScreen(color), mix(atlasToScreen(atlasCaveFog), atlasClassicSky.xyz, open), amount));
     } else {
-        fogged = mix(color, atlasSkyRadiance(normalize(v)), atlasFogAmount(v));
+        vec3 dir = normalize(v);
+        // The sun's halo in the haze grows with the square of the haze: it veils
+        // far hills standing against the sun, not the ground at your feet (on
+        // near ground it read as sunlight shining through the hill behind it).
+        // Fully fogged, this is exactly the sky behind, so the edge never shows.
+        vec3 fogColor = mix(atlasCaveFog, atlasSkyGradient(dir) + atlasSunHalo(dir) * amount, open);
+        fogged = mix(color, fogColor, amount);
     }
     // With the camera in water or lava, a short dense fog of that fluid's colour.
     float medium = atlasMediumParams.x * (1.0 - exp(-length(v) * atlasMediumParams.y));
