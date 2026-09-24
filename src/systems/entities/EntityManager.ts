@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { worldManager } from '../WorldManager';
 import { checkCollision, getSupportTop, isSolid } from '../player/playerCollision';
+import { MAX_MOVE_SLICE } from '../player/playerConstants';
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from '../player/playerConstants';
 import { GRAVITY } from '../../constants';
 import { gameEvents } from '../events/GameEvents';
@@ -1355,6 +1356,14 @@ class EntityManager {
     }
 
     private moveWithCollision(e: Entity, kind: EntityKind, dt: number, guard = false): void {
+        // In sub-steps of at most MAX_MOVE_SLICE blocks, so a fast fall or a hard
+        // shove can't carry a small body clean through a floor or a wall in one tick.
+        const fastest = Math.max(Math.abs(e.vel.x), Math.abs(e.vel.y), Math.abs(e.vel.z)) * dt;
+        const steps = Math.min(8, Math.max(1, Math.ceil(fastest / MAX_MOVE_SLICE)));
+        for (let i = 0; i < steps; i++) this.moveWithCollisionStep(e, kind, dt / steps, guard);
+    }
+
+    private moveWithCollisionStep(e: Entity, kind: EntityKind, dt: number, guard: boolean): void {
         const p = e.pos;
         const w = e.width, h = e.height;
 

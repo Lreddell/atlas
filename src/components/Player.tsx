@@ -10,7 +10,7 @@ import {
     onKeyDown, onKeyUp, getMovementIntent, inputState, lookBridge, consumeDodgePress, dodgePressAge,
     DODGE_BUFFER_MS,
 } from '../systems/player/playerInput';
-import { simulateStep, type SimulationResult } from '../systems/player/playerMovement';
+import { simulateStep, sweepAxis, type SimulationResult } from '../systems/player/playerMovement';
 import { applyMagneticForce, applyBossMagneticFields, getMagnetPolarity, type MagneticMode } from '../systems/player/magnetism';
 import { entityManager } from '../systems/entities/EntityManager';
 import { bossSummon } from '../systems/boss/bossSummon';
@@ -597,11 +597,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
       const newPos = pos.current.clone();
       const newVel = vel.current.clone();
       let blocked = false;
+      // In slices, like simulateStep: a dash covers 1.3 blocks a tick and an
+      // air roll can fall at terminal velocity.
       const moveAxis = (axis: 'x' | 'y' | 'z', d: number) => {
           if (d === 0) return;
-          newPos[axis] += d;
-          if (checkCollision(worldManager, newPos, PLAYER_WIDTH, height)) {
-              newPos[axis] -= d;
+          if (sweepAxis(worldManager, newPos, axis, d, PLAYER_WIDTH, height)) {
               newVel[axis] = 0;
               blocked = true;
           }
@@ -617,11 +617,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
           else if (newVel.y < 0) newVel.y = 0;
           moveAxis('x', newVel.x * FIXED_DT);
           moveAxis('z', newVel.z * FIXED_DT);
-          const dy = newVel.y * FIXED_DT;
-          newPos.y += dy;
           let isGrounded = false;
-          if (checkCollision(worldManager, newPos, PLAYER_WIDTH, height)) {
-              newPos.y -= dy;
+          if (sweepAxis(worldManager, newPos, 'y', newVel.y * FIXED_DT, PLAYER_WIDTH, height)) {
               if (newVel.y < 0) {
                   isGrounded = true;
                   const top = getSupportTop(worldManager, newPos, PLAYER_WIDTH);

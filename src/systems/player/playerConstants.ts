@@ -83,6 +83,12 @@ export const MAX_SUBSTEPS = 4;
 // Gameplay
 export const MAX_BREATH = 300; // 15 Seconds * 20 TPS
 
+// Moves are resolved in slices no longer than this (blocks), so nothing passes
+// clean through an obstacle between two ticks: a fall at terminal velocity
+// covers 3.9 blocks a tick and creative sprint-flight 2.5, while a body needs
+// only 2.8 blocks of travel to clear a one-block floor (1.6 across a wall).
+export const MAX_MOVE_SLICE = 0.5;
+
 // Collision epsilons
 export const CONTACT_EPS = 1e-4; 
 export const GROUND_EPS = 0.05;  

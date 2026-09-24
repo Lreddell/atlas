@@ -8,7 +8,7 @@ import {
     WALK_SPEED, SPRINT_MULTIPLIER, SNEAK_MULTIPLIER,
     GRAVITY, JUMP_VELOCITY, TERMINAL_VELOCITY, SPRINT_JUMP_BOOST,
     GROUND_FRICTION, AIR_FRICTION, FLUID_FRICTION, AIR_CONTROL, SPRINT_STOP_GRACE_TICKS,
-    SAFE_WALK_STEP, CONTACT_EPS, GROUND_EPS,
+    SAFE_WALK_STEP, CONTACT_EPS, GROUND_EPS, MAX_MOVE_SLICE,
     SWIM_SPEED, SWIM_SUBMERGED_SPEED, LAVA_HORIZONTAL_REDUCTION,
     FLUID_GRAVITY, FLUID_TERMINAL_VEL, FLUID_JUMP_ACCEL, FLUID_JUMP_MAX,
     BOAT_SPEED, BOAT_FRICTION, BOAT_LAND_SPEED, BOAT_LAND_FRICTION,
@@ -23,6 +23,33 @@ const _yAxis = new THREE.Vector3(0, 1, 0);
 
 // Consecutive slow-sprint ticks (single player, module state is fine)
 let sprintSlowTicks = 0;
+
+/** How many slices a move of `d` blocks is resolved in (see MAX_MOVE_SLICE). */
+export const moveSlices = (d: number): number => Math.max(1, Math.ceil(Math.abs(d) / MAX_MOVE_SLICE));
+
+/**
+ * Moves `pos` along one axis by `d`, slice by slice, stopping flush at the
+ * first slice that would overlap a block. Returns whether it was stopped.
+ */
+export function sweepAxis(
+    wm: WorldManager,
+    pos: { x: number; y: number; z: number },
+    axis: 'x' | 'y' | 'z',
+    d: number,
+    width: number,
+    height: number,
+): boolean {
+    const slices = moveSlices(d);
+    const step = d / slices;
+    for (let i = 0; i < slices; i++) {
+        pos[axis] += step;
+        if (checkCollision(wm, pos, width, height)) {
+            pos[axis] -= step;
+            return true;
+        }
+    }
+    return false;
+}
 
 export interface SimulationResult {
     position: THREE.Vector3;
@@ -103,29 +130,23 @@ export function simulateStep(
 
         newVel.addScaledVector(_inputVec, flySpeed * flyAccel);
 
-        const hVel = new THREE.Vector2(newVel.x, newVel.z);
-        if (hVel.length() > flySpeed) {
-            hVel.normalize().multiplyScalar(flySpeed);
-            newVel.x = hVel.x;
-            newVel.z = hVel.y;
+        const hSpeed = Math.hypot(newVel.x, newVel.z);
+        if (hSpeed > flySpeed) {
+            newVel.x *= flySpeed / hSpeed;
+            newVel.z *= flySpeed / hSpeed;
         }
 
         if (intent.jump) newVel.y += flySpeed * flyAccel;
         if (intent.sneak) newVel.y -= flySpeed * flyAccel;
         
-        // Integrate
-        const dx = newVel.x * dt;
-        const dy = newVel.y * dt;
-        const dz = newVel.z * dt;
-
-        newPos.x += dx;
-        if (!noClip && checkCollision(wm, newPos, PLAYER_WIDTH, height)) newPos.x -= dx;
-        
-        newPos.y += dy;
-        if (!noClip && checkCollision(wm, newPos, PLAYER_WIDTH, height)) newPos.y -= dy;
-        
-        newPos.z += dz;
-        if (!noClip && checkCollision(wm, newPos, PLAYER_WIDTH, height)) newPos.z -= dz;
+        // Integrate: spectators pass through everything, flight stops flush at blocks.
+        if (noClip) {
+            newPos.addScaledVector(newVel, dt);
+        } else {
+            if (sweepAxis(wm, newPos, 'x', newVel.x * dt, PLAYER_WIDTH, height)) newVel.x = 0;
+            if (sweepAxis(wm, newPos, 'y', newVel.y * dt, PLAYER_WIDTH, height)) newVel.y = 0;
+            if (sweepAxis(wm, newPos, 'z', newVel.z * dt, PLAYER_WIDTH, height)) newVel.z = 0;
+        }
 
         return { position: newPos, velocity: newVel, grounded: false };
     }
@@ -240,11 +261,12 @@ export function simulateStep(
         dx = safeDx;
     }
 
-    newPos.x += dx;
-    if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
-        if (!tryStepUp()) {
-            newPos.x -= dx;
+    for (let i = 0, n = moveSlices(dx), step = dx / n; i < n; i++) {
+        newPos.x += step;
+        if (checkCollision(wm, newPos, PLAYER_WIDTH, height) && !tryStepUp()) {
+            newPos.x -= step;
             newVel.x = 0;
+            break;
         }
     }
 
@@ -256,46 +278,50 @@ export function simulateStep(
         dz = safeDz;
     }
 
-    newPos.z += dz;
-    if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
-        if (!tryStepUp()) {
-            newPos.z -= dz;
+    for (let i = 0, n = moveSlices(dz), step = dz / n; i < n; i++) {
+        newPos.z += step;
+        if (checkCollision(wm, newPos, PLAYER_WIDTH, height) && !tryStepUp()) {
+            newPos.z -= step;
             newVel.z = 0;
+            break;
         }
     }
 
     // Y Axis
-    const dy = newVel.y * dt;
-    newPos.y += dy;
     let isGrounded = false;
+    const ySlices = moveSlices(newVel.y * dt);
+    const dy = newVel.y * dt / ySlices;
+    for (let slice = 0; slice < ySlices; slice++) {
+        newPos.y += dy;
+        if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
+            newPos.y -= dy;
 
-    if (checkCollision(wm, newPos, PLAYER_WIDTH, height)) {
-        newPos.y -= dy;
-        
-        if (newVel.y < 0) {
-            isGrounded = true;
-            // Snap to the top of the actual supporting block (beds are 0.5 high).
-            let supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
-            if (supportTop === null) {
-                // Fast fall: this step overshot the floor by more than a block, so
-                // the reverted position sits in the air ABOVE it and getSupportTop
-                // (which only looks ~1 block down) misses. Sweep the feet down to
-                // the real surface, otherwise the player "lands" floating in the
-                // air, which, over a 1-deep water pool, also robs the landing of
-                // its fall-damage immunity and can be fatal.
-                let by = Math.floor(newPos.y);
-                const limit = by - Math.ceil(Math.abs(dy)) - 2;
-                while (by >= limit) {
-                    const top = getSupportTop(wm, { x: newPos.x, y: by + CONTACT_EPS, z: newPos.z }, PLAYER_WIDTH);
-                    if (top !== null) { supportTop = top; break; }
-                    by--;
+            if (newVel.y < 0) {
+                isGrounded = true;
+                // Snap to the top of the actual supporting block (beds are 0.5 high).
+                let supportTop = getSupportTop(wm, newPos, PLAYER_WIDTH);
+                if (supportTop === null) {
+                    // Fast fall: this step overshot the floor by more than a block, so
+                    // the reverted position sits in the air ABOVE it and getSupportTop
+                    // (which only looks ~1 block down) misses. Sweep the feet down to
+                    // the real surface, otherwise the player "lands" floating in the
+                    // air, which, over a 1-deep water pool, also robs the landing of
+                    // its fall-damage immunity and can be fatal.
+                    let by = Math.floor(newPos.y);
+                    const limit = by - Math.ceil(Math.abs(dy)) - 2;
+                    while (by >= limit) {
+                        const top = getSupportTop(wm, { x: newPos.x, y: by + CONTACT_EPS, z: newPos.z }, PLAYER_WIDTH);
+                        if (top !== null) { supportTop = top; break; }
+                        by--;
+                    }
                 }
+                newPos.y = (supportTop !== null ? supportTop : Math.floor(newPos.y)) + CONTACT_EPS;
+            } else {
+                newPos.y = Math.floor(newPos.y + height + 1.0) - height - CONTACT_EPS;
             }
-            newPos.y = (supportTop !== null ? supportTop : Math.floor(newPos.y)) + CONTACT_EPS;
-        } else {
-            newPos.y = Math.floor(newPos.y + height + 1.0) - height - CONTACT_EPS;
+            newVel.y = 0;
+            break;
         }
-        newVel.y = 0;
     }
     
     // Ground probe: fix rare "hovering" cases where gravity/collision misses for a tick.
