@@ -1,5 +1,5 @@
 
-import { useRef, useState, useMemo, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useImperativeHandle, forwardRef, useEffect } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHUNK_SIZE } from '../../constants';
@@ -22,6 +22,9 @@ import { setClassicLighting, setClassicLightLevels } from '../../systems/graphic
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { createShadowSnap, snapShadowCenter } from '../../systems/graphics/shadows';
 import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
+import { SKY_FAR_PLANE_GLSL, SKY_ORDER, drawAtFarPlane, skyFrame } from '../../systems/graphics/skyObjects';
+import { Aurora } from './sky/Aurora';
+import { Meteors } from './sky/Meteors';
 
 // The sky, the sun and moon, the stars, and the scene's two lights, all driven
 // by one sampled atmosphere (systems/graphics/atmosphere.ts) per frame.
@@ -96,6 +99,7 @@ const StarShader = {
         void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mvPosition;
+            ${SKY_FAR_PLANE_GLSL}
             gl_PointSize = max(1.5, (420.0 + magnitude * 360.0) / -mvPosition.z);
             float twinkle = speed > 0.0 ? 0.65 + 0.35 * sin(uTime * speed + phase) : 1.0;
             vAlpha = twinkle * (0.35 + 0.65 * magnitude);
@@ -114,257 +118,6 @@ const StarShader = {
     `,
 };
 
-// Aurora curtain shaders – curves PlaneGeometry ribbons into sky-spanning arcs
-const AuroraCurtainVertexShader = `
-    uniform float uTime;
-    uniform float uRadius;
-    uniform float uArcLength;
-    uniform float uRotation;
-    uniform float uPhase;
-    uniform float uTilt;      // tilt angle in radians (0 = vertical curtain, >0 = leans overhead)
-    uniform float uElevation; // base elevation angle above horizon
-    varying vec2 vUv;
-    varying float vWave;
-
-    void main() {
-        vUv = uv;
-
-        // Map uv.x to angle along the arc with slow rotational drift
-        float angle = (uv.x - 0.5) * uArcLength + uRotation + uTime * (0.005 + uPhase * 0.0008);
-
-        // Height parameter (0 at bottom, 1 at top of ribbon)
-        float hNorm = (position.y / 1.0 + 0.5); // plane goes -0.5 to 0.5 in local Y
-
-        // Base position on arc in XZ plane at uRadius
-        float baseX = uRadius * cos(angle);
-        float baseZ = uRadius * sin(angle);
-
-        // Elevation: raise the arc above the horizon
-        float baseY = uRadius * sin(uElevation);
-        float horizScale = cos(uElevation);
-        baseX *= horizScale;
-        baseZ *= horizScale;
-
-        // Curtain extends upward from base, tilting inward (overhead) via uTilt
-        float curtainHeight = position.y; // raw local Y from plane geometry
-        // Vertical component
-        float vy = curtainHeight * cos(uTilt);
-        // Inward component (toward center) for overhead lean
-        float inward = curtainHeight * sin(uTilt);
-        float dirX = -cos(angle); // direction toward center
-        float dirZ = -sin(angle);
-
-        float x = baseX + dirX * inward;
-        float z = baseZ + dirZ * inward;
-        float y = baseY + vy;
-
-        // Gentle wave motion – subtle undulation, stronger toward top
-        float hf = 0.05 + hNorm * 0.35;
-        float w1 = sin(angle * 3.0 + uTime * 0.04 + uPhase) * 5.0;
-        float w2 = sin(angle * 6.0 - uTime * 0.06 + uPhase * 0.6) * 2.5;
-        float wave = (w1 + w2) * hf;
-        y += wave;
-        vWave = wave;
-
-        // Very slight lateral sway
-        float sway = sin(angle * 3.0 + uTime * 0.03 + uPhase) * 1.5 * hf;
-        x += -sin(angle) * sway;
-        z +=  cos(angle) * sway;
-
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(x, y, z, 1.0);
-    }
-`;
-
-const AuroraCurtainFragmentShader = `
-    uniform float uTime;
-    uniform float uOpacity;
-    uniform float uPhase;
-    uniform vec3 uColorA;
-    uniform vec3 uColorB;
-    uniform vec3 uColorC;
-    varying vec2 vUv;
-    varying float vWave;
-
-    void main() {
-        // Vertical mask: thin bright band at base, long soft fade upward
-        float bottom = smoothstep(0.0, 0.08, vUv.y);
-        float top    = 1.0 - smoothstep(0.15, 0.92, vUv.y);
-        float vertMask = bottom * top;
-
-        // Bright narrow core near the base (like real aurora)
-        float core = exp(-pow((vUv.y - 0.10) * 8.0, 2.0));
-
-        // Horizontal edge fade (no hard cutoffs at ribbon ends)
-        float edgeFade = smoothstep(0.0, 0.06, vUv.x) * (1.0 - smoothstep(0.94, 1.0, vUv.x));
-
-        // Vertical ray streaks – irregular columns via layered frequencies
-        float r1 = sin(vUv.x * 47.0 + uPhase * 2.0 + uTime * 0.025);
-        float r2 = sin(vUv.x * 23.0 - uPhase * 1.3 + uTime * 0.04);
-        float r3 = sin(vUv.x * 73.0 + uPhase * 0.7);
-        float rays = 0.35 + 0.65 * clamp(r1 * r2 + r3 * 0.3, 0.0, 1.0);
-
-        // Horizontal intensity variation
-        float s1 = 0.6 + 0.4 * sin(vUv.x * 9.0 + uTime * 0.06 + uPhase);
-        float hIntensity = s1 * rays;
-
-        // Colours: green base -> cyan mid -> purple/violet top with strong transitions
-        vec3 col = mix(uColorA, uColorB, smoothstep(0.04, 0.20, vUv.y));
-        col = mix(col, uColorC, smoothstep(0.25, 0.70, vUv.y));
-
-        // Whitish-green brightening at core
-        col = mix(col, vec3(0.85, 1.0, 0.90), core * 0.5);
-
-        // Dynamic colour shift along the ribbon length, stronger effect
-        float cShift = sin(vUv.x * 5.0 + uTime * 0.035 + uPhase) * 0.5 + 0.5;
-        col = mix(col, mix(uColorB, uColorC, cShift), 0.25);
-
-        float alpha = (vertMask + core * 0.6) * hIntensity * edgeFade * uOpacity;
-        // Scene-linear and additive: premultiply, then tone map like everything else.
-        gl_FragColor = vec4(col * 1.8 * clamp(alpha, 0.0, 1.0), 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-    }
-`;
-
-// Shooting Star Component
-const ShootingStar = ({ dayFactor, isPaused, isBloodMoon }: { dayFactor: number, isPaused: boolean, isBloodMoon: boolean }) => {
-    const groupRef = useRef<THREE.Group>(null);
-    const [active, setActive] = useState(false);
-    const progress = useRef(0);
-    const speed = useRef(0.3); // Controls animation duration
-    const startPos = useRef(new THREE.Vector3());
-    const endPos = useRef(new THREE.Vector3());
-
-    // Custom shader for the trail
-    const material = useMemo(() => new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color('#d4f1f9') }, uOpacity: { value: 1.0 } },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform vec3 uColor;
-            uniform float uOpacity;
-            varying vec2 vUv;
-            void main() {
-                // Horizontal gradient for trail (tail at x=0, head at x=1)
-                // pow(vUv.x, 4.0) makes the tail fade out gracefully
-                float alpha = pow(vUv.x, 4.0) * uOpacity;
-                // Additive with SRC_ALPHA: the blend applies alpha once.
-                gl_FragColor = vec4(uColor * 2.0, alpha);
-                #include <tonemapping_fragment>
-                #include <colorspace_fragment>
-            }
-        `,
-        transparent: true,
-        depthWrite: false,
-        depthTest: true,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide
-    }), []);
-
-    const spawnStar = useCallback(() => {
-        setActive(true);
-        progress.current = 0;
-
-        speed.current = 0.15 + Math.random() * 0.25;
-
-        const r = 350;
-        const u = 0.3 + Math.random() * 0.7;
-        const y = r * u;
-        const rXZ = Math.sqrt(r*r - y*y);
-        const theta = Math.random() * Math.PI * 2;
-
-        startPos.current.set(
-            rXZ * Math.cos(theta),
-            y,
-            rXZ * Math.sin(theta)
-        );
-
-        const moveDist = 200 + Math.random() * 100;
-
-        const moveDir = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            -Math.random() * 0.5,
-            (Math.random() - 0.5) * 2
-        ).normalize();
-
-        endPos.current.copy(startPos.current).add(moveDir.multiplyScalar(moveDist));
-
-        const colors = isBloodMoon
-            ? ['#ff6b6b', '#ff4d4d', '#c62828', '#ff8a80', '#b71c1c']
-            : ['#00ffff', '#e0ffff', '#d8bfd8', '#7fffd4', '#fffacd'];
-        const col = new THREE.Color(colors[Math.floor(Math.random() * colors.length)]);
-        material.uniforms.uColor.value = col;
-
-        if (groupRef.current) {
-            groupRef.current.position.copy(startPos.current);
-            groupRef.current.lookAt(endPos.current);
-            groupRef.current.visible = true;
-        }
-    }, [isBloodMoon, material]);
-
-    useEffect(() => {
-        const onSpawn = () => {
-            if (isPaused) return;
-            spawnStar();
-        };
-
-        window.addEventListener('atlas:shootingstar:spawn', onSpawn);
-        return () => window.removeEventListener('atlas:shootingstar:spawn', onSpawn);
-    }, [isPaused, isBloodMoon, spawnStar]);
-
-    useFrame((_, delta) => {
-        if (isPaused) return;
-
-        // Only spawn at night (dayFactor < 0.1 implies very dark/night)
-        if (!active && dayFactor < 0.1) {
-            // Very rare: about once every ~40 seconds, independent of frame rate.
-            if (Math.random() < 0.096 * delta) {
-                spawnStar();
-            }
-        }
-
-        if (active && groupRef.current) {
-            // Update using the randomized speed
-            progress.current += delta * speed.current;
-
-            if (progress.current >= 1) {
-                setActive(false);
-                groupRef.current.visible = false;
-            } else {
-                // Lerp position
-                groupRef.current.position.lerpVectors(startPos.current, endPos.current, progress.current);
-
-                // Fade In AND Out
-                // Fade In over the first 10% of travel
-                const fadeIn = Math.min(1.0, progress.current * 10.0);
-                // Fade Out over the last 20%
-                const fadeOut = 1.0 - Math.pow(progress.current, 5.0);
-
-                material.uniforms.uOpacity.value = fadeIn * fadeOut;
-            }
-        }
-    });
-
-    return (
-        // renderOrder -960: Behind Terrain (0), In front of Sun/Moon (-970/-980), In front of Stars (-990)
-        <group ref={groupRef} visible={false} renderOrder={-960}>
-            {/*
-                Rotate -90 deg on Y so the Plane's X-axis (length) aligns with the Group's Z-axis (lookAt direction).
-                Plane is 60 units long (X), 1.2 units wide (Y).
-            */}
-            <mesh rotation={[0, -Math.PI / 2, 0]}>
-                <planeGeometry args={[60, 1.2]} />
-                <primitive object={material} />
-            </mesh>
-        </group>
-    );
-};
-
 export interface DayNightCycleRef {
     setTime: (timeTicks: number) => void;
     setPhase: (phaseIndex: number) => void;
@@ -372,7 +125,9 @@ export interface DayNightCycleRef {
 
 // The original sun and moon: tilted pixel squares with a soft glow. Their cores
 // run bright enough in Luminous to catch the bloom; Classic keeps them level
-// with the old look.
+// with the old look. They fade in and out by opacity: fading by colour left an
+// opaque dark square (a black moon rising into the dusk sky). Opaque, the
+// moon's unlit side still hides the stars behind it.
 const SUN_CORE_LUMINOUS = 2.4;
 const SUN_CORE_CLASSIC = 1.35;
 const MOON_CORE_LUMINOUS = 1.5;
@@ -443,6 +198,20 @@ function mulberry32(seed: number) {
 
 const BIOME_SAMPLE_INTERVAL = 0.25; // seconds between biome lookups for haze/aurora
 
+/** A sun or moon disc: opaque texels, faded by opacity, drawn at the far plane. */
+function createDiscMaterial(): THREE.MeshBasicMaterial {
+    const material = new THREE.MeshBasicMaterial({ fog: false, transparent: true, depthWrite: false });
+    drawAtFarPlane(material);
+    return material;
+}
+
+/** A sun or moon glow: additive, drawn at the far plane. */
+function createGlowMaterial(map: THREE.Texture | null): THREE.SpriteMaterial {
+    const material = new THREE.SpriteMaterial({ map, fog: false, transparent: false, blending: THREE.AdditiveBlending, depthWrite: false });
+    drawAtFarPlane(material);
+    return material;
+}
+
 export const DayNightCycle = forwardRef<DayNightCycleRef, {
     isPaused: boolean,
     renderDistance: number,
@@ -457,7 +226,6 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const shadowMapSize = shadowSettings.mapSize;
     const { scene, camera, gl } = useThree();
     const starsRef = useRef<THREE.Group>(null);
-    const auroraGroupRef = useRef<THREE.Group>(null);
     // The scene's only two lights, mounted for the Canvas's whole life so the
     // light count (and with it every lit shader) never changes at dawn or dusk.
     const keyLightRef = useRef<THREE.DirectionalLight>(null);
@@ -473,8 +241,6 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const skyMeshRef = useRef<THREE.Mesh>(null);
 
     // Internal tracking
-    const [currentDayFactor, setCurrentDayFactor] = useState(1.0);
-    const [bloodMoonActive, setBloodMoonActive] = useState(false);
     const daysPassedRef = useRef(0);
     const auroraBiomeBlendRef = useRef(0);
     const magneticFogBlendRef = useRef(0);
@@ -529,6 +295,10 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const moonGlowTexture = useMemo(() => srgbCanvasTexture(createGlowTexture('#FFFFFF')), []);
     const sunGlowRef = useRef<THREE.Sprite>(null);
     const moonGlowRef = useRef<THREE.Sprite>(null);
+    const sunDiscMaterial = useMemo(() => { const m = createDiscMaterial(); m.map = sunTexture; return m; }, [sunTexture]);
+    const moonDiscMaterial = useMemo(() => createDiscMaterial(), []);
+    const sunGlowMaterial = useMemo(() => createGlowMaterial(sunGlowTexture), [sunGlowTexture]);
+    const moonGlowMaterial = useMemo(() => createGlowMaterial(moonGlowTexture), [moonGlowTexture]);
 
     const skyMat = useMemo(() => new THREE.ShaderMaterial({
         uniforms: {
@@ -551,45 +321,6 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         depthWrite: false,
         blending: THREE.AdditiveBlending
     }), []);
-
-    const auroraCurtainConfigs = useMemo(() => [
-        // Low horizon sweep – main visible ribbon
-        { radius: 400, arc: Math.PI * 1.1,  rotation: 0,              phase: 0,    tilt: 0.05,  elevation: 0.12 },
-        // Mid-sky ribbon from a different direction
-        { radius: 390, arc: Math.PI * 0.85, rotation: Math.PI * 0.55, phase: 1.7,  tilt: 0.15,  elevation: 0.28 },
-        // Opposite horizon
-        { radius: 410, arc: Math.PI * 1.0,  rotation: Math.PI * 1.25, phase: 3.4,  tilt: 0.08,  elevation: 0.16 },
-        // High overhead ribbon – crosses zenith
-        { radius: 370, arc: Math.PI * 0.7,  rotation: Math.PI * 0.30, phase: 5.1,  tilt: 0.55,  elevation: 0.45 },
-        // Another low accent from yet another angle
-        { radius: 420, arc: Math.PI * 0.6,  rotation: Math.PI * 1.70, phase: 2.5,  tilt: 0.04,  elevation: 0.10 },
-        // Mid-high ribbon crossing overhead from a different direction
-        { radius: 380, arc: Math.PI * 0.75, rotation: Math.PI * 1.05, phase: 4.0,  tilt: 0.40,  elevation: 0.38 },
-    ], []);
-
-    const auroraMaterials = useMemo(() => auroraCurtainConfigs.map(c => new THREE.ShaderMaterial({
-        uniforms: {
-            uTime:      { value: 0 },
-            uOpacity:   { value: 0 },
-            uRadius:    { value: c.radius },
-            uArcLength: { value: c.arc },
-            uRotation:  { value: c.rotation },
-            uPhase:     { value: c.phase },
-            uTilt:      { value: c.tilt },
-            uElevation: { value: c.elevation },
-            uColorA:    { value: new THREE.Color('#44ff88') },
-            uColorB:    { value: new THREE.Color('#88ffcc') },
-            uColorC:    { value: new THREE.Color('#9966ff') },
-        },
-        vertexShader: AuroraCurtainVertexShader,
-        fragmentShader: AuroraCurtainFragmentShader,
-        transparent: true,
-        depthWrite: false,
-        depthTest: true,   // Occluded by terrain in depth buffer
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-        fog: false,
-    })), [auroraCurtainConfigs]);
 
     useImperativeHandle(ref, () => ({
         setTime: (timeTicks: number) => {
@@ -634,6 +365,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     }, []);
 
     useFrame(({ clock }, delta) => {
+        skyFrame.paused = isPaused;
         if (isPaused) return;
 
         // Read time directly from WorldManager (synced with game ticks)
@@ -647,7 +379,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         const lunarEvent = getLunarNightEventState(ticks, TICK_CYCLE, worldManager.getSeed());
         const phaseIndex = lunarEvent.phaseIndex;
         const isBloodMoon = lunarEvent.isBloodMoon;
-        if (isBloodMoon !== bloodMoonActive) setBloodMoonActive(isBloodMoon);
+        skyFrame.bloodMoon = isBloodMoon;
+        skyFrame.moonPhase = phaseIndex;
 
         // The moon shows its phase; a blood moon is always full, its whole face burning red.
         const shownPhase = isBloodMoon ? 4 : phaseIndex;
@@ -730,7 +463,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         }
 
         const dayFactor = state.dayFactor;
-        if (Math.abs(dayFactor - currentDayFactor) > 0.01) setCurrentDayFactor(dayFactor);
+        skyFrame.medium = medium;
 
         // Chunks now take day and night from the scene lights; the legacy sunlight
         // factor stays at 1 and only the Brightness floor passes through.
@@ -759,7 +492,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             sunGroupRef.current.up.set(0, 0, 1);
             sunGroupRef.current.lookAt(camera.position);
             sunGroupRef.current.rotateZ(CELESTIAL_TILT);
-            (sunCoreRef.current.material as THREE.MeshBasicMaterial).color.setScalar((classic ? SUN_CORE_CLASSIC : SUN_CORE_LUMINOUS) * sunFade);
+            sunDiscMaterial.color.setScalar(classic ? SUN_CORE_CLASSIC : SUN_CORE_LUMINOUS);
+            sunDiscMaterial.opacity = sunFade;
             // A soft glow (the old one was mostly lost in its fog); Luminous leaves the rest to the bloom.
             if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade);
             sunGroupRef.current.visible = sunFade > 0.001;
@@ -776,8 +510,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             moonGroupRef.current.lookAt(camera.position);
             moonGroupRef.current.rotateZ(CELESTIAL_TILT);
             // Tinted by the night's lunar event: white, or the blood moon's deep red.
-            (moonCoreRef.current.material as THREE.MeshBasicMaterial).color
-                .set(lunarEvent.moonColorHex).multiplyScalar((classic ? MOON_CORE_CLASSIC : MOON_CORE_LUMINOUS) * moonFade);
+            moonDiscMaterial.color.set(lunarEvent.moonColorHex).multiplyScalar(classic ? MOON_CORE_CLASSIC : MOON_CORE_LUMINOUS);
+            moonDiscMaterial.opacity = moonFade;
             if (moonGlowRef.current) {
                 // Only the lit part of the moon glows: none at new moon, softest at full.
                 const lit = isBloodMoon ? 1 : 1 - Math.abs(phaseIndex - 4) / 4;
@@ -824,63 +558,43 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         if (starsRef.current) {
             starsRef.current.position.copy(camera.position);
             starsRef.current.quaternion.copy(scratchStarQuat.setFromAxisAngle(STAR_AXIS, phi));
-            starMaterial.uniforms.uOpacity.value = state.starVisibility;
+            starMaterial.uniforms.uOpacity.value = state.starVisibility * (1 - medium);
             starMaterial.uniforms.uTime.value = clock.elapsedTime;
-            starsRef.current.visible = state.starVisibility > 0.01;
+            starsRef.current.visible = state.starVisibility * (1 - medium) > 0.01;
             // The galaxy band turns with the stars: sky shader samples in star space.
             skyMat.uniforms.uStarRotation.value.setFromMatrix4(
                 scratchStarMatrix.makeRotationFromQuaternion(starsRef.current.quaternion).invert(),
             );
             skyMat.uniforms.uStarVisibility.value = state.starVisibility;
         }
+        skyFrame.night = state.starVisibility;
 
-        // Fast path: full daylight with the biome blend already settled at zero.
-        if (auroraGroupRef.current && dayFactor >= 0.2 && auroraBiomeBlendRef.current < 0.001) {
-            auroraGroupRef.current.visible = false;
-        } else if (auroraGroupRef.current) {
-            const nightFactor = THREE.MathUtils.clamp((0.2 - dayFactor) / 0.2, 0, 1);
-            const targetBiomeBlend = biomeSample.snowy ? 1 : 0;
-            auroraBiomeBlendRef.current = THREE.MathUtils.damp(auroraBiomeBlendRef.current, targetBiomeBlend, 0.75, delta);
-
-            const intensityPulse = 0.75 + 0.25 * Math.sin(clock.elapsedTime * 0.05);
-            const auroraOpacity = nightFactor * auroraBiomeBlendRef.current * 0.35 * intensityPulse;
-
+        // The aurora (sky/Aurora): at night in snowy biomes, breathing slowly, in
+        // the moon phase's colours (or the blood moon's).
+        const targetBiomeBlend = biomeSample.snowy ? 1 : 0;
+        auroraBiomeBlendRef.current = THREE.MathUtils.damp(auroraBiomeBlendRef.current, targetBiomeBlend, 0.75, delta);
+        const auroraNight = THREE.MathUtils.clamp((0.2 - dayFactor) / 0.2, 0, 1);
+        skyFrame.aurora = auroraNight * auroraBiomeBlendRef.current * (0.75 + 0.25 * Math.sin(clock.elapsedTime * 0.05));
+        if (skyFrame.aurora > 0.005) {
             const theme = isBloodMoon ? AURORA_BLOOD_MOON_THEME : (AURORA_PHASE_THEMES[phaseIndex] || AURORA_PHASE_THEMES[0]);
-
+            const drift = isBloodMoon ? 0.3 : 1;
             const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.07);
             const pulse2 = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.03 + 1.2);
-            for (let i = 0; i < auroraMaterials.length; i++) {
-                const mat = auroraMaterials[i];
-                const p = auroraCurtainConfigs[i].phase;
-                const localPulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 0.04 + p);
-                mat.uniforms.uTime.value = clock.elapsedTime;
-                mat.uniforms.uOpacity.value = auroraOpacity * (0.6 + 0.4 * localPulse);
-                // Apply moon-phase color theme with slow per-ribbon variation
-                if (isBloodMoon) {
-                    mat.uniforms.uColorA.value.setHSL(theme[0] + pulse * 0.008 + p * 0.002, theme[1], theme[2]);
-                    mat.uniforms.uColorB.value.setHSL(theme[3] + pulse2 * 0.01 + p * 0.002, theme[4], theme[5]);
-                    mat.uniforms.uColorC.value.setHSL(theme[6] + pulse * 0.012 + p * 0.002, theme[7], theme[8]);
-                } else {
-                    mat.uniforms.uColorA.value.setHSL(theme[0] + pulse * 0.03 + p * 0.008, theme[1], theme[2]);
-                    mat.uniforms.uColorB.value.setHSL(theme[3] + pulse2 * 0.04 + p * 0.006, theme[4], theme[5]);
-                    mat.uniforms.uColorC.value.setHSL(theme[6] + pulse * 0.05 + p * 0.005, theme[7], theme[8]);
-                }
-            }
-
-            auroraGroupRef.current.position.set(camera.position.x, camera.position.y, camera.position.z);
-            auroraGroupRef.current.visible = auroraOpacity > 0.01;
+            skyFrame.auroraLow.setHSL(theme[0] + pulse * 0.03 * drift, theme[1], theme[2]);
+            skyFrame.auroraMid.setHSL(theme[3] + pulse2 * 0.04 * drift, theme[4], theme[5]);
+            skyFrame.auroraHigh.setHSL(theme[6] + pulse * 0.05 * drift, theme[7], theme[8]);
         }
     });
 
     return (
         <>
-            <mesh ref={skyMeshRef} renderOrder={-1000}>
+            <mesh ref={skyMeshRef} renderOrder={SKY_ORDER.dome}>
                 <sphereGeometry args={[450, 48, 32]} />
                 <primitive object={skyMat} attach="material" />
             </mesh>
 
             <group ref={starsRef}>
-                <points renderOrder={-990} material={starMaterial}>
+                <points renderOrder={SKY_ORDER.stars} material={starMaterial}>
                     <bufferGeometry>
                         <bufferAttribute attach="attributes-position" count={starData.positions.length / 3} array={starData.positions} itemSize={3} />
                         <bufferAttribute attach="attributes-phase" count={starData.phases.length} array={starData.phases} itemSize={1} />
@@ -890,63 +604,22 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 </points>
             </group>
 
-            <group ref={auroraGroupRef} visible={false} renderOrder={-988}>
-                {/* Low horizon sweep */}
-                <mesh>
-                    <planeGeometry args={[1, 90, 160, 8]} />
-                    <primitive object={auroraMaterials[0]} />
-                </mesh>
-                {/* Mid-sky ribbon */}
-                <mesh>
-                    <planeGeometry args={[1, 80, 128, 8]} />
-                    <primitive object={auroraMaterials[1]} />
-                </mesh>
-                {/* Opposite horizon */}
-                <mesh>
-                    <planeGeometry args={[1, 85, 140, 8]} />
-                    <primitive object={auroraMaterials[2]} />
-                </mesh>
-                {/* Overhead crossing */}
-                <mesh>
-                    <planeGeometry args={[1, 70, 96, 6]} />
-                    <primitive object={auroraMaterials[3]} />
-                </mesh>
-                {/* Low accent */}
-                <mesh>
-                    <planeGeometry args={[1, 60, 80, 6]} />
-                    <primitive object={auroraMaterials[4]} />
-                </mesh>
-                {/* Mid-high crossing */}
-                <mesh>
-                    <planeGeometry args={[1, 75, 100, 6]} />
-                    <primitive object={auroraMaterials[5]} />
-                </mesh>
-            </group>
-
-            {/* Shooting Star effect attached to camera location but rendered independently */}
-            <group position={camera.position}>
-                <ShootingStar dayFactor={currentDayFactor} isPaused={isPaused} isBloodMoon={bloodMoonActive} />
-            </group>
+            <Aurora />
+            <Meteors />
 
             {/* The original sun and moon: tilted pixel squares facing the camera,
                 each over a soft additive glow drawn just before it. */}
             <group ref={sunGroupRef}>
-                <sprite ref={sunGlowRef} scale={[120, 120, 1]} renderOrder={-980}>
-                    <spriteMaterial map={sunGlowTexture} fog={false} transparent={false} blending={THREE.AdditiveBlending} depthWrite={false} />
-                </sprite>
-                <mesh ref={sunCoreRef} renderOrder={-970}>
+                <sprite ref={sunGlowRef} scale={[120, 120, 1]} renderOrder={SKY_ORDER.glow} material={sunGlowMaterial} />
+                <mesh ref={sunCoreRef} renderOrder={SKY_ORDER.disc} material={sunDiscMaterial}>
                     <planeGeometry args={[40, 40]} />
-                    <meshBasicMaterial map={sunTexture} fog={false} alphaTest={0.5} depthWrite={false} />
                 </mesh>
             </group>
 
             <group ref={moonGroupRef}>
-                <sprite ref={moonGlowRef} scale={[140, 140, 1]} renderOrder={-980}>
-                    <spriteMaterial map={moonGlowTexture} fog={false} transparent={false} blending={THREE.AdditiveBlending} depthWrite={false} />
-                </sprite>
-                <mesh ref={moonCoreRef} renderOrder={-970}>
+                <sprite ref={moonGlowRef} scale={[140, 140, 1]} renderOrder={SKY_ORDER.glow} material={moonGlowMaterial} />
+                <mesh ref={moonCoreRef} renderOrder={SKY_ORDER.disc} material={moonDiscMaterial}>
                     <planeGeometry args={[30, 30]} />
-                    <meshBasicMaterial fog={false} alphaTest={0.5} depthWrite={false} />
                 </mesh>
             </group>
 

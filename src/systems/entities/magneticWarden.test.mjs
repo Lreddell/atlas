@@ -459,8 +459,12 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     // is not passed through raw either: the composite tone maps every pixel.
     assert.match(shaders, /gl_FragColor = depth >= 1\.0 \? texture2D\( tColor, vUv \) : gatherAlongMotion\( depth \);/);
     const dayNight = read('src/components/world/DayNightCycle.tsx');
-    assert.ok((dayNight.match(/#include <tonemapping_fragment>/g) ?? []).length >= 4, 'sky, stars, aurora and shooting stars tone map');
-    assert.doesNotMatch(dayNight, /toneMapped: false|toneMapped=\{false\}/);
+    const aurora = read('src/components/world/sky/Aurora.tsx');
+    const meteors = read('src/components/world/sky/Meteors.tsx');
+    const toneMaps = (source) => (source.match(/#include <tonemapping_fragment>/g) ?? []).length;
+    assert.ok(toneMaps(dayNight) >= 2, 'sky and stars tone map');
+    assert.ok(toneMaps(aurora) >= 1 && toneMaps(meteors) >= 1, 'aurora and meteors tone map');
+    for (const sky of [dayNight, aurora, meteors]) assert.doesNotMatch(sky, /toneMapped: false|toneMapped=\{false\}/);
     // One shared toggle feeds both the main-menu and in-game Video Settings: both
     // are the same PauseMenu, reading and writing the graphics store directly.
     assert.doesNotMatch(app, /motionBlurEnabled=\{/);
