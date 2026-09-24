@@ -73,7 +73,7 @@ test('sprint-flying into a one-block wall stops at it, from any starting point',
 });
 
 test('sweepAxis stops flush at the first obstacle and reports it', () => {
-    const wm = world((x, y, z) => x === 3);
+    const wm = world((x) => x === 3);
     const pos = { x: 0.5, y: 0, z: 0.5 };
     assert.equal(sweepAxis(wm, pos, 'x', 10, PLAYER_WIDTH, PLAYER_HEIGHT), true);
     assert.ok(pos.x + PLAYER_WIDTH / 2 <= 3 && pos.x + PLAYER_WIDTH / 2 > 3 - MAX_MOVE_SLICE, `flush against the block, got x ${pos.x}`);
