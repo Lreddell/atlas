@@ -414,7 +414,7 @@ export class WorldManager {
           
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
               if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
@@ -696,11 +696,8 @@ export class WorldManager {
               continue;
           }
 
-          let m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
-          if (!m) {
-              m = new Uint8Array(c.length);
-              WorldStore.setMetadataData(this.state, job.cx, job.cz, m);
-          }
+          // Absent metadata means none (setMetadataIfAny); the mesher reads it as zeros.
+          const m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
 
           let l = WorldStore.getLightData(this.state, job.cx, job.cz);
           if (!l) {
@@ -1041,8 +1038,9 @@ export class WorldManager {
               const [cx, cz] = key.split(',').map(Number);
               const blocks = WorldStore.getChunkData(this.state, cx, cz);
               const light = WorldStore.getLightData(this.state, cx, cz);
-              const meta = WorldStore.getMetadataData(this.state, cx, cz);
-              if (blocks && light && meta) {
+              if (blocks && light) {
+                  // Saves keep their full layout: a chunk without metadata writes zeros.
+                  const meta = WorldStore.getMetadataData(this.state, cx, cz) ?? new Uint8Array(blocks.length);
                   batch.push({ cx, cz, blocks, light, meta });
                   savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
               }
@@ -1419,7 +1417,7 @@ export class WorldManager {
           const result = WorldGen.generateChunk(cx, cz, { rejectedVaultIds: [...this.rejectedVaultCandidates] });
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
           this.setStage(cx, cz, ChunkStage.GENERATED);
           // We don't mesh here, just ensure data exists for collision/spawn checks
       }

@@ -27,6 +27,28 @@ export function setMetadataData(state: WorldState, cx: number, cz: number, data:
     state.metadata.set(getChunkKey(cx, cz), data);
 }
 
+/** Whether any cell holds metadata (scanned four bytes at a time where aligned). */
+export function hasAnyMetadata(data: Uint8Array): boolean {
+    if (data.byteOffset % 4 === 0 && data.byteLength % 4 === 0) {
+        const words = new Uint32Array(data.buffer, data.byteOffset, data.byteLength / 4);
+        for (let i = 0; i < words.length; i++) if (words[i] !== 0) return true;
+        return false;
+    }
+    for (let i = 0; i < data.length; i++) if (data[i] !== 0) return true;
+    return false;
+}
+
+/**
+ * Keeps a chunk's metadata only if it holds any: most chunks have none (it
+ * records rotations, fluid levels, growth stages), and a column's worth is
+ * 96 KB, a third of a loaded chunk. Readers treat a missing array as all
+ * zeros; writers go through ensureMetadata, which allocates on first use.
+ */
+export function setMetadataIfAny(state: WorldState, cx: number, cz: number, data: Uint8Array | undefined) {
+    if (data && hasAnyMetadata(data)) state.metadata.set(getChunkKey(cx, cz), data);
+    else state.metadata.delete(getChunkKey(cx, cz));
+}
+
 export function ensureMetadata(state: WorldState, cx: number, cz: number): Uint8Array {
     const key = getChunkKey(cx, cz);
     if (!state.metadata.has(key)) {
