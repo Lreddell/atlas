@@ -7,7 +7,61 @@ source of truth; mirror it into the in-game "What's New" popup
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
-## [Unreleased]
+## [v1.3.0-alpha] - Unreleased
+
+### Highlights
+- Atlas's Luminous look brings a unified sky and distance haze, richer day and
+  night lighting, reflective water, softer shadows, restrained glow, and a new
+  Luminous Coast main-menu panorama. The original Classic Atlas panorama remains
+  selectable in Panorama Settings.
+- The Magnetic Warden becomes a three-form fight built around polarity, tower
+  crystals, a movement kit, clearer attack warnings, and a defeat cinematic.
+- Free third person, over-the-shoulder third person, and a detached camera join
+  a jointed player model, custom skins, and more responsive first-person motion.
+- Chunk meshes now combine full-block faces and batch settled chunks by region;
+  compact mesh and world metadata reduce the amount of data kept per chunk.
+
+### Luminous graphics and atmosphere
+- A shared atmosphere drives the sky and fog together so distant terrain and
+  water fade into the horizon. Sunlight warms the day; phased moonlight, stars,
+  auroras, meteors, and a red blood moon give nights their own readable look.
+- Clouds are volumetric and lit by the sky. Water reflects the sky and sun,
+  lava flows and glows, foliage sways, and fireflies, pollen, snow, embers, and
+  boss sparks add motion to the world.
+- Voxel lighting distinguishes face direction and corner shade while caves use
+  their own light data. Torches, crystals, lava, the player, and Vault enemies
+  take part in the same world lighting instead of inheriting daylight in caves.
+- The new render pipeline adds selective bloom, optional god rays, colour
+  grading, anti-aliasing, and stable sun shadows. The Classic visual style
+  remains available alongside Low, Medium, High, and Ultra quality presets;
+  first launch chooses a conservative preset from the detected GPU.
+- Corrected dark cave edges, sunlight leaking through hills, night lighting,
+  cloud visibility, and open-air haze on shaded block faces. Block art now uses
+  the same seeded texture choices on every launch.
+- The new Luminous Coast panorama is bundled as the default menu and loading
+  background. Classic Atlas, the original Alpha 1.0.1 panorama, is still
+  bundled and can be selected in Panorama Settings.
+
+### Animation, skins, and interaction
+- The first-person view responds to walking, sprinting, sneaking, landing, and
+  jumping; held tools and attacks move with it. Mining progresses through ten
+  crack stages with block chips, while dropped items, death, the HUD, and menus
+  have smoother motion.
+- Select a player skin from previewed choices or import a Minecraft skin. The
+  jointed player body animates movement and combat in third person and casts a
+  full shadow even while playing in first person.
+- Boats now seat and animate the player while rowing. Boat aiming and heading
+  follow the intended view in third person.
+
+### Rendering, streaming, and diagnostics
+- Full-block chunk faces are greedily meshed with tiled textures, while settled
+  chunks share render meshes in 4-by-4-chunk regions with tighter bounds.
+- Water and glass faces against unloaded chunks are omitted until their
+  neighbors arrive. Chunk normals use bytes, chunk indices use 16 bits, and
+  metadata is kept only for chunks that contain it.
+- Development QA now exposes render cost, scene and region counts, GPU timing,
+  and JavaScript profiling to help compare graphics settings and render
+  distances.
 
 ### Magnetic Warden rework
 - The Magnetic Warden fight is rebuilt around one rule that every attack and every
@@ -114,6 +168,14 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   the reprojection history, so none of them streak.
 
 ### Fixes
+- Refusing pointer lock no longer causes a fatal input error. Camera and
+  interaction recovery now keep the eye-origin aim ray aligned across the
+  free, shoulder, and detached views.
+- Fast-moving bodies no longer pass through thin floors or walls, and blocks
+  cannot be placed inside entities. The world clock stays in step with the
+  player during heavy load.
+- The Warden's Charge lane is shown in white for a clearer warning. Boss lights
+  use the shared light list so their arrival does not rebuild world shaders.
 - Desktop app: Ctrl+W, Ctrl+R and Ctrl+Q no longer close, reload or quit the
   window mid-game (Ctrl is sprint, W forward, Q drop). The keys still reach the
   game.
@@ -125,6 +187,7 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
   no longer deletes them; they come back where they were, with their despawn
   timer where it left off. This includes the Magnetic Warden's loot when you
   quit right after the kill, before it has landed.
+- Updated the Bell Titan and Magnetic Warden music cues for their fights.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

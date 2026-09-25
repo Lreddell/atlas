@@ -110,22 +110,28 @@ import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
 import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
+import {
+    BUILT_IN_MENU_PANORAMAS,
+    DEFAULT_MENU_PANORAMA,
+    MENU_PANORAMA_LIBRARY_KEY,
+    MENU_PANORAMA_PATH_KEY,
+    getBuiltInMenuPanorama,
+    readStoredMenuPanoramaPath,
+} from './data/menuPanoramas';
 import { getSpawnSearchCenter } from './utils/noise';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
 type RenderedChunk = { cx: number; cz: number };
 
 const MENU_BACKGROUND_MODE_KEY = 'atlas.menu.backgroundMode';
-const MENU_PANORAMA_PATH_KEY = 'atlas.menu.panoramaPath';
-const MENU_PANORAMA_LIBRARY_KEY = 'atlas.menu.panoramaLibrary';
 const MENU_PANORAMA_DATA_KEY = 'atlas.menu.panoramaDataUrl';
 const MENU_PANORAMA_BLUR_KEY = 'atlas.menu.panoramaBlur';
 const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
 const PANORAMA_CAPTURE_KEY = 'F8';
 const WEB_PANORAMA_PREFIX = 'web:';
-const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
-const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
+const DEFAULT_MENU_PANORAMA_URL = DEFAULT_MENU_PANORAMA.url;
+const DEFAULT_PANORAMA_ID = DEFAULT_MENU_PANORAMA.id;
 const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
 /**
  * Resolve an item by its display name for the chat commands. Spaces and
@@ -422,10 +428,7 @@ const App: React.FC = () => {
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
     const [menuBackgroundMode, setMenuBackgroundMode] = useState<'dirt' | 'panorama'>('panorama');
-  const [menuPanoramaPath, setMenuPanoramaPath] = useState<string | null>(() => {
-      if (typeof window === 'undefined') return null;
-      return window.localStorage.getItem(MENU_PANORAMA_PATH_KEY);
-  });
+  const [menuPanoramaPath, setMenuPanoramaPath] = useState<string | null>(readStoredMenuPanoramaPath);
   const [menuPanoramaLibrary, setMenuPanoramaLibrary] = useState<string[]>(() => {
       if (typeof window === 'undefined') return [];
       try {
@@ -439,6 +442,10 @@ const App: React.FC = () => {
   });
         const [menuPanoramaDataUrl, setMenuPanoramaDataUrl] = useState<string | null>(() => {
             if (typeof window === 'undefined') return DEFAULT_MENU_PANORAMA_URL;
+            const savedPath = readStoredMenuPanoramaPath();
+            if (!savedPath) return DEFAULT_MENU_PANORAMA_URL;
+            const builtIn = getBuiltInMenuPanorama(savedPath);
+            if (builtIn) return builtIn.url;
             return window.localStorage.getItem(MENU_PANORAMA_DATA_KEY) || DEFAULT_MENU_PANORAMA_URL;
         });
         const [menuPanoramaBlur, setMenuPanoramaBlur] = useState<number>(() => {
@@ -1773,7 +1780,9 @@ const App: React.FC = () => {
       }
       setMenuPanoramaPath(filePath);
       setMenuBackgroundMode('panorama');
-      setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
+      if (!getBuiltInMenuPanorama(filePath)) {
+          setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
+      }
   }, []);
 
   const removePanoramaFromLibrary = useCallback((filePath: string) => {
@@ -2395,19 +2404,6 @@ const App: React.FC = () => {
       }
   }, [menuPanoramaPath]);
 
-  // On first launch (no saved panorama), seed the default built-in panorama path
-  useEffect(() => {
-      if (!isElectron) return;
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.getDefaultPanoramaPath) return;
-      if (window.localStorage.getItem(MENU_PANORAMA_PATH_KEY)) return;
-      desktopApi.getDefaultPanoramaPath().then((result: { filePath: string | null }) => {
-          if (result?.filePath) {
-              setMenuPanoramaPath(result.filePath);
-          }
-      });
-  }, [isElectron]);
-
   useEffect(() => {
       if (typeof window === 'undefined') return;
       window.localStorage.setItem(MENU_PANORAMA_LIBRARY_KEY, JSON.stringify(menuPanoramaLibrary));
@@ -2528,12 +2524,14 @@ const App: React.FC = () => {
           }
       };
 
-      if (!menuPanoramaPath) {
+      const builtIn = getBuiltInMenuPanorama(menuPanoramaPath ?? DEFAULT_PANORAMA_ID);
+      if (builtIn) {
           revokeCurrentWebObjectUrl();
-          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
+          setMenuPanoramaDataUrl(builtIn.url);
           setMenuPanoramaFaceDataUrls(null);
           return;
       }
+      if (!menuPanoramaPath) return;
 
       if (!isElectron) {
           if (menuPanoramaPath.startsWith(WEB_PANORAMA_PREFIX)) {
@@ -3201,7 +3199,10 @@ const App: React.FC = () => {
               hasPanoramaBackground={!!menuPanoramaDataUrl}
               onToggleBackground={toggleMenuBackgroundMode}
               panoramaCaptureHotkey={PANORAMA_CAPTURE_KEY}
-              panoramaEntries={[...menuPanoramaLibrary, DEFAULT_PANORAMA_ID]}
+              panoramaEntries={[
+                  ...menuPanoramaLibrary.filter((entry) => !getBuiltInMenuPanorama(entry)),
+                  ...BUILT_IN_MENU_PANORAMAS.map((panorama) => panorama.id),
+              ]}
               activePanoramaPath={menuPanoramaPath ?? DEFAULT_PANORAMA_ID}
               defaultPanoramaId={DEFAULT_PANORAMA_ID}
               onUsePanorama={setActivePanorama}

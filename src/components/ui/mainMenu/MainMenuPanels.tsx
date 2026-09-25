@@ -1,5 +1,6 @@
 import React from 'react';
 import { APP_DISPLAY_VERSION } from '../../../constants';
+import { getBuiltInMenuPanorama } from '../../../data/menuPanoramas';
 import type { WorldMetadata } from '../../../systems/world/WorldStorage';
 import type { WorldGenPresetEntry } from '../../../systems/world/worldGenPresets';
 import type { GameMode } from '../../../types';
@@ -226,8 +227,9 @@ interface PanoramaPanelProps {
     onBack: () => void;
 }
 
-const getPanoramaLabel = (filePath: string, defaultPanoramaId: string) => {
-    if (filePath === defaultPanoramaId) return 'Default Panorama';
+const getPanoramaLabel = (filePath: string) => {
+    const builtIn = getBuiltInMenuPanorama(filePath);
+    if (builtIn) return builtIn.name;
     if (filePath.startsWith('web:')) return filePath.slice(4) || 'Browser Panorama';
     const normalized = filePath.replace(/\\/g, '/');
     const chunks = normalized.split('/');
@@ -275,15 +277,16 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                     {panoramaEntries.map((filePath) => {
                         const isActive = activePanoramaPath === filePath;
                         const isDefault = filePath === defaultPanoramaId;
+                        const builtIn = getBuiltInMenuPanorama(filePath);
                         return (
                             <div
                                 key={filePath}
                                 className={`mb-1 flex items-center justify-between gap-3 border-2 p-3 ${isActive ? 'border-white bg-white/10' : 'border-transparent bg-black/40'}`}
                             >
                                 <div className="min-w-0">
-                                    <div className="truncate font-bold text-[#eee]">{getPanoramaLabel(filePath, defaultPanoramaId)}</div>
+                                    <div className="truncate font-bold text-[#eee]">{getPanoramaLabel(filePath)}{isDefault ? ' (Default)' : ''}</div>
                                     <div className="truncate text-[10px] text-gray-400">
-                                        {isDefault ? 'Built-in default panorama' : filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}
+                                        {builtIn ? builtIn.description : filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 gap-2">
@@ -295,7 +298,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                                         small
                                         variant="primary"
                                     />
-                                    {!isDefault && (
+                                    {!builtIn && (
                                         <MenuButton
                                             label="Delete"
                                             onClick={() => onDeletePanoramaFromDisk(filePath)}
