@@ -7,187 +7,97 @@ source of truth; mirror it into the in-game "What's New" popup
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
-## [v1.3.0-alpha] - Unreleased
+## [v1.3.0-alpha]: 2026-09-25 — Light & Polarity
+
+A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and frame your adventure.
 
 ### Highlights
-- Atlas's Luminous look brings a unified sky and distance haze, richer day and
-  night lighting, reflective water, softer shadows, restrained glow, and a new
-  Luminous Coast main-menu panorama. The original Classic Atlas panorama remains
-  selectable in Panorama Settings.
-- The Magnetic Warden becomes a three-form fight built around polarity, tower
-  crystals, a movement kit, clearer attack warnings, and a defeat cinematic.
-- Free third person, over-the-shoulder third person, and a detached camera join
-  a jointed player model, custom skins, and more responsive first-person motion.
-- Chunk meshes now combine full-block faces and batch settled chunks by region;
-  compact mesh and world metadata reduce the amount of data kept per chunk.
+- Explore the Luminous visual style with richer skies, readable nights, reflective water, animated foliage, and new lighting and shadows.
+- Face the Magnetic Warden, Aegis, and Storm in a rebuilt three-form encounter driven by polarity and tower crystals.
+- Dodge, dash, and launch with a new movement kit, timed weapon attacks, and clearer combat feedback.
+- Play in free or over-the-shoulder third person, set up a detached camera, and choose or import your own skin.
+- Enjoy lighter chunk rendering, saved ground items, smoother menus, and the new Luminous Coast panorama.
 
-### Luminous graphics and atmosphere
-- A shared atmosphere drives the sky and fog together so distant terrain and
-  water fade into the horizon. Sunlight warms the day; phased moonlight, stars,
-  auroras, meteors, and a red blood moon give nights their own readable look.
-- Clouds are volumetric and lit by the sky. Water reflects the sky and sun,
-  lava flows and glows, foliage sways, and fireflies, pollen, snow, embers, and
-  boss sparks add motion to the world.
-- Voxel lighting distinguishes face direction and corner shade while caves use
-  their own light data. Torches, crystals, lava, the player, and Vault enemies
-  take part in the same world lighting instead of inheriting daylight in caves.
-- The new render pipeline adds selective bloom, optional god rays, colour
-  grading, anti-aliasing, and stable sun shadows. The Classic visual style
-  remains available alongside Low, Medium, High, and Ultra quality presets;
-  first launch chooses a conservative preset from the detected GPU.
-- Corrected dark cave edges, sunlight leaking through hills, night lighting,
-  cloud visibility, and open-air haze on shaded block faces. Block art now uses
-  the same seeded texture choices on every launch.
-- The new Luminous Coast panorama is bundled as the default menu and loading
-  background. Classic Atlas, the original Alpha 1.0.1 panorama, is still
-  bundled and can be selected in Panorama Settings.
+### Luminous World & Atmosphere
+- A shared sky and distance haze blend terrain and water into the horizon. Warm sunlight, cool shade, moon phases, stars, auroras, meteors, and blood moons give each time of day its own look.
+- Clouds have solid volume and sky lighting, remain visible from every direction, and no longer disappear into the terrain's render-distance haze.
+- Water reflects the sky and sun; lava flows and glows. Wind moves foliage, while fireflies, pollen, snow, embers, and magnetic sparks bring movement to the world.
+- Torches, crystals, lava, blocks, the player, and Vault enemies share more consistent lighting. Caves stay dark and readable instead of inheriting daylight.
+- Improved sun shadows and open-air haze, fixed light leaking through hills and glowing night edges, and made block texture variations consistent between launches.
 
-### Animation, skins, and interaction
-- The first-person view responds to walking, sprinting, sneaking, landing, and
-  jumping; held tools and attacks move with it. Mining progresses through ten
-  crack stages with block chips, while dropped items, death, the HUD, and menus
-  have smoother motion.
-- Select a player skin from previewed choices or import a Minecraft skin. The
-  jointed player body animates movement and combat in third person and casts a
-  full shadow even while playing in first person.
-- Boats now seat and animate the player while rowing. Boat aiming and heading
-  follow the intended view in third person.
+### Video Settings
+- Choose Low, Medium, High, or Ultra graphics quality, then adjust individual options. First launch selects a conservative preset based on the detected GPU.
+- Switch between Luminous and Classic visual styles. Classic offers a simpler look while keeping the new graphics controls.
+- Presets balance clouds, reflections, bloom, god rays, ambient particles, and anti-aliasing. Video Settings also lets you adjust resolution, mipmaps, shadow style, and chunk fade.
+- Motion Blur affects only the 3D scene, leaving the HUD and menus sharp. Ultra enables it by default; other presets leave it off. It stays restrained and resets across camera cuts, teleports, respawns, and panorama captures.
+- View Bobbing can be toggled in Video Settings. Fixed motion blur darkening the scene and improved shadow stability as the camera moves.
+- Pixel is the default shadow style for every quality preset. Pixel shadows use Low quality or can be switched off; Medium and High remain available with Soft shadows.
+- The default render distance is now 16 chunks. Existing saved render-distance choices are preserved.
+- Removed the custom cloud-image upload control from Video Settings.
 
-### Rendering, streaming, and diagnostics
-- Full-block chunk faces are greedily meshed with tiled textures, while settled
-  chunks share render meshes in 4-by-4-chunk regions with tighter bounds.
-- Water and glass faces against unloaded chunks are omitted until their
-  neighbors arrive. Chunk normals use bytes, chunk indices use 16 bits, and
-  metadata is kept only for chunks that contain it.
-- Development QA now exposes render cost, scene and region counts, GPU timing,
-  and JavaScript profiling to help compare graphics settings and render
-  distances.
+### The Magnetic Warden
+- The encounter now unfolds across three distinct forms: Warden, Aegis, and Storm. Early forms have more health and tighter attack pacing, and the boss keeps pressure across the arena.
+- Polarity drives the fight: same polarity repels, opposite attracts. Matching bolts bounce off active Polarity Boots; opposing the exposed boss lets your strikes land.
+- Tower crystals shield every form. Break one crystal in Form I, two in Form II, and all four relit crystals in Form III. Shields do not expire on their own.
+- Lit tower faces follow the boss's polarity. Climb with the opposite polarity, then press R during the warning window when a tower flips to keep your grip; missing it shocks you away.
+- Form I mixes volleys, Lash, Charge, and a Draw into a Repel burst. Lash and Charge develop delayed follow-up swings, and white-marked melee attacks must be avoided regardless of polarity.
+- The Aegis follows tower climbers with aimed volleys and side sweeps, with each crystal powering a different pattern. Breaking both brings it down onto dry ground for a damage window; tracking slams also threaten the platform.
+- The Storm combines timed polarity flips, expanding rings, spiral bolts, double beats, and tracking slams. The slam marker turns white when its target locks; the central impact hurts regardless of polarity.
+- Breaking a shield or landing a Magnet Slam creates a clear opening. The final stretch accelerates the Storm's rhythm and sends its orbiting shards into the fight.
+- Removed the old Flux burst, burning tethers, projectile parry, and unannounced polarity feint. Contact with the boss's body alone no longer deals damage.
+- Shield beams, charged towers, phase markers, an off-screen boss compass, and clearer white Charge lanes help track the encounter. Ground warnings match the attack areas, and unnecessary projectile target circles are gone.
+- A new defeat cinematic follows the Warden's collapse and the towers going dark. Press Space to skip it.
 
-### Magnetic Warden rework
-- The Magnetic Warden fight is rebuilt around one rule that every attack and every
-  counter derives from: same polarity repels, opposite attracts. Match its colour
-  and its bolts bounce off your boots; oppose it and you are drawn in and your
-  strikes land. Its ground rings launch a matching polarity and pin the opposite.
-- Every form is shielded by its tower crystals, and crystal power never fades: the
-  only way through a shield is to climb the towers and break every crystal of the
-  form (one for the Warden, two for the Aegis, the last for the Storm). Each lit
-  tower carries the Warden's polarity on its climb faces, so you oppose it to
-  cling and climb, and when the Warden swaps colour its towers swap with it. A
-  flux window opens on the towers before each flip: flip (R) inside it to hold
-  on, or the settled tower shocks you off toward the platform.
-- A new one-button kit on `C`, resolved by the same rule: a dodge roll with
-  invulnerability frames (bolts, rings, lunges and contact pass through), a
-  magnetic dash onto an opposite magnet face or into an opposed, exposed Warden
-  (which arms a Magnet Slam: the next strike lands at two and a half times damage
-  and staggers it), a repel leap away from a matched Warden, and a magnetic
-  launch off a wall. Launches now arc far enough to reach a tower's landing pool
-  from high on its face.
-- The roll needs no gear, works in mid-air (steering with the movement keys, the
-  way back to the platform after a launch), chains straight into another roll if
-  re-pressed at the end of one, and cancels fall damage outright on a landing
-  rolled through. Presses are buffered across physics substeps, so a roll never
-  silently vanishes because the press landed between ticks. Its cooldown shows
-  as a ring on the crosshair, which flashes red when a press cannot be answered.
-- Third person, anywhere in a world, in two flavours on a voxel-aware spring arm.
-  `F5` is the free view: the body keeps its own heading and runs whichever way
-  you point while the camera orbits, so you can watch a telegraph coming from
-  behind while still running clear of it, and every direction sprints. `F6` welds
-  the body to the camera, over the shoulder. Both come with a fully rebuilt
-  player body: jointed arms and legs with real elbows and knees, a chest that
-  twists against the hips, damped
-  blending so poses never snap, and clips for idle, walk, sprint, sneak, rise,
-  fall, landing squash, the dodge roll (a true somersault about the axis across
-  the roll), the magnetic dash, the repel leap, the wall climb and the attack
-  swing. Every aim ray still starts from the eye toward the crosshair, so
-  blocks, melee and the crossbow behave identically in both views. Every boss
-  fight opens in the free view and hands the previous view back when it ends.
-- A defeat cinematic for the Warden: the camera cuts in low as it buckles, orbits
-  out while its core cracks apart, and rises over the arena through the white
-  blow-out as the towers go dark. Space skips it.
-- The Warden now fights in three forms with distinct rules. Form I, the Warden,
-  duels on the platform with a five-bolt Volley, a close Lash, a Draw that drags
-  an opposed player in before a Repel burst, a Charge down a marked lane, and
-  telegraphed polarity swaps; while shielded it holsters the Draw and only fires
-  honest, sidesteppable volleys at a climber.
-- Form II, the Aegis, shatters into a hovering core and lights two towers. It
-  contests whichever tower you climb, drifting out over that tower's landing pool
-  to fire down at you (and into dash range from the upper climb). Break both
-  crystals and it is yanked down into the pool below the felled tower, reeling
-  for a long punish window, then limps low. Plunges mark the floor, drop, and
-  sweep a polarity ring.
-- Form III, the Storm, holds the final tower and lands behind an orbiting shard
-  barrier, flipping polarity on a beat: a contracting countdown ring shows the
-  coming colour, the tower flips with every beat, every beat fires a ring, a
-  quiet recoil window follows, and spiral bolts stream between beats. Every
-  fourth beat is a double beat. Below twelve percent the beat quickens and the
-  shards themselves fly.
-- Removed the Flux meter and its burst, the burning tethers, the parry bolt, the
-  four-tower crystal gauntlet at the start, the 50-block homing slam, and the
-  unreactable polarity feint. Its body no longer hurts by touch; every hit comes
-  from a telegraphed attack.
-- The fight logic lives in a deterministic, unit-tested state machine
-  (`magneticWardenCore`) with every timing in one table, driven in-world by an
-  entity brain (`MagneticWardenEncounter`); the kit (`playerMotion`), the view
-  rig (`viewRig`) and the tower flux rule (`climbSurfaces`) are pure, tested
-  modules too. Ground telegraphs share their geometry with the hit tests.
-- New presentation: crystal-to-core shield beams, charged tower columns that
-  flicker for the whole flux window, the Charge lane, an off-screen boss compass,
-  a shield readout and phase markers on the boss bar, and new sound slots for the
-  kit and the towers documented in the sound pack folder. Combat feedback (the
-  dodge cooldown ring, the tower flip warning, dodged and shocked flashes) sits
-  around the crosshair, and the polarity indicator moved to the bottom-right
-  corner so nothing overlaps the hotbar's item name or the hearts.
+### Combat & Magnetic Movement
+- Press C to dodge roll without special gear, including in mid-air. Rolls give brief invulnerability and protect against fall damage when you roll through the landing.
+- Rolls now use stamina and have a recovery period. Combat readouts show readiness, stamina, and cooldowns, while a failed input flashes feedback near the crosshair.
+- With active Polarity Boots, C also performs a dash toward an opposite magnet face, a repel leap away from a matching Warden, or a launch off a wall toward the landing pools.
+- Dash into an opposed, exposed Warden to ready a Magnet Slam: your next strike deals 2.5 times damage and staggers it.
+- Melee attacks have weapon-specific windup, hit timing, and recovery, with matching held-item motion. Weapon tooltips expose useful timing information.
+- Improved buffered dodge inputs, interaction timing, and input cleanup so actions are less likely to disappear between updates or remain stuck after leaving a menu.
+- Polarity, tower warnings, attack readiness, and dodge feedback have clearer placement without covering the hotbar item name or health display.
 
-### Low health
-- Dropping to four hearts opens a low-health state: a heartbeat that quickens as
-  you weaken (about 72 BPM at 8 HP up to 114 at 1) and a heavy crimson
-  screen-edge pulse beating on the same timing. It clears once you heal back to
-  five hearts, so regeneration around the threshold does not start and stop it
-  every tick.
-- The red pulse renders *under* the polarity rim, so a Warden fight stays readable:
-  blue still means negative polarity even while you are bleeding.
-- Music modifiers now compose in semitone space instead of overriding each other.
-  A night track is -1 and the Warden's final phase +1, so the Storm at night lands
-  back on the authored pitch rather than cancelling the night treatment outright.
-  Both the streaming decks and the decoded authored loops follow the composed rate
-  — the authored loops were previously stuck at 1.0 while everything else shifted.
-- The heartbeat is an authored cue (`entity.player.heartbeat`); see
-  `public/assets/rvx/sounds/player/README.txt` for the slot. Without the file the
-  cue is silent and everything else still works.
+### Cameras, Skins & Player Animation
+- F5 toggles free third person: orbit the camera while your character moves independently, with sprinting available in every direction.
+- F6 toggles over-the-shoulder third person, keeping the body aligned with the camera. Both views use a camera arm that responds to nearby blocks.
+- F7 cycles the detached camera: fly it into position, press again to park it and control your character, then press again to return to the player view.
+- Boss fights start in free third person and restore your previous view afterward. Camera transitions, cinematic recovery, and detached-camera cleanup are more reliable.
+- Choose a skin from the preview carousel or import a Minecraft skin. The jointed player model shows held items, equipped armor, eating, attacks, climbing, rolls, and magnetic moves.
+- First-person hands and the camera respond to walking, sprinting, sneaking, jumping, and landing. Your full body casts a shadow even in first person.
+- Mining uses ten crack stages and flying block chips. Dropped items, deaths, HUD changes, and menu transitions have smoother animation.
+- Boat passengers now sit and row, with corrected aiming and boat heading in third person.
+- Improved eye-based aiming, block selection outlines, and interaction alignment across camera modes.
 
-### Video
-- Motion Blur, off by default, in Video Settings from both the main menu and the
-  pause menu. It is a scene-only camera-reprojection pass: the 3D world blurs
-  along its actual screen-space motion, a still camera produces an identical
-  image, and the HUD — crosshair, hearts, hotbar, boss bar, menus, both vignettes
-  — is never touched, because the effect lives entirely inside the WebGL canvas.
-- Restrained on purpose: a 120-degree shutter rather than the cinematic 180, at
-  0.35 strength, capped at 1.8% of screen width and normalised to 60 FPS so a low
-  frame rate does not turn into long trails. Camera cuts (view changes, teleports,
-  respawn, cinematics, the detached camera, FOV changes, panorama capture) reset
-  the reprojection history, so none of them streak.
+### Menus & Panoramas
+- Luminous Coast is the new bundled default for menu and loading backgrounds. The original panorama remains available as Classic Atlas in Panorama Settings.
+- Keep using your own captured or imported panoramas, with named built-in choices that are protected from deletion.
+- The short Video Settings fade now also appears on matching menu pages, tutorial and editor tabs, creative inventory categories, loading panels, and dialogs. These fades respect reduced-motion preferences.
+- What's New now includes this full update, with older releases still selectable. Its panel and version buttons use the same square, beveled styling as the rest of the menus.
 
-### Fixes
-- Refusing pointer lock no longer causes a fatal input error. Camera and
-  interaction recovery now keep the eye-origin aim ray aligned across the
-  free, shoulder, and detached views.
-- Fast-moving bodies no longer pass through thin floors or walls, and blocks
-  cannot be placed inside entities. The world clock stays in step with the
-  player during heavy load.
-- The Warden's Charge lane is shown in white for a clearer warning. Boss lights
-  use the shared light list so their arrival does not rebuild world shaders.
-- Desktop app: Ctrl+W, Ctrl+R and Ctrl+Q no longer close, reload or quit the
-  window mid-game (Ctrl is sprint, W forward, Q drop). The keys still reach the
-  game.
-- Creative mode plays the normal survival music (biome and cave tracks) while the
-  creative music folder is empty, instead of going silent.
-- Items near your body are no longer pulled toward you while you are dead, and
-  can't be picked up in the first moments after respawning.
-- Items lying on the ground are now saved with the world. Quitting or reloading
-  no longer deletes them; they come back where they were, with their despawn
-  timer where it left off. This includes the Magnetic Warden's loot when you
-  quit right after the kill, before it has landed.
-- Updated the Bell Titan and Magnetic Warden music cues for their fights.
+### Sound & Low Health
+- At four hearts or less, a heartbeat and crimson screen-edge pulse warn that health is low. The heartbeat speeds up as health falls and clears after you recover to five hearts.
+- The low-health effect stays beneath the polarity rim so the boss's red and blue cues remain readable. Low health no longer changes the music pitch.
+- Updated Magnetic Warden and Bell Titan fight music, stabilized encounter music transitions, and corrected how night and boss-phase pitch changes combine.
+- Creative mode falls back to normal biome and cave music when its dedicated music folder is empty.
+- Added feedback sounds for magnetic movement and tower events.
+
+### Performance & Memory
+- Adjacent full-block faces are combined into larger surfaces while preserving tiled textures, reducing the geometry needed to draw the world.
+- Settled chunks are drawn together in small regions with tighter visibility bounds, reducing repeated rendering work.
+- Chunk geometry uses more compact data, and empty chunks no longer reserve unused block metadata. This reduces memory overhead as more chunks are loaded.
+- Water and glass no longer build unnecessary faces against chunks that have not loaded yet.
+- Boss lighting uses the shared world light system to avoid rebuilding terrain shaders when an encounter starts.
+- Expanded development performance diagnostics make it easier to investigate slowdowns at different quality settings and render distances.
+
+### Saves & Gameplay Fixes
+- Items on the ground now save with the world, including their remaining despawn time. Reloading no longer deletes dropped supplies or boss loot that has not yet landed.
+- Items stop being pulled toward dead players and cannot be collected in the first moments after respawning.
+- Fast-moving bodies no longer pass through thin floors and walls, and blocks cannot be placed inside entities.
+- The world clock now stays in step with player simulation under heavy load.
+- Refusing or losing mouse capture no longer causes a fatal input error, and camera recovery avoids sudden look changes.
+- Fixed recovery after cinematics and panorama capture, including returning control to the correct camera mode.
+- Desktop Ctrl+W, Ctrl+R, and Ctrl+Q no longer close, reload, or quit the game during movement and item dropping.
+- In-game overlays now share the HUD's display layer so combat readouts and menu effects stack consistently.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

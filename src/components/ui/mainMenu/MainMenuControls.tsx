@@ -9,6 +9,7 @@ interface MenuButtonProps {
     tooltip?: string;
     small?: boolean;
     variant?: 'normal' | 'primary' | 'danger';
+    pressed?: boolean;
 }
 
 export const MenuButton: React.FC<MenuButtonProps> = ({
@@ -19,12 +20,14 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
     tooltip,
     small,
     variant = 'normal',
+    pressed,
 }) => {
     const [isHovered, setIsHovered] = useState(false);
 
     let colors = 'bg-[#8b8b8b] border-white border-b-[#373737] border-r-[#373737] text-white';
     if (variant === 'primary') colors = 'bg-[#8b8b8b] border-white border-b-[#373737] border-r-[#373737] text-white';
     if (variant === 'danger') colors = 'bg-red-700 border-red-400 border-b-red-950 border-r-red-950 text-white';
+    if (pressed) colors = 'bg-[#555] border-[#373737] border-b-white border-r-white text-yellow-200';
 
     return (
         <div
@@ -38,6 +41,7 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
             <button
                 disabled={disabled}
                 aria-disabled={disabled}
+                aria-pressed={pressed}
                 onClick={(event) => {
                     event.stopPropagation();
                     if (!disabled && onClick) {

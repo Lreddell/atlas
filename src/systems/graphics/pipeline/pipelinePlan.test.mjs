@@ -17,7 +17,7 @@ test('Low draws straight to the canvas; every other preset runs the pipeline', (
     for (const preset of GRAPHICS_PRESET_ORDER.filter(id => id !== 'low')) {
         const plan = planPipeline(configFor(preset), caps);
         assert.equal(plan.active, true, preset);
-        assert.equal(plan.motionBlur, false, `${preset}: motion blur stays off by default`);
+        assert.equal(plan.motionBlur, preset === 'ultra', `${preset}: only Ultra enables motion blur by default`);
         assert.equal(wantsContextAntialias(configFor(preset), plan), false, `${preset}: the pipeline brings its own AA`);
     }
 });
@@ -45,11 +45,13 @@ test('anti-aliasing: MSAA on the HDR target when available, FXAA otherwise', () 
 
 test('Classic runs no Luminous effects, and a pipeline it needs (motion blur) leaves colours ungraded', () => {
     const classic = (preset, overrides = {}) => resolveGraphicsConfig({ version: 1, preset, overrides, preferences: { visualStyle: 'classic' }, detected: false });
-    const ultra = planPipeline(classic('ultra'), caps);
-    assert.equal(ultra.active, false, 'no bloom or god rays, so no pipeline');
-    assert.equal(wantsContextAntialias(classic('ultra'), ultra), true);
-    const blurred = planPipeline(classic('ultra', { motionBlur: true }), caps);
+    const unblurred = classic('ultra', { motionBlur: false });
+    const ultra = planPipeline(unblurred, caps);
+    assert.equal(ultra.active, false, 'no bloom, god rays or blur, so no pipeline');
+    assert.equal(wantsContextAntialias(unblurred, ultra), true);
+    const blurred = planPipeline(classic('ultra'), caps);
     assert.equal(blurred.active, true);
+    assert.equal(blurred.motionBlur, true, 'Ultra enables blur in Classic as well');
     assert.equal(blurred.neutralGrade, true);
     assert.equal(blurred.bloom, 'off');
     assert.equal(planPipeline(configFor('ultra'), caps).neutralGrade, false);

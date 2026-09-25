@@ -1,14 +1,12 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
-import { setCloudTexture } from '../world/cloudState';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
 import { SkinsMenu } from './SkinsMenu';
-import { UiNotice, type UiNoticeState } from './UiNotice';
 import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
@@ -23,6 +21,7 @@ const QUALITY_LABELS: Record<GraphicsQuality, string> = {
 };
 const SHADOW_LABELS: Record<ShadowQuality, string> = { off: 'OFF', low: 'Low', medium: 'Medium', high: 'High' };
 const SHADOW_CYCLE: readonly ShadowQuality[] = ['off', 'low', 'medium', 'high'];
+const PIXEL_SHADOW_CYCLE: readonly ShadowQuality[] = ['off', 'low'];
 const PIXEL_RATIO_CYCLE: readonly GraphicsConfig['maxPixelRatio'][] = [1, 1.5, 2];
 const VISUAL_STYLE_LABELS: Record<VisualStyle, string> = { luminous: 'Luminous', classic: 'Classic' };
 const SHADOW_STYLE_LABELS: Record<ShadowStyle, string> = { soft: 'Soft', pixel: 'Pixel' };
@@ -146,9 +145,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const graphics = useGraphicsSettings();
     const gfx = graphics.config;
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
-    const [notice, setNotice] = useState<UiNoticeState | null>(null);
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
-    const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Audio State
     const [volumes, setVolumes] = useState<Record<string, number>>({
@@ -208,24 +205,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const updateNightSlowdown = (val: boolean) => {
         setNightSlowdown(val);
         musicController.setNightSlowdownEnabled(val);
-    };
-
-    const handleCloudUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            if (evt.target?.result) {
-                setCloudTexture(evt.target.result as string);
-                soundManager.play("ui.click");
-                setNotice({ type: 'success', message: 'Cloud texture updated.' });
-            } else {
-                setNotice({ type: 'error', message: 'Failed to read the cloud texture.' });
-            }
-        };
-        reader.onerror = () => setNotice({ type: 'error', message: 'Failed to read the cloud texture.' });
-        reader.readAsDataURL(file);
-        e.target.value = '';
     };
 
     // Main Menu
@@ -312,7 +291,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
                 <MenuButton
                     label={`Shadows: ${SHADOW_LABELS[gfx.shadows]}`}
-                    onClick={() => graphicsSettings.setOption('shadows', nextInCycle(SHADOW_CYCLE, gfx.shadows))}
+                    onClick={() => graphicsSettings.setOption('shadows', nextInCycle(gfx.shadowStyle === 'pixel' ? PIXEL_SHADOW_CYCLE : SHADOW_CYCLE, gfx.shadows))}
                     width="w-64"
                 />
                 <MenuButton
@@ -338,15 +317,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     onChange={(on) => graphicsSettings.setOption('mipmaps', on)} />
                 <MCToggle label="Chunk Fade-In" value={gfx.chunkFade} width="w-64"
                     onChange={(on) => graphicsSettings.setOption('chunkFade', on)} />
-                {/* Scene only: the 3D world blurs, the HUD never does. Off in every preset. */}
+                {/* Scene only: the 3D world blurs, the HUD never does. Enabled by Ultra. */}
                 <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-64"
                     onChange={(on) => graphicsSettings.setOption('motionBlur', on)} />
                 <MCToggle label="View Bobbing" value={gfx.viewBobbing} width="w-64"
                     onChange={(on) => graphicsSettings.setOption('viewBobbing', on)} />
 
-                {/* Custom Environment */}
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCloudUpload} />
-                <MenuButton label="Load Custom Clouds..." onClick={() => fileInputRef.current?.click()} width="w-64" disabled={gfx.clouds === 'off'} />
             </div>
 
             <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
@@ -444,7 +420,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
         >
-            <UiNotice notice={notice} onDismiss={() => setNotice(null)} />
             {isMainMenu && showMenuBackground && (
                 <MenuPanoramaBackground
                     backgroundMode={backgroundMode}

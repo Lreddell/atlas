@@ -16,8 +16,8 @@ test('every preset defines every option, and quality rises monotonically', () =>
     const shadowRank = ['off', 'low', 'medium', 'high'];
     const ranks = GRAPHICS_PRESET_ORDER.map(id => shadowRank.indexOf(GRAPHICS_PRESETS[id].shadows));
     assert.deepEqual([...ranks].sort((a, b) => a - b), ranks);
-    // Motion blur is a taste option: off in every preset, only the player turns it on.
-    for (const id of GRAPHICS_PRESET_ORDER) assert.equal(GRAPHICS_PRESETS[id].motionBlur, false, id);
+    // Ultra enables motion blur; the other presets leave it off.
+    for (const id of GRAPHICS_PRESET_ORDER) assert.equal(GRAPHICS_PRESETS[id].motionBlur, id === 'ultra', id);
     // Low is the pre-overhaul cost: no shadows, bloom, god rays or ambient particles.
     assert.equal(GRAPHICS_PRESETS.low.shadows, 'off');
     assert.equal(GRAPHICS_PRESETS.low.bloom, 'off');
@@ -66,6 +66,29 @@ test('preferences sit beside the presets and never make the quality custom', () 
     // Back to Luminous, the preset's effects return.
     state = withOption(withPreset(state, 'high'), 'visualStyle', 'luminous');
     assert.equal(resolveGraphicsConfig(state).bloom, GRAPHICS_PRESETS.high.bloom);
+});
+
+test('pixel shadows default across presets and stay Low or Off after saved overrides', () => {
+    for (const preset of GRAPHICS_PRESET_ORDER) {
+        const base = withPreset(DEFAULT_GRAPHICS_STATE, preset);
+        assert.equal(resolveGraphicsConfig(base).shadowStyle, 'pixel');
+        assert.equal(resolveGraphicsConfig(base).shadows, preset === 'low' ? 'off' : 'low');
+        for (const visualStyle of ['classic', 'luminous']) {
+            for (const shadows of ['off', 'low', 'medium', 'high']) {
+                const saved = parseGraphicsState(JSON.stringify({
+                    ...base, overrides: { shadows }, preferences: { shadowStyle: 'pixel', visualStyle },
+                }));
+                assert.equal(resolveGraphicsConfig(saved).shadows, shadows === 'off' ? 'off' : 'low');
+                const soft = withOption(saved, 'shadowStyle', 'soft');
+                assert.equal(resolveGraphicsConfig(soft).shadows, shadows, 'Soft retains the full quality range');
+            }
+        }
+    }
+    const high = withPreset(DEFAULT_GRAPHICS_STATE, 'high');
+    const capped = withOption(high, 'shadows', 'high');
+    assert.equal(resolveGraphicsConfig(capped).shadows, 'low');
+    assert.equal(graphicsQuality(capped), 'high', 'A capped no-op must not create a Custom override');
+    assert.equal(resolveGraphicsConfig(withOption(capped, 'shadows', 'off')).shadows, 'off');
 });
 
 test('stored preferences are validated, and an old view-bobbing override moves over', () => {

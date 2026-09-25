@@ -54,7 +54,7 @@ export interface GraphicsConfig extends QualityConfig, GraphicsPreferences {}
 export type GraphicsOverrides = Partial<QualityConfig>;
 
 export const DEFAULT_GRAPHICS_PREFERENCES: Readonly<GraphicsPreferences> = {
-    visualStyle: 'luminous', shadowStyle: 'soft', viewBobbing: true,
+    visualStyle: 'luminous', shadowStyle: 'pixel', viewBobbing: true,
 };
 
 export const GRAPHICS_PRESET_ORDER: readonly GraphicsPresetId[] = ['low', 'medium', 'high', 'ultra'];
@@ -72,14 +72,14 @@ export const GRAPHICS_PRESETS: Readonly<Record<GraphicsPresetId, Readonly<Qualit
         mipmaps: true, motionBlur: false, chunkFade: true,
     },
     high: {
-        shadows: 'medium', bloom: 'half', godRays: true, water: 'fancy', foliageWind: true,
+        shadows: 'low', bloom: 'half', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'medium', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
         mipmaps: true, motionBlur: false, chunkFade: true,
     },
     ultra: {
-        shadows: 'high', bloom: 'full', godRays: true, water: 'fancy', foliageWind: true,
+        shadows: 'low', bloom: 'full', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'high', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: true, chunkFade: true,
     },
 };
 
@@ -115,9 +115,12 @@ export function applyVisualStyle(config: GraphicsConfig): GraphicsConfig {
 export function resolveGraphicsConfig(
     state: Pick<GraphicsSettingsState, 'preset' | 'overrides'> & { preferences?: Partial<GraphicsPreferences> },
 ): GraphicsConfig {
-    return applyVisualStyle({
+    const config = applyVisualStyle({
         ...GRAPHICS_PRESETS[state.preset], ...state.overrides, ...DEFAULT_GRAPHICS_PREFERENCES, ...state.preferences,
     });
+    // Enforce this for saved overrides and non-menu callers as well as the UI.
+    if (config.shadowStyle === 'pixel' && config.shadows !== 'off') config.shadows = 'low';
+    return config;
 }
 
 export function graphicsQuality(state: Pick<GraphicsSettingsState, 'preset' | 'overrides'>): GraphicsQuality {
@@ -145,8 +148,10 @@ export function withOption<K extends keyof GraphicsConfig>(
     }
     const qualityKey = key as keyof QualityConfig;
     const overrides: Record<string, unknown> = { ...state.overrides };
-    if (GRAPHICS_PRESETS[state.preset][qualityKey] === value) delete overrides[qualityKey];
-    else overrides[qualityKey] = value;
+    const nextValue = key === 'shadows' && state.preferences.shadowStyle === 'pixel' && value !== 'off'
+        ? 'low' : value;
+    if (GRAPHICS_PRESETS[state.preset][qualityKey] === nextValue) delete overrides[qualityKey];
+    else overrides[qualityKey] = nextValue;
     return { ...state, overrides: overrides as GraphicsOverrides, detected: true };
 }
 
