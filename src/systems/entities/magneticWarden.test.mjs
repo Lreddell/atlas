@@ -430,13 +430,14 @@ test('low health drives one state, and motion blur is scene-only and off by defa
     assert.doesNotMatch(state, /musicController|PlaybackRate/);
     assert.doesNotMatch(read('src/systems/sound/musicRate.ts'), /lowHealth/i);
 
-    // Motion blur: off unless the player turned it on (it is off in every graphics
-    // preset). It runs as one stage of the post pipeline, which is unmounted
+    // Motion blur: on by default in Ultra only, otherwise off unless the player
+    // turns it on. It runs as one stage of the post pipeline, which is unmounted
     // whenever nothing needs post-processing, so that path is R3F's own renderer
     // with no extra targets.
     const graphicsPresets = read('src/systems/graphics/graphicsSettings.ts');
-    assert.equal((graphicsPresets.match(/motionBlur: false/g) ?? []).length, 4);
-    assert.doesNotMatch(graphicsPresets, /motionBlur: true/);
+    assert.equal((graphicsPresets.match(/motionBlur: false/g) ?? []).length, 3);
+    assert.equal((graphicsPresets.match(/motionBlur: true/g) ?? []).length, 1);
+    assert.match(graphicsPresets, /ultra: \{[^}]*motionBlur: true/);
     assert.match(app, /\{pipelinePlan\.active && !isCapturingPanorama && <RenderPipeline plan=\{pipelinePlan\} \/>\}/);
     const plan = read('src/systems/graphics/pipeline/pipelinePlan.ts');
     assert.match(plan, /const active = config\.bloom !== 'off' \|\| config\.godRays \|\| config\.motionBlur;/);
@@ -546,11 +547,12 @@ test('player-facing text teaches the one rule, the crystal shields, the towers a
     assert.match(readme, /Press `C` to dodge roll/);
     assert.match(readme, /Press `F5` for free third person/);
     assert.doesNotMatch(readme, /Flux/);
+    // The rebuilt fight shipped in v1.3.0-alpha.
     const changelog = read('CHANGELOG.md');
-    assert.match(changelog, /## \[Unreleased\]/);
-    assert.match(changelog, /three forms/i);
+    assert.match(changelog, /## \[v1\.3\.0-alpha\]/);
+    assert.match(changelog, /three distinct forms/i);
     assert.match(changelog, /Magnet Slam/);
-    assert.match(changelog, /`F5` is the free view/);
+    assert.match(changelog, /F5 toggles free third person/);
     assert.match(changelog, /defeat cinematic/);
 });
 

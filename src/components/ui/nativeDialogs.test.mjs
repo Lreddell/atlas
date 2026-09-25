@@ -36,10 +36,10 @@ test('affected screens use the shared non-blocking notice component', () => {
     const noticePath = path.join(srcDir, 'components/ui/UiNotice.tsx');
     assert.ok(existsSync(noticePath), 'UiNotice.tsx must provide shared non-blocking feedback');
 
+    // (Video Settings lost its one notice with the cloud-image upload.)
     for (const relativePath of [
         'App.tsx',
         'components/ui/MainMenu.tsx',
-        'components/ui/PauseMenu.tsx',
         'components/ui/FeatureEditor/FeatureEditor.tsx',
         'components/ui/FeatureEditor/TextureEditorView.tsx',
     ]) {
@@ -50,13 +50,17 @@ test('affected screens use the shared non-blocking notice component', () => {
 test('persistent file inputs and texture object URLs are cleaned up', () => {
     const featureEditor = readSource('components/ui/FeatureEditor/FeatureEditor.tsx');
     const textureEditor = readSource('components/ui/FeatureEditor/TextureEditorView.tsx');
-    const pauseMenu = readSource('components/ui/PauseMenu.tsx');
 
     assert.match(featureEditor, /e\.target\.value = ''/);
     assert.match(textureEditor, /e\.target\.value = ''/);
-    assert.match(pauseMenu, /e\.target\.value = ''/);
     assert.match(textureEditor, /URL\.revokeObjectURL\(url\)/);
     assert.match(textureEditor, /img\.onerror/);
     assert.match(featureEditor, /reader\.onerror/);
-    assert.match(pauseMenu, /reader\.onerror/);
+    // Video Settings lost its file input with the cloud-image upload; one added
+    // back must clean up the same way.
+    const pauseMenu = readSource('components/ui/PauseMenu.tsx');
+    if (/type="file"/.test(pauseMenu)) {
+        assert.match(pauseMenu, /e\.target\.value = ''/);
+        assert.match(pauseMenu, /reader\.onerror/);
+    }
 });
