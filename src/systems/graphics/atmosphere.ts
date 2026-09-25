@@ -191,10 +191,16 @@ export interface AtmosphereState {
     classicSunlight: number;
 }
 
-// A charged steel-blue haze: the old Magnetic Fields fog's teal-grey, kept a
-// little cooler and darker so the arena's red and blue still read through it.
-const MAGNETIC_FOG_TINT = linear(0x557893);
-const MAGNETIC_TINT_ZENITH = linear(0x3e5474);
+// A charged, dusky purple haze, as the old Magnetic Fields fog was (0x2a2238,
+// lightened to read by day), with the sky above it purpled too; the arena's
+// red and blue still read through it.
+const MAGNETIC_FOG_TINT = linear(0x7a5a9a);
+const MAGNETIC_TINT_ZENITH = linear(0x4e3f78);
+const magneticFog: Vec3 = [0, 0, 0];
+const magneticZenith: Vec3 = [0, 0, 0];
+const scaleInto = (out: Vec3, source: Vec3, scale: number) => {
+    out[0] = source[0] * scale; out[1] = source[1] * scale; out[2] = source[2] * scale;
+};
 const BLOOD_ZENITH = linear(0x2a0609);
 const BLOOD_HORIZON = linear(0x4c0c12);
 const BLOOD_GROUND = linear(0x1c0508);
@@ -320,16 +326,20 @@ export function sampleAtmosphere(input: AtmosphereInput, out: AtmosphereState = 
         hazeNear += 0.0006 * blood;
     }
 
-    // The Magnetic Fields are hazy and charged: a thick steel-blue haze (close to
-    // the original biome fog) that still leaves the arena readable, closing in
-    // with the Warden's storm.
+    // The Magnetic Fields are hazy and charged: a purple haze, as the original
+    // biome fog was, light close by and thick farther off, that still leaves the
+    // arena readable and closes in with the Warden's storm.
     const mag = clamp01(input.magnetic);
     if (mag > 0) {
-        mixVec(out.skyHorizon, out.skyHorizon, MAGNETIC_FOG_TINT, mag * 0.7);
-        mixVec(out.skyHorizonSun, out.skyHorizonSun, MAGNETIC_FOG_TINT, mag * 0.55);
-        mixVec(out.skyZenith, out.skyZenith, MAGNETIC_TINT_ZENITH, mag * 0.35);
-        mixVec(out.fogGround, out.fogGround, MAGNETIC_FOG_TINT, mag * 0.75);
-        haze = mix(haze, mix(50, 26, clamp01(input.storm)), mag);
+        // Its purple dims with the daylight, so nights there stay dark.
+        const glow = 0.3 + 0.7 * out.dayFactor;
+        scaleInto(magneticFog, MAGNETIC_FOG_TINT, glow);
+        scaleInto(magneticZenith, MAGNETIC_TINT_ZENITH, glow);
+        mixVec(out.skyHorizon, out.skyHorizon, magneticFog, mag * 0.8);
+        mixVec(out.skyHorizonSun, out.skyHorizonSun, magneticFog, mag * 0.65);
+        mixVec(out.skyZenith, out.skyZenith, magneticZenith, mag * 0.45);
+        mixVec(out.fogGround, out.fogGround, magneticFog, mag * 0.85);
+        haze = mix(haze, mix(80, 45, clamp01(input.storm)), mag);
     }
 
     // The render-distance veil only covers the last stretch before the loading
@@ -339,8 +349,9 @@ export function sampleAtmosphere(input: AtmosphereInput, out: AtmosphereState = 
     out.fogStart = Math.max(16, Math.min(out.fogEnd - 12, edge * 0.8));
     out.hazeDistance = haze;
     out.hazeNear = hazeNear;
-    // Open-air haze thins with altitude; the Magnetic Fields haze fills the
-    // biome at any height (its arena stands high), as the old biome fog did.
-    out.hazeHeight = mix(56, 4000, mag);
+    // Open-air haze thins with altitude. The Magnetic Fields haze fills the
+    // biome up to its high arena and thins only slowly above it, so the clouds
+    // still show overhead.
+    out.hazeHeight = mix(56, 300, mag);
     return out;
 }

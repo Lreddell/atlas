@@ -66,11 +66,13 @@ void main() {
         alpha = 0.6 + 0.4 * sin( t * 9.0 + phase.y );
         color = vec3( 1.7, 0.55, 0.12 );
     } else {
-        // Polarity sparks: quick jittery motes, red or blue.
-        drift = vec3( 0.0, 0.25, 0.0 );
-        wiggle = vec3( sin( t * 3.1 + phase.x ), sin( t * 2.3 + phase.y ) * 0.6, cos( t * 2.7 + phase.z ) ) * 0.8;
+        // Polarity sparks: motes drifting up through the air, red or blue, each
+        // glowing up and fading away in turn, never blinking.
+        drift = vec3( 0.06, 0.3, 0.04 );
+        wiggle = vec3( sin( t * 0.9 + phase.x ), sin( t * 0.7 + phase.y ) * 0.5, cos( t * 0.8 + phase.z ) ) * 0.6;
         size = 0.06;
-        alpha = step( 0.35, fract( t * 1.7 + aRand.w ) );
+        float life = fract( t * 0.22 + aRand.w * 3.0 );
+        alpha = smoothstep( 0.0, 0.3, life ) * ( 1.0 - smoothstep( 0.55, 1.0, life ) );
         color = aRand.w > 0.5 ? vec3( 1.45, 0.28, 0.26 ) : vec3( 0.3, 0.6, 1.5 );
     }
 #else

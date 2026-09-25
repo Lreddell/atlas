@@ -112,16 +112,18 @@ test('the haze lifts the near distance lightly and closes in with distance', () 
     for (let ticks = 0; ticks < 24000; ticks += 400) assert.ok(haze(sample(ticks), 32) < 0.1, `murky nearby at ${ticks}`);
 });
 
-test('the Magnetic Fields haze is thick and steel-blue, closing in with the storm', () => {
+test('the Magnetic Fields haze is thick and purple, closing in with the storm', () => {
     const clear = sample(6000);
     const calm = sample(6000, { magnetic: 1, storm: 0 });
     const frenzy = sample(6000, { magnetic: 1, storm: 1 });
     assert.ok(calm.hazeDistance < clear.hazeDistance * 0.25);
     assert.ok(frenzy.hazeDistance < calm.hazeDistance * 0.6);
-    // Readable across the arena, thick past it (the old biome fog was opaque by 55 blocks).
-    assert.ok(haze(calm, 30) < 0.4, `readable at 30 blocks (${haze(calm, 30)})`);
-    assert.ok(haze(calm, 60) > 0.65, `thick at 60 blocks (${haze(calm, 60)})`);
-    // Cool steel blue, not violet: blue over red, green close behind blue.
+    // Light close by and thick farther off, as the old biome fog was at a
+    // render distance of 16 (clear near, opaque by about 115 blocks).
+    assert.ok(haze(calm, 30) < 0.2, `clear at 30 blocks (${haze(calm, 30)})`);
+    assert.ok(haze(calm, 60) < 0.5, `readable across the arena (${haze(calm, 60)})`);
+    assert.ok(haze(calm, 120) > 0.85, `thick farther off (${haze(calm, 120)})`);
+    // Dusky purple, as the old fog was: red and blue over green, blue ahead.
     const [r, g, b] = calm.fogGround;
-    assert.ok(b > r * 1.4 && g > r, `steel-blue fog ${calm.fogGround}`);
+    assert.ok(b > r && r > g, `purple fog ${calm.fogGround}`);
 });
