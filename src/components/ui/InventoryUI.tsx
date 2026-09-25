@@ -161,6 +161,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const lastClickRef = useRef<{ time: number, key: string, button: number } | null>(null);
     const [, setTick] = useState(0);
     const rafRef = useRef<number>(0);
+    const creativeGridRef = useRef<HTMLDivElement>(null);
 
     const creativeItems = useMemo(() => {
         const manualOrderMap = new Map(ITEM_SORT_ORDER.map((type, i) => [type, i]));
@@ -189,6 +190,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 && b.category === activeTab)
             .sort(sortFn) 
             .map(b => ({ type: b.id, count: 1 }));
+    }, [activeTab]);
+
+    // A new tab starts at the top of its items (the grid stays mounted, so it
+    // swaps its contents in place rather than fading in again).
+    useEffect(() => {
+        if (creativeGridRef.current) creativeGridRef.current.scrollTop = 0;
     }, [activeTab]);
 
     useEffect(() => {
@@ -680,7 +687,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     </div>
                     
                     {openContainer.type === 'creative' && (
-                        <div key={activeTab} className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin atlas-fade-in">
+                        <div ref={creativeGridRef} className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
                              <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
                                      <div
