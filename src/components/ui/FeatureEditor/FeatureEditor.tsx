@@ -359,7 +359,7 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
             </aside>
 
             {/* Content Area */}
-            <main className="flex-1 flex flex-col bg-[#080808] relative">
+            <main key={activeTab} className="flex-1 flex flex-col bg-[#080808] relative atlas-fade-in">
                 {renderTabContent()}
             </main>
         </div>

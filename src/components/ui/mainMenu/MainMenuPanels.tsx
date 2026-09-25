@@ -263,6 +263,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
     <div className="relative z-10 flex h-full w-[760px] flex-col items-center py-10">
         <h1 className={submenuHeadingClass}>Panorama Settings</h1>
 
+        <div key={panoramaSubmenu} className="flex min-h-0 w-full flex-1 flex-col items-center atlas-fade-in">
         {panoramaSubmenu === 'manager' && (
             <>
                 <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-pixel text-gray-300">
@@ -383,6 +384,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                 </div>
             </>
         )}
+        </div>
     </div>
 );
 
@@ -506,7 +508,7 @@ interface TutorialPromptModalProps {
 }
 
 export const TutorialPromptModal: React.FC<TutorialPromptModalProps> = ({ onAccept, onDecline }) => (
-    <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70">
+    <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70 atlas-fade-in">
         <div className="w-[560px] border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6">
             <h2 className="mb-2 text-2xl font-bold font-pixel text-white text-shadow-md">First Time Here?</h2>
             <p className="mb-6 text-sm font-pixel leading-relaxed text-gray-200">

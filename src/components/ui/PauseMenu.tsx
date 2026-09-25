@@ -412,7 +412,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     ))}
                 </div>
 
-                <div className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4">
+                <div key={tutorialTab} className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4 atlas-fade-in">
                     <h2 className="text-white text-lg font-bold font-pixel text-shadow-md mb-1">{activeSection.title}</h2>
                     <p className="text-blue-200 text-sm font-pixel mb-3">{activeSection.subtitle}</p>
 

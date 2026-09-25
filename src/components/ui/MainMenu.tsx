@@ -277,6 +277,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             )}
             {showSubmenuOverlay && <div className={`pointer-events-none absolute inset-0 ${submenuOverlayClass}`} />}
 
+            <div key={view} className="flex h-full min-h-0 w-full flex-col items-center justify-center atlas-fade-in">
             {view === 'create' && (
                 <CreateWorldPanel
                     worldName={worldName}
@@ -362,6 +363,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onShowWhatsNew={handleOpenWhatsNew}
                 />
             )}
+            </div>
 
             {showTutorialPrompt && (
                 <TutorialPromptModal

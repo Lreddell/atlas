@@ -226,7 +226,7 @@ export const TextureAtlasViewer: React.FC<TextureAtlasViewerProps> = ({ onClose 
 
     return (
         <div 
-            className="absolute inset-0 z-[600] bg-black/90 flex items-center justify-center backdrop-blur-sm pointer-events-auto"
+            className="absolute inset-0 z-[600] bg-black/90 flex items-center justify-center backdrop-blur-sm pointer-events-auto atlas-fade-in"
             onClick={onClose}
         >
             <div 

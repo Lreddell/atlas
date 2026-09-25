@@ -833,7 +833,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                <div key={activeSection} className="flex-1 overflow-y-auto p-4 space-y-6 atlas-fade-in">
                     {/* --- NOISE SECTION --- */}
                     {activeSection === 'noise' && (
                         <div className="bg-[#1a1a1a] rounded p-3 border border-white/10">

@@ -25,7 +25,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
     return (
         <div
-            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-black/70"
+            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-black/70 atlas-fade-in"
             onClick={onCancel}
         >
             <div

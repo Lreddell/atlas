@@ -219,7 +219,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
             )}
 
             {/* Panel styling matches the pause-menu overlay treatment. */}
-            <div className="relative flex flex-col items-center">
+            <div className="relative flex flex-col items-center atlas-fade-in">
                 <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />
                 <div className="relative z-10 flex flex-col items-center gap-5 py-8 px-10 w-[440px]">
 

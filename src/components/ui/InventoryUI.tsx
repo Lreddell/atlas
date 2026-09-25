@@ -680,7 +680,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     </div>
                     
                     {openContainer.type === 'creative' && (
-                        <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
+                        <div key={activeTab} className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin atlas-fade-in">
                              <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
                                      <div

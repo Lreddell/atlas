@@ -21,7 +21,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
     if (!entry) return null;
 
     return (
-        <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70" onClick={onClose}>
+        <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70 atlas-fade-in" onClick={onClose}>
             <div
                 ref={dialogRef}
                 role="dialog"
@@ -41,7 +41,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
                 </div>
 
                 {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 font-pixel text-sm leading-relaxed text-gray-200">
+                <div key={entry.version} className="flex-1 overflow-y-auto px-6 py-4 font-pixel text-sm leading-relaxed text-gray-200 atlas-fade-in">
                     {entry.tagline && <p className="mb-4 text-gray-300">{entry.tagline}</p>}
 
                     {entry.highlights.length > 0 && (
