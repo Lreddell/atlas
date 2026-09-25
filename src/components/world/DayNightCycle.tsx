@@ -15,6 +15,7 @@ import { SHADOW_QUALITY_SETTINGS, type ShadowQuality, type VisualStyle } from '.
 import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_AXIS, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
 import { CLASSIC_ORBIT_AXIS, sampleClassicAtmosphere } from '../../systems/graphics/classicAtmosphere';
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
+import { cloudCoverToward } from '../../systems/graphics/cloudLayer';
 import { BlockType } from '../../types';
 import { createGlowTexture, createMoonPhaseTexture, createSunTexture } from '../../utils/textures';
 import { floorLight, updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
@@ -207,6 +208,8 @@ function mulberry32(seed: number) {
 }
 
 const BIOME_SAMPLE_INTERVAL = 0.25; // seconds between biome lookups for haze/aurora
+/** How much of the sun's or moon's glow a cloud in front of it takes away. */
+const CLOUD_GLOW_DIM = 0.7;
 
 /** A sun or moon disc: opaque texels, faded by opacity, drawn at the far plane. */
 function createDiscMaterial(): THREE.MeshBasicMaterial {
@@ -263,6 +266,8 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     const mediumIsLavaRef = useRef(false);
     // How enclosed the eye is: 0 in open air, 1 deep underground (eased, like an eye adapting).
     const caveRef = useRef(0);
+    // How much a cloud covers the sun and the moon, eased.
+    const coveredRef = useRef({ sun: 0, moon: 0 });
 
     const TICK_CYCLE = 24000;
 
@@ -452,6 +457,21 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         setClassicLighting(classic);
         setClassicLightLevels(state.classicSunlight, brightness);
 
+        // A cloud over the sun or moon dims its glow, in the sky and in the haze
+        // toward it (the ground under the cloud is already in its shadow).
+        const eye = camera.position;
+        const sunCover = classic ? 0 : cloudCoverToward(eye.x, eye.y, eye.z, state.sunDir[0], state.sunDir[1], state.sunDir[2]);
+        const moonCover = classic ? 0 : cloudCoverToward(eye.x, eye.y, eye.z, state.moonDir[0], state.moonDir[1], state.moonDir[2]);
+        const covered = coveredRef.current;
+        covered.sun = THREE.MathUtils.damp(covered.sun, sunCover, 2.5, delta);
+        covered.moon = THREE.MathUtils.damp(covered.moon, moonCover, 2.5, delta);
+        const sunGlow = ATMOSPHERE_UNIFORMS.atlasSunGlow.value;
+        const sunDim = 1 - CLOUD_GLOW_DIM * covered.sun;
+        sunGlow.x *= sunDim; sunGlow.y *= sunDim; sunGlow.z *= sunDim;
+        const moonGlow = ATMOSPHERE_UNIFORMS.atlasMoonGlow.value;
+        const moonDim = 1 - CLOUD_GLOW_DIM * covered.moon;
+        moonGlow.x *= moonDim; moonGlow.y *= moonDim; moonGlow.z *= moonDim;
+
         // Eye adaptation: how enclosed the eye is, from the voxel sky light where it
         // stands, eased over a second or so. Enclosed, the exposure settles to one
         // cave value and fog fades to a dim cave air, so a cave reads the same by
@@ -524,7 +544,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             sunDiscMaterial.color.setScalar(classic ? SUN_CORE_CLASSIC : SUN_CORE_LUMINOUS);
             sunDiscMaterial.opacity = sunFade;
             // A soft glow (the old one was mostly lost in its fog); Luminous leaves the rest to the bloom.
-            if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade);
+            if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade * sunDim);
             sunGroupRef.current.visible = sunFade > 0.001;
         }
 
@@ -545,7 +565,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 // Only the lit part of the moon glows: none at new moon, softest at full.
                 const lit = isBloodMoon ? 1 : 1 - Math.abs(phaseIndex - 4) / 4;
                 (moonGlowRef.current.material as THREE.SpriteMaterial).color
-                    .copy(scratchGlowColor.set(lunarEvent.moonGlowHex)).multiplyScalar((classic ? 0.16 : 0.12) * lit * moonFade);
+                    .copy(scratchGlowColor.set(lunarEvent.moonGlowHex)).multiplyScalar((classic ? 0.16 : 0.12) * lit * moonFade * moonDim);
             }
             moonGroupRef.current.visible = moonFade > 0.001;
         }

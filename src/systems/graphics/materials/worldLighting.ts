@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CLOUD_GLSL, CLOUD_UNIFORMS } from '../cloudLayer';
 
 // One lighting model for the voxel world and everything standing in it.
 //
@@ -11,6 +12,8 @@ import * as THREE from 'three';
 //   atlasBlockLight  0..1  torch and lamp light here
 //   atlasAo / atlasClassicAo  ambient occlusion (1 where open)
 //   atlasFaceShade   the stylised per-axis shade on the ambient light
+//
+// The clouds (cloudLayer.ts) shadow the sun or moon on all of it alike.
 //
 // Two styles share these inputs. Luminous: hemisphere ambient scaled by sky
 // openness, the sun or moon gated to open sky, warm torch light, and a cool
@@ -27,6 +30,7 @@ export const WORLD_LIGHT_UNIFORMS = {
     atlasVoxelStyle: { value: { x: 1, y: 1, z: 0, w: 0 } },
     /** The Classic style: x 1 when on, y the old day/night sunlight factor, z the Brightness option (0..1). */
     atlasClassic: { value: { x: 0, y: 1, z: 0.5, w: 0 } },
+    ...CLOUD_UNIFORMS,
 };
 
 /** Switches between the Luminous and Classic lighting (uniforms only, no recompile). */
@@ -54,6 +58,7 @@ float atlasClassicAo;
 float atlasFaceShade;
 float atlasVoxelKeyGate;
 vec3 atlasAlbedo;
+${CLOUD_GLSL}
 `;
 
 /**
@@ -70,6 +75,12 @@ export const worldLightPrepare = (classicFloor = '0.05') => /* glsl */`
 	// The sun and moon only reach surfaces that are open to the sky (Classic
 	// needs no gate: its sky light already darkens the surface itself).
 	atlasVoxelKeyGate = atlasClassic.x > 0.5 ? 1.0 : smoothstep( 0.5, 0.95, atlasSkyLight );
+#if defined( USE_FOG ) && NUM_DIR_LIGHTS > 0
+	// The clouds' shadows, drifting over the ground and everything on it.
+	if ( atlasClassic.x < 0.5 ) {
+		atlasVoxelKeyGate *= atlasCloudSunlight( vAtlasFogOffset, inverseTransformDirection( directionalLights[ 0 ].direction, viewMatrix ) );
+	}
+#endif
 	if ( atlasClassic.x > 0.5 ) {
 		diffuseColor.rgb *= max( atlasSkyLight * atlasClassicAo * atlasClassic.y, ${classicFloor} + atlasClassic.z * 0.25 );
 	}

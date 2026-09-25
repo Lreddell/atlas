@@ -5,14 +5,17 @@ import path from 'node:path';
 import test from 'node:test';
 
 // GLSL is only compiled in the browser, so a changed signature in the shared
-// atmosphere functions (atmosphereUniforms.ts) breaks a caller silently: the
-// shader fails to compile and whatever it draws disappears. This checks every
-// call site in the source against the signatures.
+// atmosphere and cloud functions (atmosphereUniforms.ts, cloudLayer.ts) breaks
+// a caller silently: the shader fails to compile and whatever it draws
+// disappears. This checks every call site in the source against the signatures.
 const root = path.resolve(import.meta.dirname, '../../..');
 const files = execFileSync('git', ['ls-files', 'src/*.ts', 'src/*.tsx'], { cwd: root, encoding: 'utf8' })
     .split('\n').filter(Boolean);
 
-const SIGNATURES = { atlasFogAmount: 2, atlasApplyFog: 2, atlasSkyRadiance: 1, atlasSkyGradient: 1, atlasSunHalo: 1 };
+const SIGNATURES = {
+    atlasFogAmount: 2, atlasApplyFog: 2, atlasSkyRadiance: 1, atlasSkyGradient: 1, atlasSunHalo: 1,
+    atlasCloudUv: 1, atlasCloudSunlight: 2, atlasCloudLight: 4, atlasCloudsSeen: 3,
+};
 
 /** The top-level argument count of the call whose '(' is at `open`. */
 function argumentCount(source, open) {
@@ -39,7 +42,7 @@ test('every call to the shared atmosphere functions matches their signatures', (
             for (const match of source.matchAll(pattern)) {
                 // Skip the definitions themselves ("float atlasFogAmount(vec3 v, ...").
                 const before = source.slice(Math.max(0, match.index - 8), match.index);
-                if (/(float|vec3|vec4)\s+$/.test(before)) continue;
+                if (/(float|vec2|vec3|vec4)\s+$/.test(before)) continue;
                 calls++;
                 const got = argumentCount(source, match.index + match[0].length - 1);
                 if (got !== expected) problems.push(`${file}: ${name} called with ${got} arguments, takes ${expected}`);

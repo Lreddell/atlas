@@ -5,6 +5,7 @@ import '../shadows';
 import { ATLAS_COLS } from '../../../data/blocks';
 import { ATLAS_PADDING, ATLAS_RAW_TILE_SIZE, ATLAS_STRIDE, getAtlasDimensions } from '../../../utils/textures';
 import { FACE_DATA } from '../../world/worldConstants';
+import { CLOUD_SHADE_GLSL } from '../cloudLayer';
 import {
     WORLD_LIGHT_DECLARATIONS,
     WORLD_LIGHT_END,
@@ -33,7 +34,7 @@ import {
 //    crystals); Resonant blocks are capped low at the mesher.
 //  - Leaves and plants glow when the sun or moon is behind them, and sway in
 //    the wind (leaves as whole blocks, plants from the root).
-//  - Water and glass reflect the sky and the sun or moon; water ripples on
+//  - Water and glass reflect the sky, its clouds and the sun or moon; water ripples on
 //    the 16-texel grid.
 //  - Pixel shadows (the Pixel shadow style, BasicShadowMap): every texture
 //    pixel takes one shadow value, so shadow edges step on the same 16x16 grid
@@ -371,6 +372,13 @@ ${WORLD_LIGHT_END}
 	}
 `;
 
+// The clouds' light, for their reflections (after three declares its lights, before main()).
+const VOXEL_CLOUD_REFLECTION = /* glsl */`
+#if defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
+${CLOUD_SHADE_GLSL}
+#endif
+`;
+
 const FRAGMENT_REFLECTIONS = /* glsl */`
 #if defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
 	// Water and glass reflect the sky and the sun or moon, more at grazing angles.
@@ -393,8 +401,12 @@ const FRAGMENT_REFLECTIONS = /* glsl */`
 		vec3 atlasR = reflect( atlasEye, atlasN );
 		float atlasF0 = atlasIsWater ? 0.02 : 0.04;
 		float atlasFresnel = atlasF0 + ( 1.0 - atlasF0 ) * pow( 1.0 - saturate( dot( - atlasEye, atlasN ) ), 5.0 );
+		// The sky and its clouds, blurred with distance (ripples break up the rest).
+		vec3 atlasReflected = atlasSkyRadiance( atlasR );
+		vec4 atlasClouds = atlasCloudsSeen( vAtlasFogOffset, atlasR, 1.0 + length( vAtlasFogOffset ) / 48.0 );
+		atlasReflected = mix( atlasReflected, atlasClouds.rgb, atlasClouds.a );
 		// Out of the sky's reach (under an overhang, in a cave) there is nothing bright to reflect.
-		vec3 atlasReflected = atlasSkyRadiance( atlasR ) * ( atlasSkyLight * atlasSkyLight );
+		atlasReflected *= atlasSkyLight * atlasSkyLight;
 		#if NUM_DIR_LIGHTS > 0
 		vec3 atlasKeyWorld = normalize( ( vec4( directionalLights[ 0 ].direction, 0.0 ) * viewMatrix ).xyz );
 		atlasReflected += directionalLights[ 0 ].color * ( pow( saturate( dot( atlasR, atlasKeyWorld ) ), 220.0 ) * 6.0 * atlasVoxelKeyGate );
@@ -443,10 +455,11 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
             .replace('#include <lights_fragment_end>', FRAGMENT_LIGHTS_END)
             .replace('#include <opaque_fragment>', FRAGMENT_REFLECTIONS)
             .replace('#include <clipping_planes_pars_fragment>', `#include <clipping_planes_pars_fragment>
-${VOXEL_SAMPLE_FUNCTION}`);
+${VOXEL_SAMPLE_FUNCTION}
+${VOXEL_CLOUD_REFLECTION}`);
     };
     // One program per variant, however many clones share it.
-    const cacheKey = `atlas-voxel-v5:${options.variant}${options.fade ? ':fade' : ''}`;
+    const cacheKey = `atlas-voxel-v6:${options.variant}${options.fade ? ':fade' : ''}`;
     material.customProgramCacheKey = () => cacheKey;
     material.needsUpdate = true;
 }

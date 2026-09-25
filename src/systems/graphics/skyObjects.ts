@@ -7,22 +7,21 @@ import { addShaderPatch } from './materials/shaderPatches';
 // terrain at any render distance, and the clouds. (Placed at a fixed radius,
 // they could draw over mountains farther out than that at high render
 // distances.) Their order back to front is fixed by render order: the dome,
-// stars, the sun's and moon's glows, their discs, the aurora, meteors, then
-// the clouds over all of it. The clouds lay their depth down before any
-// transparent sky object, so a disc, the aurora or a meteor behind a cloud is
-// hidden there (then covered by the cloud's colour) rather than blazing
-// through a night cloud as if in front of it.
+// stars, the sun's and moon's glows, their discs, the aurora and meteors,
+// with the clouds over all of it. The clouds draw before any transparent sky
+// object and leave their depth, so a disc, the aurora or a meteor behind a
+// cloud is hidden there rather than blazing through a night cloud as if in
+// front of it.
 
 /** Render order of each sky layer (every one of them in a group of order 0). */
 export const SKY_ORDER = {
     dome: -1000,
     stars: -990,
     glow: -980,
-    cloudDepth: -2000,
+    clouds: -2000,
     disc: -970,
     aurora: -500,
     meteors: -400,
-    cloudColor: -100,
 } as const;
 
 /** GLSL, after gl_Position is set: moves the vertex onto the far plane. */

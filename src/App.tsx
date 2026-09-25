@@ -405,7 +405,6 @@ const App: React.FC = () => {
     // so it stays off until the player turns it on.
     const graphics = useGraphicsSettings();
     const shadowsEnabled = graphics.config.shadows !== 'off';
-    const cloudsEnabled = graphics.config.clouds !== 'off';
     const mipmapsEnabled = graphics.config.mipmaps;
     // Bloom, god rays or motion blur put a post pipeline in charge of the frame
     // (systems/graphics/pipeline); without them R3F draws straight to the canvas.
@@ -3408,7 +3407,7 @@ const App: React.FC = () => {
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
-                <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
+                <Clouds isPaused={worldPaused} renderDistance={renderDistance} quality={graphics.config.clouds} />
                 {graphics.config.ambientParticles !== 'off' && appState === 'game' && (
                     <AmbientParticles density={graphics.config.ambientParticles} isPaused={worldPaused} />
                 )}
