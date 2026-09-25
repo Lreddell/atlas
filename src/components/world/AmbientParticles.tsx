@@ -124,7 +124,7 @@ void main() {
     if ( vAlpha < 0.01 ) discard;
 #ifdef GLOW
     // Self-lit and additive: the haze swallows it with distance.
-    gl_FragColor = vec4( vColor * vAlpha * ( 1.0 - atlasFogAmount( vOffset ) ), 1.0 );
+    gl_FragColor = vec4( vColor * vAlpha * ( 1.0 - atlasFogAmount( vOffset, 1.0 - atlasHazeParams.z ) ), 1.0 );
 #else
     gl_FragColor = vec4( atlasApplyFog( vColor * atlasSceneLight, vOffset ), vAlpha );
 #endif

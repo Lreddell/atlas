@@ -190,7 +190,15 @@ float atlasFogAmount(vec3 v, float open) {
 }
 
 vec3 atlasApplyFog(vec3 color, vec3 v) {
-    float open = atlasFogSky >= 0.0 ? atlasFogSky : 1.0 - atlasHazeParams.z;
+    // How open the air along the view is. From open air, every surface takes the
+    // sky's haze whatever its own sky light: a vertex's sky light averages the
+    // cells round its corner, solid ones included, so the shaded sides of
+    // blocks, their lower edges and the ground under trees read partly closed,
+    // and fogging them toward the dark cave air kept their black shading at any
+    // distance. From inside a cave, each surface's own sky light decides, so the
+    // cave stays the same by day and by night while daylight shows at its mouth.
+    float cameraOpen = 1.0 - atlasHazeParams.z;
+    float open = atlasFogSky >= 0.0 ? max(atlasFogSky, cameraOpen) : cameraOpen;
     float amount = atlasFogAmount(v, open);
     vec3 fogged;
     if (atlasClassicSky.w > 0.5) {
