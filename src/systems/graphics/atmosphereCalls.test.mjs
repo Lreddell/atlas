@@ -14,7 +14,7 @@ const files = execFileSync('git', ['ls-files', 'src/*.ts', 'src/*.tsx'], { cwd: 
 
 const SIGNATURES = {
     atlasFogAmount: 2, atlasApplyFog: 2, atlasSkyRadiance: 1, atlasSkyGradient: 1, atlasSunHalo: 1,
-    atlasCloudUv: 1, atlasCloudSunlight: 2, atlasCloudLight: 4, atlasCloudsSeen: 3,
+    atlasCloudUv: 1, atlasCloudSunlight: 2, atlasCloudCoverAlong: 1, atlasCloudLight: 4, atlasCloudsSeen: 3,
 };
 
 /** The top-level argument count of the call whose '(' is at `open`. */

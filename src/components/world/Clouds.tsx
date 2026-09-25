@@ -30,10 +30,16 @@ import type { CloudQuality } from '../../systems/graphics/graphicsSettings';
 // instead: the average cover along its way through the slab, lit as the
 // cloud sides and bases that make it up, so far clouds never shimmer.
 //
-// Only the nearest face shows, blended once at the layer's opacity, so a
-// cloud reads as one soft volume from any side. The pixel takes the hit's
-// depth: terrain in front hides the cloud (peaks rise through the layer),
-// and the sky's discs, aurora and meteors, drawn after, stay hidden behind it.
+// Only the nearest face shows, so a cloud reads as one volume from any side.
+// The clouds draw after every sky object, and a cloud lets through only a
+// little of what is behind it, alike for all of it, as thin real cloud does:
+// the bright aurora, moon, sun and meteors glow through dimly (a little more
+// through a thin rim than a big cloud's middle), while the faint stars are
+// lost (each star checks the clouds along its own line of sight, so none
+// shows inside a cloud). Far off, the clouds take the haze's colour, as the
+// terrain does. (Classic keeps its old, more translucent clouds.) The pixel
+// takes the hit's depth, so terrain in front hides the cloud (peaks rise
+// through the layer), and water or particles drawn later sort against it.
 
 const VERTEX = /* glsl */`
 varying vec3 vCloudRay;
@@ -58,13 +64,19 @@ uniform mat4 projectionMatrix;
 uniform float atlasCloudPixel;
 varying vec3 vCloudRay;
 
+// How much of what is behind it a cloud hides: a thin rim a little less than
+// a big cloud's middle. (The layer's own opacity multiplies this.)
+float atlasCloudSolid( float inner ) {
+	return atlasClassicSky.w > 0.5 ? 1.0 : mix( 0.9, 1.0, inner );
+}
+
 bool atlasCloudAt( ivec2 cell, ivec2 size ) {
 	ivec2 wrapped = cell - size * ivec2( floor( vec2( cell ) / vec2( size ) ) );
 	return texelFetch( atlasCloudMap, wrapped, 0 ).r > 0.5;
 }
 
 // The clouds along the stretch tA..tB of the ray, averaged from the map's
-// mipmaps: rgb their light (fogged), a how much of the view they cover. tMid
+// mipmaps: rgb their light (hazed), a how much of the view they cover. tMid
 // is where along the ray that light is taken.
 vec4 atlasCloudAverage( vec3 dir, float tA, float tB, float footprint, out float tMid ) {
 	tMid = 0.5 * ( tA + tB );
@@ -78,8 +90,9 @@ vec4 atlasCloudAverage( vec3 dir, float tA, float tB, float footprint, out float
 	float sides = ${(CLOUD_THICKNESS / CLOUD_CELL).toFixed(4)} * ( abs( dir.x ) + abs( dir.z ) );
 	vec3 facing = horizontal > 1e-4 ? -vec3( dir.x, 0.0, dir.z ) / horizontal : vec3( 0.0 );
 	vec3 n = normalize( mix( vec3( 0.0, dir.y > 0.0 ? -1.0 : 1.0, 0.0 ), facing, sides / ( sides + abs( dir.y ) ) ) );
-	vec3 light = atlasCloudLight( n, dir, cell.g / max( cell.r, 1e-3 ), 0.5 );
-	return vec4( atlasApplyFog( light, rel ), cover );
+	float inner = cell.g / max( cell.r, 1e-3 );
+	vec3 light = atlasCloudLight( n, dir, inner, 0.5 );
+	return vec4( atlasApplyFog( light, rel ), cover * atlasCloudSolid( inner ) );
 }
 
 void main() {
@@ -157,7 +170,7 @@ void main() {
 			vec3 rel = dir * tHit;
 			float inner = textureLod( atlasCloudMap, atlasCloudUv( rel.xz ), 0.0 ).g;
 			float height = clamp( ( cameraPosition.y + rel.y - atlasCloudLayer.x ) / ( atlasCloudLayer.y - atlasCloudLayer.x ), 0.0, 1.0 );
-			near = vec4( atlasApplyFog( atlasCloudLight( n, dir, inner, height ), rel ), 1.0 );
+			near = vec4( atlasApplyFog( atlasCloudLight( n, dir, inner, height ), rel ), atlasCloudSolid( inner ) );
 			tNear = tHit;
 		} else if ( t < tOut ) {
 			// Out of steps before the end of the layer: the rest of it, averaged.
@@ -199,10 +212,10 @@ const updateCloudColor = (dayFactor: number, classic: boolean) => {
     const color = CLOUD_UNIFORMS.atlasCloudColor.value;
     if (classic) color.lerpColors(CLASSIC_CLOUD_NIGHT, CLASSIC_CLOUD_DAY, dayFactor);
     else color.copy(CLOUD_ALBEDO);
-    // A pixel takes one blend (the nearest face), so this is a cloud's whole
-    // cover: thinner at night, when clouds show as dark shapes against the
-    // stars. Classic matches the old renderer, which blended both of a cloud's faces.
-    naturalOpacity = classic ? 0.84 + 0.12 * dayFactor : 0.55 + 0.35 * dayFactor;
+    // Luminous clouds are nearly solid: a night cloud is a moonlit shape that
+    // an aurora or the moon still glows through, dimly. Classic matches the
+    // old renderer, which blended both of a cloud's faces.
+    naturalOpacity = classic ? 0.84 + 0.12 * dayFactor : 0.9 + 0.07 * dayFactor;
 };
 
 registerCloudHandlers({ updateColor: updateCloudColor });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addShaderPatch } from './materials/shaderPatches';
+import { CLOUD_GLSL, CLOUD_UNIFORMS } from './cloudLayer';
 
 // What the sky's objects (stars, sun and moon, aurora, meteors) share.
 //
@@ -8,20 +9,19 @@ import { addShaderPatch } from './materials/shaderPatches';
 // they could draw over mountains farther out than that at high render
 // distances.) Their order back to front is fixed by render order: the dome,
 // stars, the sun's and moon's glows, their discs, the aurora and meteors,
-// with the clouds over all of it. The clouds draw before any transparent sky
-// object and leave their depth, so a disc, the aurora or a meteor behind a
-// cloud is hidden there rather than blazing through a night cloud as if in
-// front of it.
+// then the clouds over all of it. Drawn last, a cloud covers every one of
+// them alike (the dome, stars and aurora included), so none shows through a
+// cloud that hides another.
 
 /** Render order of each sky layer (every one of them in a group of order 0). */
 export const SKY_ORDER = {
     dome: -1000,
     stars: -990,
     glow: -980,
-    clouds: -2000,
     disc: -970,
     aurora: -500,
     meteors: -400,
+    clouds: -100,
 } as const;
 
 /** GLSL, after gl_Position is set: moves the vertex onto the far plane. */
@@ -34,6 +34,24 @@ export function drawAtFarPlane(material: THREE.Material): void {
             '#include <logdepthbuf_vertex>',
             `${SKY_FAR_PLANE_GLSL}\n#include <logdepthbuf_vertex>`,
         );
+    });
+}
+
+/**
+ * Hides a built-in sky material (the sun or moon, their glows) behind the
+ * clouds, pixel by pixel: `amount` 1 hides it wholly where a cloud is in
+ * front; less lets a soft part of it through (a glow seen through cloud).
+ */
+export function veilByClouds(material: THREE.Material, amount: number): void {
+    addShaderPatch(material, `sky-cloud-veil-${amount}`, (shader) => {
+        Object.assign(shader.uniforms, CLOUD_UNIFORMS);
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nvarying vec3 vAtlasSkyDir;')
+            .replace('#include <logdepthbuf_vertex>', 'vAtlasSkyDir = mvPosition.xyz * mat3( viewMatrix );\n#include <logdepthbuf_vertex>');
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>\nvarying vec3 vAtlasSkyDir;\n${CLOUD_GLSL}`)
+            .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+	gl_FragColor.a *= 1.0 - ${amount.toFixed(2)} * atlasCloudCoverAlong( normalize( vAtlasSkyDir ) );`);
     });
 }
 
@@ -55,12 +73,16 @@ float atlasSkyNoise( float x ) {
 export const skyFrame = {
     /** 0..1: how dark the sky is (star visibility). */
     night: 0,
-    /** 0..1: aurora strength (night, a snowy biome, a slow breathing). */
+    /** 0..1: how much aurora there is (night, in a snowy biome). */
     aurora: 0,
-    /** Aurora colours, low to high (scene-linear). */
+    /** How lively it is: about 0.3 calm, 0.7 lively, up to 1.6 in a substorm (auroraActivity.ts). */
+    auroraActivity: 0.5,
+    /** Aurora colours, low to high (scene-linear), the pink fringe along its foot, and its faint tops. */
     auroraLow: new THREE.Color(0x44ff88),
     auroraMid: new THREE.Color(0x88ffcc),
     auroraHigh: new THREE.Color(0x9966ff),
+    auroraFringe: new THREE.Color(0xff4f9a),
+    auroraTop: new THREE.Color(0xc0283c),
     bloodMoon: false,
     /** 0 new moon .. 4 full .. 7. */
     moonPhase: 0,

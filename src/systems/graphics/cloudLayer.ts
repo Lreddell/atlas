@@ -50,6 +50,20 @@ vec2 atlasCloudUv( vec2 relXZ ) {
 	return ( atlasCloudGrid.xy + relXZ * atlasCloudGrid.z ) / vec2( textureSize( atlasCloudMap, 0 ) );
 }
 
+// How much cloud lies along a line of sight dir (world, from the camera):
+// 0 clear, 1 behind a cloud. For points of light such as the stars.
+float atlasCloudCoverAlong( vec3 dir ) {
+	if ( atlasCloudLayer.z <= 0.0 || dir.y < 0.01 ) return 0.0;
+	float t = ( 0.5 * ( atlasCloudLayer.x + atlasCloudLayer.y ) - cameraPosition.y ) / dir.y;
+	if ( t <= 0.0 ) return 0.0;
+	vec2 at = dir.xz * t;
+	float reach = 1.0 - smoothstep( 0.6, 1.0, length( at ) / atlasCloudLayer.w );
+	// Crisp at the clouds' own voxel edges; far off, where a pixel spans
+	// several cells, their average.
+	float cover = smoothstep( 0.25, 0.75, textureLod( atlasCloudMap, atlasCloudUv( at ), log2( max( t / 600.0, 1.0 ) ) ).r );
+	return clamp( cover * reach * atlasCloudLayer.z, 0.0, 1.0 );
+}
+
 // How much of the key light (world direction keyDir, toward it) reaches the
 // point rel through the clouds: 1 in the open, less in a cloud's shadow.
 float atlasCloudSunlight( vec3 rel, vec3 keyDir ) {
@@ -112,6 +126,9 @@ vec3 atlasCloudLight( vec3 n, vec3 viewDir, float inner, float height ) {
 	float lowSun = ( 1.0 - smoothstep( 0.02, 0.35, atlasSunDir.y ) ) * smoothstep( -0.16, -0.02, atlasSunDir.y );
 	float towardSun = dot( normalize( viewDir.xz + 1e-5 ), normalize( atlasSunDir.xz + 1e-5 ) ) * 0.5 + 0.5;
 	ambient += atlasSunGlow * ( PI * 0.35 * base * lowSun * ( 0.2 + 0.8 * towardSun * towardSun ) * ( 1.0 - 0.5 * inner ) );
+	// Under an aurora, the clouds glow with its light, most where it shines
+	// through them from behind.
+	ambient += atlasAuroraGlow * ( PI * 0.8 * ( 0.2 + 0.8 * smoothstep( -0.3, 0.8, -viewDir.z ) ) );
 	// The sun or moon on the faces that see it; through a thin cloud (not a
 	// thick one) some of it soaks down to the base; and where it is behind a
 	// cloud's rim, a silver lining.

@@ -51,6 +51,8 @@ export const ATMOSPHERE_UNIFORMS = {
     atlasCaveFog: { value: v3() },
     /** Camera in a fluid: x amount 0..1, y fog density per block. */
     atlasMediumParams: { value: { x: 0, y: 0.1, z: 0, w: 0 } as V4 },
+    /** The aurora's glow in the air low over the northern horizon (scene-linear; 0 when there is none). */
+    atlasAuroraGlow: { value: v3() },
     atlasMediumColor: { value: v3() },
 };
 
@@ -115,6 +117,7 @@ uniform vec4 atlasClassicSky;
 uniform vec2 atlasCloudFog;
 uniform vec4 atlasHazeParams;
 uniform vec3 atlasCaveFog;
+uniform vec3 atlasAuroraGlow;
 ${TONE_CURVE_GLSL}
 
 // How open to the sky the surface being fogged is: 0 in a cave, 1 in open air.
@@ -141,6 +144,8 @@ vec3 atlasSkyGradient(vec3 dir) {
     // A soft halo round the moon.
     float moonDot = max(dot(dir, atlasMoonDir), 0.0);
     sky += atlasMoonGlow * (pow(moonDot, 16.0) * 0.35 + pow(moonDot, 128.0) * 0.9);
+    // Under an aurora, the air low over the northern horizon glows with it.
+    sky += atlasAuroraGlow * (exp(-up * 5.0) * smoothstep(-0.25, 0.8, -dir.z));
     // Below the horizon the sky settles into a dim ground haze.
     return mix(sky, atlasFogGround, clamp(-dir.y * 3.0, 0.0, 1.0));
 }

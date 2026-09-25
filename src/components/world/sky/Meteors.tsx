@@ -2,24 +2,31 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SKY_FAR_PLANE_GLSL, SKY_ORDER, skyFrame } from '../../../systems/graphics/skyObjects';
+import { CLOUD_GLSL, CLOUD_UNIFORMS } from '../../../systems/graphics/cloudLayer';
 
 // Meteors (shooting stars) across the night sky.
 //
-// Each is a streak along a great circle of the sky: a white-hot head that
-// catches the bloom and a tapered tail tinted by what burns, facing the camera
-// wherever it runs (a flat plane could turn edge-on and vanish). It flares
-// once more just before it burns out. About one in ten is a fireball: slower,
-// longer, brighter, green or orange. A small pool runs them with no React
-// renders. They show on dark nights, redden under a blood moon, add light,
-// and sit at the far plane: in front of the stars and aurora, behind clouds.
+// As the original shooting stars were: long streaks gliding a good way across
+// the sky over a couple of seconds, mostly sideways and a little downward, in
+// cyan, pale cyan, thistle, aquamarine or lemon, and red under a blood moon.
+// Drawn in the new style: each follows a great circle of the sky with a
+// white-hot head that catches the bloom and a tapered tail in its colour,
+// facing the camera wherever it runs (a flat plane could turn edge-on and
+// vanish). It flares once more, its head burns out, and its glowing train
+// lingers a moment, shrinking toward where the head vanished as it fades. Now
+// and then one is a fireball: slower, longer and brighter. A small pool runs
+// them with no React renders. They show once the sky is dark, add light, and
+// sit at the far plane: in front of the stars and aurora, hidden by clouds.
 
-const POOL = 4;
+const POOL = 5;
 const RADIUS = 420;
-/** Meteors a second at full dark (before the pool is full). */
-const RATE = 0.1;
+/** Meteors a second in a fully dark sky (before the pool is full). */
+const RATE = 0.15;
+/** Seconds the train lingers after the head burns out. */
+const AFTERGLOW = 0.7;
 
-const COLORS = ['#f4f7ff', '#dfe8ff', '#d6ffe4', '#fff1c9', '#e6d8ff'];
-const FIREBALL_COLORS = ['#9dffb6', '#ffb36b'];
+// The original shooting stars' colours.
+const COLORS = ['#00ffff', '#e0ffff', '#d8bfd8', '#7fffd4', '#fffacd'];
 const BLOOD_COLORS = ['#ff6b6b', '#ff4d4d', '#c62828', '#ff8a80', '#b71c1c'];
 
 const VERTEX = /* glsl */`
@@ -29,6 +36,8 @@ uniform vec2 uAngles;   // tail, head (radians along the great circle)
 uniform float uWidth;
 varying float vAlong;
 varying float vSide;
+varying float vClear;
+${CLOUD_GLSL}
 void main() {
     float along = position.x;
     float angle = mix( uAngles.x, uAngles.y, along );
@@ -38,6 +47,8 @@ void main() {
     vec3 p = dir * ${RADIUS.toFixed(1)} + across * position.y * uWidth * mix( 0.15, 1.0, along );
     vAlong = along;
     vSide = position.y;
+    // Behind a cloud it is lost, like the stars.
+    vClear = 1.0 - atlasCloudCoverAlong( dir );
     gl_Position = projectionMatrix * modelViewMatrix * vec4( p, 1.0 );
     ${SKY_FAR_PLANE_GLSL}
 }
@@ -46,14 +57,16 @@ void main() {
 const FRAGMENT = /* glsl */`
 uniform vec3 uColor;
 uniform float uBrightness;
+uniform float uHead;    // how bright the head still burns (0 once it has burnt out)
 varying float vAlong;
 varying float vSide;
+varying float vClear;
 void main() {
     float across = 1.0 - vSide * vSide;
-    float tail = pow( vAlong, 2.2 );
-    float head = smoothstep( 0.88, 1.0, vAlong );
+    float tail = pow( vAlong, 2.6 );
+    float head = smoothstep( 0.88, 1.0, vAlong ) * uHead;
     vec3 color = mix( uColor, vec3( 1.0, 0.98, 0.95 ), head ) * ( tail * across * ( 1.0 + 2.5 * head ) );
-    gl_FragColor = vec4( color * uBrightness, 1.0 );
+    gl_FragColor = vec4( color * ( uBrightness * vClear ), 1.0 );
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
 }
@@ -95,30 +108,30 @@ const pick = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list
 const _up = new THREE.Vector3(0, 1, 0);
 
 function launch(meteor: Meteor): void {
-    const fireball = Math.random() < 0.1;
+    const fireball = Math.random() < 1 / 12;
     const material = meteor.material;
-    // Somewhere between 25 and 70 degrees up, any bearing.
-    const elevation = THREE.MathUtils.degToRad(25 + Math.random() * 45);
+    // Somewhere between 20 and 75 degrees up, any bearing.
+    const elevation = THREE.MathUtils.degToRad(20 + Math.random() * 55);
     const bearing = Math.random() * Math.PI * 2;
     const start = material.uniforms.uStart.value as THREE.Vector3;
     start.set(Math.cos(elevation) * Math.cos(bearing), Math.sin(elevation), Math.cos(elevation) * Math.sin(bearing));
-    // Heading mostly downward across the sky: tip "straight down" by up to 60 degrees.
+    // Across the sky and a little down, as the originals ran: tipped from
+    // "straight down" by 35 to 80 degrees, to either side.
     const down = new THREE.Vector3().copy(start).multiplyScalar(start.y).sub(_up).normalize();
     const side = new THREE.Vector3().crossVectors(start, down);
-    const tip = (Math.random() - 0.5) * THREE.MathUtils.degToRad(120);
+    const tip = THREE.MathUtils.degToRad(35 + Math.random() * 45) * (Math.random() < 0.5 ? -1 : 1);
     const travel = down.multiplyScalar(Math.cos(tip)).addScaledVector(side, Math.sin(tip)).normalize();
     (material.uniforms.uAxis.value as THREE.Vector3).crossVectors(start, travel).normalize();
 
     meteor.active = true;
     meteor.age = 0;
-    meteor.life = fireball ? 1.6 + Math.random() * 1.0 : 0.45 + Math.random() * 0.65;
-    meteor.arc = THREE.MathUtils.degToRad(fireball ? 18 + Math.random() * 14 : 8 + Math.random() * 16);
-    meteor.trail = meteor.arc * (fireball ? 0.55 : 0.4);
-    meteor.brightness = fireball ? 3.2 : 1.2 + Math.random() * 1.4;
-    material.uniforms.uWidth.value = fireball ? 2.6 : 1.1 + Math.random() * 0.6;
-    (material.uniforms.uColor.value as THREE.Color).set(
-        skyFrame.bloodMoon ? pick(BLOOD_COLORS) : fireball ? pick(FIREBALL_COLORS) : pick(COLORS),
-    );
+    // A long glide over a couple of seconds, its tail about ten degrees of sky.
+    meteor.life = fireball ? 3 + Math.random() * 1.4 : 1.3 + Math.random() * 1.5;
+    meteor.arc = THREE.MathUtils.degToRad(fireball ? 38 + Math.random() * 16 : 24 + Math.random() * 18);
+    meteor.trail = THREE.MathUtils.degToRad(fireball ? 16 + Math.random() * 6 : 9 + Math.random() * 4);
+    meteor.brightness = fireball ? 3.2 : 1.2 + Math.random() * 1.2;
+    material.uniforms.uWidth.value = fireball ? 2.4 : 1.1 + Math.random() * 0.5;
+    (material.uniforms.uColor.value as THREE.Color).set(skyFrame.bloodMoon ? pick(BLOOD_COLORS) : pick(COLORS));
     if (meteor.mesh) meteor.mesh.visible = true;
 }
 
@@ -135,6 +148,8 @@ export const Meteors: React.FC = () => {
                 uWidth: { value: 1 },
                 uColor: { value: new THREE.Color() },
                 uBrightness: { value: 0 },
+                uHead: { value: 1 },
+                ...CLOUD_UNIFORMS,
             },
             vertexShader: VERTEX,
             fragmentShader: FRAGMENT,
@@ -163,7 +178,7 @@ export const Meteors: React.FC = () => {
         group.position.copy(camera.position);
         if (skyFrame.paused) return;
         const dt = Math.min(delta, 0.1);
-        const dark = THREE.MathUtils.smoothstep(skyFrame.night, 0.6, 0.95) * (1 - skyFrame.medium);
+        const dark = THREE.MathUtils.smoothstep(skyFrame.night, 0.3, 0.8) * (1 - skyFrame.medium);
         // Frame-rate independent: a chance per second, not per frame.
         if (dark > 0 && Math.random() < RATE * dark * dt) {
             const free = meteors.find(m => !m.active);
@@ -172,20 +187,29 @@ export const Meteors: React.FC = () => {
         for (const meteor of meteors) {
             if (!meteor.active) continue;
             meteor.age += dt;
-            const t = meteor.age / meteor.life;
-            if (t >= 1) {
+            // How far it has burnt (0..1), then how far its train has faded (0..1).
+            const t = Math.min(1, meteor.age / meteor.life);
+            const after = Math.max(0, (meteor.age - meteor.life) / AFTERGLOW);
+            if (after >= 1) {
                 meteor.active = false;
                 if (meteor.mesh) meteor.mesh.visible = false;
                 continue;
             }
-            // Fast at first, slowing as it burns; the tail stretches out behind the head.
-            const head = meteor.arc * (1 - Math.pow(1 - t, 1.6));
-            const tail = Math.max(0, head - meteor.trail * Math.min(1, t * 3));
-            meteor.material.uniforms.uAngles.value.set(tail, head);
-            // In quickly, a last flare near the end, then out.
-            const flare = 1 + 0.8 * Math.exp(-Math.pow((t - 0.82) / 0.06, 2));
-            const fade = Math.min(1, t * 8) * (1 - THREE.MathUtils.smoothstep(t, 0.86, 1));
-            meteor.material.uniforms.uBrightness.value = meteor.brightness * flare * fade * Math.max(dark, 0.35);
+            // A steady glide that eases a little as it burns; the tail stretches
+            // out behind the head to its full length, and once the head has
+            // burnt out the train shrinks back toward where it vanished.
+            const head = meteor.arc * (1 - Math.pow(1 - t, 1.3));
+            let tail = Math.max(0, head - meteor.trail * Math.min(1, t * 4));
+            tail += (head - tail) * 0.45 * THREE.MathUtils.smoothstep(after, 0, 1);
+            const uniforms = meteor.material.uniforms;
+            uniforms.uAngles.value.set(tail, head);
+            // In quickly, a last flare, the head burning out, then the train
+            // fading away.
+            const flare = 1 + 0.6 * Math.exp(-Math.pow((t - 0.72) / 0.07, 2));
+            const burnOut = 1 - THREE.MathUtils.smoothstep(t, 0.74, 1);
+            uniforms.uHead.value = burnOut;
+            const train = (1 - after) * (1 - after);
+            uniforms.uBrightness.value = meteor.brightness * Math.min(1, t * 10) * flare * (0.55 + 0.45 * burnOut) * train * Math.max(dark, 0.35);
         }
     });
 

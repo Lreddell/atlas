@@ -15,7 +15,8 @@ import { SHADOW_QUALITY_SETTINGS, type ShadowQuality, type VisualStyle } from '.
 import { createAtmosphereState, sampleAtmosphere, SUN_ORBIT_AXIS, SUN_ORBIT_TILT } from '../../systems/graphics/atmosphere';
 import { CLASSIC_ORBIT_AXIS, sampleClassicAtmosphere } from '../../systems/graphics/classicAtmosphere';
 import { ATMOSPHERE_GLSL, ATMOSPHERE_UNIFORMS, applyAtmosphereUniforms, applyMediumUniforms } from '../../systems/graphics/atmosphereUniforms';
-import { cloudCoverToward } from '../../systems/graphics/cloudLayer';
+import { CLOUD_GLSL, CLOUD_UNIFORMS, cloudCoverToward } from '../../systems/graphics/cloudLayer';
+import { auroraActivity, stepAuroraActivity } from '../../systems/graphics/auroraActivity';
 import { BlockType } from '../../types';
 import { createGlowTexture, createMoonPhaseTexture, createSunTexture } from '../../utils/textures';
 import { floorLight, updateVoxelLighting } from '../../systems/graphics/materials/voxelMaterial';
@@ -25,7 +26,7 @@ import { setClassicLighting, setClassicLightLevels } from '../../systems/graphic
 import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { createShadowSnap, snapShadowCenter } from '../../systems/graphics/shadows';
 import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
-import { SKY_FAR_PLANE_GLSL, SKY_ORDER, drawAtFarPlane, skyFrame } from '../../systems/graphics/skyObjects';
+import { SKY_FAR_PLANE_GLSL, SKY_ORDER, drawAtFarPlane, skyFrame, veilByClouds } from '../../systems/graphics/skyObjects';
 import { Aurora } from './sky/Aurora';
 import { Meteors } from './sky/Meteors';
 
@@ -91,7 +92,9 @@ const SKY_FRAGMENT = /* glsl */`
     }
 `;
 
-// Stars: seeded points that twinkle, in scene-linear HDR.
+// Stars: seeded points that twinkle, in scene-linear HDR. A star behind a
+// cloud is lost (it checks the clouds along its own line of sight): only the
+// bright aurora, moon and sun glow through a cloud.
 const StarShader = {
     vertexShader: /* glsl */`
         attribute float phase;
@@ -99,13 +102,15 @@ const StarShader = {
         attribute float magnitude;
         varying float vAlpha;
         uniform float uTime;
+        ${CLOUD_GLSL}
         void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mvPosition;
             ${SKY_FAR_PLANE_GLSL}
             gl_PointSize = max(1.5, (420.0 + magnitude * 360.0) / -mvPosition.z);
-            float twinkle = speed > 0.0 ? 0.65 + 0.35 * sin(uTime * speed + phase) : 1.0;
-            vAlpha = twinkle * (0.35 + 0.65 * magnitude);
+            float twinkle = speed > 0.0 ? 0.75 + 0.25 * sin(uTime * speed + phase) : 1.0;
+            vec3 sight = normalize((modelMatrix * vec4(position, 1.0)).xyz - cameraPosition);
+            vAlpha = twinkle * (0.35 + 0.65 * magnitude) * (1.0 - atlasCloudCoverAlong(sight));
         }
     `,
     fragmentShader: /* glsl */`
@@ -211,17 +216,19 @@ const BIOME_SAMPLE_INTERVAL = 0.25; // seconds between biome lookups for haze/au
 /** How much of the sun's or moon's glow a cloud in front of it takes away. */
 const CLOUD_GLOW_DIM = 0.7;
 
-/** A sun or moon disc: opaque texels, faded by opacity, drawn at the far plane. */
+/** A sun or moon disc: opaque texels, faded by opacity, drawn at the far plane, hidden behind a cloud. */
 function createDiscMaterial(): THREE.MeshBasicMaterial {
     const material = new THREE.MeshBasicMaterial({ fog: false, transparent: true, depthWrite: false });
     drawAtFarPlane(material);
+    veilByClouds(material, 1);
     return material;
 }
 
-/** A sun or moon glow: additive, drawn at the far plane. */
+/** A sun or moon glow: additive, drawn at the far plane; a soft part of it shows through a cloud. */
 function createGlowMaterial(map: THREE.Texture | null): THREE.SpriteMaterial {
     const material = new THREE.SpriteMaterial({ map, fog: false, transparent: false, blending: THREE.AdditiveBlending, depthWrite: false });
     drawAtFarPlane(material);
+    veilByClouds(material, 0.6);
     return material;
 }
 
@@ -331,7 +338,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     }), []);
 
     const starMaterial = useMemo(() => new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
+        uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 }, ...CLOUD_UNIFORMS },
         vertexShader: StarShader.vertexShader,
         fragmentShader: StarShader.fragmentShader,
         transparent: false,
@@ -375,7 +382,11 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
             positions[i*3+2] = r * Math.cos(phi);
             phases[i] = random() * Math.PI * 2;
-            speeds[i] = random() < 0.08 ? 0.4 + random() * 1.4 : 0;
+            // A few twinkle, slowly. (The draws keep their old order, so every
+            // star stays where it always was.)
+            const twinkleRoll = random();
+            const twinkleRate = twinkleRoll < 0.08 ? random() : 0;
+            speeds[i] = twinkleRoll < 0.03 ? 0.06 + twinkleRate * 0.14 : 0;
             magnitudes[i] = Math.pow(random(), 3);
         }
         return { positions, phases, speeds, magnitudes };
@@ -457,8 +468,9 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         setClassicLighting(classic);
         setClassicLightLevels(state.classicSunlight, brightness);
 
-        // A cloud over the sun or moon dims its glow, in the sky and in the haze
-        // toward it (the ground under the cloud is already in its shadow).
+        // A cloud over the sun or moon dims its halo in the sky and in the haze
+        // toward it (the ground under the cloud is already in its shadow; the
+        // disc and its glow hide behind the cloud pixel by pixel).
         const eye = camera.position;
         const sunCover = classic ? 0 : cloudCoverToward(eye.x, eye.y, eye.z, state.sunDir[0], state.sunDir[1], state.sunDir[2]);
         const moonCover = classic ? 0 : cloudCoverToward(eye.x, eye.y, eye.z, state.moonDir[0], state.moonDir[1], state.moonDir[2]);
@@ -544,7 +556,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             sunDiscMaterial.color.setScalar(classic ? SUN_CORE_CLASSIC : SUN_CORE_LUMINOUS);
             sunDiscMaterial.opacity = sunFade;
             // A soft glow (the old one was mostly lost in its fog); Luminous leaves the rest to the bloom.
-            if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade * sunDim);
+            if (sunGlowRef.current) (sunGlowRef.current.material as THREE.SpriteMaterial).color.setScalar((classic ? 0.3 : 0.22) * sunFade);
             sunGroupRef.current.visible = sunFade > 0.001;
         }
 
@@ -565,7 +577,7 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
                 // Only the lit part of the moon glows: none at new moon, softest at full.
                 const lit = isBloodMoon ? 1 : 1 - Math.abs(phaseIndex - 4) / 4;
                 (moonGlowRef.current.material as THREE.SpriteMaterial).color
-                    .copy(scratchGlowColor.set(lunarEvent.moonGlowHex)).multiplyScalar((classic ? 0.16 : 0.12) * lit * moonFade * moonDim);
+                    .copy(scratchGlowColor.set(lunarEvent.moonGlowHex)).multiplyScalar((classic ? 0.16 : 0.12) * lit * moonFade);
             }
             moonGroupRef.current.visible = moonFade > 0.001;
         }
@@ -618,12 +630,17 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         }
         skyFrame.night = state.starVisibility;
 
-        // The aurora (sky/Aurora): at night in snowy biomes, breathing slowly, in
-        // the moon phase's colours (or the blood moon's).
+        // The aurora (sky/Aurora): at night in snowy biomes, in the moon phase's
+        // colours (or the blood moon's), swelling and fading and now and then
+        // breaking into a substorm.
         const targetBiomeBlend = biomeSample.snowy ? 1 : 0;
         auroraBiomeBlendRef.current = THREE.MathUtils.damp(auroraBiomeBlendRef.current, targetBiomeBlend, 0.75, delta);
-        const auroraNight = THREE.MathUtils.clamp((0.2 - dayFactor) / 0.2, 0, 1);
-        skyFrame.aurora = auroraNight * auroraBiomeBlendRef.current * (0.75 + 0.25 * Math.sin(clock.elapsedTime * 0.05));
+        // It eases in through the dusk as the sun sinks, and out again through the
+        // dawn, over a minute or more either way.
+        const auroraNight = 1 - THREE.MathUtils.smoothstep(state.sunDir[1], -0.45, -0.05);
+        skyFrame.aurora = auroraNight * auroraBiomeBlendRef.current;
+        skyFrame.auroraActivity = stepAuroraActivity(auroraActivity, Math.min(delta, 0.1));
+        const auroraGlow = ATMOSPHERE_UNIFORMS.atlasAuroraGlow.value;
         if (skyFrame.aurora > 0.005) {
             const theme = isBloodMoon ? AURORA_BLOOD_MOON_THEME : (AURORA_PHASE_THEMES[phaseIndex] || AURORA_PHASE_THEMES[0]);
             const drift = isBloodMoon ? 0.3 : 1;
@@ -632,6 +649,31 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
             skyFrame.auroraLow.setHSL(theme[0] + pulse * 0.03 * drift, theme[1], theme[2]);
             skyFrame.auroraMid.setHSL(theme[3] + pulse2 * 0.04 * drift, theme[4], theme[5]);
             skyFrame.auroraHigh.setHSL(theme[6] + pulse * 0.05 * drift, theme[7], theme[8]);
+            // A pink fringe along the foot and crimson tops, as in a strong real display.
+            if (isBloodMoon) {
+                skyFrame.auroraFringe.setHSL(0.99, 0.9, 0.5);
+                skyFrame.auroraTop.setHSL(0.97, 0.8, 0.25);
+            } else {
+                skyFrame.auroraFringe.setHSL(0.93, 0.95, 0.62);
+                skyFrame.auroraTop.setHSL(0.98, 0.85, 0.42);
+            }
+            // Its light: a glow in the air low beneath it, and a faint tint on the
+            // night's sky light (snow goes faintly green under a bright display).
+            const lit = skyFrame.aurora * (1 - medium) * skyFrame.auroraActivity;
+            const glow = 0.008 * Math.min(lit, 1.2);
+            auroraGlow.x = skyFrame.auroraLow.r * glow;
+            auroraGlow.y = skyFrame.auroraLow.g * glow;
+            auroraGlow.z = skyFrame.auroraLow.b * glow;
+            if (hemi && !classic) {
+                const tint = 0.006 * Math.min(lit, 1);
+                hemi.color.r += skyFrame.auroraLow.r * tint;
+                hemi.color.g += skyFrame.auroraLow.g * tint;
+                hemi.color.b += skyFrame.auroraLow.b * tint;
+            }
+        } else {
+            auroraGlow.x = 0;
+            auroraGlow.y = 0;
+            auroraGlow.z = 0;
         }
     });
 
