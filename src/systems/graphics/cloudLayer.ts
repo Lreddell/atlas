@@ -119,7 +119,7 @@ vec3 atlasCloudLight( vec3 n, vec3 viewDir, float inner, float height ) {
 	ambient += horizon * ( PI * 0.18 * base );
 	// Little light gets into the middle of a big cloud: its base goes grey there
 	// while its rim stays bright.
-	ambient *= 1.0 - 0.35 * inner * base;
+	ambient *= 1.0 - 0.2 * inner * base;
 	// Around sunrise and sunset, and for a while after the sun has set, the low
 	// sun lights the undersides from its side of the sky: gold, then orange,
 	// then pink as it sinks, brightest toward it.
@@ -133,7 +133,7 @@ vec3 atlasCloudLight( vec3 n, vec3 viewDir, float inner, float height ) {
 	// thick one) some of it soaks down to the base; and where it is behind a
 	// cloud's rim, a silver lining.
 	float direct = max( dot( n, keyDir ), 0.0 )
-		+ base * max( keyDir.y, 0.0 ) * 0.45 * ( 1.0 - 0.9 * inner )
+		+ base * max( keyDir.y, 0.0 ) * 0.45 * ( 1.0 - 0.45 * inner )
 		+ pow( max( dot( viewDir, keyDir ), 0.0 ), 8.0 ) * 0.7 * ( 1.0 - 0.8 * inner );
 	// Light bounced about inside a cloud leaves it brighter than a white wall in the same light.
 	return ( ambient + keyColor * direct ) * ( 2.0 * RECIPROCAL_PI ) * atlasCloudColor;

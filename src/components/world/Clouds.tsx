@@ -197,7 +197,10 @@ void main() {
 				: face == 2 ? vec3( 0.0, 0.0, -float( stepCell.y ) )
 				: vec3( 0.0, dir.y > 0.0 ? -1.0 : 1.0, 0.0 );
 			vec3 rel = dir * tHit;
-			float inner = textureLod( atlasCloudMap, atlasCloudUv( rel.xz ), 0.0 ).g;
+			// How deep in its cloud, read broadly (averaged over a few cells): the
+			// cell-by-cell depth made blotchy patches that followed no shape.
+			vec4 around = textureLod( atlasCloudMap, atlasCloudUv( rel.xz ), 2.0 );
+			float inner = clamp( around.g / max( around.r, 0.5 ), 0.0, 1.0 );
 			float height = clamp( ( cameraPosition.y + rel.y - atlasCloudLayer.x ) / ( atlasCloudLayer.y - atlasCloudLayer.x ), 0.0, 1.0 );
 			near = vec4( atlasApplyFog( atlasCloudLight( n, dir, inner, height ), rel ), atlasCloudSolid( through ) );
 			tNear = tHit;
