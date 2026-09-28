@@ -66,11 +66,13 @@ uniform float atlasCloudPixel;
 varying vec3 vCloudRay;
 
 // How much of what is behind it a cloud hides, from how far the view runs
-// through it: a clipped corner or a thin rim lets a good deal through, a view
-// straight through the slab a little, a long look along a cloud nothing, the
-// same from above as from below. (The layer's own opacity multiplies this.)
+// through it: a view straight through the slab lets a little through, a long
+// look along a cloud nothing, the same from above as from below. Every face
+// keeps most of its body even where the view only clips it (by a face's edge,
+// or a corner): fading there turned faces to glowing glass toward their edges.
+// (The layer's own opacity multiplies this.)
 float atlasCloudSolid( float through ) {
-	return atlasClassicSky.w > 0.5 ? 1.0 : 1.0 - exp( -through * 0.55 );
+	return atlasClassicSky.w > 0.5 ? 1.0 : mix( 0.75, 1.0, 1.0 - exp( -through * 0.4 ) );
 }
 
 bool atlasCloudAt( ivec2 cell, ivec2 size ) {
