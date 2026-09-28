@@ -72,14 +72,14 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
                     width="w-full"
                 />
                 <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
-                    {gameMode === 'survival' && 'Search for resources, craft, gain levels, health and hunger.'}
+                    {gameMode === 'survival' && 'Gather resources, craft gear, and manage your health and hunger.'}
                     {gameMode === 'creative' && 'Unlimited resources, free flying and destroy blocks instantly.'}
                     {gameMode === 'spectator' && "You can look but don't touch."}
                 </p>
             </div>
 
             <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Edit Preset (.json)</label>
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Generation Preset</label>
                 <select
                     value={selectedWorldGenPresetId}
                     onChange={(event) => onSelectedWorldGenPresetIdChange(event.target.value)}

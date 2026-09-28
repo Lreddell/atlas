@@ -1228,7 +1228,7 @@ export class WorldManager {
       return noiseH + 2;
   }
 
-  public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
+  public findSafeSpawnPosition(targetX: number, targetZ: number, firstSpawn = false): { x: number, y: number, z: number } {
       const seaLevel = GenConfig.height.seaLevel;
       const { safeSearchRadius, safeSearchStep } = GenConfig.spawn;
       
@@ -1278,10 +1278,10 @@ export class WorldManager {
                   const z = Math.floor(targetZ + dz);
                   const h = WorldGen.getTerrainHeight(x, z);
 
-                  const score = this.scoreSpawnCandidate(x, z);
+                  const score = this.scoreSpawnCandidate(x, z, firstSpawn);
                   if (score > 0 && (!scored || score > scored.score)) {
                       scored = { x, z, y: h, score };
-                  } else if (h > seaLevel) {
+                  } else if (h > seaLevel && !this.isSealedSpawnColumn(x, z)) {
                       const ls = scoreFallbackLand(x, z, h);
                       if (!land || ls > land.landScore) {
                           land = { x, z, y: h, landScore: ls };
@@ -1322,16 +1322,26 @@ export class WorldManager {
       return GenConfig.height.seaLevel;
   }
 
-  public scoreSpawnCandidate(x: number, z: number): number {
+  /**
+   * A still-sealed region (the Magnetic Fields before its Warden falls): no
+   * mining or building, so never a place to start or respawn.
+   */
+  private isSealedSpawnColumn(x: number, z: number): boolean {
+      const region = getRegionAt(x, 0, z);
+      return !!region && region.sealedByDefault && !progression.isRegionCleansed(region.id);
+  }
+
+  public scoreSpawnCandidate(x: number, z: number, firstSpawn = false): number {
       const seaLevel = GenConfig.height.seaLevel;
       const biome = getBiome(x, z);
       const height = WorldGen.getTerrainHeight(x, z);
 
-      // Reject ocean, river, and volcanic
+      // Reject ocean, river, volcanic, and sealed regions
       if (biome.id === 'ocean' || biome.id === 'frozen_ocean') return -1;
       if (biome.id === 'river' || biome.id === 'frozen_river') return -1;
       if (biome.id === 'volcanic') return -1;
       if (height <= seaLevel) return -1;
+      if (this.isSealedSpawnColumn(x, z)) return -1;
 
       let score = 100;
 
@@ -1363,6 +1373,14 @@ export class WorldManager {
       else if (biome.id === 'desert') score -= 5;
       else if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') score -= 5;
 
+      // A new world's first spawn also steers clear of closed canopy and
+      // wetland, where a new player starts in the dark or in water. Respawns
+      // keep the scoring above, so existing worlds respawn where they did.
+      if (firstSpawn) {
+          if (biome.id === 'dark_forest') score -= 25;
+          else if (biome.id === 'swamp' || biome.id === 'jungle') score -= 15;
+      }
+
       return score;
   }
 
@@ -1382,7 +1400,7 @@ export class WorldManager {
               const x = Math.floor(center.x + Math.cos(angle) * r);
               const z = Math.floor(center.z + Math.sin(angle) * r);
 
-              const score = this.scoreSpawnCandidate(x, z);
+              const score = this.scoreSpawnCandidate(x, z, true);
               if (score > bestScore) {
                   bestScore = score;
                   bestX = x;
@@ -1391,12 +1409,12 @@ export class WorldManager {
 
               // Good enough, stop early
               if (bestScore >= GenConfig.spawn.earlyAcceptScore) {
-                  return this.findSafeSpawnPosition(bestX, bestZ);
+                  return this.findSafeSpawnPosition(bestX, bestZ, true);
               }
           }
       }
 
-      return this.findSafeSpawnPosition(bestX, bestZ);
+      return this.findSafeSpawnPosition(bestX, bestZ, true);
   }
 
   // Helper to synchronously force generation if missing (prevents falling through world on start)

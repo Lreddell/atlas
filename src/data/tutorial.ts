@@ -17,9 +17,10 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'You can play in survival, creative, or spectator mode, and shape terrain with the built-in World Editor when you want to author worlds instead of adventuring in them. Every world can be saved, renamed, imported, and exported from the main menu.'
         ],
         bullets: [
-            'Explore infinite-style terrain across a dozen-plus biomes.',
+            'Explore infinite-style terrain across more than twenty biomes, with caves and deepslate depths below.',
             'Gather resources, craft weapons and armor, build, and fight.',
             'Find the Magnetic Fields and defeat the Warden to cleanse them.',
+            'Seek out the Resonant Vaults sealed beneath rare listening spires, and the Bell Titan within.',
             'Customize generation presets for unique world seeds.'
         ]
     },
@@ -29,14 +30,16 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'First steps for a new world',
         paragraphs: [
             'Start with Singleplayer, create a world, then choose a game mode and optional generation preset.',
-            'In Survival, your priority is shelter, food, and basic tools before night falls.',
+            'In Survival, start with wood and basic tools, then keep an eye on food, which you forage from plants.',
             'In Creative, focus on testing builds and layouts without resource limits.'
         ],
         bullets: [
-            'Create world: Singleplayer -> Create New World.',
-            'Set game mode: Survival, Creative, or Spectator.',
-            'Optional: choose a World Edit Preset for terrain rules.',
-            'Play selected world and begin gathering or building.'
+            'Create world: Singleplayer -> Create New World, then pick Survival, Creative, or Spectator.',
+            'Hold left click on a tree for logs. In your inventory (E), one log makes four planks, and two planks stacked make four sticks.',
+            'Two planks above two sticks make a wooden pickaxe, right in the inventory grid. Four planks make a Crafting Table for the 3x3 recipes.',
+            'Mine stone for cobblestone: stone tools, and a Furnace (eight cobblestone in a ring) to smelt ore. Coal or charcoal on a stick makes torches.',
+            "Food: apples fall from oak leaves, bananas from jungle leaves, and glowing Lumen Berries from cave glow lichen. One of each, in a row at a Crafting Table, makes a Forager's Bowl.",
+            'A bed (three wool over three planks) lets you sleep through the night and sets your respawn point. Four wheat seeds, found in tall grass, weave into one wool.'
         ]
     },
     {
@@ -45,16 +48,18 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'Core keyboard and mouse input',
         paragraphs: [
             'Movement and interaction follow familiar voxel-sandbox controls.',
-            'Some controls are context-dependent and only work while actively in-game.'
+            'Some controls are context-dependent and only work while actively in-game. Mouse sensitivity, invert mouse, and the full key list are in Options > Controls.'
         ],
         bullets: [
-            'W A S D: Move',
+            'W A S D (or the arrow keys): Move',
             'Space: Jump (double-tap in Creative to toggle flight)',
             'Ctrl (hold) or double-tap W: Sprint',
             'Left Shift: Sneak / descend in flight contexts',
             'Mouse: Look around',
             'Left Click: Break / attack',
             'Right Click: Place / use / eat',
+            'Middle Click: Pick the block you are looking at',
+            '1-9 or Mouse Wheel: Choose a hotbar slot',
             'E: Open inventory',
             'Q: Drop held item (Ctrl+Q drops the whole stack)',
             'R: Flip magnetic polarity (needs Polarity Boots)',
@@ -62,9 +67,12 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'C: Dodge roll (always available, in the air too; a landing rolled through takes no fall damage). With Polarity Boots it also becomes a magnetic dash onto an opposite magnet face or into an opposed Warden, a repel leap away from a matched one, or a launch off a wall',
             'F5: Free third person, where the body runs its own way while the camera orbits (boss fights start in it)',
             'F6: Over-the-shoulder third person, where the body turns with the camera',
-            '/ or T: Open command input',
+            'F7: Detached camera: press to fly it into place, again to park it while you play, and again to put it back',
+            '/ or T: Open chat and command input',
             'Esc: Pause / menu back',
-            'F3: Toggle debug screen',
+            'O: Show the current Vault objective again',
+            'F1: Hide the HUD',
+            'F3: Toggle debug screen (position, biome)',
             'F4: Toggle texture atlas viewer',
             'F8: Capture menu panorama'
         ]
@@ -76,10 +84,10 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         paragraphs: [
             'The world runs a full day-night cycle, biome-dependent ambience, and moon-phase variation.',
             'In Survival, health, hunger, and breath matter. Weapons deal real damage and wear out with use; armor pieces absorb hits until their durability runs out.',
-            'Lighting, weather ambience, and music context react to where you are and what state you are in.'
+            'Lighting and music react to where you are and what state you are in.'
         ],
         bullets: [
-            'Day/night affects visibility and atmosphere.',
+            'Day/night affects visibility and atmosphere. Sleep in a bed at night to skip to morning; no one can sleep through a blood moon.',
             'Health and hunger shape survival pacing; armor reduces combat damage (not falls, fire, or drowning).',
             'Tools and weapons show durability bars and break at zero; tiers (wood to diamond) differ in damage and lifespan.',
             'Equip helmet, chestplate, leggings, and boots in the dedicated armor slots of the inventory screen. All four sets (iron, gold, diamond, copper) are craftable.',
@@ -94,6 +102,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'Polarity traversal and the sealed Magnetic Fields',
         paragraphs: [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
+            'The Fields are rare: the nearest is usually thousands of blocks from where you start, and looks like tiered walls of dark magnetite rising toward a plateau. The /locate biome magnetic_fields command gives its position.',
             'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
             'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones, providing enough force to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
             'Summon the Magnetic Warden at the central altar. It fights in three forms, and one rule runs the whole duel: same polarity repels, opposite attracts. Match its colour and its bolts bounce off your boots; oppose it and you are drawn in close enough to strike.',
@@ -128,7 +137,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             '/giveitem <id> [count] and /equip <armor id>',
             '/time set <day|night|value> and /time add <value>',
             '/tp <x> <y> <z>',
-            '/locate biome <name>',
+            '/locate biome <name> and /locate vault',
             '/boss <spawn|kill> and /magfields <on|off|toggle>: encounter testing',
             '/playsound <id>, /sound volume <value>, /music skip',
             'Tip: use Options and Panorama Settings to tune visuals and menu presentation.'
