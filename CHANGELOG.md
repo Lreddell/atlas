@@ -69,7 +69,7 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Improved eye-based aiming, block selection outlines, and interaction alignment across camera modes.
 
 ### Menus & Panoramas
-- Luminous Coast is the new bundled default for menu and loading backgrounds. The original panorama remains available as Classic Atlas in Panorama Settings.
+- Luminous Coast is the new bundled default for menu and loading backgrounds. The original panorama remains available as Classic Atlas in Options > Menu Background.
 - Keep using your own captured or imported panoramas, with named built-in choices that are protected from deletion.
 - The short Video Settings fade now also appears on matching menu pages, tutorial and editor tabs, creative inventory categories, loading panels, and dialogs. These fades respect reduced-motion preferences.
 - What's New now includes this full update, with older releases still selectable. Its panel and version buttons use the same square, beveled styling as the rest of the menus.

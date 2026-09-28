@@ -7,7 +7,7 @@ import type { GameMode } from '../../../types';
 import { MenuButton, MenuSlider } from './MainMenuControls';
 import type { FormattedSplashSegment } from './useSplashAnimation';
 
-export type MainMenuView = 'main' | 'create' | 'select' | 'settings' | 'editors';
+export type MainMenuView = 'main' | 'create' | 'select' | 'settings';
 export type PanoramaSubmenu = 'manager' | 'settings';
 
 const submenuHeadingClass = 'text-white text-xl mb-4 font-bold text-shadow-lg';
@@ -109,7 +109,7 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
                     ))}
                 </select>
                 <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
-                    Presets are saved from Editor Features {'\u2192'} World Editor.
+                    Presets are saved from the World Editor.
                 </p>
             </div>
 
@@ -180,7 +180,7 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                             </span>
                         </div>
                         <div className="text-xs font-pixel text-gray-400">
-                            {world.id.split('-')[0]} {'\u2022'} {world.gameMode} {'\u2022'} {new Date(world.lastPlayed).toLocaleDateString()} {new Date(world.lastPlayed).toLocaleTimeString()}
+                            {world.gameMode.charAt(0).toUpperCase() + world.gameMode.slice(1)} {'\u2022'} Seed {world.seed.trim() || world.seedNum} {'\u2022'} {new Date(world.lastPlayed).toLocaleDateString()} {new Date(world.lastPlayed).toLocaleTimeString()}
                         </div>
                     </div>
                     {selectedWorldId === world.id && (
@@ -279,7 +279,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
     onBack,
 }) => (
     <div className="relative z-10 flex h-full w-[760px] flex-col items-center py-10">
-        <h1 className={submenuHeadingClass}>Panorama Settings</h1>
+        <h1 className={submenuHeadingClass}>Menu Background</h1>
 
         <div key={panoramaSubmenu} className="flex min-h-0 w-full flex-1 flex-col items-center atlas-fade-in">
         {panoramaSubmenu === 'manager' && (
@@ -406,30 +406,12 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
     </div>
 );
 
-interface EditorsPanelProps {
-    onChunkBase: () => void;
-    onFeatureEditor: () => void;
-    onBack: () => void;
-}
-
-export const EditorsPanel: React.FC<EditorsPanelProps> = ({ onChunkBase, onFeatureEditor, onBack }) => (
-    <div className="relative z-10 flex flex-col items-center">
-        <h1 className={submenuHeadingClass}>Editor Features</h1>
-        <div className="flex w-[420px] flex-col gap-4">
-            <MenuButton label="World Editor" onClick={onChunkBase} width="w-full" variant="primary" />
-            <MenuButton label="Feature Editor" onClick={onFeatureEditor} disabled tooltip="Coming soon!" width="w-full" />
-            <MenuButton label="Back" onClick={onBack} width="w-full" />
-        </div>
-    </div>
-);
-
 interface MainLandingPanelProps {
     formattedSplash: FormattedSplashSegment[];
     splashFontSize: number;
     isBrowserMode: boolean;
     onSingleplayer: () => void;
-    onEditors: () => void;
-    onPanoramaSettings: () => void;
+    onWorldEditor: () => void;
     onOptions: () => void;
     onTutorial: () => void;
     onQuit?: () => void;
@@ -442,8 +424,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
     splashFontSize,
     isBrowserMode,
     onSingleplayer,
-    onEditors,
-    onPanoramaSettings,
+    onWorldEditor,
     onOptions,
     onTutorial,
     onQuit,
@@ -487,9 +468,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
 
         <div className="flex w-[400px] flex-col gap-4">
             <MenuButton label="Singleplayer" onClick={onSingleplayer} width="w-full" variant="primary" />
-            <MenuButton label="Editor Features" onClick={onEditors} width="w-full" />
-            <MenuButton label="Panorama Settings" onClick={onPanoramaSettings} width="w-full" />
-            <MenuButton label="Multiplayer" disabled tooltip="Coming soon!" width="w-full" />
+            <MenuButton label="World Editor" onClick={onWorldEditor} width="w-full" />
             <div className="flex w-full gap-4">
                 <MenuButton label="Options..." onClick={onOptions} width="w-[192px]" />
                 {isBrowserMode ? (

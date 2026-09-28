@@ -41,6 +41,8 @@ export interface WorldMetadata {
     allowCommands?: boolean;
     /** Items and armor stay with the player through death. Absent -> off. */
     keepInventory?: boolean;
+    /** The HUD shows the player's position. Absent -> off. */
+    showCoordinates?: boolean;
     player?: PlayerData; // Last known player state
     spawnPoint?: { x: number, y: number, z: number } | null;
     worldSpawn?: { x: number, y: number, z: number } | null;

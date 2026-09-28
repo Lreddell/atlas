@@ -4,7 +4,6 @@ import { musicController } from '../../systems/sound/MusicController';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import {
     CreateWorldPanel,
-    EditorsPanel,
     MainLandingPanel,
     PanoramaPanel,
     TutorialPromptModal,
@@ -31,7 +30,10 @@ const BUILD_CREDIT_URL = 'https://github.com/Lreddell/atlas';
 interface MainMenuProps {
     onStart: (worldId: string) => void;
     onChunkBase: () => void;
-    onFeatureEditor: () => void;
+    /** The view to open on (Options > Menu Background opens 'settings'). */
+    initialView?: 'main' | 'settings';
+    /** Where Back leads from the menu background settings when Options opened them. */
+    onPanoramaDone?: () => void;
     onOptions: (opts?: { openTutorial?: boolean }) => void;
     onQuit?: () => void;
     backgroundMode: 'dirt' | 'panorama';
@@ -60,7 +62,8 @@ interface MainMenuProps {
 export const MainMenu: React.FC<MainMenuProps> = ({
     onStart,
     onChunkBase,
-    onFeatureEditor,
+    initialView = 'main',
+    onPanoramaDone,
     onOptions,
     onQuit,
     backgroundMode,
@@ -85,7 +88,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     setPanoramaRotationSpeed,
     showBackground = true,
 }) => {
-    const [view, setView] = useState<MainMenuView>('main');
+    const [view, setView] = useState<MainMenuView>(initialView);
     const [panoramaSubmenu, setPanoramaSubmenu] = useState<PanoramaSubmenu>('manager');
     const [panoramaDebugFly, setPanoramaDebugFly] = useState(false);
     const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
@@ -241,8 +244,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
     const handleOpenCreateView = useCallback(() => setView('create'), []);
     const handleOpenSelectView = useCallback(() => setView('select'), []);
-    const handleOpenSettingsView = useCallback(() => setView('settings'), []);
-    const handleOpenEditorsView = useCallback(() => setView('editors'), []);
     const handleBackToMain = useCallback(() => setView('main'), []);
 
     if (panoramaDebugFly) {
@@ -340,15 +341,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     setPanoramaGradient={setPanoramaGradient}
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     setPanoramaRotationSpeed={setPanoramaRotationSpeed}
-                    onBack={handleBackToMain}
-                />
-            )}
-
-            {view === 'editors' && (
-                <EditorsPanel
-                    onChunkBase={onChunkBase}
-                    onFeatureEditor={onFeatureEditor}
-                    onBack={handleBackToMain}
+                    onBack={onPanoramaDone ?? handleBackToMain}
                 />
             )}
 
@@ -358,8 +351,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     splashFontSize={splashFontSize}
                     isBrowserMode={isBrowserMode}
                     onSingleplayer={handleOpenSelectView}
-                    onEditors={handleOpenEditorsView}
-                    onPanoramaSettings={handleOpenSettingsView}
+                    onWorldEditor={onChunkBase}
                     onOptions={() => onOptions()}
                     onTutorial={() => onOptions({ openTutorial: true })}
                     onQuit={onQuit}

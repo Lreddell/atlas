@@ -64,6 +64,8 @@ interface PauseMenuProps {
     onTutorialClose?: () => void;
     /** The open world's rules, shown in-game as World Options. */
     worldOptions?: WorldOptions;
+    /** From the title screen: open the menu background (panorama) settings. */
+    onOpenPanorama?: () => void;
 }
 
 export interface WorldOptions {
@@ -74,6 +76,8 @@ export interface WorldOptions {
     onAllowCommands: (on: boolean) => void;
     keepInventory: boolean;
     onKeepInventory: (on: boolean) => void;
+    showCoordinates: boolean;
+    onShowCoordinates: (on: boolean) => void;
 }
 
 type MenuScreen = 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial' | 'world';
@@ -160,6 +164,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     initialScreen = 'main',
     onTutorialClose,
     worldOptions,
+    onOpenPanorama,
 }) => {
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const graphics = useGraphicsSettings();
@@ -276,6 +281,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-[9.5rem]" />
                     <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
                 </div>
+                {isMainMenu && onOpenPanorama && <MenuButton label="Menu Background..." onClick={onOpenPanorama} width="w-80" />}
                 {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
                 {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-80" />}
             </div>
@@ -504,6 +510,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             <MCToggle label="Keep Inventory" value={worldOptions.keepInventory} onChange={worldOptions.onKeepInventory} width="w-80" />
             <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
                 Keep your items and armor when you die.
+            </p>
+
+            <MCToggle label="Show Coordinates" value={worldOptions.showCoordinates} onChange={worldOptions.onShowCoordinates} width="w-80" />
+            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+                Show your position in the corner of the screen.
             </p>
 
             <p className="mb-4 w-80 select-text text-center text-xs font-pixel text-gray-300 text-shadow-md">

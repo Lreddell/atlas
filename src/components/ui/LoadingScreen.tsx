@@ -63,7 +63,7 @@ const LOADING_TIPS = [
     "Use /setspawn to set your respawn point, and /keepinventory on to keep items on death.",
     "Worlds can be renamed, imported, and exported from the main menu.",
     "Desktop builds can open the active save folder directly from the world menu.",
-    "Panorama Settings lets you manage captured backgrounds and tune blur, gradient, and rotation.",
+    "Options > Menu Background manages captured panoramas and tunes their blur, gradient, and rotation.",
     "The built-in tutorial under Options covers controls, gear, boats, commands, and Magnetic Fields progression.",
     "Moon phases run on an 8-day cycle, and each phase changes nighttime brightness.",
     "Volcanic Crags use lava in place of normal water, which makes them one of Atlas's harshest biomes.",

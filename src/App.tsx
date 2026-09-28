@@ -85,6 +85,7 @@ import { resonantVaultRuntime } from './systems/world/ResonantVaultRuntime';
 import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
 import { isKeyFor, keyLabelFor } from './systems/player/keyBindingStore';
+import { CoordinatesReadout } from './components/ui/CoordinatesReadout';
 import { HOTBAR_KEY_ACTIONS, type KeyAction } from './systems/player/keyBindings';
 import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
@@ -382,6 +383,10 @@ const App: React.FC = () => {
   const [keepInventory, setKeepInventory] = useState(false);
   // Whether cheat commands work in this world (World Options / world creation).
   const [allowCommands, setAllowCommands] = useState(true);
+  // Whether the HUD shows the player's position (World Options).
+  const [showCoordinates, setShowCoordinates] = useState(false);
+  // The main menu opens on this view (Options > Menu Background).
+  const [menuInitialView, setMenuInitialView] = useState<'main' | 'settings'>('main');
   // The open world's name and seed, for World Options.
   const [worldInfo, setWorldInfo] = useState<{ name: string; seed: string } | null>(null);
   // Entity id of the boat the player is riding, or null. Boats are real world
@@ -813,7 +818,7 @@ const App: React.FC = () => {
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory, showCoordinates });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -831,6 +836,7 @@ const App: React.FC = () => {
           meta.gameMode = gameMode; // persist command-driven gamemode changes
           meta.allowCommands = allowCommands;
           meta.keepInventory = keepInventory;
+          meta.showCoordinates = showCoordinates;
           meta.player = playerData;
           meta.spawnPoint = spawnPoint;
           meta.worldSpawn = worldSpawn;
@@ -857,7 +863,7 @@ const App: React.FC = () => {
               worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory, showCoordinates]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -3021,6 +3027,7 @@ const App: React.FC = () => {
       setGameMode(meta.gameMode);
       setAllowCommands(meta.allowCommands ?? true);
       setKeepInventory(meta.keepInventory ?? false);
+      setShowCoordinates(meta.showCoordinates ?? false);
       setWorldInfo({ name: meta.name, seed: meta.seed.trim() || String(meta.seedNum) });
       worldManager.setTime(meta.time);
 
@@ -3222,10 +3229,11 @@ const App: React.FC = () => {
       )}
 
       {bootReady && appState === 'menu' && (
-          <MainMenu 
+          <MainMenu
               onStart={handleStartGame}
               onChunkBase={() => setAppState('chunkbase')}
-              onFeatureEditor={() => setAppState('featureEditor')}
+              initialView={menuInitialView}
+              onPanoramaDone={menuInitialView === 'settings' ? () => { setMenuInitialView('main'); setAppState('options'); } : undefined}
               onOptions={(opts) => {
                   setOpenOptionsInHelp(!!opts?.openTutorial);
                   setAppState('options');
@@ -3286,6 +3294,7 @@ const App: React.FC = () => {
               renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
+              onOpenPanorama={() => { setMenuInitialView('settings'); setAppState('menu'); }}
               onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
@@ -3325,6 +3334,7 @@ const App: React.FC = () => {
                     {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-black atlas-fade-in-sleep flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
+                    {!hudHidden && !showDebug && showCoordinates && !cinematicMode && !showDeathScreen && <CoordinatesReadout positionRef={playerPosRef} />}
                     {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
@@ -3333,14 +3343,14 @@ const App: React.FC = () => {
                     {!hudHidden && !showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
                     {!hudHidden && ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
                         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
-                            Sneak (Shift) to hop out of the boat
+                            Sneak ({keyLabelFor('sneak')}) to hop out of the boat
                         </div>
                     )}
                     {/* Low health sits UNDER the polarity rim (z-20 vs z-30) so a red
                         damage pulse can never be mistaken for positive polarity. */}
                     {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
                     {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
-                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} worldOptions={worldInfo ? { ...worldInfo, gameMode, allowCommands, onAllowCommands: setAllowCommands, keepInventory, onKeepInventory: setKeepInventory } : undefined} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
+                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} worldOptions={worldInfo ? { ...worldInfo, gameMode, allowCommands, onAllowCommands: setAllowCommands, keepInventory, onKeepInventory: setKeepInventory, showCoordinates, onShowCoordinates: setShowCoordinates } : undefined} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
