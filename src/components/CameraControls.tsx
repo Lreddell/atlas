@@ -4,6 +4,8 @@ import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { lookBridge } from '../systems/player/playerInput';
 import { viewRig } from '../systems/player/viewRig';
+import { lookDelta } from '../systems/player/controlSettings';
+import { getControlSettings } from '../systems/player/controlStore';
 
 export interface CameraControlsHandle {
     lock: () => void;
@@ -89,20 +91,20 @@ export const CameraControls = forwardRef<CameraControlsHandle, CameraControlsPro
             // frames never exceeds a couple hundred pixels, so clamp to that.
             const MAX_LOOK_DELTA = 250;
             const clamp = (v: number) => (Number.isFinite(v) ? Math.max(-MAX_LOOK_DELTA, Math.min(MAX_LOOK_DELTA, v)) : 0);
-            const mx = clamp(e.movementX);
-            const my = clamp(e.movementY);
+            // Scaled by the player's sensitivity and invert choice (Options > Controls).
+            const look = lookDelta(clamp(e.movementX), clamp(e.movementY), getControlSettings());
 
             // While latched to a magnetic wall, look is around the wall normal :
             // Player owns the camera orientation, so just hand it the raw deltas
             // instead of mutating the world-up Euler camera.
             if (lookBridge.active) {
-                lookBridge.dYaw -= mx * 0.002;
-                lookBridge.dPitch -= my * 0.002;
+                lookBridge.dYaw += look.yaw;
+                lookBridge.dPitch += look.pitch;
                 return;
             }
 
-            camera.rotation.y -= mx * 0.002;
-            camera.rotation.x -= my * 0.002;
+            camera.rotation.y += look.yaw;
+            camera.rotation.x += look.pitch;
             camera.rotation.x = Math.max(-1.55, Math.min(1.55, camera.rotation.x));
             
             // Final NaN Check

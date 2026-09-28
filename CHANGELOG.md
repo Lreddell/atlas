@@ -81,6 +81,20 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Creative mode falls back to normal biome and cave music when its dedicated music folder is empty.
 - Added feedback sounds for magnetic movement and tower events.
 
+### Water & Lava
+- Water and lava flow by Minecraft's rules. Water spreads seven blocks, one level lower each block, and runs toward the nearest drop within four blocks; lava spreads three blocks and moves six times slower.
+- Flowing water falls in columns and spreads out where it lands. A flow cut off from its source drains away, and water between two sources on solid ground becomes a new source.
+- Lava that water touches hardens, a source into obsidian and flowing lava into cobblestone, and lava pouring into water turns it to stone.
+- Water and lava surfaces slope between neighbouring levels, and flows saved partway continue once their area loads again.
+- Large floods no longer stall the game: moving water relights the world in batches instead of block by block.
+- Caves no longer break through the sea floor and leave dark holes in the ocean, and distant water no longer shimmers with fine grain.
+
+### Controls & Getting Started
+- A new Controls screen in Options sets mouse sensitivity and inverted look, and lists every key.
+- Music & Sounds sliders are named for what they control: Ambient & Events, Enemies & Bosses, Player, and Interface. The unused Friendly Creatures slider is gone.
+- The Tutorial now covers the first recipes, where food comes from, beds, every key, and how to find the Magnetic Fields.
+- New worlds prefer to start outside dark forests, swamps, and jungles, and never inside the sealed Magnetic Fields.
+
 ### Performance & Memory
 - Adjacent full-block faces are combined into larger surfaces while preserving tiled textures, reducing the geometry needed to draw the world.
 - Settled chunks are drawn together in small regions with tighter visibility bounds, reducing repeated rendering work.

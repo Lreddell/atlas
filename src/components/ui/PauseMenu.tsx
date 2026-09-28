@@ -7,6 +7,9 @@ import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
 import { SkinsMenu } from './SkinsMenu';
+import { CONTROL_GROUPS } from '../../data/controls';
+import { controlSettings, useControlSettings } from '../../systems/player/controlStore';
+import { MAX_SENSITIVITY, MIN_SENSITIVITY } from '../../systems/player/controlSettings';
 import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
@@ -53,11 +56,11 @@ interface PauseMenuProps {
     panoramaFaceDataUrls?: string[] | null;
     isMainMenu?: boolean;
     showMenuBackground?: boolean;
-    initialScreen?: 'main' | 'video' | 'audio' | 'skins' | 'tutorial';
+    initialScreen?: 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial';
     onTutorialClose?: () => void;
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'skins' | 'tutorial';
+type MenuScreen = 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial';
 
 // Menu Slider Component
 const MenuSlider: React.FC<{
@@ -144,6 +147,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const graphics = useGraphicsSettings();
     const gfx = graphics.config;
+    const controls = useControlSettings();
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
     
@@ -220,7 +224,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 </div>
                 <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-80" />
                 <div className="flex gap-3">
-                    <MenuButton label="Controls..." disabled width="w-[9.5rem]" />
+                    <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-[9.5rem]" />
                     <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
                 </div>
                 {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
@@ -353,13 +357,48 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-6">
+                {/* Each slider names what its category actually plays: 'ambient' is
+                    lava and Vault events (there is no weather), 'ui' the menus and
+                    HUD. Nothing plays as 'neutral' yet, so it has no slider. */}
                 <MenuSlider label="Music" value={volumes.music} min={0} max={1} onChange={(v) => updateVolume('music', v)} width="w-64" />
-                <MenuSlider label="Weather" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-64" />
+                <MenuSlider label="Ambient & Events" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-64" />
                 <MenuSlider label="Blocks" value={volumes.blocks} min={0} max={1} onChange={(v) => updateVolume('blocks', v)} width="w-64" />
-                <MenuSlider label="Hostile Creatures" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-64" />
-                <MenuSlider label="Friendly Creatures" value={volumes.neutral} min={0} max={1} onChange={(v) => updateVolume('neutral', v)} width="w-64" />
-                <MenuSlider label="Players" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-64" />
-                <MenuSlider label="Voice/Speech" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-64" />
+                <MenuSlider label="Enemies & Bosses" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-64" />
+                <MenuSlider label="Player" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-64" />
+                <MenuSlider label="Interface" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-64" />
+            </div>
+
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+        </div>
+    );
+
+    // Controls: mouse look settings, then every key the game listens for.
+    const renderControls = () => (
+        <div className="flex flex-col gap-2 items-center w-[640px]">
+            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Controls</h1>
+
+            <div className="mb-3 flex gap-4">
+                <MenuSlider
+                    label="Mouse Sensitivity"
+                    value={controls.sensitivity} min={MIN_SENSITIVITY} max={MAX_SENSITIVITY} step={0.05}
+                    onChange={(v) => controlSettings.set({ sensitivity: v })} width="w-64"
+                    formatValue={(v) => `${Math.round(v * 100)}%`}
+                />
+                <MCToggle label="Invert Mouse" value={controls.invertY} onChange={(on) => controlSettings.set({ invertY: on })} width="w-64" />
+            </div>
+
+            <div className="w-full max-h-[330px] overflow-y-auto bg-black/35 border-2 border-white/20 px-4 py-3 mb-4">
+                {CONTROL_GROUPS.map((group) => (
+                    <div key={group.title} className="mb-3 last:mb-0">
+                        <h2 className="text-blue-200 text-sm font-pixel mb-1">{group.title}</h2>
+                        {group.bindings.map(([keys, action]) => (
+                            <div key={keys} className="flex items-baseline justify-between gap-6 border-b border-white/5 py-[3px]">
+                                <span className="shrink-0 text-white text-sm font-pixel">{keys}</span>
+                                <span className="text-right text-gray-300 text-sm font-pixel">{action}</span>
+                            </div>
+                        ))}
+                    </div>
+                ))}
             </div>
 
             <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
@@ -445,6 +484,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}
+                    {screen === 'controls' && renderControls()}
                     {screen === 'skins' && <SkinsMenu onDone={() => setScreen('main')} />}
                     {screen === 'tutorial' && renderTutorial()}
                 </div>
