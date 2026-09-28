@@ -31,8 +31,37 @@ const OPEN_SIMPLEX_2D_GRADIENTS = [
   [-0.130526192220052 / OPEN_SIMPLEX_2D_NORMALIZER, 0.99144486137381 / OPEN_SIMPLEX_2D_NORMALIZER],
 ] as const;
 
+// Perlin's gradient for a corner is +/-u +/-v, with u and v two of x, y, z picked
+// by the hash's low four bits (the improved-noise table):
+//   u = h < 8 ? x : y;  v = h < 4 ? y : (h === 12 || h === 14 ? x : z)
+//   grad = ((h & 1) ? -u : u) + ((h & 2) ? -v : v)
+// Those choices follow a random hash, so as branches the CPU mispredicts them
+// constantly. Read from tables instead: which coordinate each term takes and
+// its sign. Multiplying by +/-1 is exact and the sum keeps its order, so the
+// value is bit for bit the branching version's.
+const GRAD_U = new Uint8Array(16);
+const GRAD_V = new Uint8Array(16);
+const GRAD_SU = new Float64Array(16);
+const GRAD_SV = new Float64Array(16);
+for (let h = 0; h < 16; h++) {
+  GRAD_U[h] = h < 8 ? 0 : 1;
+  GRAD_V[h] = h < 4 ? 1 : h === 12 || h === 14 ? 0 : 2;
+  GRAD_SU[h] = (h & 1) === 0 ? 1 : -1;
+  GRAD_SV[h] = (h & 2) === 0 ? 1 : -1;
+}
+// The corner offset a gradient reads (x, y, z), reused for every corner.
+const corner = new Float64Array(3);
+const perlinGrad = (hash: number, x: number, y: number, z: number): number => {
+  const h = hash & 15;
+  corner[0] = x;
+  corner[1] = y;
+  corner[2] = z;
+  return GRAD_SU[h] * corner[GRAD_U[h]] + GRAD_SV[h] * corner[GRAD_V[h]];
+};
+
 export class SimpleNoise {
-  private p: number[] = [];
+  // The doubled permutation table. Typed: noise3D reads it eight times a call.
+  private p: Uint8Array = new Uint8Array(512);
   private perm: number[] = [];
 
   constructor(seed: number = Math.random()) {
@@ -40,7 +69,7 @@ export class SimpleNoise {
   }
 
   public init(seed: number) {
-    this.p = new Array(512);
+    this.p = new Uint8Array(512);
     this.perm = new Array(256);
     const permutation = new Array(256);
     for (let i = 0; i < 256; i++) {
@@ -88,36 +117,59 @@ export class SimpleNoise {
   }
 
   // --- Classic Perlin 3D ---
+  // Terrain, caves and ores call this about 250,000 times a chunk, most of the
+  // cost of generating one, so it is written out flat: one floor per axis, the
+  // typed table in a local, no method calls. Every expression keeps the
+  // textbook order (fade: t*t*t*(t*(t*6-15)+10); lerp: a + t*(b - a)), so the
+  // results are bit for bit what they were and every seed builds the same world.
   noise3D(x: number, y: number, z: number) {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    const Z = Math.floor(z) & 255;
+    const p = this.p;
+    const fx = Math.floor(x);
+    const fy = Math.floor(y);
+    const fz = Math.floor(z);
+    const X = fx & 255;
+    const Y = fy & 255;
+    const Z = fz & 255;
 
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
+    x -= fx;
+    y -= fy;
+    z -= fz;
 
-    const u = this.fade(x);
-    const v = this.fade(y);
-    const w = this.fade(z);
+    const u = x * x * x * (x * (x * 6 - 15) + 10);
+    const v = y * y * y * (y * (y * 6 - 15) + 10);
+    const w = z * z * z * (z * (z * 6 - 15) + 10);
 
-    const A = this.p[X] + Y;
-    const AA = this.p[A] + Z;
-    const AB = this.p[A + 1] + Z;
-    const B = this.p[X + 1] + Y;
-    const BA = this.p[B] + Z;
-    const BB = this.p[B + 1] + Z;
+    const A = p[X] + Y;
+    const AA = p[A] + Z;
+    const AB = p[A + 1] + Z;
+    const B = p[X + 1] + Y;
+    const BA = p[B] + Z;
+    const BB = p[B + 1] + Z;
 
-    return this.lerp(w,
-      this.lerp(v,
-        this.lerp(u, this.grad(this.p[AA], x, y, z), this.grad(this.p[BA], x - 1, y, z)),
-        this.lerp(u, this.grad(this.p[AB], x, y - 1, z), this.grad(this.p[BB], x - 1, y - 1, z))
-      ),
-      this.lerp(v,
-        this.lerp(u, this.grad(this.p[AA + 1], x, y, z - 1), this.grad(this.p[BA + 1], x - 1, y, z - 1)),
-        this.lerp(u, this.grad(this.p[AB + 1], x, y - 1, z - 1), this.grad(this.p[BB + 1], x - 1, y - 1, z - 1))
-      )
-    );
+    const x1 = x - 1;
+    const y1 = y - 1;
+    const z1 = z - 1;
+    const g000 = perlinGrad(p[AA], x, y, z);
+    const g100 = perlinGrad(p[BA], x1, y, z);
+    const g010 = perlinGrad(p[AB], x, y1, z);
+    const g110 = perlinGrad(p[BB], x1, y1, z);
+    const g001 = perlinGrad(p[AA + 1], x, y, z1);
+    const g101 = perlinGrad(p[BA + 1], x1, y, z1);
+    const g011 = perlinGrad(p[AB + 1], x, y1, z1);
+    const g111 = perlinGrad(p[BB + 1], x1, y1, z1);
+
+    const x00 = g000 + u * (g100 - g000);
+    const x10 = g010 + u * (g110 - g010);
+    const x01 = g001 + u * (g101 - g001);
+    const x11 = g011 + u * (g111 - g011);
+    const y0 = x00 + v * (x10 - x00);
+    const y1v = x01 + v * (x11 - x01);
+    return y0 + w * (y1v - y0);
+  }
+
+  /** A sampler for this noise down one column at a time (see NoiseColumn). */
+  column(): NoiseColumn {
+    return new NoiseColumn(this, this.p);
   }
 
   // --- Value Noise (Blocky/Linear) ---
@@ -234,6 +286,142 @@ export class SimpleNoise {
       const hash = this.perm[(this.perm[xsb & 255] + ysb) & 255];
       const gradient = OPEN_SIMPLEX_2D_GRADIENTS[hash % OPEN_SIMPLEX_2D_GRADIENTS.length];
       return gradient[0] * dx + gradient[1] * dy;
+  }
+}
+
+/**
+ * One Perlin field sampled down a column: x and z fixed and only y changing,
+ * the way world generation samples caves and ores, block by block. noise3D
+ * works out the unit cell's eight corner hashes and the x and z parts of each
+ * corner's gradient on every call; here they are worked out once per cell, and
+ * a sample only adds the y parts and interpolates. That arithmetic is noise3D's
+ * own, so the values are bit for bit the same (noise.test.mjs checks it).
+ */
+export class NoiseColumn {
+  private readonly noise: SimpleNoise;
+  private readonly p: Uint8Array;
+  private x = 0;
+  private z = 0;
+  private X = 0;
+  private Z = 0;
+  // The x and z offsets of the cell's corners, and their fades.
+  private x0 = 0;
+  private x1 = 0;
+  private z0 = 0;
+  private z1 = 0;
+  private u = 0;
+  private w = 0;
+  private cellY = NaN;
+  // Per corner, in noise3D's order (000, 100, 010, 110, 001, 101, 011, 111),
+  // the gradient as k + s * (the corner's y offset).
+  private readonly k = new Float64Array(8);
+  private readonly s = new Float64Array(8);
+
+  constructor(noise: SimpleNoise, p: Uint8Array) {
+    this.noise = noise;
+    this.p = p;
+  }
+
+  /** Moves to the column through (x, z). */
+  begin(x: number, z: number): void {
+    const fx = Math.floor(x);
+    const fz = Math.floor(z);
+    this.x = x;
+    this.z = z;
+    this.X = fx & 255;
+    this.Z = fz & 255;
+    const xf = x - fx;
+    const zf = z - fz;
+    this.x0 = xf;
+    this.x1 = xf - 1;
+    this.z0 = zf;
+    this.z1 = zf - 1;
+    this.u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+    this.w = zf * zf * zf * (zf * (zf * 6 - 15) + 10);
+    this.cellY = NaN;
+  }
+
+  /** noise3D(x, y, z) for the column's x and z. */
+  sample(y: number): number {
+    const fy = Math.floor(y);
+    if (fy !== this.cellY) this.enterCell(fy);
+    const yf = y - fy;
+    // Only a y a hair below an integer rounds to yf = 1, where the upper
+    // corners' zero y offset could flip a -0 gradient to +0 (see setCorner).
+    if (yf === 1) return this.noise.noise3D(this.x, y, this.z);
+    const y1 = yf - 1;
+    const k = this.k;
+    const s = this.s;
+    const g000 = k[0] + s[0] * yf;
+    const g100 = k[1] + s[1] * yf;
+    const g010 = k[2] + s[2] * y1;
+    const g110 = k[3] + s[3] * y1;
+    const g001 = k[4] + s[4] * yf;
+    const g101 = k[5] + s[5] * yf;
+    const g011 = k[6] + s[6] * y1;
+    const g111 = k[7] + s[7] * y1;
+
+    const u = this.u;
+    const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+    const w = this.w;
+    const x00 = g000 + u * (g100 - g000);
+    const x10 = g010 + u * (g110 - g010);
+    const x01 = g001 + u * (g101 - g001);
+    const x11 = g011 + u * (g111 - g011);
+    const y0 = x00 + v * (x10 - x00);
+    const y1v = x01 + v * (x11 - x01);
+    return y0 + w * (y1v - y0);
+  }
+
+  private enterCell(fy: number): void {
+    this.cellY = fy;
+    const p = this.p;
+    const Y = fy & 255;
+    const A = p[this.X] + Y;
+    const AA = p[A] + this.Z;
+    const AB = p[A + 1] + this.Z;
+    const B = p[this.X + 1] + Y;
+    const BA = p[B] + this.Z;
+    const BB = p[B + 1] + this.Z;
+    this.setCorner(0, p[AA], this.x0, this.z0, true);
+    this.setCorner(1, p[BA], this.x1, this.z0, true);
+    this.setCorner(2, p[AB], this.x0, this.z0, false);
+    this.setCorner(3, p[BB], this.x1, this.z0, false);
+    this.setCorner(4, p[AA + 1], this.x0, this.z1, true);
+    this.setCorner(5, p[BA + 1], this.x1, this.z1, true);
+    this.setCorner(6, p[AB + 1], this.x0, this.z1, false);
+    this.setCorner(7, p[BB + 1], this.x1, this.z1, false);
+  }
+
+  /**
+   * Splits a corner's gradient (perlinGrad) into its x/z term k and the sign s
+   * of its y term. The two terms are the ones perlinGrad adds, and adding is
+   * commutative, so k + s * y is its value exactly. A gradient with no y term
+   * gets a zero s whose product with y is -0: adding -0 leaves every k as it
+   * is, a k of -0 included. Lower corners' y offsets are >= 0, so s = -0;
+   * upper corners' are < 0 (bar yf = 1, see sample), so s = +0.
+   */
+  private setCorner(i: number, hash: number, cx: number, cz: number, lowerCorner: boolean): void {
+    const h = hash & 15;
+    const su = GRAD_SU[h];
+    const sv = GRAD_SV[h];
+    if (h < 4) {
+      // +/-x +/-y
+      this.k[i] = su * cx;
+      this.s[i] = sv;
+    } else if (h < 8) {
+      // +/-x +/-z
+      this.k[i] = su * cx + sv * cz;
+      this.s[i] = lowerCorner ? -0 : 0;
+    } else if (h === 12 || h === 14) {
+      // +/-y +/-x
+      this.k[i] = sv * cx;
+      this.s[i] = su;
+    } else {
+      // +/-y +/-z
+      this.k[i] = sv * cz;
+      this.s[i] = su;
+    }
   }
 }
 

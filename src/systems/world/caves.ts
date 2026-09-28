@@ -129,6 +129,113 @@ export function isCaveCarved(
     return false;
 }
 
+/** A 3D noise field sampled down one column at a time (NoiseColumn in noise.ts). */
+export interface ColumnNoise {
+    begin(x: number, z: number): void;
+    sample(y: number): number;
+}
+
+/**
+ * isCaveCarved a column at a time, the way the chunk generator carves: the
+ * same tests on the same fields at the same points, each field sampled down
+ * the column, which reuses each noise cell's corner hashes instead of working
+ * them out for every block. Keep the two in step (caves.test.mjs checks they
+ * agree); the editor preview uses isCaveCarved.
+ */
+export class CaveColumn {
+    private readonly cfg: CaveConfig;
+    private readonly worm1: ColumnNoise;
+    private readonly worm2: ColumnNoise;
+    private readonly cavernMask: ColumnNoise;
+    private readonly cavern1: ColumnNoise;
+    private readonly cavern2: ColumnNoise;
+    private readonly noodleMask: ColumnNoise;
+    private readonly noodle1: ColumnNoise;
+    private readonly noodle2: ColumnNoise;
+    private readonly deepCheese: ColumnNoise;
+
+    /** `column` makes a column sampler over the cave noise. */
+    constructor(cfg: CaveConfig, column: () => ColumnNoise) {
+        this.cfg = cfg;
+        this.worm1 = column();
+        this.worm2 = column();
+        this.cavernMask = column();
+        this.cavern1 = column();
+        this.cavern2 = column();
+        this.noodleMask = column();
+        this.noodle1 = column();
+        this.noodle2 = column();
+        this.deepCheese = column();
+    }
+
+    /** Moves to the column at cave-space (cwx, cwz). */
+    begin(cwx: number, cwz: number): void {
+        const cfg = this.cfg;
+        const wf = cfg.wormFreq;
+        this.worm1.begin(cwx * wf, cwz * wf);
+        this.worm2.begin(cwx * wf + 123.4, cwz * wf + 123.4);
+        this.cavernMask.begin(cwx * 0.005, cwz * 0.005);
+        const cf = cfg.cavernFreq;
+        this.cavern1.begin(cwx * cf + 99, cwz * cf + 99);
+        this.cavern2.begin(cwx * cf + 88, cwz * cf + 88);
+        this.noodleMask.begin(cwx * 0.01 + 222, cwz * 0.01 + 222);
+        const nf = cfg.noodleFreq;
+        this.noodle1.begin(cwx * nf + 555, cwz * nf + 555);
+        this.noodle2.begin(cwx * nf + 444, cwz * nf + 444);
+        const df = cfg.deepCheeseFreq;
+        this.deepCheese.begin(cwx * df + 777, cwz * df + 777);
+    }
+
+    /** isCaveCarved(cwx, y, cwz, depth, taper) for the current column. */
+    isCarved(y: number, depth: number, taper: number): boolean {
+        const cfg = this.cfg;
+        if (!cfg.enabled) return false;
+
+        if (cfg.wormEnabled) {
+            const f = cfg.wormFreq;
+            const thr = cfg.wormThreshold * taper;
+            const wc1 = this.worm1.sample(y * f * cfg.wormYScale);
+            if (Math.abs(wc1) < thr) {
+                const wc2 = this.worm2.sample(y * f * cfg.wormYScale + 123.4);
+                if (Math.sqrt(wc1 * wc1 + wc2 * wc2) < thr) return true;
+            }
+        }
+
+        if (cfg.cavernEnabled && depth > cfg.cavernMinDepth) {
+            const mask = this.cavernMask.sample(y * 0.02);
+            if (mask > cfg.cavernMaskThreshold) {
+                const f = cfg.cavernFreq;
+                const thr = cfg.cavernThreshold;
+                const mc1 = this.cavern1.sample(y * f + 99);
+                if (Math.abs(mc1) < thr) {
+                    const mc2 = this.cavern2.sample(y * f + 88);
+                    if (Math.sqrt(mc1 * mc1 + mc2 * mc2) < thr) return true;
+                }
+            }
+        }
+
+        if (cfg.noodleEnabled) {
+            const mask = this.noodleMask.sample(y * 0.01);
+            if (mask > cfg.noodleMaskThreshold) {
+                const f = cfg.noodleFreq;
+                const thr = cfg.noodleThreshold * taper;
+                const nc1 = this.noodle1.sample(y * f);
+                if (Math.abs(nc1) < thr) {
+                    const nc2 = this.noodle2.sample(y * f);
+                    if (Math.sqrt(nc1 * nc1 + nc2 * nc2) < thr) return true;
+                }
+            }
+        }
+
+        if (cfg.deepCheeseEnabled && depth > 10 && y < cfg.deepCheeseMaxY) {
+            const f = cfg.deepCheeseFreq;
+            if (this.deepCheese.sample(y * f + 777) > cfg.deepCheeseThreshold) return true;
+        }
+
+        return false;
+    }
+}
+
 /**
  * Which decoration region a column falls in. Two decorrelated low-frequency
  * fields; the one over its threshold (higher wins ties) claims the column.
