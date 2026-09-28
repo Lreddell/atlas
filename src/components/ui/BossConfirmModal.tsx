@@ -4,7 +4,7 @@ import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 // Confirmation prompt shown when right-clicking a Magnetic Boss Summoner. Warns the
 // player before the fight begins; confirming spawns the boss, cancelling does
-// nothing. Styled to match the menus (raised panel + MenuButton).
+// nothing. A framed panel like the other dialogs.
 
 interface BossConfirmModalProps {
     bossName: string;
@@ -28,7 +28,7 @@ export const BossConfirmModal: React.FC<BossConfirmModalProps> = ({
 
     return (
         <div
-            className="pointer-events-auto absolute inset-0 z-[200] flex items-center justify-center bg-black/70 atlas-fade-in"
+            className="pointer-events-auto absolute inset-0 z-[200] flex items-center justify-center bg-ink-950/70 atlas-fade-in"
             onClick={onCancel}
         >
             <div
@@ -37,16 +37,16 @@ export const BossConfirmModal: React.FC<BossConfirmModalProps> = ({
                 aria-modal="true"
                 aria-labelledby={titleId}
                 tabIndex={-1}
-                className="flex w-[440px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6 font-pixel text-white outline-none"
+                className="atlas-panel flex w-[520px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 px-8 pb-7 pt-5 outline-none atlas-panel-in"
                 onClick={(e) => e.stopPropagation()}
             >
-                <h2 id={titleId} className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">{title ?? `Summon ${bossName}?`}</h2>
-                <p className="text-center text-sm leading-relaxed text-gray-300">
+                <h2 id={titleId} className="atlas-title text-center">{title ?? `Summon ${bossName}?`}</h2>
+                <p className="text-center text-read text-parchment-200">
                     {description ?? `The ${bossName} will awaken and attack across three forms, each shielded by its tower crystals. Same polarity repels, opposite attracts: match its colour to shrug off its bolts, oppose it to climb its towers and strike. Make sure you are ready.`}
                 </p>
-                <div className="mt-2 flex justify-center gap-3">
-                    <MenuButton label={confirmLabel} onClick={onConfirm} variant="primary" width="w-[160px]" />
-                    <MenuButton label="Cancel" onClick={onCancel} width="w-[150px]" />
+                <div className="mt-2 grid w-full grid-cols-2 gap-3">
+                    <MenuButton label={confirmLabel} onClick={onConfirm} variant="primary" width="w-full" />
+                    <MenuButton label="Cancel" onClick={onCancel} width="w-full" />
                 </div>
             </div>
         </div>

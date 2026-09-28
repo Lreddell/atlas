@@ -61,10 +61,10 @@ export const PolarityIndicator: React.FC = () => {
         <div className="pointer-events-none flex select-none flex-col items-center gap-1">
             {surge.armed && (
                 <div className="flex w-[92px] flex-col items-center">
-                    <div className="animate-pulse whitespace-nowrap font-pixel text-[10px] text-white [text-shadow:1px_1px_0_#000]">
+                    <div className="animate-pulse whitespace-nowrap text-px-2 text-parchment-50 text-shadow-md">
                         SLAM READY
                     </div>
-                    <div className="mt-[2px] h-[4px] w-full border border-black/80 bg-[#2b2338]">
+                    <div className="mt-[2px] h-[8px] w-full border-2 border-ink-950 bg-ink-800">
                         <div className="h-full bg-white" style={{ width: `${surge.fraction * 100}%` }} />
                     </div>
                 </div>
@@ -82,7 +82,7 @@ export const PolarityIndicator: React.FC = () => {
                         style={{ imageRendering: 'pixelated' }}
                     />
                 </div>
-                <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">{flipKey}</kbd>
+                <kbd className="atlas-key absolute -bottom-2 -right-2">{flipKey}</kbd>
             </div>
         </div>
     );

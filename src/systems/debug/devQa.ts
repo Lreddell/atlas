@@ -28,6 +28,7 @@ export interface DevQaHandles {
     tp: (x: number, y: number, z: number) => void;
     hud: (visible: boolean) => void;
     openInventory: () => void;
+    openContainer: (type: 'crafting' | 'furnace' | 'chest') => void;
     closeContainers: () => void;
     streaming: () => StreamingStatus;
     position: () => { x: number; y: number; z: number };
@@ -580,6 +581,8 @@ export interface AtlasQaApi {
     tp(x: number, y: number, z: number): void;
     hud(visible: boolean): void;
     openInventory(): void;
+    /** Opens a crafting table, furnace or chest screen as if the block at the player's feet were used. */
+    openContainer(type: 'crafting' | 'furnace' | 'chest'): void;
     closeContainers(): void;
     position(): { x: number; y: number; z: number };
     renderDistance(chunks: number): void;
@@ -629,6 +632,7 @@ export function createDevQaApi(): AtlasQaApi {
         tp: (x, y, z) => need('tp')(x, y, z),
         hud: visible => need('hud')(visible),
         openInventory: () => need('openInventory')(),
+        openContainer: type => need('openContainer')(type),
         closeContainers: () => need('closeContainers')(),
         position: () => need('position')(),
         renderDistance: chunks => need('renderDistance')(chunks),

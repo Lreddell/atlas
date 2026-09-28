@@ -4,8 +4,8 @@ import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 // A small in-app confirmation dialog. Used instead of the native window.confirm(),
 // which blocks the event loop and (in the desktop/embedded webview) can leave text
-// inputs unable to receive keyboard focus afterwards. Styled to match the menus
-// (raised panel + MenuButton); the danger variant uses MenuButton's red button.
+// inputs unable to receive keyboard focus afterwards. A framed panel with the
+// menus' buttons; the danger variant uses the ember button.
 
 interface ConfirmModalProps {
     title: string;
@@ -25,7 +25,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
     return (
         <div
-            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-black/70 atlas-fade-in"
+            className="pointer-events-auto fixed inset-0 z-[300] flex items-center justify-center bg-ink-950/70 atlas-fade-in"
             onClick={onCancel}
         >
             <div
@@ -34,14 +34,14 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 aria-modal="true"
                 aria-labelledby={titleId}
                 tabIndex={-1}
-                className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6 font-pixel text-white outline-none"
+                className="atlas-panel flex w-[460px] max-w-[calc(100vw-2rem)] flex-col items-center gap-4 px-8 pb-7 pt-5 outline-none atlas-panel-in"
                 onClick={(e) => e.stopPropagation()}
             >
-                <h2 id={titleId} className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">{title}</h2>
-                <div className="text-center text-sm leading-relaxed text-gray-300">{message}</div>
-                <div className="mt-2 flex justify-center gap-3">
-                    <MenuButton label={confirmLabel} onClick={onConfirm} variant={danger ? 'danger' : 'primary'} width="w-[170px]" />
-                    <MenuButton label={cancelLabel} onClick={onCancel} width="w-[150px]" />
+                <h2 id={titleId} className="atlas-title text-center">{title}</h2>
+                <div className="text-center text-read text-parchment-200">{message}</div>
+                <div className="mt-2 grid w-full grid-cols-2 gap-3">
+                    <MenuButton label={confirmLabel} onClick={onConfirm} variant={danger ? 'danger' : 'primary'} width="w-full" />
+                    <MenuButton label={cancelLabel} onClick={onCancel} width="w-full" />
                 </div>
             </div>
         </div>

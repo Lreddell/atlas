@@ -5,8 +5,20 @@ import { climbSurfaces } from '../../systems/player/climbSurfaces';
 import { inputState } from '../../systems/player/playerInput';
 import { PolarityIndicator } from './PolarityIndicator';
 import { useKeyLabel } from '../../systems/player/keyBindingStore';
+import { PixelArt } from './kit/PixelArt';
 
 const CIRCUMFERENCE = 2 * Math.PI * 17;
+
+// A tick for a dodged attack, in pixels rather than a font's check mark.
+const DODGE_TICK = [
+    '......o',
+    '.....oo',
+    'o...oo.',
+    'oo.oo..',
+    '.ooo...',
+    '..o....',
+] as const;
+const DODGE_TICK_PALETTE = { o: '#fffaf0' };
 
 /**
  * The live kit state, sampled off the physics rather than pushed, and coarsened
@@ -41,7 +53,7 @@ function useCombatView() {
 export const CombatFeedback: React.FC<{ magnetic?: boolean }> = ({ magnetic = false }) => {
     const view = useCombatView();
     return <div className="pointer-events-none flex w-full flex-col items-center gap-2 select-none">
-        {view.stamina < 100 && <div className="h-2 w-[180px] max-w-full border border-black bg-black/60" role="meter" aria-label="Roll stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)}>
+        {view.stamina < 100 && <div className="h-[10px] w-[180px] max-w-full border-2 border-ink-950 bg-ink-900/70" role="meter" aria-label="Roll stamina" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.floor(view.stamina)}>
             <div className="h-full bg-[#83bd63] transition-[width] duration-75 motion-reduce:transition-none" style={{ width: `${view.stamina}%` }} />
         </div>}
         {magnetic && <PolarityIndicator />}
@@ -73,10 +85,10 @@ export const CombatOverlay: React.FC = () => {
                 transform="rotate(-90 22 22)" opacity={view.refused ? 0.95 : 0.8} />
         </svg>}
         {view.flux > 0 && !view.aligned && <div className="absolute left-1/2 top-[34%] w-[92px] -translate-x-1/2" role="status" aria-label={`Tower flipping: press ${flipKey} to hold on`}>
-            <div className="mb-1 text-center font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]">{flipKey} SWITCH</div>
-            <div className="h-1 border border-black bg-black/60"><div className="h-full bg-white" style={{ width: `${view.flux * 100}%` }} /></div>
+            <div className="mb-1 text-center text-px-2 text-parchment-50 text-shadow-md">{flipKey} SWITCH</div>
+            <div className="h-[8px] border-2 border-ink-950 bg-ink-900/70"><div className="h-full bg-parchment-50" style={{ width: `${view.flux * 100}%` }} /></div>
         </div>}
-        {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]" role="status" aria-label="Shocked off: wrong polarity">SHOCKED OFF</div>}
-        {view.dodged && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 text-lg text-white drop-shadow-[0_1px_2px_#000]" role="status" aria-label="Attack dodged">✓</div>}
+        {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 whitespace-nowrap text-px-2 text-parchment-50 text-shadow-md" role="status" aria-label="Shocked off: wrong polarity">SHOCKED OFF</div>}
+        {view.dodged && <div className="absolute left-1/2 top-[55%] -translate-x-1/2 drop-shadow-[2px_2px_0_#070917]" role="status" aria-label="Attack dodged"><PixelArt rows={DODGE_TICK} palette={DODGE_TICK_PALETTE} scale={3} /></div>}
     </div>;
 };

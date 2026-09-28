@@ -2,6 +2,401 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---- Atlas UI kit ------------------------------------------------------------
+   Ink navy panels in brass frames, parchment text, brass for the action that
+   matters on a screen, star teal only for keyboard focus. Everything is drawn
+   at 2 screen pixels per art pixel: 2px outlines, 2px bevels, hard shadows, no
+   rounded corners, no blur, no gradients on chrome. Colours come from
+   tailwind.config.cjs. */
+
+:root {
+    /* A brass rivet, 2x2 art pixels: lit top-left, shaded bottom-right. */
+    --atlas-rivet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='4' height='4' fill='%23e2b866'/%3E%3Crect width='2' height='2' fill='%23fff1c4'/%3E%3Crect x='2' y='2' width='2' height='2' fill='%235a3c19'/%3E%3C/svg%3E");
+}
+
+@layer components {
+    /* A framed panel: dark outline, brass band (lit top-left), a dark line, a
+       navy rim, then the ink field. Rivets sit on the band's corners. Content
+       needs at least 8px of padding to clear the frame. */
+    .atlas-panel {
+        position: relative;
+        background-color: theme('colors.ink.800');
+        border: 2px solid theme('colors.ink.950');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.brass.200'),
+            inset -2px -2px 0 theme('colors.brass.600'),
+            inset 0 0 0 4px theme('colors.brass.400'),
+            inset 0 0 0 6px theme('colors.ink.950'),
+            inset 0 0 0 8px theme('colors.ink.700'),
+            4px 4px 0 rgb(3 4 12 / 0.5);
+    }
+
+    .atlas-panel::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            var(--atlas-rivet) 0 0 / 4px 4px no-repeat,
+            var(--atlas-rivet) 100% 0 / 4px 4px no-repeat,
+            var(--atlas-rivet) 0 100% / 4px 4px no-repeat,
+            var(--atlas-rivet) 100% 100% / 4px 4px no-repeat;
+    }
+
+    /* A recessed area inside a panel: lists, notes, scroll boxes. */
+    .atlas-well {
+        background-color: theme('colors.ink.900');
+        border: 2px solid theme('colors.ink.950');
+        box-shadow:
+            inset 2px 2px 0 rgb(3 4 12 / 0.9),
+            inset -2px -2px 0 theme('colors.ink.600');
+    }
+
+    /* One raised row inside a well (a saved world, a panorama). */
+    .atlas-row {
+        border: 2px solid transparent;
+        background-color: theme('colors.ink.800');
+        box-shadow: inset 0 -2px 0 theme('colors.ink.950');
+    }
+
+    .atlas-row:hover {
+        background-color: theme('colors.ink.750');
+    }
+
+    .atlas-row[aria-selected='true'],
+    .atlas-row[data-active='true'] {
+        border-color: theme('colors.brass.300');
+        background-color: theme('colors.ink.700');
+    }
+
+    /* Screen and dialog titles. */
+    .atlas-title {
+        color: theme('colors.brass.200');
+        font-size: 33px;
+        line-height: 40px;
+        text-shadow: 3px 3px 0 theme('colors.ink.950');
+    }
+
+    .atlas-heading {
+        color: theme('colors.brass.200');
+        font-size: 22px;
+        line-height: 26px;
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+
+    /* ---- Buttons ---- */
+    .atlas-btn {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid theme('colors.ink.950');
+        background-color: theme('colors.ink.700');
+        color: theme('colors.parchment.100');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.ink.500'),
+            inset -2px -2px 0 theme('colors.ink.900');
+        font-size: 22px;
+        line-height: 26px;
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+        outline: none;
+        user-select: none;
+        white-space: nowrap;
+    }
+
+    .atlas-btn:hover:not(:disabled) {
+        background-color: theme('colors.ink.600');
+        border-color: theme('colors.brass.300');
+        color: theme('colors.parchment.50');
+    }
+
+    .atlas-btn:active:not(:disabled),
+    .atlas-btn[aria-pressed='true'],
+    .atlas-btn[aria-selected='true'] {
+        background-color: theme('colors.ink.850');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.ink.950'),
+            inset -2px -2px 0 theme('colors.ink.600');
+    }
+
+    .atlas-btn[aria-pressed='true'],
+    .atlas-btn[aria-selected='true'] {
+        color: theme('colors.brass.200');
+    }
+
+    /* A selected tab also takes a brass edge, so it reads at a glance. */
+    .atlas-btn[aria-selected='true'] {
+        border-color: theme('colors.brass.300');
+    }
+
+    .atlas-btn:active:not(:disabled) > .atlas-btn-label {
+        transform: translateY(2px);
+    }
+
+    .atlas-btn:focus-visible {
+        outline: 2px solid theme('colors.star');
+        outline-offset: 2px;
+    }
+
+    .atlas-btn:disabled {
+        background-color: theme('colors.ink.850');
+        color: theme('colors.parchment.500');
+        box-shadow: inset -2px -2px 0 theme('colors.ink.900');
+        text-shadow: none;
+        cursor: not-allowed;
+    }
+
+    /* The one action a screen is for: a brass plate with dark lettering. */
+    .atlas-btn-primary {
+        background-color: theme('colors.brass.400');
+        color: theme('colors.brass.800');
+        text-shadow: 2px 2px 0 rgb(255 241 196 / 0.35);
+        box-shadow:
+            inset 2px 2px 0 theme('colors.brass.200'),
+            inset -2px -2px 0 theme('colors.brass.600');
+    }
+
+    .atlas-btn-primary:hover:not(:disabled) {
+        background-color: theme('colors.brass.300');
+        border-color: theme('colors.ink.950');
+        color: theme('colors.brass.800');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.brass.100'),
+            inset -2px -2px 0 theme('colors.brass.500');
+    }
+
+    .atlas-btn-primary:active:not(:disabled) {
+        background-color: theme('colors.brass.500');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.brass.700'),
+            inset -2px -2px 0 theme('colors.brass.300');
+    }
+
+    .atlas-btn-danger {
+        background-color: theme('colors.ember.500');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.ember.300'),
+            inset -2px -2px 0 theme('colors.ember.600');
+    }
+
+    .atlas-btn-danger:hover:not(:disabled) {
+        background-color: theme('colors.ember.400');
+    }
+
+    .atlas-btn-danger:active:not(:disabled) {
+        background-color: theme('colors.ember.600');
+        box-shadow:
+            inset 2px 2px 0 rgb(40 8 6),
+            inset -2px -2px 0 theme('colors.ember.400');
+    }
+
+    .atlas-btn-label {
+        position: relative;
+        display: block;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 0 8px;
+    }
+
+    /* ---- Slider: a recessed track, a filled run, a brass knob ---- */
+    .atlas-slider {
+        position: relative;
+        border: 2px solid theme('colors.ink.950');
+        background-color: theme('colors.ink.900');
+        box-shadow:
+            inset 2px 2px 0 rgb(3 4 12 / 0.9),
+            inset -2px -2px 0 theme('colors.ink.600');
+        user-select: none;
+    }
+
+    .atlas-slider:hover:not([aria-disabled='true']) {
+        border-color: theme('colors.brass.300');
+    }
+
+    .atlas-slider:has(input:focus-visible) {
+        outline: 2px solid theme('colors.star');
+        outline-offset: 2px;
+    }
+
+    .atlas-slider-fill {
+        position: absolute;
+        top: 2px;
+        bottom: 2px;
+        left: 2px;
+        background-color: theme('colors.ink.600');
+    }
+
+    .atlas-slider-knob {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 12px;
+        border: 2px solid theme('colors.ink.950');
+        background-color: theme('colors.brass.400');
+        box-shadow:
+            inset 2px 2px 0 theme('colors.brass.200'),
+            inset -2px -2px 0 theme('colors.brass.600');
+    }
+
+    .atlas-slider[aria-disabled='true'] .atlas-slider-knob {
+        background-color: theme('colors.ink.500');
+        box-shadow: none;
+    }
+
+    /* ---- Text entry ---- */
+    .atlas-input {
+        height: 40px;
+        width: 100%;
+        border: 2px solid theme('colors.ink.950');
+        background-color: theme('colors.ink.900');
+        box-shadow: inset 2px 2px 0 rgb(3 4 12 / 0.9);
+        padding: 0 10px;
+        color: theme('colors.parchment.100');
+        caret-color: theme('colors.brass.200');
+        font-size: 22px;
+        line-height: 26px;
+        outline: none;
+    }
+
+    .atlas-input::placeholder {
+        color: theme('colors.parchment.500');
+    }
+
+    .atlas-input:hover {
+        border-color: theme('colors.ink.400');
+    }
+
+    .atlas-input:focus {
+        border-color: theme('colors.brass.300');
+    }
+
+    .atlas-label {
+        display: block;
+        color: theme('colors.parchment.300');
+        font-size: 22px;
+        line-height: 26px;
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+
+    .atlas-hint {
+        color: theme('colors.parchment.400');
+        font-size: 16px;
+        line-height: 20px;
+    }
+
+    /* ---- Inventory ---- */
+    .atlas-slot {
+        background-color: #10152f;
+        border: 2px solid;
+        border-color: #05060f #2b375f #2b375f #05060f;
+    }
+
+    .atlas-tooltip {
+        background-color: rgb(7 9 23 / 0.96);
+        border: 2px solid theme('colors.ink.950');
+        box-shadow: inset 0 0 0 2px theme('colors.ink.500');
+        padding: 6px 10px 8px;
+        color: theme('colors.parchment.300');
+    }
+
+    /* The selected slot: a brass ring, dark-edged inside and out, with lit
+       top-left and shaded bottom-right sides. */
+    .atlas-select-frame {
+        border: 4px solid;
+        border-color: theme('colors.brass.200') theme('colors.brass.500') theme('colors.brass.500') theme('colors.brass.200');
+        box-shadow:
+            0 0 0 2px theme('colors.ink.950'),
+            inset 0 0 0 2px theme('colors.ink.950');
+    }
+
+    /* A stack's count, in the slot's bottom-right corner. */
+    .atlas-count {
+        color: theme('colors.parchment.50');
+        font-size: 22px;
+        line-height: 22px;
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+
+    /* A key cap, for the key a prompt refers to. */
+    .atlas-key {
+        display: inline-block;
+        min-width: 22px;
+        border: 2px solid theme('colors.ink.950');
+        background-color: theme('colors.parchment.200');
+        box-shadow: inset 0 -2px 0 theme('colors.parchment.400');
+        padding: 0 4px 2px;
+        color: theme('colors.ink.900');
+        font-size: 11px;
+        line-height: 14px;
+        text-align: center;
+    }
+
+    /* HUD words that float over the world: a quiet ink plate. */
+    .atlas-plate {
+        background-color: rgb(7 9 23 / 0.62);
+        padding: 0 8px;
+        color: theme('colors.parchment.100');
+        font-size: 22px;
+        line-height: 26px;
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+}
+
+@layer utilities {
+    .text-shadow-sm {
+        text-shadow: 1px 1px 0 rgb(7 9 23 / 0.9);
+    }
+
+    .text-shadow-md {
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+
+    .text-shadow-lg {
+        text-shadow: 2px 2px 0 theme('colors.ink.950');
+    }
+
+    .text-shadow-xl {
+        text-shadow: 4px 4px 0 theme('colors.ink.950');
+    }
+
+    /* Chat fades out at the top instead of being cut. */
+    .mask-fade-top {
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
+        mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
+    }
+
+    /* Square pixel scrollbars for scroll boxes inside the game's panels. */
+    .scrollbar-thin::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background-color: theme('colors.ink.900');
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+        background-color: theme('colors.ink.500');
+        border: 2px solid theme('colors.ink.900');
+        box-shadow: inset 2px 2px 0 theme('colors.ink.400');
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+        background-color: theme('colors.brass.500');
+        box-shadow: inset 2px 2px 0 theme('colors.brass.300');
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-corner {
+        background-color: transparent;
+    }
+
+    .pixelated {
+        image-rendering: pixelated;
+    }
+}
+
 @keyframes atlas-item-pop {
     from {
         transform: scaleX(0.5) scaleY(1.5);
@@ -16,6 +411,90 @@
     .atlas-item-pop {
         animation: atlas-item-pop 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
         transform-origin: 50% 75%;
+    }
+}
+
+/* The loading screen's grass block, turning slowly (still if motion is reduced). */
+@keyframes ls-cube-spin {
+    from {
+        transform: rotateX(25deg) rotateY(0deg);
+    }
+
+    to {
+        transform: rotateX(25deg) rotateY(360deg);
+    }
+}
+
+.ls-scene {
+    perspective: 320px;
+    width: 80px;
+    height: 80px;
+}
+
+.ls-cube {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    transform-style: preserve-3d;
+    transform: rotateX(25deg) rotateY(-35deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .ls-cube {
+        animation: ls-cube-spin 9s linear infinite;
+    }
+}
+
+.ls-face {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    image-rendering: pixelated;
+}
+
+.ls-top {
+    transform: rotateX(90deg) translateZ(40px);
+}
+
+.ls-bottom {
+    transform: rotateX(-90deg) translateZ(40px);
+}
+
+.ls-front {
+    transform: translateZ(40px);
+}
+
+.ls-back {
+    transform: rotateY(180deg) translateZ(40px);
+}
+
+.ls-left {
+    transform: rotateY(-90deg) translateZ(40px);
+}
+
+.ls-right {
+    transform: rotateY(90deg) translateZ(40px);
+}
+
+/* The title screen's splash: tilted, and it throbs unless motion is reduced. */
+@keyframes atlas-splash-pulse {
+    0%, 100% {
+        transform: scale(1) rotate(-20deg);
+    }
+
+    50% {
+        transform: scale(1.1) rotate(-20deg);
+    }
+}
+
+.atlas-splash {
+    transform: rotate(-20deg);
+    transform-origin: center top;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .atlas-splash {
+        animation: atlas-splash-pulse 0.5s infinite alternate ease-in-out;
     }
 }
 

@@ -2275,6 +2275,14 @@ const App: React.FC = () => {
           tp: (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
           hud: visible => setHudHidden(!visible),
           openInventory,
+          openContainer: type => {
+              const p = playerPosRef.current;
+              const [x, y, z] = [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+              if (type === 'chest') worldManager.ensureChest(x, y, z);
+              setOpenContainer({ type, x, y, z });
+              isInventoryOpenRef.current = true;
+              enterUIMode();
+          },
           closeContainers: () => { if (openContainer) closeInventory({ deferPointerLock: true }); },
           streaming: () => worldManager.getStreamingStatus(),
           position: () => ({ x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z }),
@@ -2283,7 +2291,7 @@ const App: React.FC = () => {
           getBlock: (x, y, z) => worldManager.getBlock(x, y, z, false),
           setBlock: (x, y, z, type) => { worldManager.setBlock(x, y, z, type as BlockType); },
       });
-  }, [executeCommand, openInventory, closeInventory, openContainer]);
+  }, [executeCommand, openInventory, closeInventory, openContainer, setOpenContainer, enterUIMode]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
@@ -3218,7 +3226,7 @@ const App: React.FC = () => {
       {pendingPanoramaDelete && (
           <ConfirmModal
               title="Remove Panorama?"
-              message={<>Remove <span className="text-white">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
+              message={<>Remove <span className="text-parchment-50">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
               confirmLabel="Remove"
               danger
               onConfirm={() => void confirmDeletePanorama()}
@@ -3358,7 +3366,7 @@ const App: React.FC = () => {
                     {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={overlayStyle} />}
                     {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
-                    {isSleeping && <div className="absolute inset-0 z-[100] bg-black atlas-fade-in-sleep flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
+                    {isSleeping && <div className="absolute inset-0 z-[100] bg-ink-950 atlas-fade-in-sleep flex items-center justify-center"><span className="text-px-3 text-parchment-200 motion-safe:animate-pulse">Sleeping...</span></div>}
                     {!hudHidden && !showDebug && showCoordinates && !cinematicMode && !showDeathScreen && <CoordinatesReadout positionRef={playerPosRef} />}
                     {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
@@ -3367,7 +3375,8 @@ const App: React.FC = () => {
                     <CinematicOverlay />
                     {!hudHidden && !showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
                     {!hudHidden && ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
-                        <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
+                        // Above the vitals, the armor or breath row, and the item name.
+                        <div className="atlas-plate absolute bottom-[184px] left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap">
                             Sneak ({keyLabelFor('sneak')}) to hop out of the boat
                         </div>
                     )}
@@ -3539,8 +3548,8 @@ const App: React.FC = () => {
             </Canvas>
 
             {isCapturingPanorama && (
-                <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">
-                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-pixel text-sm">
+                <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-ink-950/30 flex items-center justify-center">
+                    <div className="atlas-panel px-8 py-4 text-px-2 text-parchment-100">
                         Capturing panorama… input locked
                     </div>
                 </div>

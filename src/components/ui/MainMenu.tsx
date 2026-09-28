@@ -135,7 +135,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const hasFaceCubemap = !!panoramaFaceDataUrls && panoramaFaceDataUrls.length === 6;
     const isBrowserMode = !onQuit;
     const usingPanorama = backgroundMode === 'panorama' && (!!panoramaBackgroundDataUrl || hasFaceCubemap);
-    const submenuOverlayClass = usingPanorama ? 'bg-black/60' : 'bg-black/35';
+    const submenuOverlayClass = usingPanorama ? 'bg-ink-950/55' : 'bg-ink-950/35';
     const showSubmenuOverlay = view !== 'main';
 
     useEffect(() => {
@@ -258,7 +258,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     debugFlyMode
                 />
-                <div className="pointer-events-none absolute left-3 top-3 border border-white/30 bg-black/55 px-2 py-1 text-xs font-pixel text-white">
+                <div className="atlas-plate pointer-events-none absolute left-3 top-3 !text-read">
                     Panorama Debug Fly {'\u2022'} F5 toggle {'\u2022'} WASD/Space/Shift {'\u2022'} Mouse look {'\u2022'} Esc to exit
                 </div>
             </div>
@@ -377,7 +377,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     title="Delete World?"
                     danger
                     confirmLabel="Delete Forever"
-                    message={<>This will permanently delete <span className="text-white">{pendingDeleteName || 'this world'}</span>. It will be lost forever! (A long time!)</>}
+                    message={<>This will permanently delete <span className="text-parchment-50">{pendingDeleteName || 'this world'}</span>. It will be lost forever! (A long time!)</>}
                     onConfirm={() => void confirmDeleteWorld()}
                     onCancel={cancelDeleteWorld}
                 />

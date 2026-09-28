@@ -31,7 +31,7 @@ interface SlotProps {
   bare?: boolean;
   /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
   animateChanges?: boolean;
-  /** Draw the white selection frame on this slot (the hotbar draws one sliding frame instead). */
+  /** Draw the brass selection frame on this slot (the hotbar draws one sliding frame instead). */
   selectionFrame?: boolean;
   cooldownFraction?: number;
 }
@@ -341,7 +341,7 @@ export const Slot: React.FC<SlotProps> = ({
         <div className="relative w-12 h-12 flex items-center justify-center pointer-events-none">
             {renderContent()}
             {item && item.count > 1 && (
-                <span className="absolute bottom-1 right-1 text-white text-[14px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,1)] select-none z-20">
+                <span className="atlas-count absolute bottom-0 right-[2px] select-none z-20">
                     {item.count}
                 </span>
             )}
@@ -362,9 +362,7 @@ export const Slot: React.FC<SlotProps> = ({
         className={`
             group relative flex items-center justify-center
             ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
-            ${bare
-                ? 'pointer-events-none'
-                : 'cursor-pointer bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]'}
+            ${bare ? 'pointer-events-none' : 'atlas-slot cursor-pointer'}
             ${selected ? 'z-10' : ''}
         `}
     >
@@ -373,23 +371,23 @@ export const Slot: React.FC<SlotProps> = ({
         </div>
 
         {!bare && (
-            <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />
+            <span className="absolute inset-0 z-10 pointer-events-none bg-parchment-100/20 opacity-0 group-hover:opacity-100" />
         )}
 
         {!bare && cooldownFraction > 0 && (
             <span
                 data-resonant-cooldown="true"
-                className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-black/65 border-t border-white/25"
+                className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-ink-950/70 border-t-2 border-parchment-300/40"
                 style={{ height: `${Math.round(Math.max(0, Math.min(1, cooldownFraction)) * 100)}%` }}
             />
         )}
 
         {selected && !bare && selectionFrame && (
-            <span className="absolute -inset-1 z-30 pointer-events-none border-4 border-white shadow-lg" />
+            <span className="absolute -inset-1 z-30 pointer-events-none atlas-select-frame" />
         )}
 
         {item && item.count > 1 && (
-            <span className="absolute bottom-1 right-1 text-white text-[12px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none pointer-events-none z-20">
+            <span className="atlas-count absolute bottom-0 right-[2px] select-none pointer-events-none z-20">
                 {item.count}
             </span>
         )}

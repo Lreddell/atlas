@@ -66,16 +66,16 @@ export const SkinsMenu: React.FC<{ onDone: () => void }> = ({ onDone }) => {
         } catch (e) { setError(e instanceof Error ? e.message : 'Could not import skin.'); }
         finally { setBusy(false); }
     };
-    return <section className="w-[min(900px,calc(100vw-48px))] max-h-[calc(100vh-80px)] overflow-y-auto text-white font-pixel" aria-label="Skins"
+    return <section className="w-[min(900px,calc(100vw-48px))] max-h-[calc(100vh-80px)] overflow-y-auto text-parchment-100" aria-label="Skins"
         onKeyDown={event => {
             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                 event.preventDefault(); event.stopPropagation(); browse(index + (event.key === 'ArrowLeft' ? -1 : 1));
             }
         }}>
-        <h1 className="mb-5 text-center text-xl font-bold text-shadow-lg">Skins</h1>
+        <h1 className="atlas-title mb-5 text-center">Skins</h1>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-[40%_1fr]">
             <div className="flex flex-col items-center">
-                <div className="h-[min(390px,48vh)] min-h-[220px] w-full cursor-grab active:cursor-grabbing" aria-label={`3D preview of ${skin.name}. Drag to rotate.`}>
+                <div className="atlas-well h-[min(390px,48vh)] min-h-[220px] w-full cursor-grab active:cursor-grabbing" aria-label={`3D preview of ${skin.name}. Drag to rotate.`}>
                     <Canvas camera={{ position: [-2.2, 1.6, -4.2], fov: 34 }} dpr={[1, 1.5]} gl={{ alpha: true }}>
                         <ambientLight intensity={1.6} />
                         <directionalLight position={[-3, 5, -4]} intensity={2} />
@@ -84,35 +84,35 @@ export const SkinsMenu: React.FC<{ onDone: () => void }> = ({ onDone }) => {
                         <OrbitControls target={[0, 0.98, 0]} enablePan={false} enableZoom={false} minPolarAngle={0.7} maxPolarAngle={1.8} />
                     </Canvas>
                 </div>
-                <span className="text-xs text-white/70">Drag to rotate</span>
+                <span className="atlas-hint mt-2">Drag to rotate</span>
             </div>
             <div className="flex min-w-0 flex-col items-center justify-center gap-4">
-                <div className="text-center" aria-live="polite"><h2 className="text-lg font-bold text-shadow-lg">{skin.name}</h2><p className="mt-1 text-xs text-white/70">{skin.texture ? 'Imported' : 'Atlas'}</p></div>
+                <div className="text-center" aria-live="polite"><h2 className="text-px-2 text-parchment-50 text-shadow-md">{skin.name}</h2><p className="atlas-hint mt-1">{skin.texture ? 'Imported' : 'Atlas'}</p></div>
                 <div className="relative h-48 w-full overflow-hidden" aria-label="Skin carousel" aria-roledescription="carousel">
                     <div className="absolute left-1/2 flex gap-3 transition-transform duration-200 motion-reduce:transition-none" style={{ transform: `translateX(${-index * 112 - 50}px)` }}>
                         {skins.map((entry, i) => <button key={entry.id} type="button" onClick={() => browse(i)} aria-label={entry.name} aria-pressed={index === i} tabIndex={index === i ? 0 : -1}
-                            className={`flex h-44 w-[100px] shrink-0 flex-col items-center justify-center gap-2 border-2 px-1 outline-none focus-visible:ring-2 focus-visible:ring-white ${index === i ? 'border-white bg-[#555] shadow-[inset_2px_2px_0_#999,inset_-2px_-2px_0_#333]' : 'border-[#373737] bg-black/30 opacity-60 hover:opacity-100'}`}>
+                            className={`flex h-44 w-[100px] shrink-0 flex-col items-center justify-center gap-2 border-2 px-1 outline-none focus-visible:outline-2 focus-visible:outline-star ${index === i ? 'border-brass-300 bg-ink-600 shadow-[inset_2px_2px_0_#46578a,inset_-2px_-2px_0_#0b0e1a]' : 'border-ink-950 bg-ink-900/70 opacity-60 hover:opacity-100'}`}>
                             <SkinPortrait skin={entry} />
-                            <span className="w-full truncate text-[10px]">{entry.name}</span>
+                            <span className="w-full truncate text-px-1 text-parchment-100">{entry.name}</span>
                         </button>)}
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <MenuButton label="<" tooltip="Previous skin" width="w-12" onClick={() => browse(index - 1)} />
-                    <span className="w-20 text-center text-sm tabular-nums">{index + 1} / {skins.length}</span>
-                    <MenuButton label=">" tooltip="Next skin" width="w-12" onClick={() => browse(index + 1)} />
+                    <MenuButton label="<" tooltip="Previous skin" width="w-14" onClick={() => browse(index - 1)} />
+                    <span className="w-20 text-center text-px-2 tabular-nums text-parchment-200">{index + 1} / {skins.length}</span>
+                    <MenuButton label=">" tooltip="Next skin" width="w-14" onClick={() => browse(index + 1)} />
                 </div>
-                {skin.texture && <MenuButton label={`Arms: ${skin.model === 'slim' ? 'Slim' : 'Classic'}`} width="w-64" disabled={skin.legacy} tooltip={skin.legacy ? 'Legacy skins use classic arms' : undefined}
+                {skin.texture && <MenuButton label={`Arms: ${skin.model === 'slim' ? 'Slim' : 'Classic'}`} width="w-72" disabled={skin.legacy} tooltip={skin.legacy ? 'Legacy skins use classic arms' : undefined}
                     onClick={() => setModels(old => ({ ...old, [skin.id]: skin.model === 'slim' ? 'classic' : 'slim' }))} />}
-                <MenuButton label={equipped ? 'Selected' : 'Use Skin'} width="w-64" disabled={equipped} onClick={() => run(() => equipSkin(skin))} />
-                {skin.texture && <MenuButton label="Remove Skin" width="w-64" small onClick={() => run(() => { removeImportedSkin(skin.id); setBrowsed('explorer'); })} />}
+                <MenuButton label={equipped ? 'Selected' : 'Use Skin'} width="w-72" variant="primary" disabled={equipped} onClick={() => run(() => equipSkin(skin))} />
+                {skin.texture && <MenuButton label="Remove Skin" width="w-72" small variant="danger" onClick={() => run(() => { removeImportedSkin(skin.id); setBrowsed('explorer'); })} />}
             </div>
         </div>
-        {error && <p role="alert" className="mx-auto mt-4 max-w-lg text-center text-sm text-white">{error}</p>}
+        {error && <p role="alert" className="mx-auto mt-4 max-w-lg text-center text-read text-ember-300">{error}</p>}
         <div className="mt-6 flex flex-wrap justify-center gap-3">
             <input ref={fileInput} type="file" accept="image/png,.png" className="hidden" aria-label="Import Minecraft skin" onChange={event => { void importFile(event.target.files?.[0]); event.target.value = ''; }} />
-            <MenuButton label={busy ? 'Importing...' : 'Import Skin'} width="w-48" disabled={busy} onClick={() => fileInput.current?.click()} />
-            <MenuButton label="Done" width="w-48" onClick={onDone} />
+            <MenuButton label={busy ? 'Importing...' : 'Import Skin'} width="w-60" disabled={busy} onClick={() => fileInput.current?.click()} />
+            <MenuButton label="Done" width="w-60" onClick={onDone} />
         </div>
     </section>;
 };

@@ -5,7 +5,7 @@ import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
-import { MenuButton } from './mainMenu/MainMenuControls';
+import { MenuButton, MenuSlider } from './mainMenu/MainMenuControls';
 import { SkinsMenu } from './SkinsMenu';
 import { controlSettings, useControlSettings } from '../../systems/player/controlStore';
 import { MAX_SENSITIVITY, MIN_SENSITIVITY } from '../../systems/player/controlSettings';
@@ -81,59 +81,6 @@ export interface WorldOptions {
 }
 
 type MenuScreen = 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial' | 'world';
-
-// Menu Slider Component
-const MenuSlider: React.FC<{
-    label: string;
-    value: number; // 0 to 1 usually, or range
-    min: number;
-    max: number;
-    step?: number;
-    onChange: (val: number) => void;
-    width?: string;
-    formatValue?: (val: number) => string;
-    disabled?: boolean;
-}> = ({ label, value, min, max, step = 0.01, onChange, width = 'w-96', formatValue, disabled = false }) => {
-    
-    const percentage = ((value - min) / (max - min)) * 100;
-    
-    return (
-        <div 
-            className={`
-                ${width} h-10 relative bg-[#000000] border-2 border-white border-b-[#373737] border-r-[#373737] select-none
-                ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-            `}
-            onMouseDown={(e) => { if (!disabled) e.stopPropagation(); }}
-            onMouseUp={(e) => { 
-                e.stopPropagation(); 
-                if(!disabled) soundManager.play("ui.slider"); 
-            }}
-        >
-            {/* Range Input (Invisible but handles interaction) */}
-            <input 
-                type="range"
-                min={min} max={max} step={step}
-                value={value}
-                disabled={disabled}
-                onChange={(e) => onChange(parseFloat(e.target.value))}
-                className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer disabled:cursor-not-allowed"
-            />
-            
-            {/* Visual Button Face (Draggable part) */}
-            <div className="absolute inset-0 bg-[#8b8b8b] border border-[#555] pointer-events-none">
-                <div 
-                    className="absolute top-0 bottom-0 bg-[#a0a0a0] border-r-2 border-black/20"
-                    style={{ width: `${percentage}%` }}
-                />
-            </div>
-
-            {/* Text Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 text-white font-pixel text-shadow-md">
-                {label}: {formatValue ? formatValue(value) : Math.round(percentage) + '%'}
-            </div>
-        </div>
-    );
-};
 
 // Checkbox simulation (Toggle Button)
 const MCToggle: React.FC<{
@@ -260,47 +207,41 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
     // Main Menu
     const renderMain = () => (
-        <div className="flex flex-col gap-3 items-center">
-            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">{isMainMenu ? 'Options' : 'Game Menu'}</h1>
-            
-            <div className="flex flex-col gap-3 w-full items-center">
-                {!isMainMenu && <MenuButton label="Back to Game" onClick={onResume} width="w-80" />}
-                <div className="flex gap-3">
-                    <MenuButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
-                    <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
-                </div>
-                {worldOptions ? (
-                    <div className="flex gap-3">
-                        <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-[9.5rem]" />
-                        <MenuButton label="World Options..." onClick={() => setScreen('world')} width="w-[9.5rem]" />
+        <div className="flex flex-col items-center gap-3">
+            <h1 className="atlas-title mb-3">{isMainMenu ? 'Options' : 'Game Menu'}</h1>
+
+            <div className="flex w-[400px] flex-col items-center gap-3">
+                {!isMainMenu && <MenuButton label="Back to Game" onClick={onResume} width="w-full" variant="primary" />}
+                <div className="grid w-full grid-cols-2 gap-3">
+                    <MenuButton label="Video Settings..." onClick={() => setScreen('video')} width="w-full" />
+                    <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-full" />
+                    <div className={worldOptions ? undefined : 'col-span-2'}>
+                        <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-full" />
                     </div>
-                ) : (
-                    <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-80" />
-                )}
-                <div className="flex gap-3">
-                    <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-[9.5rem]" />
-                    <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
+                    {worldOptions && <MenuButton label="World Options..." onClick={() => setScreen('world')} width="w-full" />}
+                    <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-full" />
+                    <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-full" />
                 </div>
-                {isMainMenu && onOpenPanorama && <MenuButton label="Menu Background..." onClick={onOpenPanorama} width="w-80" />}
-                {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-80" />}
-                {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-80" />}
+                {isMainMenu && onOpenPanorama && <MenuButton label="Menu Background..." onClick={onOpenPanorama} width="w-full" />}
+                {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-full" />}
+                {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-full" />}
             </div>
         </div>
     );
 
     // Video Settings
     const renderVideo = () => (
-        <div className="flex flex-col gap-2 items-center w-[600px]">
-            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Video Settings</h1>
+        <div className="flex w-[652px] flex-col items-center gap-2">
+            <h1 className="atlas-title mb-3">Video Settings</h1>
 
             {/* Quality presets. Changing any option below switches to Custom. */}
-            <div className="flex flex-col items-center gap-1 mb-3">
+            <div className="mb-3 flex w-full flex-col items-center gap-1">
                 <MenuButton
                     label={`Graphics: ${QUALITY_LABELS[graphics.quality]}`}
                     onClick={() => graphicsSettings.setPreset(nextPresetAfter(graphics.quality === 'custom' ? graphics.state.preset : graphics.quality))}
-                    width="w-[33rem]"
+                    width="w-[652px]"
                 />
-                <p className="text-xs font-pixel text-gray-300 text-shadow-md">
+                <p className="atlas-hint mb-2 text-center">
                     {graphics.quality === 'custom'
                         ? `Custom, based on ${QUALITY_LABELS[graphics.state.preset]}. Click to pick a preset again.`
                         : 'Low, Medium, High or Ultra. Changing an option below switches to Custom.'}
@@ -310,149 +251,149 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     label={`Visual Style: ${VISUAL_STYLE_LABELS[gfx.visualStyle]}`}
                     tooltip="Luminous is the new lighting, sky and effects; Classic is how Atlas looked before them"
                     onClick={() => graphicsSettings.setOption('visualStyle', gfx.visualStyle === 'classic' ? 'luminous' : 'classic')}
-                    width="w-[33rem]"
+                    width="w-[652px]"
                 />
-                <p className="text-xs font-pixel text-gray-300 text-shadow-md">
+                <p className="atlas-hint text-center">
                     {gfx.visualStyle === 'classic'
                         ? 'The original look: flat light, the old sky and fog, no glow or post effects.'
                         : 'Warm light, cool shadows, sky-matched haze and glow.'}
                 </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-                <MenuSlider 
-                    label="Brightness" 
-                    value={brightness} min={0} max={1} step={0.05} 
-                    onChange={setBrightness} width="w-64"
+            <div className="mb-4 grid grid-cols-2 gap-3">
+                <MenuSlider
+                    label="Brightness"
+                    value={brightness} min={0} max={1} step={0.05}
+                    onChange={setBrightness} width="w-80"
                     formatValue={(v) => v === 0 ? 'Moody' : (v === 1 ? 'Bright' : `+${Math.round(v*100)}%`)}
                 />
-                <MenuSlider 
-                    label="Render Distance" 
-                    value={renderDistance} min={4} max={48} step={1} 
-                    onChange={setRenderDistance} width="w-64"
+                <MenuSlider
+                    label="Render Distance"
+                    value={renderDistance} min={4} max={48} step={1}
+                    onChange={setRenderDistance} width="w-80"
                     formatValue={(v) => `${v} Chunks`}
                 />
-                <MenuSlider 
-                    label="FOV" 
-                    value={fov} min={30} max={110} step={1} 
-                    onChange={setFov} width="w-64"
+                <MenuSlider
+                    label="FOV"
+                    value={fov} min={30} max={110} step={1}
+                    onChange={setFov} width="w-80"
                     formatValue={(v) => v === 70 ? 'Normal' : v.toString()}
                 />
-                
-                <MenuSlider 
-                    label="Max Framerate" 
+
+                <MenuSlider
+                    label="Max Framerate"
                     value={maxFps} min={10} max={260} step={10}
-                    onChange={setMaxFps} width="w-64"
+                    onChange={setMaxFps} width="w-80"
                     disabled={vsync}
                     formatValue={(v) => `${v} fps`}
                 />
-                <MCToggle label="VSync" value={vsync} onChange={setVsync} width="w-64" />
+                <MCToggle label="VSync" value={vsync} onChange={setVsync} width="w-80" />
 
                 <MenuButton
                     label={`Shadows: ${SHADOW_LABELS[gfx.shadows]}`}
                     onClick={() => graphicsSettings.setOption('shadows', nextInCycle(gfx.shadowStyle === 'pixel' ? PIXEL_SHADOW_CYCLE : SHADOW_CYCLE, gfx.shadows))}
-                    width="w-64"
+                    width="w-80"
                 />
                 <MenuButton
                     label={`Shadow Style: ${SHADOW_STYLE_LABELS[gfx.shadowStyle]}`}
                     tooltip="Soft edges, or crisp shadows stepped on the same 16-pixel grid as the textures"
                     onClick={() => graphicsSettings.setOption('shadowStyle', gfx.shadowStyle === 'pixel' ? 'soft' : 'pixel')}
-                    width="w-64"
+                    width="w-80"
                     disabled={gfx.shadows === 'off'}
                 />
                 <MCToggle
-                    label="Clouds" value={gfx.clouds !== 'off'} width="w-64"
+                    label="Clouds" value={gfx.clouds !== 'off'} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('clouds', on ? presetCloudsOrFancy(graphics.state.preset) : 'off')}
                 />
-                <MCToggle label="Antialiasing" value={gfx.antialiasing !== 'off'} width="w-64"
+                <MCToggle label="Antialiasing" value={gfx.antialiasing !== 'off'} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('antialiasing', on ? 'msaa' : 'off')} />
                 <MenuButton
                     label={`Resolution: ${gfx.maxPixelRatio}x`}
                     tooltip="Highest pixel density the world renders at on high-DPI screens"
                     onClick={() => graphicsSettings.setOption('maxPixelRatio', nextInCycle(PIXEL_RATIO_CYCLE, gfx.maxPixelRatio))}
-                    width="w-64"
+                    width="w-80"
                 />
-                <MCToggle label="Mipmaps" value={gfx.mipmaps} width="w-64"
+                <MCToggle label="Mipmaps" value={gfx.mipmaps} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('mipmaps', on)} />
-                <MCToggle label="Chunk Fade-In" value={gfx.chunkFade} width="w-64"
+                <MCToggle label="Chunk Fade-In" value={gfx.chunkFade} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('chunkFade', on)} />
                 {/* Scene only: the 3D world blurs, the HUD never does. Enabled by Ultra. */}
-                <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-64"
+                <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('motionBlur', on)} />
-                <MCToggle label="View Bobbing" value={gfx.viewBobbing} width="w-64"
+                <MCToggle label="View Bobbing" value={gfx.viewBobbing} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('viewBobbing', on)} />
 
             </div>
 
-            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-80" />
         </div>
     );
 
     // Audio Settings
     const renderAudio = () => (
-        <div className="flex flex-col gap-2 items-center w-[600px]">
-            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Music & Sounds</h1>
-            
-            <div className="mb-4 flex gap-4">
-                <MenuSlider 
-                    label="Master Volume" 
-                    value={volumes.master} min={0} max={1} 
-                    onChange={(v) => updateVolume('master', v)} width="w-64"
+        <div className="flex w-[652px] flex-col items-center gap-2">
+            <h1 className="atlas-title mb-3">Music &amp; Sounds</h1>
+
+            <div className="mb-3 grid grid-cols-2 gap-3">
+                <MenuSlider
+                    label="Master Volume"
+                    value={volumes.master} min={0} max={1}
+                    onChange={(v) => updateVolume('master', v)} width="w-80"
                 />
                 <MenuSlider
                     label="Music Delay"
                     value={musicDelay} min={0} max={300} step={5}
-                    onChange={updateMusicDelay} width="w-64"
+                    onChange={updateMusicDelay} width="w-80"
                     formatValue={(v) => `${v}s`}
                 />
             </div>
 
-            <div className="mb-4 flex gap-4 justify-center">
-                <MCToggle label="Slow Music at Night" value={nightSlowdown} onChange={updateNightSlowdown} width="w-64" />
+            <div className="mb-3 flex justify-center">
+                <MCToggle label="Slow Music at Night" value={nightSlowdown} onChange={updateNightSlowdown} width="w-80" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="mb-5 grid grid-cols-2 gap-3">
                 {/* Each slider names what its category actually plays: 'ambient' is
                     lava and Vault events (there is no weather), 'ui' the menus and
                     HUD. Nothing plays as 'neutral' yet, so it has no slider. */}
-                <MenuSlider label="Music" value={volumes.music} min={0} max={1} onChange={(v) => updateVolume('music', v)} width="w-64" />
-                <MenuSlider label="Ambient & Events" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-64" />
-                <MenuSlider label="Blocks" value={volumes.blocks} min={0} max={1} onChange={(v) => updateVolume('blocks', v)} width="w-64" />
-                <MenuSlider label="Enemies & Bosses" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-64" />
-                <MenuSlider label="Player" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-64" />
-                <MenuSlider label="Interface" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-64" />
+                <MenuSlider label="Music" value={volumes.music} min={0} max={1} onChange={(v) => updateVolume('music', v)} width="w-80" />
+                <MenuSlider label="Ambient & Events" value={volumes.ambient} min={0} max={1} onChange={(v) => updateVolume('ambient', v)} width="w-80" />
+                <MenuSlider label="Blocks" value={volumes.blocks} min={0} max={1} onChange={(v) => updateVolume('blocks', v)} width="w-80" />
+                <MenuSlider label="Enemies & Bosses" value={volumes.hostile} min={0} max={1} onChange={(v) => updateVolume('hostile', v)} width="w-80" />
+                <MenuSlider label="Player" value={volumes.player} min={0} max={1} onChange={(v) => updateVolume('player', v)} width="w-80" />
+                <MenuSlider label="Interface" value={volumes.ui} min={0} max={1} onChange={(v) => updateVolume('ui', v)} width="w-80" />
             </div>
 
-            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-80" />
         </div>
     );
 
     // Controls: mouse look settings, then every key the game listens for.
     const renderControls = () => (
-        <div className="flex flex-col gap-2 items-center w-[640px]">
-            <h1 className="text-white text-xl mb-4 font-bold font-pixel text-shadow-lg">Controls</h1>
+        <div className="flex w-[760px] flex-col items-center gap-2">
+            <h1 className="atlas-title mb-3">Controls</h1>
 
-            <div className="mb-3 flex gap-4">
+            <div className="mb-3 grid grid-cols-2 gap-3">
                 <MenuSlider
                     label="Mouse Sensitivity"
                     value={controls.sensitivity} min={MIN_SENSITIVITY} max={MAX_SENSITIVITY} step={0.05}
-                    onChange={(v) => controlSettings.set({ sensitivity: v })} width="w-64"
+                    onChange={(v) => controlSettings.set({ sensitivity: v })} width="w-80"
                     formatValue={(v) => `${Math.round(v * 100)}%`}
                 />
-                <MCToggle label="Invert Mouse" value={controls.invertY} onChange={(on) => controlSettings.set({ invertY: on })} width="w-64" />
+                <MCToggle label="Invert Mouse" value={controls.invertY} onChange={(on) => controlSettings.set({ invertY: on })} width="w-80" />
             </div>
 
-            <div className="w-full max-h-[340px] overflow-y-auto bg-black/35 border-2 border-white/20 px-4 py-3 mb-4">
+            <div className="atlas-well mb-4 max-h-[360px] w-full overflow-y-auto px-4 py-3 scrollbar-thin">
                 {KEY_ACTION_GROUPS.map((group) => (
-                    <div key={group} className="mb-3">
-                        <h2 className="text-blue-200 text-sm font-pixel mb-1">{group}</h2>
+                    <div key={group} className="mb-4">
+                        <h2 className="atlas-heading mb-1">{group}</h2>
                         {KEY_ACTIONS.filter((action) => action.group === group).map((action) => {
                             const conflicts = conflictsOf(keys.bindings, action.id);
                             const waiting = listening === action.id;
                             return (
                                 <div key={action.id} className="flex items-center justify-between gap-4 py-[2px]">
                                     <span
-                                        className={`text-sm font-pixel ${conflicts.length > 0 ? 'text-red-300' : 'text-gray-100'}`}
+                                        className={`truncate text-px-2 text-shadow-md ${conflicts.length > 0 ? 'text-ember-300' : 'text-parchment-100'}`}
                                         title={conflicts.length > 0 ? `Also bound to ${conflicts.map(keyActionLabel).join(', ')}` : undefined}
                                     >
                                         {action.label}
@@ -460,14 +401,14 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                                     <div className="flex shrink-0 gap-2">
                                         <MenuButton
                                             small
-                                            width="w-44"
+                                            width="w-[280px]"
                                             pressed={waiting}
                                             label={waiting ? '> Press a key <' : bindingLabel(keys.bindings, action.id, keys.layout)}
                                             onClick={() => setListening(waiting ? null : action.id)}
                                         />
                                         <MenuButton
                                             small
-                                            width="w-16"
+                                            width="w-[92px]"
                                             label="Reset"
                                             disabled={isDefaultBinding(keys.bindings, action.id)}
                                             onClick={() => keyBindingStore.reset(action.id)}
@@ -479,49 +420,49 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     </div>
                 ))}
                 <div>
-                    <h2 className="text-blue-200 text-sm font-pixel mb-1">Mouse & Menus</h2>
+                    <h2 className="atlas-heading mb-1">Mouse &amp; Menus</h2>
                     {FIXED_BINDINGS.map(([key, action]) => (
                         <div key={key} className="flex items-baseline justify-between gap-6 py-[3px]">
-                            <span className="text-gray-100 text-sm font-pixel">{action}</span>
-                            <span className="text-right text-gray-400 text-sm font-pixel">{key}</span>
+                            <span className="text-px-2 text-parchment-100 text-shadow-md">{action}</span>
+                            <span className="text-right text-px-2 text-parchment-400">{key}</span>
                         </div>
                     ))}
                 </div>
             </div>
 
-            <div className="flex gap-3">
-                <MenuButton label="Reset All Keys" onClick={() => { setListening(null); keyBindingStore.resetAll(); }} width="w-64" />
-                <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <div className="grid grid-cols-2 gap-3">
+                <MenuButton label="Reset All Keys" onClick={() => { setListening(null); keyBindingStore.resetAll(); }} width="w-80" />
+                <MenuButton label="Done" onClick={() => setScreen('main')} width="w-80" />
             </div>
         </div>
     );
 
     // World Options: this world's rules, and its seed to share.
     const renderWorld = () => worldOptions && (
-        <div className="flex flex-col gap-2 items-center w-[480px]">
-            <h1 className="text-white text-xl mb-1 font-bold font-pixel text-shadow-lg">World Options</h1>
-            <p className="mb-4 text-sm font-pixel text-gray-300 text-shadow-md">{worldOptions.name}</p>
+        <div className="flex w-[480px] flex-col items-center gap-2">
+            <h1 className="atlas-title">World Options</h1>
+            <p className="mb-4 text-px-2 text-parchment-300 text-shadow-md">{worldOptions.name}</p>
 
-            <MCToggle label="Allow Commands" value={worldOptions.allowCommands} onChange={worldOptions.onAllowCommands} width="w-80" />
-            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+            <MCToggle label="Allow Commands" value={worldOptions.allowCommands} onChange={worldOptions.onAllowCommands} width="w-[400px]" />
+            <p className="atlas-hint mb-3 w-[400px] text-center">
                 Cheat commands like /gamemode, /giveitem and /tp. /help, /sound and /music always work.
             </p>
 
-            <MCToggle label="Keep Inventory" value={worldOptions.keepInventory} onChange={worldOptions.onKeepInventory} width="w-80" />
-            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+            <MCToggle label="Keep Inventory" value={worldOptions.keepInventory} onChange={worldOptions.onKeepInventory} width="w-[400px]" />
+            <p className="atlas-hint mb-3 w-[400px] text-center">
                 Keep your items and armor when you die.
             </p>
 
-            <MCToggle label="Show Coordinates" value={worldOptions.showCoordinates} onChange={worldOptions.onShowCoordinates} width="w-80" />
-            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+            <MCToggle label="Show Coordinates" value={worldOptions.showCoordinates} onChange={worldOptions.onShowCoordinates} width="w-[400px]" />
+            <p className="atlas-hint mb-3 w-[400px] text-center">
                 Show your position in the corner of the screen.
             </p>
 
-            <p className="mb-4 w-80 select-text text-center text-xs font-pixel text-gray-300 text-shadow-md">
-                Seed: <span className="text-white">{worldOptions.seed}</span>
+            <p className="mb-4 w-[400px] select-text text-center text-px-2 text-parchment-300 text-shadow-md">
+                Seed: <span className="text-parchment-50">{worldOptions.seed}</span>
             </p>
 
-            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-80" />
         </div>
     );
 
@@ -529,52 +470,51 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === tutorialTab) || TUTORIAL_SECTIONS[0];
 
         return (
-            <div className="flex flex-col gap-2 items-center w-[820px]">
-                <h1 className="text-white text-xl mb-2 font-bold font-pixel text-shadow-lg">Tutorial</h1>
+            <div className="flex w-[900px] max-w-[calc(100vw-4rem)] flex-col items-center gap-2">
+                <h1 className="atlas-title mb-2">Tutorial</h1>
 
-                <div className="w-full bg-black/40 border-2 border-white/20 mb-2 p-2 text-xs text-gray-300 font-pixel">
-                    Tutorial wiki. You can always return here through Options &gt; Tutorial.
-                </div>
-
-                <div className="w-full flex flex-wrap justify-center gap-2 mb-2">
+                <div className="mb-2 grid w-full grid-cols-3 gap-2" role="tablist" aria-label="Tutorial sections">
                     {TUTORIAL_SECTIONS.map((section) => (
                         <MenuButton
                             key={section.id}
                             label={section.title}
                             onClick={() => setTutorialTab(section.id)}
-                            width="w-[152px]"
+                            pressed={section.id === activeSection.id}
+                            width="w-full"
+                            small
                         />
                     ))}
                 </div>
 
-                <div key={tutorialTab} className="w-full max-h-[360px] overflow-y-auto bg-black/35 border-2 border-white/20 p-4 mb-4 atlas-fade-in">
-                    <h2 className="text-white text-lg font-bold font-pixel text-shadow-md mb-1">{activeSection.title}</h2>
-                    <p className="text-blue-200 text-sm font-pixel mb-3">{activeSection.subtitle}</p>
+                <div key={tutorialTab} className="atlas-well mb-4 max-h-[380px] w-full overflow-y-auto px-5 py-4 scrollbar-thin atlas-fade-in">
+                    <h2 className="atlas-heading">{activeSection.title}</h2>
+                    <p className="mb-3 text-read text-parchment-400">{activeSection.subtitle}</p>
 
-                    <div className="space-y-3 mb-4">
+                    <div className="mb-4 space-y-3">
                         {activeSection.paragraphs.map((paragraph) => (
-                            <p key={paragraph} className="text-gray-100 text-sm leading-relaxed font-pixel">{paragraph}</p>
+                            <p key={paragraph} className="text-read text-parchment-100">{paragraph}</p>
                         ))}
                     </div>
 
-                    <div className="border-t border-white/15 pt-3">
-                        <h3 className="text-white text-sm font-bold mb-2 font-pixel">Highlights</h3>
-                        <ul className="space-y-1 pl-4 list-disc">
+                    <div className="border-t-2 border-ink-600 pt-3">
+                        <h3 className="atlas-heading mb-2">Highlights</h3>
+                        <ul className="list-disc space-y-1 pl-5 marker:text-brass-400">
                             {activeSection.bullets.map((bullet) => (
-                                <li key={bullet} className="text-gray-200 text-sm font-pixel">{bullet}</li>
+                                <li key={bullet} className="text-read text-parchment-200">{bullet}</li>
                             ))}
                         </ul>
                     </div>
                 </div>
 
-                <MenuButton label="Done" onClick={() => onTutorialClose ? onTutorialClose() : setScreen('main')} width="w-64" />
+                <p className="atlas-hint mb-2">You can always come back here through Options &gt; Tutorial.</p>
+                <MenuButton label="Done" onClick={() => onTutorialClose ? onTutorialClose() : setScreen('main')} width="w-80" />
             </div>
         );
     };
 
     return (
-        <div 
-            className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-[#000000a0] backdrop-blur-[2px] atlas-fade-in' : ''}`}
+        <div
+            className={`absolute inset-0 z-50 flex items-center justify-center pointer-events-auto ${!isMainMenu ? 'bg-ink-950/55 backdrop-blur-[2px] atlas-fade-in' : ''}`}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
@@ -589,18 +529,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                 />
             )}
-            {showMainMenuSubmenuOverlay && <div className="absolute inset-0 bg-black/60 pointer-events-none" />}
-            <style>{`
-                .text-shadow-lg { text-shadow: 2px 2px 0px #3f3f3f; }
-                .text-shadow-md { text-shadow: 1px 1px 0px #3f3f3f; }
-            `}</style>
-            
-            {/* Dirt Background Container only if NOT Main Menu (pause menu style) */}
-            <div className="relative flex flex-col items-center p-2 atlas-panel-in">
-                {!isMainMenu && <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />}
+            {showMainMenuSubmenuOverlay && <div className="absolute inset-0 bg-ink-950/55 pointer-events-none" />}
 
-                {/* Each screen fades in as you move between them. */}
-                <div key={screen} className={`relative z-10 flex flex-col items-center atlas-fade-in ${screen === 'skins' ? 'p-4' : 'py-6 px-10 min-w-[400px]'}`}>
+            {/* One framed panel; each screen fades in as you move between them. */}
+            <div className="atlas-panel flex max-h-[calc(100vh-2rem)] flex-col items-center atlas-panel-in">
+                <div key={screen} className={`relative z-10 flex flex-col items-center overflow-y-auto atlas-fade-in ${screen === 'skins' ? 'p-5' : 'px-10 pb-7 pt-5'}`}>
                     {screen === 'main' && renderMain()}
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}

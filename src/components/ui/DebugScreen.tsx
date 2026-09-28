@@ -148,7 +148,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
     }, [dropsCount, chunksCount, renderDistance, fpsRef, cameraRef, playerPosRef]);
 
     return (
-        <div className="absolute inset-0 pointer-events-none z-[100] text-white font-mono text-sm leading-tight drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none p-1 flex justify-between">
+        <div className="absolute inset-0 pointer-events-none z-[100] text-white font-mono text-mono-2 leading-[20px] drop-shadow-[2px_2px_0_rgba(7,9,23,0.9)] select-none p-1 flex justify-between">
             <div ref={leftColRef} className="text-left items-start flex flex-col min-w-[300px]"></div>
             <div ref={rightColRef} className="text-right items-end flex flex-col min-w-[300px]"></div>
         </div>

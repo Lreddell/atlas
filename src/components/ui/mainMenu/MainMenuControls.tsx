@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { soundManager } from '../../../systems/sound/SoundManager';
 
+// The menus' buttons and sliders (styles in styles.css: .atlas-btn,
+// .atlas-slider). One slider serves the title screen and the pause menu.
+
 interface MenuButtonProps {
     label: string;
     onClick?: () => void;
@@ -11,6 +14,12 @@ interface MenuButtonProps {
     variant?: 'normal' | 'primary' | 'danger';
     pressed?: boolean;
 }
+
+const VARIANT_CLASS: Record<NonNullable<MenuButtonProps['variant']>, string> = {
+    normal: '',
+    primary: 'atlas-btn-primary',
+    danger: 'atlas-btn-danger',
+};
 
 export const MenuButton: React.FC<MenuButtonProps> = ({
     label,
@@ -24,14 +33,9 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
 }) => {
     const [isHovered, setIsHovered] = useState(false);
 
-    let colors = 'bg-[#8b8b8b] border-white border-b-[#373737] border-r-[#373737] text-white';
-    if (variant === 'primary') colors = 'bg-[#8b8b8b] border-white border-b-[#373737] border-r-[#373737] text-white';
-    if (variant === 'danger') colors = 'bg-red-700 border-red-400 border-b-red-950 border-r-red-950 text-white';
-    if (pressed) colors = 'bg-[#555] border-[#373737] border-b-white border-r-white text-yellow-200';
-
     return (
         <div
-            className="relative"
+            className={`relative ${width}`}
             onMouseEnter={() => {
                 setIsHovered(true);
                 if (!disabled) soundManager.play('ui.hover', { volume: 0.2, pitch: 2.0 });
@@ -39,6 +43,7 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
             onMouseLeave={() => setIsHovered(false)}
         >
             <button
+                type="button"
                 disabled={disabled}
                 aria-disabled={disabled}
                 aria-pressed={pressed}
@@ -49,19 +54,13 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
                         onClick();
                     }
                 }}
-                className={`
-                    ${width} ${small ? 'h-8 text-sm' : 'h-10'} relative border-2 select-none outline-none group
-                    ${colors}
-                    font-pixel [text-shadow:1px_1px_0px_#3f3f3f]
-                    ${disabled ? 'opacity-70 cursor-not-allowed grayscale' : 'hover:brightness-110 active:border-white active:border-b-white active:border-r-white'}
-                `}
+                className={`atlas-btn ${VARIANT_CLASS[variant]} w-full ${small ? 'h-8 leading-[22px]' : 'h-10'}`}
                 title={tooltip}
             >
-                <div className={`absolute inset-[2px] border-2 border-transparent ${!disabled && 'group-active:border-white/10'} pointer-events-none`} />
-                <span className="relative top-0 group-active:top-[1px]">{label}</span>
+                <span className="atlas-btn-label">{label}</span>
             </button>
             {disabled && isHovered && tooltip && (
-                <div className="absolute left-[105%] top-1/2 z-50 -translate-y-1/2 whitespace-nowrap border-2 border-[#2a0b4d] bg-[#100010] px-2 py-1 text-sm text-white font-pixel">
+                <div className="atlas-tooltip pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 -translate-y-1/2 whitespace-nowrap text-px-2 text-parchment-100">
                     {tooltip}
                 </div>
             )}
@@ -74,10 +73,11 @@ interface MenuSliderProps {
     value: number;
     min: number;
     max: number;
-    step: number;
+    step?: number;
     onChange: (value: number) => void;
     width?: string;
     formatValue?: (value: number) => string;
+    disabled?: boolean;
 }
 
 export const MenuSlider: React.FC<MenuSliderProps> = ({
@@ -85,20 +85,23 @@ export const MenuSlider: React.FC<MenuSliderProps> = ({
     value,
     min,
     max,
-    step,
+    step = 0.01,
     onChange,
     width = 'w-80',
     formatValue,
+    disabled = false,
 }) => {
-    const percentage = ((value - min) / (max - min)) * 100;
+    const fraction = Math.max(0, Math.min(1, (value - min) / (max - min)));
+    const percentage = fraction * 100;
 
     return (
         <div
-            className={`relative h-10 ${width} border-2 border-white border-b-[#373737] border-r-[#373737]`}
-            onMouseDown={(event) => event.stopPropagation()}
+            className={`atlas-slider h-10 ${width} ${disabled ? 'opacity-60' : ''}`}
+            aria-disabled={disabled}
+            onMouseDown={(event) => { if (!disabled) event.stopPropagation(); }}
             onMouseUp={(event) => {
                 event.stopPropagation();
-                soundManager.play('ui.slider');
+                if (!disabled) soundManager.play('ui.slider');
             }}
         >
             <input
@@ -107,16 +110,14 @@ export const MenuSlider: React.FC<MenuSliderProps> = ({
                 max={max}
                 step={step}
                 value={value}
+                disabled={disabled}
+                aria-label={label}
                 onChange={(event) => onChange(parseFloat(event.target.value))}
-                className="absolute inset-0 z-20 h-full w-full cursor-pointer opacity-0"
+                className="absolute inset-0 z-20 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
             />
-            <div className="pointer-events-none absolute inset-0 border border-[#555] bg-[#8b8b8b]">
-                <div
-                    className="absolute bottom-0 top-0 border-r-2 border-black/20 bg-[#a0a0a0]"
-                    style={{ width: `${percentage}%` }}
-                />
-            </div>
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center font-pixel text-white [text-shadow:1px_1px_0px_#3f3f3f]">
+            <div className="atlas-slider-fill pointer-events-none" style={{ width: `calc((100% - 12px) * ${fraction} + 4px)` }} />
+            <div className="atlas-slider-knob pointer-events-none" style={{ left: `calc((100% - 12px) * ${fraction})` }} />
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center whitespace-nowrap px-4 text-px-2 text-parchment-100 text-shadow-md">
                 {label}: {formatValue ? formatValue(value) : `${Math.round(percentage)}%`}
             </div>
         </div>

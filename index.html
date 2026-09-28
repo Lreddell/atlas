@@ -64,8 +64,6 @@
         // Startup preview is best-effort. A bad cache must never delay Atlas boot.
       }
 
-      const USE_MONOCRAFT_FONT = false;
-      document.documentElement.dataset.atlasFont = USE_MONOCRAFT_FONT ? 'monocraft' : 'default';
     </script>
     <style>
       @font-face {
@@ -155,15 +153,15 @@
         font-style: italic;
         font-display: swap;
       }
+      /* Game text is Pixelify Sans (bundled from @fontsource, drawn on an
+         11-pixel em: crisp at 11, 22 and 33px). Chat, commands and the debug
+         screen use Monocraft (a 9-pixel em: 9, 18, 27px). The editors keep a
+         system face for their dense forms. */
       :root {
-        --atlas-ui-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        --atlas-mono-font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        --atlas-ui-font-family: 'Pixelify Sans', ui-sans-serif, system-ui, sans-serif;
+        --atlas-mono-font-family: 'Monocraft', Consolas, 'Liberation Mono', monospace;
         --atlas-pixel-font-family: var(--atlas-ui-font-family);
-      }
-      :root[data-atlas-font='monocraft'] {
-        --atlas-ui-font-family: 'Monocraft', monospace;
-        --atlas-mono-font-family: 'Monocraft', monospace;
-        --atlas-pixel-font-family: 'Monocraft', monospace;
+        --atlas-tool-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       }
       body, html, #root {
         margin: 0;

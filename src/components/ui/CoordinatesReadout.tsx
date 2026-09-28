@@ -24,7 +24,7 @@ export const CoordinatesReadout: React.FC<CoordinatesReadoutProps> = ({ position
 
     return (
         <div
-            className="pointer-events-none absolute left-2 top-2 z-40 select-none bg-black/40 px-2 py-1 font-pixel text-sm text-white [text-shadow:1px_1px_0_#000]"
+            className="atlas-plate pointer-events-none absolute left-2 top-2 z-40 select-none"
             aria-label={`Position ${position.x}, ${position.y}, ${position.z}`}
         >
             Position: {position.x}, {position.y}, {position.z}

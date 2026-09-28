@@ -6,11 +6,16 @@ import type { WorldGenPresetEntry } from '../../../systems/world/worldGenPresets
 import type { GameMode } from '../../../types';
 import { MenuButton, MenuSlider } from './MainMenuControls';
 import type { FormattedSplashSegment } from './useSplashAnimation';
+import { AtlasWordmark, StarGlyph } from '../kit/PixelArt';
 
 export type MainMenuView = 'main' | 'create' | 'select' | 'settings';
 export type PanoramaSubmenu = 'manager' | 'settings';
 
-const submenuHeadingClass = 'text-white text-xl mb-4 font-bold text-shadow-lg';
+const GAME_MODE_NAMES: Record<GameMode, string> = {
+    survival: 'Survival',
+    creative: 'Creative',
+    spectator: 'Spectator',
+};
 
 interface CreateWorldPanelProps {
     worldName: string;
@@ -42,84 +47,77 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
     onSelectedWorldGenPresetIdChange,
     onCancel,
     onCreateWorld,
-}) => (
-    <div className="relative z-10 flex flex-col items-center">
-        <h1 className={submenuHeadingClass}>Create New World</h1>
-        <div className="flex w-[400px] flex-col gap-6">
-            <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Name</label>
+}) => {
+    // World type cycles like the other options: Default Terrain, then each saved preset.
+    const presetIds = ['', ...worldGenPresets.map((preset) => preset.id)];
+    const presetName = worldGenPresets.find((preset) => preset.id === selectedWorldGenPresetId)?.name ?? 'Default Terrain';
+    const cyclePreset = () => {
+        const next = presetIds[(presetIds.indexOf(selectedWorldGenPresetId) + 1) % presetIds.length];
+        onSelectedWorldGenPresetIdChange(next ?? '');
+    };
+
+    return (
+        <div className="atlas-panel relative z-10 flex w-[560px] max-w-[calc(100vw-2rem)] flex-col gap-3 px-8 pb-7 pt-5">
+            <h1 className="atlas-title mb-1 text-center">Create New World</h1>
+
+            <label className="flex flex-col gap-1">
+                <span className="atlas-label">World Name</span>
                 <input
                     autoFocus
                     type="text"
                     value={worldName}
                     onChange={(event) => onWorldNameChange(event.target.value)}
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
+                    className="atlas-input"
                 />
-            </div>
+            </label>
 
-            <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Seed (Leave blank for random)</label>
+            <label className="flex flex-col gap-1">
+                <span className="atlas-label">Seed</span>
                 <input
                     type="text"
                     value={seed}
                     onChange={(event) => onSeedChange(event.target.value)}
-                    placeholder="e.g. atlas"
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
+                    placeholder="Leave blank for a random world"
+                    className="atlas-input"
                 />
-            </div>
+            </label>
 
-            <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">Game Mode</label>
-                <MenuButton
-                    label={`Game Mode: ${gameMode.charAt(0).toUpperCase() + gameMode.slice(1)}`}
-                    onClick={onCycleGameMode}
-                    width="w-full"
-                />
-                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
-                    {gameMode === 'survival' && 'Gather resources, craft gear, and manage your health and hunger.'}
-                    {gameMode === 'creative' && 'Unlimited resources, free flying and destroy blocks instantly.'}
-                    {gameMode === 'spectator' && "You can look but don't touch."}
+            <div className="mt-2 flex flex-col gap-1">
+                <MenuButton label={`Game Mode: ${GAME_MODE_NAMES[gameMode]}`} onClick={onCycleGameMode} width="w-full" />
+                <p className="atlas-hint px-1">
+                    {gameMode === 'survival' && 'Gather resources, craft gear, and keep yourself fed and alive.'}
+                    {gameMode === 'creative' && 'Every block and item, free flight, and blocks break instantly.'}
+                    {gameMode === 'spectator' && 'Fly through anything and look around. Nothing can be touched.'}
                 </p>
             </div>
 
-            <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">Commands</label>
-                <MenuButton
-                    label={`Allow Commands: ${allowCommands ? 'ON' : 'OFF'}`}
-                    onClick={onToggleAllowCommands}
-                    width="w-full"
-                />
-                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
+            <div className="flex flex-col gap-1">
+                <MenuButton label={`Allow Commands: ${allowCommands ? 'ON' : 'OFF'}`} onClick={onToggleAllowCommands} width="w-full" />
+                <p className="atlas-hint px-1">
                     {allowCommands
                         ? 'Commands like /gamemode, /giveitem and /tp work in this world.'
                         : 'No cheat commands. You can change this later in World Options.'}
                 </p>
             </div>
 
-            <div className="space-y-1">
-                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">World Generation Preset</label>
-                <select
-                    value={selectedWorldGenPresetId}
-                    onChange={(event) => onSelectedWorldGenPresetIdChange(event.target.value)}
-                    className="h-10 w-full border-2 border-[#333] bg-black px-3 font-pixel text-white outline-none focus:border-blue-500"
-                >
-                    <option value="">Default Terrain</option>
-                    {worldGenPresets.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.name}</option>
-                    ))}
-                </select>
-                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
-                    Presets are saved from the World Editor.
-                </p>
+            <div className="flex flex-col gap-1">
+                <MenuButton
+                    label={`World Type: ${presetName}`}
+                    onClick={cyclePreset}
+                    disabled={worldGenPresets.length === 0}
+                    tooltip={worldGenPresets.length === 0 ? 'Save a preset in the World Editor first' : undefined}
+                    width="w-full"
+                />
+                <p className="atlas-hint px-1">Terrain presets are made and saved in the World Editor.</p>
             </div>
 
-            <div className="mt-4 flex gap-4">
-                <MenuButton label="Cancel" onClick={onCancel} width="w-[192px]" />
-                <MenuButton label="Create World" onClick={onCreateWorld} variant="primary" width="w-[192px]" />
+            <div className="mt-3 grid grid-cols-2 gap-3">
+                <MenuButton label="Cancel" onClick={onCancel} width="w-full" />
+                <MenuButton label="Create World" onClick={onCreateWorld} variant="primary" width="w-full" />
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 interface WorldSelectPanelProps {
     worlds: WorldMetadata[];
@@ -138,6 +136,11 @@ interface WorldSelectPanelProps {
     storageInfo?: string;
 }
 
+const formatPlayed = (time: number) => {
+    const date = new Date(time);
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+};
+
 export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
     worlds,
     selectedWorldId,
@@ -154,69 +157,59 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
     canOpenSaveFolder,
     storageInfo,
 }) => (
-    <div className="relative z-10 flex h-full w-full max-w-[600px] flex-col items-center px-3 py-6 sm:py-10">
-        <h1 className={submenuHeadingClass}>Select World</h1>
-        <div className="mb-6 flex-1 w-full overflow-y-auto border-2 border-white/20 bg-black/50 p-2 scrollbar-thin">
+    <div className="atlas-panel relative z-10 my-6 flex h-[calc(100%-3rem)] max-h-[760px] w-[640px] max-w-[calc(100vw-2rem)] flex-col px-6 pb-6 pt-5">
+        <h1 className="atlas-title mb-4 text-center">Select World</h1>
+        <div className="atlas-well mb-5 min-h-[120px] w-full flex-1 overflow-y-auto p-2 scrollbar-thin" role="listbox" aria-label="Saved worlds">
             {worlds.length === 0 && (
-                <div className="mt-20 text-center italic text-gray-500">No worlds found. Create one!</div>
+                <div className="mt-16 text-center text-px-2 text-parchment-400">No worlds yet. Create one to begin.</div>
             )}
-            {worlds.map((world) => (
-                <div
-                    key={world.id}
-                    onClick={() => onSelectWorld(world.id)}
-                    onDoubleClick={() => onDoubleClickWorld(world.id)}
-                    className={`
-                        mb-1 flex cursor-pointer items-center justify-between border-2 p-3 transition-all
-                        ${selectedWorldId === world.id
-                            ? 'border-white bg-white/10'
-                            : 'border-transparent bg-black/40 hover:border-white/10 hover:bg-white/5'}
-                    `}
-                >
-                    <div>
-                        <div className="flex items-center gap-2 text-lg font-bold text-[#eee]">
-                            <span>{world.name}</span>
-                            <span className="rounded border border-white/20 bg-black/35 px-2 py-0.5 text-[10px] font-pixel text-blue-200">
-                                Preset: {world.worldGenPresetName || 'Default Terrain'}
-                            </span>
+            {worlds.map((world) => {
+                const selected = selectedWorldId === world.id;
+                return (
+                    <div
+                        key={world.id}
+                        role="option"
+                        aria-selected={selected}
+                        onClick={() => onSelectWorld(world.id)}
+                        onDoubleClick={() => onDoubleClickWorld(world.id)}
+                        className="atlas-row mb-1 flex cursor-pointer items-center gap-3 px-3 py-2"
+                    >
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-3">
+                                <span className="truncate text-px-2 text-parchment-50 text-shadow-md">{world.name}</span>
+                                {world.worldGenPresetName && (
+                                    <span className="shrink-0 border-2 border-ink-500 px-1 text-px-1 text-parchment-300">{world.worldGenPresetName}</span>
+                                )}
+                            </div>
+                            <div className="truncate text-read text-parchment-400">
+                                {GAME_MODE_NAMES[world.gameMode] ?? world.gameMode} {'•'} Seed {world.seed.trim() || world.seedNum} {'•'} {formatPlayed(world.lastPlayed)}
+                            </div>
                         </div>
-                        <div className="text-xs font-pixel text-gray-400">
-                            {world.gameMode.charAt(0).toUpperCase() + world.gameMode.slice(1)} {'\u2022'} Seed {world.seed.trim() || world.seedNum} {'\u2022'} {new Date(world.lastPlayed).toLocaleDateString()} {new Date(world.lastPlayed).toLocaleTimeString()}
-                        </div>
+                        {selected && <StarGlyph scale={2} className="shrink-0" />}
                     </div>
-                    {selectedWorldId === world.id && (
-                        <div className="animate-pulse text-2xl text-green-500">{'\u25B6'}</div>
-                    )}
-                </div>
-            ))}
+                );
+            })}
         </div>
 
-        <div className="flex w-full flex-col gap-3">
-            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton label="Play Selected World" onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-[calc(100vw-2rem)] sm:w-[280px]" />
-                <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-[calc(100vw-2rem)] sm:w-[280px]" />
-            </div>
-            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-                <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-            </div>
-            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-                <MenuButton label="Import World" onClick={onImportWorld} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-            </div>
-            <div className="flex flex-col justify-center gap-3 sm:flex-row sm:gap-4">
-                <MenuButton
-                    label="Open Save Folder"
-                    onClick={onOpenSaveFolder}
-                    disabled={!selectedWorldId || !canOpenSaveFolder}
-                    tooltip={!canOpenSaveFolder ? 'Desktop build only' : undefined}
-                    width="w-[calc(100vw-2rem)] sm:w-[185px]"
-                />
-                <MenuButton label="Cancel" onClick={onCancel} width="w-[calc(100vw-2rem)] sm:w-[185px]" />
-            </div>
-            {storageInfo && (
-                <div className="mt-1 text-center text-xs font-pixel text-gray-400">{storageInfo}</div>
-            )}
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+            <MenuButton label="Play Selected World" onClick={onPlaySelected} disabled={!selectedWorldId} variant="primary" width="w-full" />
+            <MenuButton label="Create New World" onClick={onCreateNewWorld} width="w-full" />
+            <MenuButton label="Rename" onClick={onRenameWorld} disabled={!selectedWorldId} width="w-full" />
+            <MenuButton label="Delete" onClick={onDeleteWorld} disabled={!selectedWorldId} variant="danger" width="w-full" />
+            <MenuButton label="Export" onClick={onExportWorld} disabled={!selectedWorldId} width="w-full" />
+            <MenuButton label="Import World" onClick={onImportWorld} width="w-full" />
+            <MenuButton
+                label="Open Save Folder"
+                onClick={onOpenSaveFolder}
+                disabled={!selectedWorldId || !canOpenSaveFolder}
+                tooltip={!canOpenSaveFolder ? 'Desktop build only' : undefined}
+                width="w-full"
+            />
+            <MenuButton label="Back" onClick={onCancel} width="w-full" />
         </div>
+        {storageInfo && (
+            <div className="mt-3 text-center text-read text-parchment-400">{storageInfo}</div>
+        )}
     </div>
 );
 
@@ -278,19 +271,19 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
     setPanoramaRotationSpeed,
     onBack,
 }) => (
-    <div className="relative z-10 flex h-full w-[760px] flex-col items-center py-10">
-        <h1 className={submenuHeadingClass}>Menu Background</h1>
+    <div className={`atlas-panel relative z-10 my-6 flex w-[780px] max-w-[calc(100vw-2rem)] flex-col items-center px-6 pb-6 pt-5 ${panoramaSubmenu === 'manager' ? 'h-[calc(100%-3rem)] max-h-[720px]' : ''}`}>
+        <h1 className="atlas-title mb-4 text-center">Menu Background</h1>
 
         <div key={panoramaSubmenu} className="flex min-h-0 w-full flex-1 flex-col items-center atlas-fade-in">
         {panoramaSubmenu === 'manager' && (
             <>
-                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-pixel text-gray-300">
-                    Capture from in-game using {panoramaCaptureHotkey}, import an existing panorama PNG, and open Settings for panorama tuning.
-                </div>
+                <p className="atlas-hint mb-3 w-full px-1">
+                    Capture a panorama in-game with {panoramaCaptureHotkey}, or import a panorama PNG. Settings tunes the blur, shading and spin.
+                </p>
 
-                <div className="mb-6 flex-1 w-full overflow-y-auto border-2 border-white/20 bg-black/50 p-2 scrollbar-thin">
+                <div className="atlas-well mb-5 min-h-[120px] w-full flex-1 overflow-y-auto p-2 scrollbar-thin">
                     {panoramaEntries.length === 0 && (
-                        <div className="mt-20 text-center italic text-gray-500">No panoramas saved yet.</div>
+                        <div className="mt-16 text-center text-px-2 text-parchment-400">No panoramas saved yet.</div>
                     )}
 
                     {panoramaEntries.map((filePath) => {
@@ -300,20 +293,21 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         return (
                             <div
                                 key={filePath}
-                                className={`mb-1 flex items-center justify-between gap-3 border-2 p-3 ${isActive ? 'border-white bg-white/10' : 'border-transparent bg-black/40'}`}
+                                data-active={isActive}
+                                className="atlas-row mb-1 flex items-center justify-between gap-3 px-3 py-2"
                             >
                                 <div className="min-w-0">
-                                    <div className="truncate font-bold text-[#eee]">{getPanoramaLabel(filePath)}{isDefault ? ' (Default)' : ''}</div>
-                                    <div className="truncate text-[10px] text-gray-400">
-                                        {builtIn ? builtIn.description : filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}
+                                    <div className="truncate text-px-2 text-parchment-50 text-shadow-md">{getPanoramaLabel(filePath)}{isDefault ? ' (Default)' : ''}</div>
+                                    <div className="truncate text-read text-parchment-400">
+                                        {builtIn ? builtIn.description : filePath.startsWith('web:') ? 'Stored in this browser' : filePath}
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 gap-2">
                                     <MenuButton
-                                        label={isActive ? 'Using' : 'Use'}
+                                        label={isActive ? 'In Use' : 'Use'}
                                         onClick={() => onUsePanorama(filePath)}
                                         disabled={isActive}
-                                        width="w-[88px]"
+                                        width="w-[104px]"
                                         small
                                         variant="primary"
                                     />
@@ -323,7 +317,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                                             onClick={() => onDeletePanoramaFromDisk(filePath)}
                                             disabled={!canDeletePanoramaFromDisk}
                                             tooltip={!canDeletePanoramaFromDisk ? 'Desktop build only' : undefined}
-                                            width="w-[88px]"
+                                            width="w-[104px]"
                                             small
                                             variant="danger"
                                         />
@@ -334,39 +328,39 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                     })}
                 </div>
 
-                <div className="flex w-full justify-center gap-4">
+                <div className="grid w-full grid-cols-3 gap-3">
                     <MenuButton
                         label="Import Panorama"
                         onClick={onImportPanorama}
                         disabled={!canImportPanorama}
                         tooltip={!canImportPanorama ? 'Desktop build only' : undefined}
-                        width="w-[220px]"
+                        width="w-full"
                     />
-                    <MenuButton label="Settings" onClick={() => onPanoramaSubmenuChange('settings')} width="w-[220px]" />
-                    <MenuButton label="Back" onClick={onBack} width="w-[220px]" />
+                    <MenuButton label="Settings..." onClick={() => onPanoramaSubmenuChange('settings')} width="w-full" />
+                    <MenuButton label="Done" onClick={onBack} width="w-full" />
                 </div>
             </>
         )}
 
         {panoramaSubmenu === 'settings' && (
             <>
-                <div className="mb-4 w-full border-2 border-white/20 bg-black/50 p-2 text-xs font-pixel text-gray-300">
-                    Panorama appearance settings apply to menu and loading backgrounds.
-                </div>
+                <p className="atlas-hint mb-4 w-full px-1 text-center">
+                    These apply to the title screen and the loading screen.
+                </p>
 
-                <div className="mb-4 flex w-full justify-center gap-4">
+                <div className="mb-3 flex w-full justify-center">
                     <MenuButton
                         label={`Background: ${usingPanorama ? 'Panorama' : 'Dirt'}`}
                         onClick={onToggleBackground}
                         disabled={!hasPanoramaBackground && backgroundMode === 'dirt'}
-                        tooltip={!hasPanoramaBackground && backgroundMode === 'dirt' ? `Capture panorama in-game (${panoramaCaptureHotkey})` : undefined}
-                        width="w-[320px]"
+                        tooltip={!hasPanoramaBackground && backgroundMode === 'dirt' ? `Capture a panorama in-game (${panoramaCaptureHotkey})` : undefined}
+                        width="w-[460px]"
                     />
                 </div>
 
                 <div className="mb-6 grid w-full grid-cols-1 justify-items-center gap-3">
                     <MenuSlider
-                        label="Menu Panorama Blur"
+                        label="Blur"
                         value={panoramaBlur}
                         min={0}
                         max={12}
@@ -376,7 +370,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         formatValue={(value) => `${value.toFixed(1)} px`}
                     />
                     <MenuSlider
-                        label="Menu Gradient"
+                        label="Shading"
                         value={panoramaGradient}
                         min={0}
                         max={0.9}
@@ -393,13 +387,11 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         step={0.1}
                         onChange={setPanoramaRotationSpeed}
                         width="w-[460px]"
-                        formatValue={(value) => (value <= 0 ? 'Rotation Off' : `${value.toFixed(1)}x`)}
+                        formatValue={(value) => (value <= 0 ? 'Off' : `${value.toFixed(1)}x`)}
                     />
                 </div>
 
-                <div className="flex w-full justify-center gap-4">
-                    <MenuButton label="Back to Panorama" onClick={() => onPanoramaSubmenuChange('manager')} width="w-[320px]" />
-                </div>
+                <MenuButton label="Done" onClick={() => onPanoramaSubmenuChange('manager')} width="w-[460px]" />
             </>
         )}
         </div>
@@ -432,17 +424,11 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
     onShowWhatsNew,
 }) => (
     <>
-        <style>{`
-            .text-shadow-xl { text-shadow: 4px 4px 0px #3f3f3f; }
-            .text-shadow-md { text-shadow: 1px 1px 0px #3f3f3f; }
-            @keyframes pulse-scale {
-                0%, 100% { transform: scale(1) rotate(-20deg); }
-                50% { transform: scale(1.1) rotate(-20deg); }
-            }
-        `}</style>
-
-        <div className="relative mb-16 flex flex-col items-center">
-            <h1 className="text-7xl font-bold tracking-tighter text-[#c6c6c6] text-shadow-xl">Atlas</h1>
+        <div className="relative mb-14 flex flex-col items-center">
+            <h1 className="relative" aria-label="Atlas">
+                <AtlasWordmark scale={7} />
+                <StarGlyph scale={4} className="absolute -right-9 -top-7" />
+            </h1>
             <div
                 className="pointer-events-none absolute w-max"
                 style={{
@@ -452,12 +438,8 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
                 }}
             >
                 <div
-                    className="whitespace-nowrap font-bold text-yellow-300 drop-shadow-md"
-                    style={{
-                        fontSize: `${splashFontSize}px`,
-                        animation: 'pulse-scale 0.5s infinite alternate ease-in-out',
-                        transformOrigin: 'center top',
-                    }}
+                    className="atlas-splash whitespace-nowrap font-bold text-brass-200 [text-shadow:2px_2px_0_#3e2c12]"
+                    style={{ fontSize: `${splashFontSize}px` }}
                 >
                     {formattedSplash.map((segment, index) => (
                         <span key={`${index}-${segment.text}`} style={segment.style}>{segment.text}</span>
@@ -466,15 +448,15 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
             </div>
         </div>
 
-        <div className="flex w-[400px] flex-col gap-4">
+        <div className="flex w-[400px] flex-col gap-3">
             <MenuButton label="Singleplayer" onClick={onSingleplayer} width="w-full" variant="primary" />
             <MenuButton label="World Editor" onClick={onWorldEditor} width="w-full" />
-            <div className="flex w-full gap-4">
-                <MenuButton label="Options..." onClick={onOptions} width="w-[192px]" />
+            <div className="grid w-full grid-cols-2 gap-3">
+                <MenuButton label="Options..." onClick={onOptions} width="w-full" />
                 {isBrowserMode ? (
-                    <MenuButton label="Tutorial..." onClick={onTutorial} width="w-[192px]" />
+                    <MenuButton label="Tutorial..." onClick={onTutorial} width="w-full" />
                 ) : (
-                    <MenuButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? 'Cannot quit in browser' : undefined} width="w-[192px]" />
+                    <MenuButton label="Quit Game" onClick={onQuit} disabled={!onQuit} tooltip={!onQuit ? 'Cannot quit in browser' : undefined} width="w-full" />
                 )}
             </div>
         </div>
@@ -482,13 +464,13 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
         <button
             type="button"
             onClick={onShowWhatsNew}
-            className="absolute bottom-2 left-2 text-white text-shadow-md hover:underline"
+            className="absolute bottom-2 left-3 text-px-2 text-parchment-100 text-shadow-md hover:text-brass-200 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-star"
             title="See what's new"
         >
-            Atlas {APP_DISPLAY_VERSION}: What's New
+            Atlas {APP_DISPLAY_VERSION}: What&apos;s New
         </button>
         <a
-            className="absolute bottom-2 right-2 text-white text-shadow-md hover:underline"
+            className="absolute bottom-2 right-3 text-px-2 text-parchment-100 text-shadow-md hover:text-brass-200 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-star"
             href="https://github.com/Lreddell/atlas"
             onClick={onBuildCreditClick}
             target="_blank"
@@ -505,16 +487,16 @@ interface TutorialPromptModalProps {
 }
 
 export const TutorialPromptModal: React.FC<TutorialPromptModalProps> = ({ onAccept, onDecline }) => (
-    <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70 atlas-fade-in">
-        <div className="w-[560px] border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] p-6">
-            <h2 className="mb-2 text-2xl font-bold font-pixel text-white text-shadow-md">First Time Here?</h2>
-            <p className="mb-6 text-sm font-pixel leading-relaxed text-gray-200">
-                Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
-                Open it now?
+    <div className="absolute inset-0 z-[260] flex items-center justify-center bg-ink-950/70 atlas-fade-in">
+        <div className="atlas-panel w-[560px] max-w-[calc(100vw-2rem)] px-8 pb-7 pt-5">
+            <h2 className="atlas-title mb-3">First Time Here?</h2>
+            <p className="mb-6 text-read text-parchment-200">
+                Atlas has a built-in tutorial covering the controls, crafting, farming, and the Magnetic Fields.
+                Open it now? It is always under Options &gt; Tutorial.
             </p>
-            <div className="flex justify-center gap-4">
-                <MenuButton label="Yes, Show Tutorial" onClick={onAccept} width="w-[220px]" variant="primary" />
-                <MenuButton label="No, Thanks" onClick={onDecline} width="w-[220px]" />
+            <div className="grid grid-cols-2 gap-3">
+                <MenuButton label="Show Tutorial" onClick={onAccept} width="w-full" variant="primary" />
+                <MenuButton label="No, Thanks" onClick={onDecline} width="w-full" />
             </div>
         </div>
     </div>

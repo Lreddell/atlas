@@ -804,7 +804,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const biomeKeys = Object.keys(GenConfig.biomes);
 
     return (
-        <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden">
+        <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden font-tool">
             <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
             {editorStatus && (
                 <div
@@ -1133,7 +1133,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 type="text" 
                                 value={localSeedInput} 
                                 onChange={e => setLocalSeedInput(e.target.value)}
-                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-pixel focus:border-blue-500 outline-none placeholder:text-gray-800"
+                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-tool focus:border-blue-500 outline-none placeholder:text-gray-800"
                                 placeholder="Seed..."
                             />
                             {localSeedInput !== worldManager.getSeed().toString() && (

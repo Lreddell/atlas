@@ -1,6 +1,9 @@
 
 import React, { useEffect, useState } from 'react';
-import { getDirtBackground } from '../../utils/textures';
+import { ATLAS_PADDING, ATLAS_STRIDE, getAtlasCanvas, getDirtBackground } from '../../utils/textures';
+import { ATLAS_COLS } from '../../data/blocks';
+import { BlockType } from '../../types';
+import { resolveTexture } from '../../systems/world/textureResolver';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 
 // World loading tips. Add more entries here to expand the tip pool.
@@ -68,7 +71,7 @@ const LOADING_TIPS = [
     "Use /setspawn to set your respawn point, and /keepinventory on to keep items on death.",
     "Worlds can be renamed, imported, and exported from the main menu.",
     "Desktop builds can open the active save folder directly from the world menu.",
-    "Options > Menu Background manages captured panoramas and tunes their blur, gradient, and rotation.",
+    "Options > Menu Background manages captured panoramas and tunes their blur, shading, and rotation.",
     "The built-in tutorial under Options covers controls, gear, boats, commands, and Magnetic Fields progression.",
     "Moon phases run on an 8-day cycle, and each phase changes nighttime brightness.",
     "Volcanic Crags use lava in place of normal water, which makes them one of Atlas's harshest biomes.",
@@ -94,8 +97,36 @@ const LOADING_TIPS = [
     "The Warden fight rewards timing, preparation, and understanding polarity more than raw damage alone.",
 ];
 
-// Mirrors the procedural drawing in utils/textures.ts for the grass block faces.
-function buildGrassTextures(): { top: string; side: string; bottom: string } {
+type GrassFaces = { top: string; side: string; bottom: string };
+
+// The spinning cube wears the game's own grass once the texture atlas exists.
+function atlasGrassTextures(): GrassFaces | null {
+    const atlas = getAtlasCanvas();
+    if (!atlas) return null;
+    const tile = (slot: number) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return '';
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+            atlas,
+            (slot % ATLAS_COLS) * ATLAS_STRIDE + ATLAS_PADDING,
+            Math.floor(slot / ATLAS_COLS) * ATLAS_STRIDE + ATLAS_PADDING,
+            16, 16, 0, 0, 16, 16,
+        );
+        return canvas.toDataURL();
+    };
+    return {
+        top: tile(resolveTexture(BlockType.GRASS, 'top', 0, 1, 0, 0).texIdx),
+        side: tile(resolveTexture(BlockType.GRASS, 'front', 0, 0, 1, 0).texIdx),
+        bottom: tile(resolveTexture(BlockType.DIRT, 'top', 0, 1, 0, 0).texIdx),
+    };
+}
+
+// Before the atlas is ready (the first boot), a stand-in drawn the old way.
+function buildGrassTextures(): GrassFaces {
     const S = 16;
     const mk = (): HTMLCanvasElement => {
         const c = document.createElement('canvas');
@@ -151,7 +182,7 @@ interface LoadingScreenProps {
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({
     phase,
     percent,
-    details: _details,
+    details,
     backgroundMode = 'dirt',
     panoramaBackgroundDataUrl = null,
     panoramaFaceDataUrls = null,
@@ -161,12 +192,12 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
 }) => {
     const [bgPattern, setBgPattern] = useState('');
     const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * LOADING_TIPS.length));
-    const [grassTex, setGrassTex] = useState<{ top: string; side: string; bottom: string } | null>(null);
+    const [grassTex, setGrassTex] = useState<GrassFaces | null>(null);
     const clampedPercent = Math.max(0, Math.min(100, Math.floor(percent)));
 
     useEffect(() => {
         setBgPattern(getDirtBackground());
-        setGrassTex(buildGrassTextures());
+        setGrassTex(atlasGrassTextures() ?? buildGrassTextures());
     }, []);
 
     useEffect(() => {
@@ -192,28 +223,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 imageRendering: 'pixelated',
             }}
         >
-            <style>{`
-                .text-shadow-lg { text-shadow: 2px 2px 0px #3f3f3f; }
-                .text-shadow-md { text-shadow: 1px 1px 0px #3f3f3f; }
-                @keyframes ls-cube-spin {
-                    from { transform: rotateX(25deg) rotateY(0deg); }
-                    to   { transform: rotateX(25deg) rotateY(360deg); }
-                }
-                .ls-scene { perspective: 320px; width: 80px; height: 80px; }
-                .ls-cube {
-                    width: 80px; height: 80px;
-                    position: relative;
-                    transform-style: preserve-3d;
-                    animation: ls-cube-spin 9s linear infinite;
-                }
-                .ls-face { position: absolute; width: 80px; height: 80px; image-rendering: pixelated; }
-                .ls-top    { transform: rotateX(90deg)  translateZ(40px); }
-                .ls-bottom { transform: rotateX(-90deg) translateZ(40px); }
-                .ls-front  { transform:                 translateZ(40px); }
-                .ls-back   { transform: rotateY(180deg) translateZ(40px); }
-                .ls-left   { transform: rotateY(-90deg) translateZ(40px); }
-                .ls-right  { transform: rotateY(90deg)  translateZ(40px); }
-            `}</style>
 
             {backgroundMode === 'panorama' && (
                 <MenuPanoramaBackground
@@ -226,10 +235,9 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 />
             )}
 
-            {/* Panel styling matches the pause-menu overlay treatment. */}
-            <div className="relative flex flex-col items-center atlas-fade-in">
-                <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />
-                <div className="relative z-10 flex flex-col items-center gap-5 py-8 px-10 w-[440px]">
+            {/* The same framed panel as the menus. */}
+            <div className="atlas-panel flex w-[540px] max-w-[calc(100vw-2rem)] flex-col items-center atlas-fade-in">
+                <div className="relative z-10 flex w-full flex-col items-center gap-5 px-9 pb-8 pt-7">
 
                     {/* Spinning grass block */}
                     <div className="ls-scene">
@@ -244,27 +252,28 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     </div>
 
                     {/* Phase title */}
-                    <h1 className="text-white font-pixel text-xl text-shadow-md">
+                    <h1 className="atlas-title text-center">
                         {phase || 'Loading World...'}
                     </h1>
 
-                    {/* Progress bar */}
-                    <div className="w-full bg-[#111] border-2 border-white/30 h-8 relative">
-                        <div
-                            className="h-full bg-[#2e7d32] transition-all duration-100 ease-linear"
-                            style={{ width: `${clampedPercent}%` }}
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center text-white font-pixel text-xs text-shadow-md pointer-events-none">
-                            {clampedPercent}%
+                    {/* Progress: a brass bar filling a recessed track, then what is being done. */}
+                    <div className="w-full">
+                        <div className="atlas-well relative h-9 w-full" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={clampedPercent}>
+                            <div
+                                className="absolute bottom-[2px] left-[2px] top-[2px] bg-brass-400 shadow-[inset_0_2px_0_#f3d488,inset_0_-2px_0_#7a5424] transition-[width] duration-100 ease-linear motion-reduce:transition-none"
+                                style={{ width: `calc((100% - 4px) * ${clampedPercent / 100})` }}
+                            />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-px-2 text-parchment-50 text-shadow-md">
+                                {clampedPercent}%
+                            </div>
                         </div>
+                        {details && <p className="mt-2 h-6 text-center text-read text-parchment-400">{details}</p>}
                     </div>
 
-                    {/* Tips section */}
-                    <div className="w-full bg-black/40 border-2 border-white/20 px-4 py-3 min-h-[76px] flex flex-col gap-1">
-                        <span className="text-yellow-300 font-pixel text-xs text-shadow-md tracking-wide">
-                            DID YOU KNOW...
-                        </span>
-                        <p className="text-gray-200 font-pixel text-sm leading-relaxed text-shadow-md">
+                    {/* A tip, as a line from the explorer's notebook. */}
+                    <div className="atlas-well flex min-h-[112px] w-full flex-col gap-1 px-4 py-3">
+                        <span className="atlas-heading">Field Note</span>
+                        <p className="text-read text-parchment-100">
                             {LOADING_TIPS[tipIndex]}
                         </p>
                     </div>

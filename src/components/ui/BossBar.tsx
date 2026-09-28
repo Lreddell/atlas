@@ -39,6 +39,10 @@ const PhaseMarker: React.FC<{ at: number }> = ({ at }) => (
     </div>
 );
 
+const pixelRamp = (light: string, body: string, dark: string) =>
+    `linear-gradient(180deg, ${light} 0 25%, ${body} 25% 75%, ${dark} 75% 100%)`;
+const SHIELD_FILL = pixelRamp('#c9a3ff', '#8e24aa', '#5b148f');
+
 export const BossBar: React.FC = () => {
     const [boss, dispatch] = useReducer(reduceBossBarState, null);
     // Shield layer: `crystals` is the fraction of the form's tower crystals still
@@ -112,21 +116,23 @@ export const BossBar: React.FC = () => {
 
     const pct = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
     const shieldPct = shield.max > 0 ? Math.max(0, Math.min(1, shield.crystals / shield.max)) : 0;
-    // Health fill tints to the boss's current polarity (red = +, blue = −).
+    // Health fill tints to the boss's current polarity (red = +, blue = −): a
+    // lit top step, the body colour, a shaded bottom step.
     const fill = boss.bossId === 'bell_titan'
-        ? 'linear-gradient(180deg, #d6bd87 0%, #8a6335 55%, #49351f 100%)'
+        ? pixelRamp('#d6bd87', '#8a6335', '#49351f')
         : polarity < 0
-        ? 'linear-gradient(180deg, #6ab0ff 0%, #1e7ae0 55%, #0a3f8f 100%)'
-        : 'linear-gradient(180deg, #ff6a6a 0%, #e01010 55%, #a00000 100%)';
+        ? pixelRamp('#6ab0ff', '#1e7ae0', '#0a3f8f')
+        : pixelRamp('#ff6a6a', '#e01010', '#a00000');
 
     return (
         <div className="pointer-events-none absolute left-1/2 top-4 z-40 flex w-[520px] -translate-x-1/2 flex-col items-center">
-            <div className="mb-1 font-pixel text-lg text-white [text-shadow:2px_2px_0px_#000]">
-                {boss.name} {Math.ceil(boss.hp)} / {boss.maxHp}
+            <div className="mb-2 flex items-baseline gap-3 border-2 border-ink-950 bg-ink-800/90 px-3 shadow-[inset_0_0_0_2px_#7a5424]">
+                <span className="text-px-2 text-parchment-50 text-shadow-md">{boss.name}</span>
+                <span className="text-px-2 text-parchment-300 text-shadow-md">{Math.ceil(boss.hp)} / {boss.maxHp}</span>
             </div>
             <div
-                className="relative h-4 w-full overflow-hidden border border-black/80"
-                style={{ background: '#1c1c22' }}
+                className="relative h-5 w-full overflow-hidden border-2 border-ink-950 shadow-[0_0_0_2px_#c99a4a,0_0_0_4px_#070917]"
+                style={{ background: '#15131c' }}
             >
                 {/* Health underneath. */}
                 <div
@@ -138,11 +144,7 @@ export const BossBar: React.FC = () => {
                 {shieldPct > 0 && (
                     <div
                         className="absolute inset-y-0 left-0 transition-[width] duration-200"
-                        style={{
-                            width: `${shieldPct * 100}%`,
-                            background: 'linear-gradient(180deg, #c9a3ff 0%, #8e24aa 55%, #5b148f 100%)',
-                            boxShadow: 'inset 0 0 6px rgba(255,255,255,0.4)',
-                        }}
+                        style={{ width: `${shieldPct * 100}%`, background: SHIELD_FILL }}
                     />
                 )}
                 {/* Phase markers (modular): one Atlas-pixel diamond pip per phase
@@ -155,18 +157,18 @@ export const BossBar: React.FC = () => {
                 />
             </div>
             {form && (
-                <div className="mt-1 font-pixel text-xs tracking-wider text-[#e6d8ff] [text-shadow:1px_1px_0px_#000]">
+                <div className="mt-2 text-px-2 text-[#e6d8ff] text-shadow-md">
                     FORM {FORM_NUMERALS[form.form] ?? form.form} · {form.name.toUpperCase()}
                 </div>
             )}
             {/* The shield readout: the crystals left to break, or EXPOSED. */}
             {form && layers.total > 0 && (
                 layers.standing > 0 ? (
-                    <div className="mt-[2px] font-pixel text-[10px] tracking-wider text-[#c9a3ff] [text-shadow:1px_1px_0px_#000]">
+                    <div className="text-px-2 text-[#c9a3ff] text-shadow-md">
                         SHIELDED {'◆'.repeat(layers.standing)}{'◇'.repeat(Math.max(0, layers.total - layers.standing))} · break the tower crystal{layers.total > 1 ? 's' : ''}
                     </div>
                 ) : (
-                    <div className="mt-[2px] animate-pulse font-pixel text-[10px] tracking-wider text-[#ffd166] [text-shadow:1px_1px_0px_#000]">
+                    <div className="animate-pulse text-px-2 text-[#ffd166] text-shadow-md">
                         EXPOSED · oppose its colour and strike
                     </div>
                 )

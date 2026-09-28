@@ -72,9 +72,10 @@ export const Chat: React.FC<ChatProps> = ({
         onSubmitInput?.();
     };
 
+    // Never wider than the space left of the hotbar (half its 480px, plus a margin).
     return (
         <div
-            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[500px] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[clamp(280px,calc(50vw-260px),560px)] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}
@@ -86,9 +87,9 @@ export const Chat: React.FC<ChatProps> = ({
                         msg={msg}
                         open={showInput}
                         className={`
-                            px-2 py-0.5 rounded text-shadow-sm font-medium bg-black/40 backdrop-blur-[1px]
-                            ${msg.type === 'error' ? 'text-red-400' : msg.type === 'success' ? 'text-green-400' : 'text-white'}
-                            ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-black/60 pointer-events-auto' : ''}
+                            bg-ink-950/55 px-2 py-[2px] font-mono text-mono-2 text-shadow-sm
+                            ${msg.type === 'error' ? 'text-ember-300' : msg.type === 'success' ? 'text-[#9bd88a]' : 'text-parchment-50'}
+                            ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-ink-700/80 pointer-events-auto' : ''}
                         `}
                         onClick={(e) => {
                             if (!interactionsDisabled && msg.clickAction && onMessageClick) {
@@ -99,7 +100,7 @@ export const Chat: React.FC<ChatProps> = ({
                     >
                         {msg.text}
                         {msg.clickAction && (
-                            <span className="ml-2 text-yellow-400 text-xs uppercase font-bold">[Click to TP]</span>
+                            <span className="ml-2 text-brass-200">[Click to TP]</span>
                         )}
                     </ChatLine>
                 ))}
@@ -108,18 +109,18 @@ export const Chat: React.FC<ChatProps> = ({
 
             {showInput && (
                  <div
-                    className="relative bg-black/70 p-2 rounded pointer-events-auto"
+                    className="relative border-2 border-ink-950 bg-ink-900/90 px-2 py-1 shadow-[inset_0_0_0_2px_#2f3c66] pointer-events-auto"
                     onClick={stopPropagation}
                     onMouseDown={stopPropagation}
                     onMouseUp={stopPropagation}
                     onContextMenu={stopPropagation}
                  >
                      {showSuggestions && acCandidates.length > 0 && (
-                         <div className="absolute bottom-[100%] left-0 w-full mb-1 flex flex-col-reverse bg-black/80 rounded overflow-hidden border border-white/20">
+                         <div className="absolute bottom-[100%] left-0 mb-1 flex w-full flex-col-reverse overflow-hidden border-2 border-ink-950 bg-ink-900/95">
                              {acCandidates.map((c, i) => (
                                  <div
                                     key={c}
-                                    className={`px-2 py-1 text-sm ${i === acIndex ? 'bg-white/20 text-yellow-300' : 'text-gray-400'}`}
+                                    className={`px-2 py-[2px] font-mono text-mono-2 ${i === acIndex ? 'bg-ink-600 text-brass-200' : 'text-parchment-400'}`}
                                  >
                                      {c}
                                  </div>
@@ -139,7 +140,7 @@ export const Chat: React.FC<ChatProps> = ({
                              e.stopPropagation();
                              submitInput();
                          }}
-                         className="w-full bg-transparent border-none outline-none text-white font-mono text-lg"
+                         className="w-full border-none bg-transparent font-mono text-mono-2 text-parchment-50 caret-brass-200 outline-none placeholder:text-parchment-500"
                          placeholder="Type a command..."
                      />
                  </div>
