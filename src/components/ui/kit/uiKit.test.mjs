@@ -17,12 +17,39 @@ test('the pixel fonts are bundled, not fetched, and set as the UI and mono faces
     assert.match(entry, /import '@fontsource\/pixelify-sans\/400\.css';/);
     assert.match(entry, /import '@fontsource\/pixelify-sans\/700\.css';/);
     const html = read('index.html');
-    assert.match(html, /--atlas-ui-font-family: 'Pixelify Sans'/);
+    assert.match(html, /--atlas-ui-font-family: 'Atlas Numerals', 'Pixelify Sans'/);
     assert.match(html, /--atlas-mono-font-family: 'Monocraft'/);
     // The dense editor forms keep a system face.
     assert.match(html, /--atlas-tool-font-family: ui-sans-serif/);
     assert.match(read('src/components/ui/ChunkBase.tsx'), /overflow-hidden font-tool">/);
     assert.match(read('THIRD_PARTY_NOTICES.md'), /Pixelify Sans/);
+});
+
+test('digits come from Atlas Numerals, whose 5 cannot be read as an S', () => {
+    const html = read('index.html');
+    // Only the digits: letters stay Pixelify Sans.
+    for (const style of ['Regular', 'Bold']) {
+        assert.ok(fs.existsSync(path.join(root, `public/assets/fonts/AtlasNumerals-${style}.woff`)), `${style} is built`);
+        assert.match(html, new RegExp(`url\\('\\./assets/fonts/AtlasNumerals-${style}\\.woff'\\) format\\('woff'\\);[\\s\\S]*?unicode-range: U\\+0030-0039;`));
+    }
+    // The drawings, read from the generator: ten digits, five by seven.
+    const script = read('scripts/build_atlas_numerals.py');
+    const digits = Object.fromEntries([...script.matchAll(/'(\w+)': \[\s*((?:'[.#]+',\s*)+)\]/g)]
+        .map(([, name, rows]) => [name, [...rows.matchAll(/'([.#]+)'/g)].map((m) => m[1])]));
+    assert.deepEqual(Object.keys(digits), ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']);
+    for (const [name, rows] of Object.entries(digits)) {
+        assert.equal(rows.length, 7, name);
+        assert.ok(rows.every((row) => row.length === 5), name);
+    }
+    // A 5 has a flat top and an open right side under it; an S curves at the top.
+    assert.equal(digits.five[0], '#####');
+    assert.match(digits.five[1], /^#\.+$/);
+    // A 7 is a flat bar and a stroke, with no curl back at the top left.
+    assert.equal(digits.seven[0], '#####');
+    assert.equal(digits.seven[1][0], '.');
+    // Digits line up in columns: every one shares Pixelify Sans's advance.
+    assert.match(script, /'Regular': \{'weight': 400, 'advance': 586/);
+    assert.match(script, /'Bold': \{'weight': 700, 'advance': 603/);
 });
 
 test('the kit is drawn in hard pixels: no rounded corners, blur or gradients on chrome', () => {

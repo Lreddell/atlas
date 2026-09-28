@@ -153,12 +153,30 @@
         font-style: italic;
         font-display: swap;
       }
+      /* Atlas's own digits (scripts/build_atlas_numerals.py), drawn on Pixelify
+         Sans's grid: its 5 reads as an S. They cover the digits only. */
+      @font-face {
+        font-family: 'Atlas Numerals';
+        src: url('./assets/fonts/AtlasNumerals-Regular.woff') format('woff');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+        unicode-range: U+0030-0039;
+      }
+      @font-face {
+        font-family: 'Atlas Numerals';
+        src: url('./assets/fonts/AtlasNumerals-Bold.woff') format('woff');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+        unicode-range: U+0030-0039;
+      }
       /* Game text is Pixelify Sans (bundled from @fontsource, drawn on an
-         11-pixel em: crisp at 11, 22 and 33px). Chat, commands and the debug
-         screen use Monocraft (a 9-pixel em: 9, 18, 27px). The editors keep a
-         system face for their dense forms. */
+         11-pixel em: crisp at 11, 22 and 33px), with Atlas Numerals for its
+         digits. Chat, commands and the debug screen use Monocraft (a 9-pixel
+         em: 9, 18, 27px). The editors keep a system face for their dense forms. */
       :root {
-        --atlas-ui-font-family: 'Pixelify Sans', ui-sans-serif, system-ui, sans-serif;
+        --atlas-ui-font-family: 'Atlas Numerals', 'Pixelify Sans', ui-sans-serif, system-ui, sans-serif;
         --atlas-mono-font-family: 'Monocraft', Consolas, 'Liberation Mono', monospace;
         --atlas-pixel-font-family: var(--atlas-ui-font-family);
         --atlas-tool-font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
