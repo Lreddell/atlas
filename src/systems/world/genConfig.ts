@@ -160,10 +160,10 @@ export const DEFAULTS = {
     bossDomains: {
         magneticFields: {
             enabled: true,
-            cell: 2560,            // grid spacing between candidate centers (blocks)
+            cell: 1536,            // grid spacing between candidate centers (blocks)
             radius: 384,           // base biome radius before edge warping
             fieldFreq: 0.0009,     // boss-field noise frequency for center activation
-            fieldThreshold: 0.55,  // center activates only where the field peaks (rare)
+            fieldThreshold: 0.3,   // center activates only where the field is high: the nearest is usually ~2,000 blocks from spawn
             edgeFreq: 0.011,       // boundary wobble frequency
             edgeAmp: 0.28,         // boundary radius varies by ±28% → organic outline
             tierWarpFreq: 0.02,    // cliff-ring wobble frequency

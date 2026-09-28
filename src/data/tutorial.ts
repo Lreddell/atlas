@@ -102,7 +102,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'Polarity traversal and the sealed Magnetic Fields',
         paragraphs: [
             'The Magnetic Fields biome is sealed: you cannot mine or build there until its guardian falls. Doors, containers, and the crystals you need remain usable.',
-            'The Fields are rare: the nearest is usually thousands of blocks from where you start, and looks like tiered walls of dark magnetite rising toward a plateau. The /locate biome magnetic_fields command gives its position.',
+            'The nearest Field is usually a couple of thousand blocks from where you start: look for tiered walls of dark magnetite rising toward a plateau. The /locate biome magnetic_fields command gives its position.',
             'The region is a huge tiered expedition: between the rim and the central arena you will find crystal deposits, glowing shard clusters, charged veins, spike hazards, polarity launch pads, pylon route markers, and collapsed ruins that can shelter loot caches.',
             'Polarity Boots give you control over magnetism: your polarity attracts you to opposite-polarity magnets and repels you from matching ones, providing enough force to launch across gaps and climb magnetic walls. Launch pads on the shelves are a safe place to practice before the fight.',
             'Summon the Magnetic Warden at the central altar. It fights in three forms, and one rule runs the whole duel: same polarity repels, opposite attracts. Match its colour and its bolts bounce off your boots; oppose it and you are drawn in close enough to strike.',

@@ -76,15 +76,32 @@ export interface MagneticFieldInstance {
     centerZ: number;
 }
 
+/** Blocks kept between two neighbouring regions at their widest. */
+const REGION_GAP = 64;
+
+/**
+ * How far (a fraction of the cell) a center may wander: as much as the spacing
+ * allows while two neighbouring regions, each reaching radius * (1 + edgeAmp),
+ * stay REGION_GAP apart, and never more than the middle half of the cell.
+ */
+const centerJitter = (c: MagneticFieldsConfig): number => {
+    const reach = c.radius * (1 + c.edgeAmp);
+    return Math.min(0.5, Math.max(0, 1 - (2 * reach + REGION_GAP) / c.cell));
+};
+
 /** Deterministic jittered center for a grid cell. */
 const cellCenter = (cx: number, cz: number, worldSeed: number): MagneticFieldInstance => {
-    const cell = getMagneticFieldsConfig().cell;
+    const c = getMagneticFieldsConfig();
+    const cell = c.cell;
+    const jitter = centerJitter(c);
+    const inset = (1 - jitter) / 2;
     const jx = hash3(cx, 1, cz, worldSeed ^ 0x6669656c);
     const jz = hash3(cx, 2, cz, worldSeed ^ 0x6473);
-    // Keep centers away from cell edges so warped regions never touch a neighbour.
+    // Centers stay far enough from the cell edges that warped regions never
+    // touch a neighbour.
     return {
-        centerX: cx * cell + Math.floor((0.25 + jx * 0.5) * cell),
-        centerZ: cz * cell + Math.floor((0.25 + jz * 0.5) * cell),
+        centerX: cx * cell + Math.floor((inset + jx * jitter) * cell),
+        centerZ: cz * cell + Math.floor((inset + jz * jitter) * cell),
     };
 };
 

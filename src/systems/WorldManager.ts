@@ -1946,8 +1946,9 @@ export class WorldManager {
       const caveNoise2D = (a: number, b: number) => GlobalNoise.cave.noise2D(a, b);
       const caveOx = GlobalNoise.offsets.cave.x, caveOz = GlobalNoise.offsets.cave.z;
 
-      // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
-      // they need a wider search than ordinary biomes to stay reliably findable.
+      // Rare sealed boss biomes (e.g. Magnetic Fields) sit a few thousand blocks
+      // apart (more with rarer World Editor settings), so they need a wider
+      // search than ordinary biomes to stay reliably findable.
       const isRareBossBiome = biomeId === 'magnetic_fields';
       const SEARCH_RADIUS = isRareBossBiome ? 36000 : 5000;
       const STEP = isRareBossBiome ? 128 : 64;

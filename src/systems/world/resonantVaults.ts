@@ -1,4 +1,6 @@
 import { placeVaultRooms } from './resonantVaultRooms.ts';
+import { magneticFieldsTouchBox } from './magneticFields.ts';
+import { SimpleNoise } from '../../utils/noise.ts';
 
 export const RESONANT_VAULT_GRID = 1536;
 export const RESONANT_VAULT_ACTIVE_DENOMINATOR = 4;
@@ -154,6 +156,28 @@ export function rotateVaultOffset(x: number, z: number, orientation: number): { 
     }
 }
 
+// The world's boss-biome noise, made as createNoiseSet(seed).bossBiome makes it.
+const bossNoiseBySeed = new Map<number, SimpleNoise>();
+
+/**
+ * A Vault never generates where its reserved square would reach into the
+ * Magnetic Fields: the Fields are sealed, and their tiered walls would bury
+ * the Listening Spire and its outlets.
+ */
+function touchesMagneticFields(centerX: number, centerZ: number, seed: number): boolean {
+    let noise = bossNoiseBySeed.get(seed);
+    if (!noise) {
+        noise = new SimpleNoise(seed + 800);
+        bossNoiseBySeed.set(seed, noise);
+    }
+    const sampler = noise;
+    const reserve = RESONANT_VAULT_HALF_EXTENT + 32;
+    return magneticFieldsTouchBox(
+        centerX - reserve, centerZ - reserve, centerX + reserve, centerZ + reserve,
+        seed | 0, (x, z) => sampler.noise2D(x, z),
+    );
+}
+
 export function getVaultCandidateForCell(gridX: number, gridZ: number, seed: number): VaultCandidate {
     const margin = RESONANT_VAULT_HALF_EXTENT + 32;
     const usable = RESONANT_VAULT_GRID - margin * 2;
@@ -167,7 +191,9 @@ export function getVaultCandidateForCell(gridX: number, gridZ: number, seed: num
         centerX,
         centerZ,
         seed,
-        active: farEnoughFromOrigin && activityRoll % RESONANT_VAULT_ACTIVE_DENOMINATOR === 0,
+        active: farEnoughFromOrigin
+            && activityRoll % RESONANT_VAULT_ACTIVE_DENOMINATOR === 0
+            && !touchesMagneticFields(centerX, centerZ, seed),
         orientation: (vaultHash(seed, gridX, gridZ, 29) & 3) as 0 | 1 | 2 | 3,
     };
 }
