@@ -53,7 +53,7 @@ vec2 atlasCloudUv( vec2 relXZ ) {
 // How much cloud lies along a line of sight dir (world, from the camera):
 // 0 clear, 1 behind a cloud. For points of light such as the stars.
 float atlasCloudCoverAlong( vec3 dir ) {
-	if ( atlasCloudLayer.z <= 0.0 || dir.y < 0.01 ) return 0.0;
+	if ( atlasCloudLayer.z <= 0.0 || abs( dir.y ) < 0.01 ) return 0.0;
 	float t = ( 0.5 * ( atlasCloudLayer.x + atlasCloudLayer.y ) - cameraPosition.y ) / dir.y;
 	if ( t <= 0.0 ) return 0.0;
 	vec2 at = dir.xz * t;
@@ -119,7 +119,7 @@ vec3 atlasCloudLight( vec3 n, vec3 viewDir, float inner, float height ) {
 	ambient += horizon * ( PI * 0.18 * base );
 	// Little light gets into the middle of a big cloud: its base goes grey there
 	// while its rim stays bright.
-	ambient *= 1.0 - 0.55 * inner * base;
+	ambient *= 1.0 - 0.35 * inner * base;
 	// Around sunrise and sunset, and for a while after the sun has set, the low
 	// sun lights the undersides from its side of the sky: gold, then orange,
 	// then pink as it sinks, brightest toward it.

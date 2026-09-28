@@ -31,10 +31,11 @@ import type { CloudQuality } from '../../systems/graphics/graphicsSettings';
 // cloud sides and bases that make it up, so far clouds never shimmer.
 //
 // Only the nearest face shows, so a cloud reads as one volume from any side.
-// The clouds draw after every sky object, and a cloud lets through only a
-// little of what is behind it, alike for all of it, as thin real cloud does:
-// the bright aurora, moon, sun and meteors glow through dimly (a little more
-// through a thin rim than a big cloud's middle), while the faint stars are
+// The clouds draw after every sky object, and a cloud lets through as much of
+// what is behind it as its thickness along the view allows, alike for all of
+// it, as real cloud does: thin rims and clipped corners are soft, a view
+// straight through the slab shows the bright aurora, moon, sun and meteors
+// dimly, a long look along a cloud shows nothing, while the faint stars are
 // lost (each star checks the clouds along its own line of sight, so none
 // shows inside a cloud). Far off, the clouds take the haze's colour, as the
 // terrain does. (Classic keeps its old, more translucent clouds.) The pixel
@@ -64,10 +65,12 @@ uniform mat4 projectionMatrix;
 uniform float atlasCloudPixel;
 varying vec3 vCloudRay;
 
-// How much of what is behind it a cloud hides: a thin rim a little less than
-// a big cloud's middle. (The layer's own opacity multiplies this.)
-float atlasCloudSolid( float inner ) {
-	return atlasClassicSky.w > 0.5 ? 1.0 : mix( 0.9, 1.0, inner );
+// How much of what is behind it a cloud hides, from how far the view runs
+// through it: a clipped corner or a thin rim lets a good deal through, a view
+// straight through the slab a little, a long look along a cloud nothing, the
+// same from above as from below. (The layer's own opacity multiplies this.)
+float atlasCloudSolid( float through ) {
+	return atlasClassicSky.w > 0.5 ? 1.0 : 1.0 - exp( -through * 0.55 );
 }
 
 bool atlasCloudAt( ivec2 cell, ivec2 size ) {
@@ -92,7 +95,7 @@ vec4 atlasCloudAverage( vec3 dir, float tA, float tB, float footprint, out float
 	vec3 n = normalize( mix( vec3( 0.0, dir.y > 0.0 ? -1.0 : 1.0, 0.0 ), facing, sides / ( sides + abs( dir.y ) ) ) );
 	float inner = cell.g / max( cell.r, 1e-3 );
 	vec3 light = atlasCloudLight( n, dir, inner, 0.5 );
-	return vec4( atlasApplyFog( light, rel ), cover * atlasCloudSolid( inner ) );
+	return vec4( atlasApplyFog( light, rel ), cover * atlasCloudSolid( 4.0 + 8.0 * inner ) );
 }
 
 void main() {
@@ -162,6 +165,30 @@ void main() {
 				}
 			}
 		}
+		// How far the view runs through the cloud it met: on to where it
+		// leaves it (or, from inside one, back to the eye).
+		float through = tHit;
+		if ( tHit >= 0.0 && !inside ) {
+			float tLeave = tOut;
+			for ( int i = 0; i < 16; i++ ) {
+				float tStep;
+				if ( tNext.x < tNext.y ) {
+					tStep = tNext.x;
+					tNext.x += tDelta.x;
+					cell.x += stepCell.x;
+				} else {
+					tStep = tNext.y;
+					tNext.y += tDelta.y;
+					cell.y += stepCell.y;
+				}
+				if ( tStep >= tOut ) break;
+				if ( !atlasCloudAt( cell, size ) ) {
+					tLeave = tStep;
+					break;
+				}
+			}
+			through = tLeave - tHit;
+		}
 		if ( tHit >= 0.0 ) {
 			// The face toward the viewer.
 			vec3 n = face == 1 ? vec3( -float( stepCell.x ), 0.0, 0.0 )
@@ -170,7 +197,7 @@ void main() {
 			vec3 rel = dir * tHit;
 			float inner = textureLod( atlasCloudMap, atlasCloudUv( rel.xz ), 0.0 ).g;
 			float height = clamp( ( cameraPosition.y + rel.y - atlasCloudLayer.x ) / ( atlasCloudLayer.y - atlasCloudLayer.x ), 0.0, 1.0 );
-			near = vec4( atlasApplyFog( atlasCloudLight( n, dir, inner, height ), rel ), atlasCloudSolid( inner ) );
+			near = vec4( atlasApplyFog( atlasCloudLight( n, dir, inner, height ), rel ), atlasCloudSolid( through ) );
 			tNear = tHit;
 		} else if ( t < tOut ) {
 			// Out of steps before the end of the layer: the rest of it, averaged.
@@ -215,7 +242,7 @@ const updateCloudColor = (dayFactor: number, classic: boolean) => {
     // Luminous clouds are nearly solid: a night cloud is a moonlit shape that
     // an aurora or the moon still glows through, dimly. Classic matches the
     // old renderer, which blended both of a cloud's faces.
-    naturalOpacity = classic ? 0.84 + 0.12 * dayFactor : 0.9 + 0.07 * dayFactor;
+    naturalOpacity = classic ? 0.84 + 0.12 * dayFactor : 1;
 };
 
 registerCloudHandlers({ updateColor: updateCloudColor });

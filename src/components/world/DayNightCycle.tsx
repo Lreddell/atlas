@@ -110,7 +110,8 @@ const StarShader = {
             gl_PointSize = max(1.5, (420.0 + magnitude * 360.0) / -mvPosition.z);
             float twinkle = speed > 0.0 ? 0.75 + 0.25 * sin(uTime * speed + phase) : 1.0;
             vec3 sight = normalize((modelMatrix * vec4(position, 1.0)).xyz - cameraPosition);
-            vAlpha = twinkle * (0.35 + 0.65 * magnitude) * (1.0 - atlasCloudCoverAlong(sight));
+            // None below the horizon: the ground is there, even seen over the clouds.
+            vAlpha = twinkle * (0.35 + 0.65 * magnitude) * (1.0 - atlasCloudCoverAlong(sight)) * smoothstep(-0.02, 0.06, sight.y);
         }
     `,
     fragmentShader: /* glsl */`
