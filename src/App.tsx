@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
 import { Analytics } from '@vercel/analytics/react';
 
-import { ChunkMesh, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
+import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -220,9 +220,14 @@ const ShadowTypeSync: React.FC<{ type: THREE.ShadowMapType }> = ({ type }) => {
 };
 
 // --- Streaming Loop Component ---
-const ChunkStreamer: React.FC<{ active: boolean }> = React.memo(({ active }) => {
+// Applies finished chunks a few milliseconds' worth a frame, then hands out
+// new jobs. Behind the loading screen nothing waits on frames, so it takes
+// far more a frame there and the world comes in sooner.
+const ChunkStreamer: React.FC<{ active: boolean; loading: boolean }> = React.memo(({ active, loading }) => {
     useFrame(() => {
         if (!active) return;
+        if (loading) worldManager.applyWorkerResults(12, 64);
+        else worldManager.applyWorkerResults(3, 6);
         worldManager.processStreamingJobs();
     });
     return null;
@@ -517,52 +522,6 @@ const App: React.FC = () => {
   const isDead = health <= 0;
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
   const renderedChunks: RenderedChunk[] = chunks;
-
-  // ── Chunk fade-out tracking ──
-  // We keep departing chunks in the render list so their ChunkMesh can animate out.
-  // Using refs mutated inside useMemo guarantees no one-frame gap where a chunk
-  // vanishes and then reappears as fading (which would unmount+remount and lose geometry).
-  const prevRenderedKeysRef = useRef<Map<string, RenderedChunk>>(new Map());
-  const fadingOutMapRef = useRef<Map<string, RenderedChunk>>(new Map());
-  const [fadingVersion, setFadingVersion] = useState(0);
-
-  const allDisplayedChunks = useMemo(() => {
-      void fadingVersion;
-      const currentKeys = new Set(renderedChunks.map(c => `${c.cx},${c.cz}`));
-
-      // Detect newly departed chunks
-      if (chunkFadeEnabled) {
-          for (const [key, chunk] of prevRenderedKeysRef.current) {
-              if (!currentKeys.has(key) && !fadingOutMapRef.current.has(key)) {
-                  fadingOutMapRef.current.set(key, chunk);
-              }
-          }
-      }
-
-      // Remove fading chunks that returned to active, or all if fade disabled
-      if (!chunkFadeEnabled) {
-          fadingOutMapRef.current.clear();
-      } else {
-          for (const key of fadingOutMapRef.current.keys()) {
-              if (currentKeys.has(key)) {
-                  fadingOutMapRef.current.delete(key);
-              }
-          }
-      }
-
-      prevRenderedKeysRef.current = new Map(renderedChunks.map(c => [`${c.cx},${c.cz}`, c]));
-
-      const result: (RenderedChunk & { fadingOut: boolean })[] = [
-          ...renderedChunks.map(c => ({ ...c, fadingOut: false })),
-          ...[...fadingOutMapRef.current.values()].map(c => ({ ...c, fadingOut: true }))
-      ];
-      return result;
-  }, [renderedChunks, chunkFadeEnabled, fadingVersion]);
-
-  const handleChunkFadeOutComplete = useCallback((cx: number, cz: number) => {
-      fadingOutMapRef.current.delete(`${cx},${cz}`);
-      setFadingVersion(v => v + 1);
-  }, []);
 
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
@@ -3464,7 +3423,15 @@ const App: React.FC = () => {
 
             <Canvas 
                 key={canvasKey} 
-                onCreated={state => { gameRendererRef.current = state; }}
+                onCreated={state => {
+                    gameRendererRef.current = state;
+                    // The scene itself never moves. Left on, its own matrix update marks
+                    // it dirty every frame, and three then recomputes the world matrix of
+                    // every object under it (~7,000 at render distance 24), static
+                    // terrain included. Moving objects still update themselves.
+                    state.scene.matrixAutoUpdate = false;
+                    state.scene.updateMatrix();
+                }}
                 shadows={shadowsEnabled ? { type: shadowMapType } : false}
                 gl={{
                     antialias: contextAntialias, alpha: false, preserveDrawingBuffer: isElectron,
@@ -3483,7 +3450,7 @@ const App: React.FC = () => {
                     panorama capture. */}
                 {pipelinePlan.active && !isCapturingPanorama && <RenderPipeline plan={pipelinePlan} />}
                 {/* Streamer runs logic loop for loading */}
-                <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
+                <ChunkStreamer active={appState === 'game' || appState === 'loading'} loading={appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
                 <ChunkRegionBatches shadowsEnabled={shadowsEnabled} />
@@ -3496,7 +3463,8 @@ const App: React.FC = () => {
                 )}
                 
                 <Suspense fallback={null}>
-                    {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
+                    {/* Chunk meshes, and those fading out (ChunkMesh.tsx). */}
+                    <ChunkField chunks={renderedChunks} shadowsEnabled={shadowsEnabled} fadeEnabled={chunkFadeEnabled} />
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} pickupsBlocked={pickupsBlocked} pickupLockUntilRef={pickupLockUntilRef} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
                 {gameMode !== 'spectator' && !isDead && !cinematicMode && !isCapturingPanorama && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}

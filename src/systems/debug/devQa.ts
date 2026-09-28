@@ -379,6 +379,8 @@ function sceneStats(): SceneStats {
             regionBytes += geometry.userData.bytes ?? 0;
             return;
         }
+        // A chunk's water back faces are a child mesh sharing the front's geometry (ChunkMesh.tsx).
+        if ((mesh.parent as THREE.Mesh | null)?.isMesh) return;
         for (const attribute of Object.values(geometry.attributes)) chunkBytes += (attribute as THREE.BufferAttribute).array.byteLength;
         chunkBytes += geometry.index.array.byteLength;
         if (!mesh.visible) {

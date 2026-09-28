@@ -8,6 +8,7 @@ import * as WorldGen from './world/chunkGeneration';
 import * as Lighting from './world/lighting';
 import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
+import { packMeshBorders } from './world/meshBorders';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
@@ -177,7 +178,18 @@ export class WorldManager {
     private desiredChunkKeys = new Set<string>();
 
   private workers: Worker[] = [];
+  /** Jobs sent to each worker and not yet answered. */
+  private workerJobs: number[] = [];
   private nextWorkerIndex = 0;
+  /**
+   * Finished chunks waiting to be applied, oldest first (applyWorkerResults).
+   * A dozen or more can finish between two frames; applied as each arrived,
+   * all their border lighting, React updates and GPU uploads landed in the
+   * next frame, which then ran long.
+   */
+  private workerInbox: any[] = [];
+  private inboxTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastInboxFrameAt = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -228,11 +240,11 @@ export class WorldManager {
   constructor() {
     this.state = WorldTypes.createWorldState();
 
-        const cpuCores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-            ? navigator.hardwareConcurrency
-            : 4;
-        this.MAX_GEN_IN_FLIGHT = Math.min(8, Math.max(3, Math.floor(cpuCores * 0.75)));
-        this.MAX_MESH_IN_FLIGHT = Math.min(4, Math.max(2, Math.floor(cpuCores / 2)));
+        // Two jobs of each kind per worker keeps every worker busy between the
+        // main thread's dispatches.
+        const poolSize = WorldManager.workerPoolSize();
+        this.MAX_GEN_IN_FLIGHT = poolSize * 2;
+        this.MAX_MESH_IN_FLIGHT = poolSize * 2;
     
     if (this.workersEnabled) {
         this.initWorkers();
@@ -301,6 +313,7 @@ export class WorldManager {
     this.activeMeshTickets.clear();
     this.genStartedAt.clear();
     this.meshStartedAt.clear();
+    this.workerInbox = [];
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
     // Water still flowing in the last world must not flow on in the next.
@@ -318,12 +331,21 @@ export class WorldManager {
       this.log("World State Reset", 'success');
   }
 
+  /**
+   * One chunk worker per spare core: all but two, which the main thread and
+   * the browser's GPU process need. Generation and meshing run here, so on a
+   * 16-thread CPU eight workers load chunks about twice as fast as four.
+   */
+  private static workerPoolSize(): number {
+      const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+          ? navigator.hardwareConcurrency
+          : 4;
+      return Math.min(8, Math.max(2, cores - 2));
+  }
+
   private initWorkers() {
       try {
-            const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-                ? navigator.hardwareConcurrency
-                : 4;
-            const poolSize = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+            const poolSize = WorldManager.workerPoolSize();
 
             for (let i = 0; i < poolSize; i++) {
                 const worker = new Worker(
@@ -341,8 +363,14 @@ export class WorldManager {
                     this.resetPipeline();
                 };
 
-                worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+                const workerIndex = this.workers.length;
+                worker.onmessage = (e) => {
+                    // Every job gets exactly one reply.
+                    this.workerJobs[workerIndex] = Math.max(0, (this.workerJobs[workerIndex] ?? 0) - 1);
+                    this.receiveResult(e.data);
+                };
                 this.workers.push(worker);
+                this.workerJobs.push(0);
             }
 
             this.syncWorkerWorldGenState();
@@ -361,15 +389,80 @@ export class WorldManager {
         worker.terminate();
     }
     this.workers = [];
+    this.workerJobs = [];
     this.nextWorkerIndex = 0;
+    this.workerInbox = [];
   }
 
-  /** Round-robin dispatch for chunk jobs. Control messages should use broadcast instead. */
+  /** Queues a finished chunk (generated, loaded or meshed) for applyWorkerResults. */
+  private receiveResult(msg: any) {
+      this.workerInbox.push(msg);
+      this.armInboxTimer();
+  }
+
+  /**
+   * Frames stop while the page is hidden or no world is on screen, and with
+   * them applyWorkerResults: then this timer applies the results instead, so
+   * streaming never stalls.
+   */
+  private armInboxTimer() {
+      if (this.inboxTimer !== null) return;
+      this.inboxTimer = setTimeout(() => {
+          this.inboxTimer = null;
+          if (this.workerInbox.length === 0) return;
+          if (performance.now() - this.lastInboxFrameAt > 100) this.drainInbox(8, 16);
+          if (this.workerInbox.length > 0) this.armInboxTimer();
+      }, 100);
+  }
+
+  /**
+   * Applies finished chunks, oldest first, until `budgetMs` has gone or
+   * `maxMeshes` meshes are in (each mesh also costs a React update and a GPU
+   * upload after this). Called once a frame by the streamer, so a burst of
+   * results spreads over a few frames instead of stalling one. Results waiting
+   * here still count as in flight, which holds back new jobs meanwhile.
+   */
+  public applyWorkerResults(budgetMs: number, maxMeshes: number) {
+      this.lastInboxFrameAt = performance.now();
+      this.drainInbox(budgetMs, maxMeshes);
+  }
+
+  private drainInbox(budgetMs: number, maxMeshes: number) {
+      const inbox = this.workerInbox;
+      if (inbox.length === 0) return;
+      const start = performance.now();
+      let meshes = 0;
+      let applied = 0;
+      while (applied < inbox.length) {
+          const msg = inbox[applied];
+          if (applied > 0 && performance.now() - start > budgetMs) break;
+          if (msg?.type === 'MESH_DONE') {
+              if (meshes >= maxMeshes) break;
+              meshes++;
+          }
+          applied++;
+          this.handleWorkerMessage(msg);
+          // A world reset from inside a handler replaces the inbox.
+          if (this.workerInbox !== inbox) return;
+      }
+      inbox.splice(0, applied);
+  }
+
+  /**
+   * Sends a chunk job to the worker with the fewest jobs waiting (ties go
+   * round the pool), so a slow generation job never holds up a queue of
+   * meshes behind it. Control messages use broadcast instead.
+   */
   private postToPool(msg: unknown) {
       if (this.workers.length === 0) return;
-      const worker = this.workers[this.nextWorkerIndex];
-      this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-      worker.postMessage(msg);
+      let best = this.nextWorkerIndex % this.workers.length;
+      for (let step = 1; step < this.workers.length; step++) {
+          const i = (this.nextWorkerIndex + step) % this.workers.length;
+          if (this.workerJobs[i] < this.workerJobs[best]) best = i;
+      }
+      this.nextWorkerIndex = (best + 1) % this.workers.length;
+      this.workerJobs[best]++;
+      this.workers[best].postMessage(msg);
   }
 
     private syncWorkerWorldGenState() {
@@ -443,13 +536,17 @@ export class WorldManager {
           this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
-              if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
+              // Side chunks with a mesh (or one on the way) remesh against this one;
+              // those still waiting for their first mesh are re-checked below.
+              if (this.getStage(ncx, ncz) > ChunkStage.GENERATED) {
                   this.queueMesh(ncx, ncz, 10);
               }
           });
 
           this.setStage(cx, cz, ChunkStage.GENERATED);
-          this.queueMesh(cx, cz, 0); 
+          this.queueFirstMesh(cx, cz, 0);
+          // This chunk may be the last side chunk a neighbour was waiting for.
+          for (const [dx, dz] of WorldManager.SIDE_NEIGHBOURS) this.queueFirstMesh(cx + dx, cz + dz, 5);
           this.scheduleStreamingPump();
       }
       else if (type === 'MESH_DONE') {
@@ -523,6 +620,35 @@ export class WorldManager {
       this.enqueueGen(cx, cz, priority);
   }
 
+  private static readonly SIDE_NEIGHBOURS: readonly (readonly [number, number])[] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  /**
+   * A mesh reads the four side chunks (their blocks for the faces between them,
+   * their light for the light across the border). A chunk meshed before they
+   * arrive only has to be meshed again as each one does: over twice the meshing
+   * work of the whole load, and four geometry swaps per chunk on the main
+   * thread. So a chunk's first mesh waits until every side chunk is generated
+   * or isn't wanted at all (the edge of the view distance, which never fills in).
+   */
+  private sideChunksReady(cx: number, cz: number): boolean {
+      for (const [dx, dz] of WorldManager.SIDE_NEIGHBOURS) {
+          const ncx = cx + dx;
+          const ncz = cz + dz;
+          if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) continue;
+          if (!this.desiredChunkKeys.has(WorldCoords.getChunkKey(ncx, ncz))) continue;
+          return false;
+      }
+      return true;
+  }
+
+  /** Queues a chunk's mesh, holding a first mesh until its side chunks are there. */
+  private queueFirstMesh(cx: number, cz: number, priority: number) {
+      if (this.getStage(cx, cz) === ChunkStage.GENERATED
+          && !this.meshCache.has(WorldCoords.getChunkKey(cx, cz))
+          && !this.sideChunksReady(cx, cz)) return;
+      this.queueMesh(cx, cz, priority);
+  }
+
   private queueMesh(cx: number, cz: number, priority: number) {
       const stage = this.getStage(cx, cz);
       if (stage < ChunkStage.GENERATED) return; 
@@ -585,7 +711,7 @@ export class WorldManager {
           } else if (stage === ChunkStage.REQUESTED) {
               this.enqueueGen(cx, cz, priority);
           } else if (stage >= ChunkStage.GENERATED && stage < ChunkStage.READY) {
-              this.queueMesh(cx, cz, priority);
+              this.queueFirstMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
@@ -678,7 +804,7 @@ export class WorldManager {
 
                     if (data) {
                         this.knownMissingStorageChunks.delete(key);
-                        this.handleWorkerMessage({
+                        this.receiveResult({
                             type: 'GEN_DONE',
                             cx: job.cx,
                             cz: job.cz,
@@ -767,8 +893,9 @@ export class WorldManager {
                       ticket,
                       chunk: c,
                       metaData: m,
-                      neighbors,
-                      lights: neighborLights,
+                      light: l,
+                      // Only the planes facing this chunk (meshBorders.ts).
+                      borders: packMeshBorders(neighbors, neighborLights),
                       cullDarkFaces: cullDark
                   });
               } else {
@@ -829,7 +956,7 @@ export class WorldManager {
           }
 
           if (stage === ChunkStage.GENERATED) {
-              this.queueMesh(cx, cz, priority);
+              this.queueFirstMesh(cx, cz, priority);
           } else if (stage === ChunkStage.MESH_QUEUED) {
               this.enqueueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {

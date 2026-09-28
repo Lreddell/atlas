@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
@@ -6,12 +6,9 @@ import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { regionBatcher } from '../systems/world/regionBatcher';
 import {
-  createVoxelFadeMaterials,
+  getVoxelFadeMaterials,
   createCutoutDepthMaterial,
-  createSplitTransparentMaterials,
   createVoxelMaterials,
-  disposeVoxelMaterials,
-  setVoxelFade,
   type VoxelMaterials,
 } from '../systems/graphics/materials/voxelMaterial';
 
@@ -36,15 +33,6 @@ interface ChunkMeshProps {
 const sharedMaterials = createVoxelMaterials(getChunkTexture());
 // Leaves and plants cast (and now receive) shadows through this, swaying with the wind.
 const cutoutDepthMaterial = createCutoutDepthMaterial(getChunkTexture());
-// Region-merged water and glass, drawn away from the camera as two passes (voxelMaterial.ts).
-const regionTransparentMaterials = createSplitTransparentMaterials(getChunkTexture());
-
-type FadeMaterials = VoxelMaterials;
-
-const createFadeMaterials = (startOpacity: number): FadeMaterials =>
-  createVoxelFadeMaterials(sharedMaterials, startOpacity);
-
-const disposeFadeMaterials = (mats: FadeMaterials) => disposeVoxelMaterials(mats);
 
 // ── Global fade ticker ──
 // Previously every chunk registered its own useFrame callback to animate fades :
@@ -81,14 +69,14 @@ export const ChunkRegionBatches: React.FC<{ shadowsEnabled: boolean }> = ({ shad
     regionBatcher.attach(root, {
       opaque: sharedMaterials.solid,
       cutout: sharedMaterials.cutout,
-      transparent: regionTransparentMaterials.front,
-      transparentBack: regionTransparentMaterials.back,
+      transparent: sharedMaterials.transparent,
+      transparentBack: sharedMaterials.transparentBack,
       cutoutDepth: cutoutDepthMaterial,
     });
     return () => regionBatcher.detach();
   }, []);
   useFrame(({ camera }) => regionBatcher.update(performance.now(), camera.position.x, camera.position.z));
-  return <group ref={rootRef} name="chunkRegions" />;
+  return <group ref={rootRef} name="chunkRegions" matrixAutoUpdate={false} />;
 };
 
 const CHUNK_FADE_DURATION_MS = 400;
@@ -105,10 +93,11 @@ const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: 
 
 const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
   const [geometries, setGeometries] = useState<Geometries>(EMPTY_GEOMETRIES);
-  const [fadeMats, setFadeMats] = useState<FadeMaterials | null>(null);
+  // True while fading in or out: the meshes wear a dissolve step's materials
+  // then (getVoxelFadeMaterials), put on by the fade itself, not by a render.
+  const [fading, setFading] = useState(false);
 
   const geometriesRef = useRef(geometries);
-  const fadeMatsRef = useRef<FadeMaterials | null>(null);
   const fadeAnimRef = useRef<FadeAnimation | null>(null);
   const fadeModeRef = useRef<'none' | 'in' | 'out'>('none');
   const fadeStartedAtRef = useRef(0);
@@ -120,6 +109,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   const opaqueMeshRef = useRef<THREE.Mesh>(null);
   const cutoutMeshRef = useRef<THREE.Mesh>(null);
   const transparentMeshRef = useRef<THREE.Mesh>(null);
+  const transparentBackMeshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
     geometriesRef.current = geometries;
@@ -151,45 +141,50 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     }
   }, [geometries]);
 
-  const stopFade = useCallback(() => {
+  // Puts a set of materials on this chunk's meshes: a dissolve step, or the shared set.
+  const applyMaterials = useCallback((materials: VoxelMaterials) => {
+    if (opaqueMeshRef.current) opaqueMeshRef.current.material = materials.solid;
+    if (cutoutMeshRef.current) cutoutMeshRef.current.material = materials.cutout;
+    if (transparentMeshRef.current) transparentMeshRef.current.material = materials.transparent;
+    if (transparentBackMeshRef.current) transparentBackMeshRef.current.material = materials.transparentBack;
+  }, []);
+
+  // Ends a fade. The meshes go back to the shared materials, except at the end
+  // of a fade-out: they stay dissolved there until they unmount, or they would
+  // flash back for the frame before.
+  const stopFade = useCallback((restore = true) => {
     if (fadeAnimRef.current) {
       activeFadeAnimations.delete(fadeAnimRef.current);
       fadeAnimRef.current = null;
     }
+    if (fadeModeRef.current === 'none') return;
     fadeModeRef.current = 'none';
-    if (fadeMatsRef.current) {
-      disposeFadeMaterials(fadeMatsRef.current);
-      fadeMatsRef.current = null;
-      setFadeMats(null);
-    }
-  }, []);
+    if (restore) applyMaterials(sharedMaterials);
+    setFading(false);
+  }, [applyMaterials]);
 
   const startFade = useCallback((mode: 'in' | 'out') => {
-    // Reuse existing clones if a fade is already running (e.g. in → out switch)
-    let mats = fadeMatsRef.current;
-    if (!mats) {
-      mats = createFadeMaterials(mode === 'in' ? 0 : 1);
-      fadeMatsRef.current = mats;
-      setFadeMats(mats);
-    }
+    if (fadeModeRef.current === 'none') setFading(true);
     fadeModeRef.current = mode;
     fadeStartedAtRef.current = performance.now();
     if (mode === 'in') lastFadeStartMsRef.current = fadeStartedAtRef.current;
+    applyMaterials(getVoxelFadeMaterials(sharedMaterials, mode === 'in' ? 0 : 1));
 
     if (!fadeAnimRef.current) {
       const anim: FadeAnimation = {
         update: (now: number) => {
-          const m = fadeMatsRef.current;
-          if (!m) return;
+          if (fadeModeRef.current === 'none') return;
           const progress = THREE.MathUtils.clamp((now - fadeStartedAtRef.current) / CHUNK_FADE_DURATION_MS, 0, 1);
           const smooth = progress * progress * (3 - 2 * progress);
           const eased = fadeModeRef.current === 'out' ? 1.0 - smooth : smooth;
 
-          setVoxelFade(m, eased);
+          // Every frame, which also dresses meshes mounted since the last one
+          // (the ticker runs before the frame renders).
+          applyMaterials(getVoxelFadeMaterials(sharedMaterials, eased));
 
           if (progress >= 1) {
             const wasOut = fadeModeRef.current === 'out';
-            stopFade();
+            stopFade(!wasOut);
             if (wasOut) {
               queueDispose(geometriesRef.current);
               geometriesRef.current = EMPTY_GEOMETRIES;
@@ -202,7 +197,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       fadeAnimRef.current = anim;
       activeFadeAnimations.add(anim);
     }
-  }, [stopFade, queueDispose]);
+  }, [stopFade, queueDispose, applyMaterials]);
 
   // Prop-driven fade-out (chunk left the render set)
   useEffect(() => {
@@ -273,7 +268,15 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             if (buff.indices && buff.indices.length > 0) {
                 geo.setIndex(new THREE.BufferAttribute(buff.indices, 1));
             }
-            geo.computeBoundingSphere();
+            if (buff.bounds) {
+                // Worked out in the worker (geometry.ts). Padded for wind sway,
+                // like the region meshes' bounds.
+                const [minX, minY, minZ, maxX, maxY, maxZ] = buff.bounds;
+                geo.boundingBox = new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ)).expandByScalar(0.5);
+                geo.boundingSphere = geo.boundingBox.getBoundingSphere(new THREE.Sphere());
+            } else {
+                geo.computeBoundingSphere();
+            }
             return geo;
         };
 
@@ -327,7 +330,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   // Once its geometry is on screen and not fading, the chunk offers it to its
   // region's merged mesh; whatever changes next (new geometry, a fade, leaving)
   // takes it back in this same commit, so it is never missing or drawn twice.
-  const batchable = fadeMats === null && !fadingOut;
+  const batchable = !fading && !fadingOut;
   useLayoutEffect(() => {
     if (!batchable || (!geometries.opaque && !geometries.cutout && !geometries.transparent)) return;
     regionBatcher.offer(cx, cz, {
@@ -337,21 +340,38 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     return () => regionBatcher.withdraw(cx, cz);
   }, [cx, cz, geometries, batchable]);
 
-  const matOpaque = fadeMats ? fadeMats.solid : sharedMaterials.solid;
-  const matCutout = fadeMats ? fadeMats.cutout : sharedMaterials.cutout;
-  const matTransparent = fadeMats ? fadeMats.transparent : sharedMaterials.transparent;
+  // A chunk never moves: work out its world matrices once per change of
+  // meshes, then have three skip the whole group in its per-frame matrix walk.
+  // It shows only while one of its meshes does (the region batcher hides them
+  // as it draws them), so three's render and shadow walks skip it too.
+  const groupRef = useRef<THREE.Group>(null);
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.updateMatrixWorld(true);
+    group.matrixWorldAutoUpdate = false;
+    group.visible = group.children.some((child) => child.visible);
+  }, [cx, cz, geometries]);
 
   return (
-    // Static transforms: freeze matrices so Three doesn't recompose thousands of
-    // chunk matrices every frame. onUpdate runs after props apply, baking the matrix once.
+    // onUpdate runs after props apply, baking the matrix once.
     <group
+      ref={groupRef}
       position={[cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE]}
       matrixAutoUpdate={false}
       onUpdate={(g) => g.updateMatrix()}
     >
-        {geometries.opaque && <mesh ref={opaqueMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={matOpaque} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.cutout && <mesh ref={cutoutMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={matCutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {geometries.transparent && <mesh ref={transparentMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={matTransparent} castShadow={false} receiveShadow={false} />}
+        {/* Always the shared materials here: a fade swaps its own onto the meshes. */}
+        {geometries.opaque && <mesh ref={opaqueMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={sharedMaterials.solid} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
+        {geometries.cutout && <mesh ref={cutoutMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={sharedMaterials.cutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
+        {/* Water and glass: the front faces, with the back faces as a child
+            over the same geometry. The child is created first, so the two sort
+            together with the back faces drawn first (voxelMaterial.ts). */}
+        {geometries.transparent && (
+          <mesh ref={transparentMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={sharedMaterials.transparent} castShadow={false} receiveShadow={false}>
+            <mesh ref={transparentBackMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
+          </mesh>
+        )}
     </group>
   );
 };
@@ -365,3 +385,79 @@ export const ChunkMesh = React.memo(
         prev.fadeInEnabled === next.fadeInEnabled &&
         prev.fadingOut === next.fadingOut
 );
+
+type ChunkCoords = { cx: number; cz: number };
+
+interface ChunkFieldProps {
+  chunks: readonly ChunkCoords[];
+  shadowsEnabled: boolean;
+  fadeEnabled: boolean;
+}
+
+/**
+ * Every chunk's mesh, plus the ones fading out after leaving the render set.
+ * Kept apart from App so that App re-rendering (the HUD, hunger, a fade
+ * finishing) doesn't rebuild and re-diff some 1,800 chunk elements each time:
+ * this renders only when the chunk set changes or a fade-out ends.
+ */
+const ChunkFieldImpl: React.FC<ChunkFieldProps> = ({ chunks, shadowsEnabled, fadeEnabled }) => {
+  // Departing chunks stay in the list so their meshes can animate out. The refs
+  // are updated inside useMemo so there is never a frame where a chunk vanishes
+  // and then comes back as fading (an unmount and remount that loses its geometry).
+  const prevKeysRef = useRef<Map<string, ChunkCoords>>(new Map());
+  const fadingOutRef = useRef<Map<string, ChunkCoords>>(new Map());
+  const [fadingVersion, setFadingVersion] = useState(0);
+
+  const displayed = useMemo(() => {
+    void fadingVersion;
+    const currentKeys = new Set(chunks.map(c => `${c.cx},${c.cz}`));
+
+    // Newly departed chunks start fading.
+    if (fadeEnabled) {
+      for (const [key, chunk] of prevKeysRef.current) {
+        if (!currentKeys.has(key) && !fadingOutRef.current.has(key)) {
+          fadingOutRef.current.set(key, chunk);
+        }
+      }
+    }
+
+    // Chunks that came back stop fading; with fades off, none fade.
+    if (!fadeEnabled) {
+      fadingOutRef.current.clear();
+    } else {
+      for (const key of fadingOutRef.current.keys()) {
+        if (currentKeys.has(key)) fadingOutRef.current.delete(key);
+      }
+    }
+
+    prevKeysRef.current = new Map(chunks.map(c => [`${c.cx},${c.cz}`, c]));
+
+    return [
+      ...chunks.map(c => ({ cx: c.cx, cz: c.cz, fadingOut: false })),
+      ...[...fadingOutRef.current.values()].map(c => ({ cx: c.cx, cz: c.cz, fadingOut: true })),
+    ];
+  }, [chunks, fadeEnabled, fadingVersion]);
+
+  const handleFadeOutComplete = useCallback((cx: number, cz: number) => {
+    fadingOutRef.current.delete(`${cx},${cz}`);
+    setFadingVersion(v => v + 1);
+  }, []);
+
+  return (
+    <>
+      {displayed.map(c => (
+        <ChunkMesh
+          key={`${c.cx},${c.cz}`}
+          cx={c.cx}
+          cz={c.cz}
+          shadowsEnabled={shadowsEnabled}
+          fadeInEnabled={fadeEnabled}
+          fadingOut={c.fadingOut}
+          onFadeOutComplete={c.fadingOut ? () => handleFadeOutComplete(c.cx, c.cz) : undefined}
+        />
+      ))}
+    </>
+  );
+};
+
+export const ChunkField = React.memo(ChunkFieldImpl);

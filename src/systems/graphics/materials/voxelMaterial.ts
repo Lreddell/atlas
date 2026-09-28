@@ -490,7 +490,10 @@ function createVoxelMaterial(variant: VoxelVariant, map: THREE.Texture | null): 
 export interface VoxelMaterials {
     solid: THREE.MeshLambertMaterial;
     cutout: THREE.MeshLambertMaterial;
+    /** Water and glass, front faces. */
     transparent: THREE.MeshLambertMaterial;
+    /** Their back faces (see createVoxelMaterials). */
+    transparentBack: THREE.MeshLambertMaterial;
 }
 
 /**
@@ -517,58 +520,62 @@ ${windGlsl('atlasVoxelClassHere', 'atlasSwayBit')}`);
     return material;
 }
 
-/** The three shared chunk materials. */
+/**
+ * The shared chunk materials. Water and glass are split into their two sides.
+ * Three draws a double-sided transparent material as back faces then front
+ * faces by flipping the material's side, and every flip marks it for a program
+ * check: two per water mesh per frame, the costliest thing in a frame near
+ * water. Split, each side is an ordinary material:
+ * - A chunk's water draws as a front mesh with a back mesh under it (same
+ *   geometry, created first), so the two sort together, back faces first, as
+ *   three's own two-pass draw did.
+ * - A merged region draws every far region's back faces first (renderOrder -1)
+ *   and then the front faces: at that size a farther region's back faces (the
+ *   dark undersides round sunken plants) could otherwise land on a nearer
+ *   region's surface.
+ */
 export function createVoxelMaterials(map: THREE.Texture | null): VoxelMaterials {
+    const transparent = createVoxelMaterial('transparent', map);
+    transparent.side = THREE.FrontSide;
+    const transparentBack = createVoxelMaterial('transparent', map);
+    transparentBack.side = THREE.BackSide;
     return {
         solid: createVoxelMaterial('solid', map),
         cutout: createVoxelMaterial('cutout', map),
-        transparent: createVoxelMaterial('transparent', map),
+        transparent,
+        transparentBack,
     };
 }
 
-/**
- * Region-merged water and glass (regionBatcher.ts), split into its two sides.
- * Three draws a double-sided transparent mesh as back faces then front faces,
- * one object at a time; with regions that big, a farther region's back faces
- * (the dark undersides round sunken plants) could land on a nearer region's
- * surface. Drawing every far region's back faces first (renderOrder -1), then
- * the front faces sorted as usual, keeps the double-sided look without that.
- */
-export function createSplitTransparentMaterials(map: THREE.Texture | null): { front: THREE.MeshLambertMaterial; back: THREE.MeshLambertMaterial } {
-    const front = createVoxelMaterial('transparent', map);
-    front.side = THREE.FrontSide;
-    const back = createVoxelMaterial('transparent', map);
-    back.side = THREE.BackSide;
-    return { front, back };
-}
+/** Steps of the chunk dissolve: its 4x4 ordered dither shows 0 to 16 of every 16 pixels. */
+const VOXEL_FADE_STEPS = 16;
+const voxelFadeSteps: VoxelMaterials[] = [];
 
 /**
- * Clones for one fading chunk. They stay opaque (depth-writing) and dissolve
- * through atlasVoxelFade instead, so they sort and occlude like the shared ones.
+ * The materials for a chunk part-way through fading in or out (amount 0 is
+ * gone, 1 fully there). The dissolve's 4x4 ordered dither only has 17 steps,
+ * so the amount is rounded up to the step it would show anyway, and every
+ * chunk at that step shares one set: a chunk coming in no longer needs four
+ * materials of its own, each set up by three on first use and thrown away
+ * 0.4 s later. The solid and cutout ones stay opaque (depth-writing) and
+ * dissolve through atlasVoxelFade, so they sort and occlude like the shared ones.
  */
-export function createVoxelFadeMaterials(shared: VoxelMaterials, startFade: number): VoxelMaterials {
+export function getVoxelFadeMaterials(shared: VoxelMaterials, amount: number): VoxelMaterials {
+    const step = Math.min(VOXEL_FADE_STEPS, Math.max(0, Math.ceil(amount * VOXEL_FADE_STEPS)));
+    const existing = voxelFadeSteps[step];
+    if (existing) return existing;
     const clone = (source: THREE.MeshLambertMaterial, variant: VoxelVariant) => {
         const material = source.clone();
         installVoxelShader(material, { variant, fade: true });
-        material.userData.atlasFade.value = startFade;
+        material.userData.atlasFade.value = step / VOXEL_FADE_STEPS;
         return material;
     };
-    return {
+    const materials: VoxelMaterials = {
         solid: clone(shared.solid, 'solid'),
         cutout: clone(shared.cutout, 'cutout'),
         transparent: clone(shared.transparent, 'transparent'),
+        transparentBack: clone(shared.transparentBack, 'transparent'),
     };
-}
-
-/** 0 = fully dissolved, 1 = fully visible. */
-export function setVoxelFade(materials: VoxelMaterials, amount: number): void {
-    materials.solid.userData.atlasFade.value = amount;
-    materials.cutout.userData.atlasFade.value = amount;
-    materials.transparent.userData.atlasFade.value = amount;
-}
-
-export function disposeVoxelMaterials(materials: VoxelMaterials): void {
-    materials.solid.dispose();
-    materials.cutout.dispose();
-    materials.transparent.dispose();
+    voxelFadeSteps[step] = materials;
+    return materials;
 }

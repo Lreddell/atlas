@@ -42,6 +42,12 @@ export interface GeometryAttributes {
     tiles: Uint16Array;
     /** 16-bit whenever the vertices fit (nearly every chunk), halving the index memory. */
     indices: Uint16Array | Uint32Array;
+    /**
+     * The positions' box, min x y z then max x y z, found while copying them
+     * out here in the worker, so the main thread needn't walk every vertex
+     * to find it (THREE's computeBoundingSphere) for each mesh it takes in.
+     */
+    bounds?: [number, number, number, number, number, number];
 }
 
 /** A face whose uvs are atlas UVs already: sprites, fluids, beds, slabs and stairs. */
@@ -187,15 +193,28 @@ class GeometryBuffer {
 
     // Creates copies of the active region to send back
     slice(): GeometryAttributes {
+        const positions = this.positions.slice(0, this.vCount * 3);
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        for (let i = 0; i < positions.length; i += 3) {
+            const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
         return {
-            positions: this.positions.slice(0, this.vCount * 3),
+            positions,
             normals: this.normals.slice(0, this.vCount * 4),
             uvs: this.uvs.slice(0, this.vCount * 2),
             colors: this.colors.slice(0, this.vCount * 4),
             tiles: this.tiles.slice(0, this.vCount),
             indices: this.vCount <= 0x10000
                 ? Uint16Array.from(this.indices.subarray(0, this.iCount))
-                : this.indices.slice(0, this.iCount)
+                : this.indices.slice(0, this.iCount),
+            bounds: this.vCount > 0 ? [minX, minY, minZ, maxX, maxY, maxZ] : undefined,
         };
     }
 }

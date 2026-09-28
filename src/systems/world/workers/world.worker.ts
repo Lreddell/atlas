@@ -1,13 +1,17 @@
 import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
+import { createBorderScratch, unpackMeshBorders } from '../meshBorders';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
 
+// Side chunks rebuilt from a mesh job's border planes, reused job after job.
+const borderScratch = createBorderScratch();
+
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, light, borders, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
@@ -43,6 +47,7 @@ ctx.onmessage = (e) => {
         }
 
         // Generate geometry using data provided in the message.
+        const { neighbors, lights } = unpackMeshBorders(borders, light, borderScratch);
         const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
 
         const buffers: Transferable[] = [];

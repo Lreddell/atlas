@@ -72,6 +72,17 @@ interface Region {
 }
 
 export const regionOf = (chunk: number): number => Math.floor(chunk / REGION_CHUNKS);
+
+/**
+ * Shows or hides a chunk's mesh, and its chunk group with it: a group whose
+ * meshes are all drawn by a region is hidden too, so three's render and
+ * shadow walks skip it instead of visiting every mesh inside.
+ */
+const setChunkMeshVisible = (mesh: THREE.Object3D, visible: boolean): void => {
+    mesh.visible = visible;
+    const group = mesh.parent;
+    if (group && group.type === 'Group') group.visible = group.children.some((child) => child.visible);
+};
 const regionKey = (rx: number, rz: number) => `${rx},${rz}`;
 const chunkKey = (cx: number, cz: number) => `${cx},${cz}`;
 
@@ -285,7 +296,7 @@ export class RegionBatcher {
         if (region.transparentBack) region.transparentBack.visible = !region.near;
         for (const { candidate } of region.drawn.values()) {
             const own = candidate.meshes.transparent;
-            if (own) own.visible = region.near || !merged;
+            if (own) setChunkMeshVisible(own, region.near || !merged);
         }
     }
 
@@ -351,7 +362,7 @@ export class RegionBatcher {
         for (const { candidate } of nextDrawn.values()) {
             for (const layer of SOLID_LAYERS) {
                 const mesh = candidate.meshes[layer];
-                if (mesh) mesh.visible = false;
+                if (mesh) setChunkMeshVisible(mesh, false);
                 candidate.geometries[layer]?.dispose();
             }
         }
@@ -374,7 +385,7 @@ export class RegionBatcher {
                 index.needsUpdate = true;
             }
             const mesh = entry.candidate.meshes[layer];
-            if (mesh) mesh.visible = true;
+            if (mesh) setChunkMeshVisible(mesh, true);
         }
     }
 

@@ -393,9 +393,13 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
         return { positions, phases, speeds, magnitudes };
     }, []);
 
-    useFrame(({ clock }, delta) => {
+    useFrame(({ clock }, frameDelta) => {
         skyFrame.paused = isPaused;
         if (isPaused) return;
+        // Every blend below eases by the frame's delta. A negative or non-finite
+        // one (a clock handed timestamps in the wrong unit) would turn them NaN for
+        // good, exposure included, and the screen would stay black.
+        const delta = Number.isFinite(frameDelta) && frameDelta > 0 ? Math.min(frameDelta, 0.5) : 0;
 
         // Read time directly from WorldManager (synced with game ticks)
         const ticks = worldManager.getTime();
