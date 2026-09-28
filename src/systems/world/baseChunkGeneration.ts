@@ -427,6 +427,14 @@ function generateChunkInner(cx: number, cz: number) {
             const wdx = wx + noiseSet.offsets.weirdness.x;
             const wdz = wz + noiseSet.offsets.weirdness.z;
             const isBreachZone = isBreachColumn(cwx, cwz, caveNoise2D, caveCfg);
+            // Under the sea (this column's floor or a neighbour's), caves keep a
+            // rock seal below the lowest nearby seabed: breaking through left the
+            // ocean hanging over dry caves, dark holes seen from above.
+            let seabedSeal = Infinity;
+            for (const [ox, oz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const h = ox === 0 && oz === 0 ? height : getTerrainHeight(wx + ox, wz + oz, noiseSet);
+                if (h < 63) seabedSeal = Math.min(seabedSeal, h - 4);
+            }
 
             // Loop from top (MAX_Y) down to bottom (MIN_Y)
             for (let y = MAX_Y; y >= MIN_Y; y--) {
@@ -512,7 +520,7 @@ function generateChunkInner(cx: number, cz: number) {
                             // Carve caves (config-driven; identical to the editor preview).
                             const depth = height - y;
                             const taper = caveSurfaceTaper(depth, isBreachZone, caveCfg);
-                            if (isCaveCarved(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg)) {
+                            if (y < seabedSeal && isCaveCarved(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg)) {
                                 type = (y <= MIN_Y + caveCfg.lavaLevel) ? BlockType.LAVA : BlockType.AIR;
                             }
                         }

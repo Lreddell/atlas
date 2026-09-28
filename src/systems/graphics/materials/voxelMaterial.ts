@@ -381,6 +381,12 @@ ${CLOUD_SHADE_GLSL}
 
 const FRAGMENT_REFLECTIONS = /* glsl */`
 #if defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
+	// How many screen pixels one ripple texel (1/16 block) spans: taken before
+	// any branch. Once it drops to a pixel or two the ripples would only alias
+	// into grain, so they calm (seen from high up as well as far off).
+	vec2 atlasRippleCell = ( cameraPosition.xz + vAtlasFogOffset.xz ) * 16.0;
+	float atlasRippleSpan = max( length( dFdx( atlasRippleCell ) ), length( dFdy( atlasRippleCell ) ) );
+	float atlasRippleSharp = 1.0 - smoothstep( 0.25, 0.6, atlasRippleSpan );
 	// Water and glass reflect the sky and the sun or moon, more at grazing angles.
 	if ( atlasVoxelStyle.y > 0.5 && gl_FrontFacing ) {
 		vec3 atlasEye = normalize( vAtlasFogOffset );
@@ -388,7 +394,7 @@ const FRAGMENT_REFLECTIONS = /* glsl */`
 		bool atlasIsWater = vVoxelClass > 2.5 && vVoxelClass < 3.5;
 		// Ripples on the 16-texel grid, so the surface reads as pixel art up close;
 		// they calm with distance, where they would only alias into stripes.
-		float atlasRippleFade = 1.0 - smoothstep( 10.0, 40.0, length( vAtlasFogOffset ) );
+		float atlasRippleFade = ( 1.0 - smoothstep( 10.0, 40.0, length( vAtlasFogOffset ) ) ) * atlasRippleSharp;
 		if ( atlasIsWater && atlasN.y > 0.5 && atlasRippleFade > 0.0 ) {
 			vec2 atlasCell = floor( ( cameraPosition.xz + vAtlasFogOffset.xz ) * 16.0 ) / 16.0;
 			float atlasT = atlasVoxelLight.w;
