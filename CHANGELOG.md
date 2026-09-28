@@ -12,92 +12,94 @@ Versions follow the existing `vX.Y.Z-alpha` scheme.
 A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and frame your adventure.
 
 ### Highlights
-- Explore the Luminous visual style with richer skies, readable nights, reflective water, animated foliage, and new lighting and shadows.
+- Explore the Luminous visual style: a new sky and haze, readable moonlit nights, reflective water, swaying foliage, soft or pixel shadows, and clouds that reach the horizon and shade the ground.
 - Face the Magnetic Warden, Aegis, and Storm in a rebuilt three-form encounter driven by polarity and tower crystals.
 - Dodge, dash, and launch with a new movement kit, timed weapon attacks, and clearer combat feedback.
 - Play in free or over-the-shoulder third person, set up a detached camera, and choose or import your own skin.
-- Enjoy lighter chunk rendering, saved ground items, smoother menus, and the new Luminous Coast panorama.
-- Grow and bake with the new farming, find recipes in the recipe book, and play through a redrawn interface of ink, parchment and brass.
+- Grow and bake with the new farming, find recipes in the recipe book, and rebind any key on the new Controls screen.
+- Play through a redrawn interface of ink, parchment and brass, with new vitals, menus and inventory screens.
+- Enjoy lighter chunk rendering, saved ground items, water that flows by Minecraft's rules, and the new Luminous Coast panorama.
 
 ### Luminous World & Atmosphere
-- A shared sky and distance haze blend terrain and water into the horizon. Warm sunlight, cool shade, moon phases, stars, auroras, meteors, and blood moons give each time of day its own look.
-- Clouds have solid volume and sky lighting, remain visible from every direction, and no longer disappear into the terrain's render-distance haze.
-- Water reflects the sky and sun; lava flows and glows. Wind moves foliage, while fireflies, pollen, snow, embers, and magnetic sparks bring movement to the world.
-- Torches, crystals, lava, blocks, the player, and Vault enemies share more consistent lighting. Caves stay dark and readable instead of inheriting daylight.
-- Improved sun shadows and open-air haze, fixed light leaking through hills and glowing night edges, and made block texture variations consistent between launches.
+- One sky and distance haze blend terrain and water into the horizon. Warm sunlight and cool shade give each time of day its own look, and moonlit nights stay readable instead of going black.
+- The night sky is redrawn, from its twinkling and shooting stars to the moon's phases, auroras and blood moons.
+- Clouds are solid, lit volumes that reach the horizon. They cast drifting shadows on the ground, show in water, and hide the sun, moon and stars behind them.
+- Water reflects the sky, sun and clouds, and lava glows. Wind sways plants and leaves, and fireflies, pollen, snow, embers, cave dust and magnetic sparks drift through the world.
+- The Magnetic Fields have a lighter purple haze and sky that thickens only in the distance.
+- Torches, crystals and lava light the world warmly, and the player and Vault enemies take the light of the world around them. Underground your eyes adjust, so caves stay dark but readable at any time of day.
+- Block textures look the same every time you launch the game.
 
 ### Video Settings
-- Choose Low, Medium, High, or Ultra graphics quality, then adjust individual options. First launch selects a conservative preset based on the detected GPU.
-- Switch between Luminous and Classic visual styles. Classic offers a simpler look while keeping the new graphics controls.
-- Presets balance clouds, reflections, bloom, god rays, ambient particles, and anti-aliasing. Video Settings also lets you adjust resolution, mipmaps, shadow style, and chunk fade.
-- Motion Blur affects only the 3D scene, leaving the HUD and menus sharp. Ultra enables it by default; other presets leave it off. It stays restrained and resets across camera cuts, teleports, respawns, and panorama captures.
-- View Bobbing can be toggled in Video Settings. Fixed motion blur darkening the scene and improved shadow stability as the camera moves.
-- Pixel is the default shadow style for every quality preset. Pixel shadows use Low quality or can be switched off; Medium and High remain available with Soft shadows.
-- The default render distance is now 16 chunks. Existing saved render-distance choices are preserved.
-- Removed the custom cloud-image upload control from Video Settings.
+- Choose Low, Medium, High, or Ultra graphics, or change any option for a Custom setup. On first launch the game picks a preset for your graphics card (never Ultra), and if it runs below about 40 fps through the first minute it suggests the next one down. It never lowers the preset by itself.
+- Visual Style switches between Luminous and Classic. Classic brings back the old look: flat light, the old sky and fog, and no glow, god rays, reflections, wind or particles.
+- Presets set shadows, bloom, god rays, water reflections, foliage wind, ambient particles, cloud quality, resolution, and motion blur.
+- New options: Resolution (the pixel density the world renders at on high-DPI screens), Shadow Style, Motion Blur, and View Bobbing. Sun Shadows is now Shadows, from Off to High, and Load Custom Clouds is gone.
+- Shadow Style is Pixel by default: crisp shadows stepped on the textures' 16-pixel grid, at Low quality or off. Soft shadows also go up to Medium and High.
+- Motion Blur blurs only the 3D scene, never the HUD or menus. Ultra turns it on and the other presets leave it off. It stays restrained and resets across camera cuts, teleports, respawns, and panorama captures.
+- The default render distance is 16 chunks, up from 8. A render distance you already chose is kept.
 
 ### The Magnetic Warden
-- The encounter now unfolds across three distinct forms: Warden, Aegis, and Storm. Early forms have more health and tighter attack pacing, and the boss keeps pressure across the arena.
+- The encounter now unfolds across three distinct forms: Warden, Aegis, and Storm. The boss has 400 health, up from 240; the Aegis takes over at 250 and the Storm at 100. It keeps up the pressure across the whole arena.
 - Polarity drives the fight: same polarity repels, opposite attracts. Matching bolts bounce off active Polarity Boots; opposing the exposed boss lets your strikes land.
-- Tower crystals shield every form. Break one crystal in Form I, two in Form II, and all four relit crystals in Form III. Shields do not expire on their own.
-- Lit tower faces follow the boss's polarity. Climb with the opposite polarity, then press R during the warning window when a tower flips to keep your grip; missing it shocks you away.
-- Form I mixes volleys, Lash, Charge, and a Draw into a Repel burst. Lash and Charge develop delayed follow-up swings, and white-marked melee attacks must be avoided regardless of polarity.
+- Tower crystals shield every form: break one crystal in Form I, two in Form II, and all four, relit, in Form III. A shield never runs out on its own.
+- A lit tower takes the boss's polarity. Climb it with the opposite polarity, and when it flips, press Flip Polarity (R) inside the warning window to keep your grip; miss it and you are shocked off.
+- Form I mixes volleys, Lash, Charge, and a Draw into a Repel burst. Lash and Charge have delayed follow-up swings, and white-marked melee attacks must be dodged whatever your polarity.
 - The Aegis follows tower climbers with aimed volleys and side sweeps, with each crystal powering a different pattern. Breaking both brings it down onto dry ground for a damage window; tracking slams also threaten the platform.
 - The Storm combines timed polarity flips, expanding rings, spiral bolts, double beats, and tracking slams. The slam marker turns white when its target locks; the central impact hurts regardless of polarity.
-- Breaking a shield or landing a Magnet Slam creates a clear opening. The final stretch accelerates the Storm's rhythm and sends its orbiting shards into the fight.
-- Removed the old Flux burst, burning tethers, projectile parry, and unannounced polarity feint. Contact with the boss's body alone no longer deals damage.
-- Shield beams, charged towers, phase markers, an off-screen boss compass, and clearer white Charge lanes help track the encounter. Ground warnings match the attack areas, and unnecessary projectile target circles are gone.
-- A new defeat cinematic follows the Warden's collapse and the towers going dark. Press Space to skip it.
+- Breaking a shield or landing a Magnet Slam creates a clear opening. The final stretch speeds up the Storm's rhythm and sends its orbiting shards into the fight.
+- Gone from the old fight: parrying bolts back at the boss, unannounced polarity feints, and damage from simply touching the boss.
+- The boss bar names the current form and shows which crystals still stand, or EXPOSED when the boss can be hurt. Charged towers glow, white lanes mark the Charge, an off-screen compass points to the boss, and ground warnings match each attack's area.
+- A new defeat cinematic follows the Warden's collapse and the towers going dark. Press Jump (Space) to skip it.
 
 ### Combat & Magnetic Movement
-- Press C to dodge roll without special gear, including in mid-air. Rolls give brief invulnerability and protect against fall damage when you roll through the landing.
-- Rolls now use stamina and have a recovery period. Combat readouts show readiness, stamina, and cooldowns, while a failed input flashes feedback near the crosshair.
-- With active Polarity Boots, C also performs a dash toward an opposite magnet face, a repel leap away from a matching Warden, or a launch off a wall toward the landing pools.
+- Press Dodge (C) to roll, with no special gear, even in mid-air. Rolls give brief invulnerability, and rolling through a landing cancels its fall damage.
+- Rolls use stamina and have a short recovery. Readouts show your stamina and when you can roll again, and a press that can't be taken flashes by the crosshair.
+- With active Polarity Boots, Dodge also dashes you to an opposite magnet face, leaps you away from a matching Warden, or launches you off a wall toward the landing pools.
 - Dash into an opposed, exposed Warden to ready a Magnet Slam: your next strike deals 2.5 times damage and staggers it.
-- Melee attacks have weapon-specific windup, hit timing, and recovery, with matching held-item motion. Weapon tooltips expose useful timing information.
-- Improved buffered dodge inputs, interaction timing, and input cleanup so actions are less likely to disappear between updates or remain stuck after leaving a menu.
-- Polarity, tower warnings, attack readiness, and dodge feedback have clearer placement without covering the hotbar item name or health display.
+- Melee attacks have weapon-specific windup, hit timing, and recovery, with matching held-item motion. Weapon tooltips show attack speed.
+- Placing blocks and using items keep the same pace at any frame rate (they ran faster on high-refresh screens), and switching items or opening a menu stops any eating or mining in progress.
 
 ### Cameras, Skins & Player Animation
 - F5 toggles free third person: orbit the camera while your character moves independently, with sprinting available in every direction.
-- F6 toggles over-the-shoulder third person, keeping the body aligned with the camera. Both views use a camera arm that responds to nearby blocks.
-- F7 cycles the detached camera: fly it into position, press again to park it and control your character, then press again to return to the player view.
-- Boss fights start in free third person and restore your previous view afterward. Camera transitions, cinematic recovery, and detached-camera cleanup are more reliable.
-- Choose a skin from the preview carousel or import a Minecraft skin. The jointed player model shows held items, equipped armor, eating, attacks, climbing, rolls, and magnetic moves.
-- First-person hands and the camera respond to walking, sprinting, sneaking, jumping, and landing. Your full body casts a shadow even in first person.
-- Mining uses ten crack stages and flying block chips. Dropped items, deaths, HUD changes, and menu transitions have smoother animation.
-- Boat passengers now sit and row, with corrected aiming and boat heading in third person.
-- Improved eye-based aiming, block selection outlines, and interaction alignment across camera modes.
+- F6 toggles over-the-shoulder third person, keeping the body aligned with the camera. Both views hang the camera on an arm that pulls in from nearby blocks.
+- F7 cycles the detached camera: fly it into position, press again to park it and keep playing through it, then press again to return to the player view.
+- F1 hides the HUD, your hand and the block outline, for clean screenshots.
+- Boss fights start in free third person and restore your previous view afterward.
+- Choose a skin from the preview carousel in Options > Skins, or import a Minecraft skin. The jointed player model shows held items, equipped armor, eating, attacks, climbing, rolls, and magnetic moves.
+- First-person hands and the camera respond to walking, sprinting, sneaking, jumping, and landing. Your whole body casts a shadow, even in first person.
+- Mining shows ten crack stages and knocks chips off the block. Dropped items bob and fly to you when picked up, and Vault enemies settle into the floor when they die.
+- The hotbar frame slides between slots, your health flashes when you are hit and twitches when low, and chat lines fade out on time.
+- In boats you sit and row.
 
 ### Menus & Panoramas
-- Luminous Coast is the new bundled default for menu and loading backgrounds. The original panorama remains available as Classic Atlas in Options > Menu Background.
-- Keep using your own captured or imported panoramas, with named built-in choices that are protected from deletion.
-- The short Video Settings fade now also appears on matching menu pages, tutorial and editor tabs, creative inventory categories, loading panels, and dialogs. These fades respect reduced-motion preferences.
-- What's New now includes this full update, with older releases still selectable. Its panel and version buttons use the same square, beveled styling as the rest of the menus.
+- Luminous Coast is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Menu Background.
+- Your own captured or imported panoramas still work, and the built-in ones can't be deleted.
+- Menus, dialogs, the inventory, and the loading and death screens ease in, and World Editor sections fade between pages. These skip their motion if your system asks for reduced motion.
 
 ### Interface
-- Every menu, dialog and screen is redrawn: navy panels in brass frames, parchment text, and brass for the action that matters on each screen. Text uses the Pixelify Sans pixel font, sized so it stays crisp; chat, commands and the F3 screen use Monocraft.
+- Menus, dialogs, the HUD and the inventory are redrawn: navy panels in brass frames, parchment text, and brass for the action that matters on each screen. Text uses the Pixelify Sans pixel font, sized so it stays crisp; chat, commands and the F3 screen use Monocraft.
 - The title screen has a new ATLAS wordmark.
 - New vitals: life crystals for health, loaves for hunger, steel plates for armor, and bubbles for breath, with the same ten pips and half pips as before. Together they are exactly as wide as the hotbar, and the selected hotbar slot has a brass frame.
-- The inventory is narrower and no longer runs off the screen beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.
+- The boss bar sits in a brass frame under a name plate, keeping its bright polarity colours.
+- The inventory is narrower, so it fits beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.
 - Create New World picks a terrain preset with a World Type button instead of a drop-down list.
 - The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the colour from the world.
 - Chat stays clear of the hotbar on smaller screens, and the tutorial marks which section is open.
 
 ### Sound & Low Health
-- At four hearts or less, a heartbeat and crimson screen-edge pulse warn that health is low. The heartbeat speeds up as health falls and clears after you recover to five hearts.
-- The low-health effect stays beneath the polarity rim so the boss's red and blue cues remain readable. Low health no longer changes the music pitch.
-- Updated Magnetic Warden and Bell Titan fight music, stabilized encounter music transitions, and corrected how night and boss-phase pitch changes combine.
-- Creative mode falls back to normal biome and cave music when its dedicated music folder is empty.
-- Added feedback sounds for magnetic movement and tower events.
+- At four hearts or less, a heartbeat and a crimson pulse around the screen warn that your health is low. The heartbeat quickens as health falls and stops once you are back to five hearts.
+- The low-health pulse sits beneath the polarity rim, so the boss's red and blue cues stay readable.
+- New Magnetic Warden and Bell Titan fight music and steadier music changes during encounters. At night, a boss's frenzy now adds its pitch change to the night slowdown instead of replacing it.
+- Creative mode plays the normal biome and cave music when its own music folder is empty.
+- New feedback sounds for magnetic movement and tower events.
 
 ### Water & Lava
-- Water and lava flow by Minecraft's rules. Water spreads seven blocks, one level lower each block, and runs toward the nearest drop within four blocks; lava spreads three blocks and moves six times slower.
+- Water and lava now flow by Minecraft's rules. Water spreads seven blocks, one level lower each block, and runs toward the nearest drop within four blocks; lava spreads three blocks and moves six times slower.
 - Flowing water falls in columns and spreads out where it lands. A flow cut off from its source drains away, and water between two sources on solid ground becomes a new source.
-- Lava that water touches hardens, a source into obsidian and flowing lava into cobblestone, and lava pouring into water turns it to stone.
+- Lava pouring down into water turns the water to stone.
 - Water and lava surfaces slope between neighbouring levels, and flows saved partway continue once their area loads again.
 - Large floods no longer stall the game: moving water relights the world in batches instead of block by block.
-- Caves no longer break through the sea floor and leave dark holes in the ocean, and distant water no longer shimmers with fine grain.
+- Caves no longer break through the sea floor and leave dark holes in the ocean.
 
 ### Farming & Trees
 - Till grass or dirt with a hoe to make farmland, then plant wheat seeds on it. Hold the button to till or plant along a row.
@@ -113,34 +115,34 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 
 ### Controls & Getting Started
 - A new Controls screen in Options sets mouse sensitivity and inverted look, and rebinds any key: click an action and press its new key. Keys bound twice show in red, and every key can be reset.
-- Music & Sounds sliders are named for what they control: Ambient & Events, Enemies & Bosses, Player, and Interface. The unused Friendly Creatures slider is gone.
+- Music & Sounds sliders are named for what they play: Weather is now Ambient & Events, Hostile Creatures is Enemies & Bosses, Players is Player, and Voice/Speech is Interface. The unused Friendly Creatures slider is gone.
 - The Tutorial now covers the first recipes, where food comes from, beds, every key, and how to find the Magnetic Fields.
-- New worlds prefer to start outside dark forests, swamps, and jungles, and never inside the sealed Magnetic Fields.
+- You never spawn or respawn inside a still-sealed Magnetic Fields region, and a new world's first spawn steers clear of dark forests, swamps, and jungles.
 
 ### Worlds & Menus
 - Each world now has Allow Commands. It is off for new Survival worlds and on for Creative and Spectator, unless you choose otherwise when creating the world. With it off, only /help, /sound and /music work.
 - World Options in the pause menu switches Allow Commands, Keep Inventory (which now saves with the world) and Show Coordinates, and shows the world's seed.
 - Show Coordinates puts your position in the corner of the screen.
 - The Magnetic Fields are much closer: the nearest is usually about two thousand blocks from where you start. Resonant Vaults never generate inside them.
-- The title screen is now Singleplayer, World Editor, Options and Tutorial or Quit. Panorama settings moved to Options > Menu Background, and saved worlds list their mode and seed.
+- The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama settings moved to Options > Menu Background, and saved worlds list their mode and seed.
 
 ### Performance & Memory
-- Adjacent full-block faces are combined into larger surfaces while preserving tiled textures, reducing the geometry needed to draw the world.
-- Settled chunks are drawn together in small regions with tighter visibility bounds, reducing repeated rendering work.
-- Chunk geometry uses more compact data, and empty chunks no longer reserve unused block metadata. This reduces memory overhead as more chunks are loaded.
-- Water and glass no longer build unnecessary faces against chunks that have not loaded yet.
-- Boss lighting uses the shared world light system to avoid rebuilding terrain shaders when an encounter starts.
-- Expanded development performance diagnostics make it easier to investigate slowdowns at different quality settings and render distances.
+- Adjacent full-block faces merge into larger surfaces while keeping their tiled textures, so the world takes far less geometry to draw.
+- Settled chunks draw together in small regions with tight visibility bounds, cutting repeated rendering work.
+- Chunk geometry uses more compact data, and empty chunks no longer reserve block metadata, so memory grows more slowly as chunks load.
+- Water and glass no longer build faces against chunks that have not loaded yet.
+- Starting a boss fight no longer hitches: boss lights use the world's shared light system instead of making every terrain shader rebuild.
 
 ### Saves & Gameplay Fixes
 - Items on the ground now save with the world, including their remaining despawn time. Reloading no longer deletes dropped supplies or boss loot that has not yet landed.
 - Items stop being pulled toward dead players and cannot be collected in the first moments after respawning.
 - Fast-moving bodies no longer pass through thin floors and walls, and blocks cannot be placed inside entities.
-- The world clock now stays in step with player simulation under heavy load.
-- Refusing or losing mouse capture no longer causes a fatal input error, and camera recovery avoids sudden look changes.
-- Fixed recovery after cinematics and panorama capture, including returning control to the correct camera mode.
+- The world clock stays in step with the player under heavy load.
+- A refused or lost mouse capture no longer crashes to an error screen.
+- Panorama capture (F8) renders its six views off-screen in a single moment instead of switching your field of view to 90 and turning your camera.
+- If blocks ever appear inside you, you are moved to the nearest open space instead of being stuck.
 - Desktop Ctrl+W, Ctrl+R, and Ctrl+Q no longer close, reload, or quit the game during movement and item dropping.
-- In-game overlays now share the HUD's display layer so combat readouts and menu effects stack consistently.
+- The boss bar and the polarity block and tint no longer draw over the pause menu and inventory.
 
 ## [v1.2.0-alpha]: 2026-08-01
 
