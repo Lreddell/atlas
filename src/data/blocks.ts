@@ -219,7 +219,10 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.SPRUCE_SAPLING]: { id: BlockType.SPRUCE_SAPLING, color: '#1b5e20', name: 'Spruce Sapling', textureSlot: 146, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.BIRCH_SAPLING]: { id: BlockType.BIRCH_SAPLING, color: '#81c784', name: 'Birch Sapling', textureSlot: 147, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
   [BlockType.CHERRY_SAPLING]: { id: BlockType.CHERRY_SAPLING, color: '#f48fb1', name: 'Cherry Sapling', textureSlot: 148, hardness: 0, isItem: true, isFuel: true, fuelValue: 5000, transparent: true, noCollision: true, category: 'natural' },
-  [BlockType.WHEAT_SEEDS]: { id: BlockType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, category: 'natural' },
+  // Planted on farmland, the seed is the wheat crop itself (its block data the growth stage).
+  [BlockType.WHEAT_SEEDS]: { id: BlockType.WHEAT_SEEDS, color: '#a5d6a7', name: 'Wheat Seeds', textureSlot: 73, hardness: 0, isItem: true, transparent: true, noCollision: true, category: 'natural' },
+  [BlockType.WHEAT]: { id: BlockType.WHEAT, color: '#d9b44a', name: 'Wheat', textureSlot: 135, hardness: 0, isItem: true, category: 'ingredients' },
+  [BlockType.BREAD]: { id: BlockType.BREAD, color: '#b87838', name: 'Bread', textureSlot: 136, hardness: 0, isItem: true, category: 'food', nutrition: 5, saturationModifier: 0.6 },
 
   // --- SLABS (half blocks; reuse the parent block's atlas texture) ---
   [BlockType.OAK_SLAB]: { id: BlockType.OAK_SLAB, color: '#8d6e63', name: 'Oak Slab', textureSlot: 8, textureParent: BlockType.OAK_PLANKS, shape: 'slab', transparent: true, hardness: 2.0, preferredTool: 'axe', isFuel: true, fuelValue: 7500, category: 'building', drops: [{ type: BlockType.OAK_SLAB, chance: 1, min: 1, max: 1 }] },

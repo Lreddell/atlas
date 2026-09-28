@@ -26,8 +26,10 @@ import {
 import { soundManager } from '../../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../../systems/sound/blockSoundGroups';
 import { getLunarNightEventState } from '../../systems/world/celestialEvents';
-import { isSaplingType, isValidSoil } from '../../systems/world/trees';
+import { isLeafType, isSaplingType, isValidSoil } from '../../systems/world/trees';
+import { LEAF_PLACED_BIT } from '../../systems/world/leafDecay';
 import { isPlacementReplaceable, needsSupport, hasSupportBelow } from '../../systems/world/blockProps';
+import { cropDrops, cropStage, isCrop, isFarmland, isHoe, tillResult } from '../../systems/world/farming';
 import { voxelRaycast } from '../../systems/world/voxelRaycast';
 import { STAIR_FACE_POS_Z, STAIR_FACE_NEG_Z, STAIR_FACE_POS_X, STAIR_FACE_NEG_X, SLAB_DOUBLE, isShaped, isSlab, getSelectionBoxes } from '../../systems/world/blockShapes';
 import { buildSelectionEdges } from '../../systems/world/shapedGeometry';
@@ -453,6 +455,49 @@ export const InteractionController = ({
                 }
             }
 
+            // Farming. A hoe tills the top of grass or dirt into farmland; a seed
+            // plants on farmland. Holding the button keeps going along a row.
+            const farmItem = inventoryRef.current[selectedSlotRef.current] as { type: BlockType; count: number } | null;
+            if (farmItem && hit.ny === 1 && (isHoe(farmItem.type) || isCrop(farmItem.type))) {
+                const now = Date.now();
+                if (isContinuous && now - lastPlacementTime.current < 200) return;
+                const aboveType = worldManager.tryGetBlock(bx, by + 1, bz);
+                if (aboveType === null) return;
+                const targetMeta = worldManager.getMetadata(bx, by, bz);
+                const worked = (soundBlock: BlockType, x: number, y: number, z: number) => {
+                    const group = getBlockSoundGroup(soundBlock);
+                    soundManager.playAt(`block.${group}.place`, { x: x + 0.5, y: y + 0.5, z: z + 0.5 });
+                    emitPlacementAnimation();
+                    lastPlacementTime.current = now;
+                };
+                if (isHoe(farmItem.type)) {
+                    const tilled = tillResult(targetType, targetMeta);
+                    // Grass and dead bushes on top are cleared by the hoe; anything else blocks it.
+                    const clearsAbove = aboveType === BlockType.GRASS_PLANT || aboveType === BlockType.DEAD_BUSH;
+                    if (tilled && (aboveType === BlockType.AIR || clearsAbove)
+                        && canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: tilled.type })) {
+                        if (clearsAbove) {
+                            if (gameMode === 'survival') {
+                                BLOCKS[aboveType].drops?.forEach((d) => { if (Math.random() < d.chance) spawnDrop(d.type, bx, by + 1, bz); });
+                            }
+                            worldManager.setBlock(bx, by + 1, bz, BlockType.AIR);
+                        }
+                        worldManager.setBlock(bx, by, bz, tilled.type, tilled.meta);
+                        if (gameMode === 'survival') damageHeldItem(selectedSlotRef.current, 1);
+                        worked(targetType, bx, by, bz);
+                    }
+                    return; // a hoe never places anything
+                }
+                if (isFarmland(targetType, targetMeta) && aboveType === BlockType.AIR
+                    && canPlayerEdit(bx, by + 1, bz, { kind: 'place', currentBlock: aboveType, placedBlock: farmItem.type })) {
+                    worldManager.setBlock(bx, by + 1, bz, farmItem.type, 0);
+                    if (gameMode === 'survival') consumeItem(selectedSlotRef.current);
+                    worked(farmItem.type, bx, by + 1, bz);
+                    return;
+                }
+                if (isContinuous) return;
+            }
+
             if (targetType === BlockType.WATER || targetType === BlockType.LAVA) {
                 // Placing: using a held Boat item on a water cell spawns a boat
                 // entity there. Survival consumes the item; creative doesn't.
@@ -588,7 +633,10 @@ export const InteractionController = ({
                 if (heldItem.type === BlockType.TORCH || heldItem.type === BlockType.BED_ITEM || !playerAABB.intersectsBox(blockAABB)) {
                     
                     let rotation = 0;
-                    if (isLogBlock(heldItem.type)) {
+                    // Leaves a player places never decay.
+                    if (isLeafType(heldItem.type)) {
+                        rotation = LEAF_PLACED_BIT;
+                    } else if (isLogBlock(heldItem.type)) {
                         if (Math.abs(hit.ny) > 0.5) rotation = 0;
                         else if (Math.abs(hit.nx) > 0.5) rotation = 1;
                         else if (Math.abs(hit.nz) > 0.5) rotation = 2;
@@ -698,7 +746,7 @@ export const InteractionController = ({
             attackItem.current = null;
             window.dispatchEvent(new CustomEvent('atlas:weapon-used', { detail: { kind: profile.kind } }));
         }
-    }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping]);
+    }, [camera, consumeInventoryType, consumeItem, damageHeldItem, gameMode, isDead, onSleepInBed, onPlaceBoat, onEnterBoat, setOpenContainer, setIsSleeping, spawnDrop]);
 
     // Melee resolves reach and recovery from the selected weapon. Conventional
     // items retain the original short-range path; the crossbow fires only on use.
@@ -1101,6 +1149,8 @@ export const InteractionController = ({
                     // A double slab is one block but yields two slabs, capture its meta
                     // before the cell is cleared.
                     const isDoubleSlab = isSlab(targetType) && (worldManager.getMetadata(bx, by, bz) & SLAB_DOUBLE) !== 0;
+                    // A crop drops by its growth stage (ripe wheat, or its seed back).
+                    const cropStageBroken = isCrop(targetType) ? cropStage(worldManager.getMetadata(bx, by, bz)) : -1;
                     // Breaking a Magnetic Shield Crystal weakens the Magnetic Warden's shield.
                     if (targetType === BlockType.MAGNETIC_SHIELD_CRYSTAL) {
                         gameEvents.emit('crystal:broken', { x: bx, y: by, z: bz, regionId: getRegionAt(bx, by, bz)?.id ?? null });
@@ -1129,7 +1179,11 @@ export const InteractionController = ({
 
                         if (canHarvest) {
                             droppedItems.forEach(item => spawnDrop(item, bx, by, bz));
-                            if (targetDef.drops) {
+                            if (cropStageBroken >= 0) {
+                                for (const drop of cropDrops(targetType, cropStageBroken)) {
+                                    for (let i = 0; i < drop.count; i++) spawnDrop(drop.type, bx, by, bz);
+                                }
+                            } else if (targetDef.drops) {
                                 targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
                             } else {
                                 spawnDrop(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType, bx, by, bz);
@@ -1184,7 +1238,8 @@ export const InteractionController = ({
             } else {
                 eatingTimer.current = 0;
                 inputState.eating = false;
-                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM)) {
+                if (heldItem && heldItemDef && (!heldItemDef.isItem || heldItem.type === BlockType.BED_ITEM
+                    || isHoe(heldItem.type) || isCrop(heldItem.type))) {
                     performInteraction(true);
                 }
             }

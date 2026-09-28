@@ -89,6 +89,13 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Large floods no longer stall the game: moving water relights the world in batches instead of block by block.
 - Caves no longer break through the sea floor and leave dark holes in the ocean, and distant water no longer shimmers with fine grain.
 
+### Farming & Trees
+- Till grass or dirt with a hoe to make farmland, then plant wheat seeds on it. Hold the button to till or plant along a row.
+- Water within four blocks keeps farmland dark and moist, and wheat on moist soil grows much faster. Crops need light to grow.
+- Wheat grows through eight stages. Harvest it golden for wheat and extra seeds: three wheat in a row make bread.
+- Dry, empty farmland turns back to dirt, a block set on top packs it down, and a hard landing tramples it. Water washing over a crop drops its harvest.
+- Felled trees shed their leaves a few seconds later, dropping the saplings, apples and sticks they held. Leaves you place never fall.
+
 ### Controls & Getting Started
 - A new Controls screen in Options sets mouse sensitivity and inverted look, and lists every key.
 - Music & Sounds sliders are named for what they control: Ambient & Events, Enemies & Bosses, Player, and Interface. The unused Friendly Creatures slider is gone.

@@ -10,6 +10,7 @@ import { BLOCKS } from '../../data/blocks';
 import { getItemStats, getMaxDurability } from './itemStats';
 import { getPlayerWeaponProfile } from '../combat/vaultWeapons';
 import { getResonantHotbarSummary, getResonantPurpose } from '../../data/resonantGuide';
+import { farmingPurpose } from '../world/farmingItems';
 
 export interface TooltipLine {
     text: string;
@@ -21,10 +22,10 @@ export interface ItemTooltip {
     lines: TooltipLine[];
 }
 
-// Mining-tool display names. Hoes are deliberately absent: Atlas has no
-// tilling/farmland system, so hoes carry no toolType/toolSpeed in BLOCKS and
-// have no mining stat to show, they still display Attack and Durability via
-// ITEM_STATS like any other weapon-ish tool.
+// Mining-tool display names. Hoes are deliberately absent: they don't mine,
+// they till (farming.ts), so they carry no toolType/toolSpeed in BLOCKS and have
+// no mining stat to show; they still display Attack and Durability via
+// ITEM_STATS like any other weapon-ish tool, and a line saying what they till.
 const TOOL_NAMES: Record<string, string> = {
     pickaxe: 'Pickaxe',
     axe: 'Axe',
@@ -84,6 +85,9 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
         const saturation = def.nutrition * (def.saturationModifier ?? 0) * 2;
         lines.push({ text: `Food: +${def.nutrition} hunger, +${Math.round(saturation * 10) / 10} saturation`, tone: 'stat' });
     }
+
+    const farming = farmingPurpose(stack.type);
+    if (farming) lines.push({ text: farming, tone: 'purpose' });
 
     for (const purpose of getResonantPurpose(stack.type)) {
         lines.push({ text: purpose, tone: 'purpose' });

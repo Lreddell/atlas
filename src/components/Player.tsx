@@ -56,6 +56,7 @@ import { addExhaustion, EXHAUSTION_COSTS, type FoodState } from '../systems/play
 import { soundManager } from '../systems/sound/SoundManager';
 import { getBlockSoundGroup } from '../systems/sound/blockSoundGroups';
 import { getFallDamageMultiplierForLandingBlock } from '../systems/player/fallDamage';
+import { TRAMPLE_FALL } from '../systems/world/farming';
 import { isEditableElement } from '../utils/dom';
 
 export interface PlayerHandle {
@@ -965,6 +966,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(({
                     // Polarity boots cushion the impact (fallDamageFactor < 1 while
                     // the ability is active; upgraded boots cushion more).
                     applyDamage(Math.ceil((fallDistance.current - SAFE_FALL) * multiplier * fallDamageFactor), true);
+                }
+                // A hard landing (not a normal jump, and not rolled through)
+                // tramples farmland back to dirt.
+                if (fallDistance.current >= TRAMPLE_FALL && landedBlock === BlockType.DIRT && !rollAbsorbsLanding(motion.current)) {
+                    worldManager.trampleFarmland(Math.floor(simRes.position.x), Math.floor(simRes.position.y - 0.2), Math.floor(simRes.position.z));
                 }
                 fallDistance.current = 0;
             }

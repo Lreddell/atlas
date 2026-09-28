@@ -6,6 +6,10 @@ import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { CROSS_RENDERED_BLOCKS } from '../../data/spriteBlocks';
 import { index3D } from './worldCoords';
 import { resolveTexture, resolveTile } from './textureResolver';
+import { cropTextureSlot, isCrop, isFarmland } from './farming';
+
+/** Where a crop's four planes stand, as fractions of the block (Minecraft's #). */
+const CROP_PLANE_OFFSETS = [0.25, 0.75] as const;
 import { getOpacity } from './blockProps';
 import { isShaped, getShapeBoxes } from './blockShapes';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
@@ -622,8 +626,10 @@ export function generateGeometryData(
                             const a1 = aoVectors[k][0], a2 = aoVectors[k][1];
                             writeCorner(cornerScratch, k * 4, alpha, nx, ny, nz, a1[0], a1[1], a1[2], true, a2[0], a2[1], a2[2], true);
                         }
-                        const choice = resolveTile(type, layout.name, dx, dy, dz, metaData ? metaData[index] : 0);
-                        const tile = packTile(choice.texIdx, choice.uvRot, uvVariationMode(type));
+                        const cellMeta = metaData ? metaData[index] : 0;
+                        const choice = resolveTile(type, layout.name, dx, dy, dz, cellMeta);
+                        // Farmland's furrows run one way: never turned or mirrored like dirt.
+                        const tile = packTile(choice.texIdx, choice.uvRot, isFarmland(type, cellMeta) ? 0 : uvVariationMode(type));
                         const sky = cornerScratch[0], block = cornerScratch[1], ao = cornerScratch[2];
                         if (cornerScratch[4] === sky && cornerScratch[8] === sky && cornerScratch[12] === sky
                             && cornerScratch[5] === block && cornerScratch[9] === block && cornerScratch[13] === block
@@ -744,8 +750,10 @@ export function generateGeometryData(
               // Plants bend from the root: only their top corners sway.
               const alphaTop = voxelClassOf(type) === VoxelClass.PLANT ? alphaBottom | SWAY_BIT : alphaBottom;
               
-              const texIdx = def.textureSlot || 0;
-              
+              const crop = isCrop(type);
+              // A crop shows its growth stage.
+              const texIdx = crop ? cropTextureSlot(type, metaData ? metaData[index] : 0) : (def.textureSlot || 0);
+
               const col = texIdx % ATLAS_COLS;
               const row = Math.floor(texIdx / ATLAS_COLS);
               
@@ -757,9 +765,32 @@ export function generateGeometryData(
               const v1 = 1.0 - (pxY / atlasHeight);
               const v0 = 1.0 - ((pxY + ATLAS_RAW_TILE_SIZE) / atlasHeight);
 
+              if (crop) {
+                  // Minecraft's crop shape: four upright planes in a #, a quarter in from each side.
+                  for (const offset of CROP_PLANE_OFFSETS) {
+                      targetBuffer.pushQuad(
+                          x+offset, y, z,
+                          x+offset, y, z+1,
+                          x+offset, y+1, z+1,
+                          x+offset, y+1, z,
+                          0, 1, 0,
+                          u0, u1, v0, v1, sky, blockLight, 255, alphaBottom, alphaTop
+                      );
+                      targetBuffer.pushQuad(
+                          x, y, z+offset,
+                          x+1, y, z+offset,
+                          x+1, y+1, z+offset,
+                          x, y+1, z+offset,
+                          0, 1, 0,
+                          u0, u1, v0, v1, sky, blockLight, 255, alphaBottom, alphaTop
+                      );
+                  }
+                  continue;
+              }
+
               const min = 0.0;
               const max = 1.0;
-              
+
               // Cross 1
               targetBuffer.pushQuad(
                   x+min, y, z+min,

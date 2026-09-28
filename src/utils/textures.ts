@@ -16,6 +16,7 @@ import {
     PR19_TEXTURE_ASSETS,
     PR19_TEXTURE_TILES,
 } from '../systems/textures/pr19TexturePixels';
+import { FARM_TEXTURE_TILES, paintFarmTile } from '../systems/textures/farmTexturePixels';
 
 // Constants for UV mapping
 export const ATLAS_RAW_TILE_SIZE = 16;
@@ -801,6 +802,11 @@ export const generateAtlasCanvas = (externalImages: Record<number, HTMLImageElem
     PR19_TEXTURE_ASSETS.forEach(({ slot }) => {
         withTile(slot, () => paintPixelTile(ctx, PR19_TEXTURE_TILES[slot]));
     });
+
+    // Farming: farmland, the wheat stages, wheat and bread.
+    for (const [slot, tile] of Object.entries(FARM_TEXTURE_TILES)) {
+        withTile(Number(slot), () => paintFarmTile(ctx, tile));
+    }
 
     // 169: Packed Ice, denser, more crystalline ice for the Ice Spikes biome.
     withTile(169, () => {

@@ -58,6 +58,7 @@ const PLANT_BLOCKS = [
     BlockType.GRASS_PLANT, BlockType.ROSE, BlockType.DANDELION, BlockType.PINK_FLOWER, BlockType.DEAD_BUSH,
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
     BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
+    BlockType.WHEAT_SEEDS,
 ];
 
 // Resonant Vault blocks glow faintly at most: the vault look is restrained

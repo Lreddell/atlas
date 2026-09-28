@@ -2,6 +2,7 @@
 import { BlockType } from '../../types';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
 import { getAtlasDimensions, ATLAS_RAW_TILE_SIZE, ATLAS_PADDING, ATLAS_STRIDE } from '../../utils/textures';
+import { farmlandTopSlot, isFarmland } from './farming';
 
 export type FaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
 
@@ -35,8 +36,12 @@ export function resolveTile(
 
     // --- Block Specific Texture Override Logic ---
 
+    // 0. Farmland: tilled dirt shows furrows on top (darker when moist), dirt elsewhere.
+    if (isFarmland(type, rotation)) {
+        texIdx = dy === 1 ? farmlandTopSlot(rotation) : 0;
+    }
     // 1. Grass Block
-    if (type === BlockType.GRASS) {
+    else if (type === BlockType.GRASS) {
         if (dy === 1) texIdx = 1; // Top
         else if (dy === -1) texIdx = 0; // Bottom
         else texIdx = 12; // Side

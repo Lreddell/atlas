@@ -6,6 +6,7 @@ import { worldToChunk, index3D } from './worldCoords';
 import { MIN_Y, MAX_Y } from '../../constants';
 import { worldManager } from '../WorldManager';
 import { isWashable } from './blockProps';
+import { cropDrops, cropStage, isCrop } from './farming';
 
 // Water and lava flow, on the world's tick.
 //
@@ -206,7 +207,14 @@ function spreadTo(state: WorldState, x: number, y: number, z: number, type: Bloc
         resetReads();
         return;
     }
-    if (isWashable(target)) worldManager.spawnDrop(target, x, y, z);
+    if (isCrop(target)) {
+        // A washed-out crop drops what breaking it would (ripe wheat and its seeds).
+        for (const drop of cropDrops(target, cropStage(metaAt(state, x, y, z)))) {
+            for (let i = 0; i < drop.count; i++) worldManager.spawnDrop(drop.type, x, y, z);
+        }
+    } else if (isWashable(target)) {
+        worldManager.spawnDrop(target, x, y, z);
+    }
     worldManager.setBlock(x, y, z, type, level); // schedules it and its neighbours
     resetReads();
     meetOtherFluid(state, type, x, y, z);

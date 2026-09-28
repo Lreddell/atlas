@@ -5,6 +5,9 @@ export enum BlockType {
   DIRT = 1,
   GRASS = 2,
   STONE = 3,
+  // Farming (1.3.0) takes the two ids no release ever used; farmland itself
+  // is tilled DIRT (a bit in its block data), so it needs none.
+  BREAD = 4,
   LEAVES = 5,
   SAND = 6,
   WATER = 7,
@@ -75,6 +78,7 @@ export enum BlockType {
   BIRCH_LOG = 87,
   BIRCH_LEAVES = 88,
   BIRCH_PLANKS = 89,
+  WHEAT = 90,
 
   // New Ores
   GOLD_ORE = 96,

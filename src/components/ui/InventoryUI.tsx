@@ -132,7 +132,10 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.RAW_COPPER, BlockType.COPPER_INGOT, 
     BlockType.RAW_GOLD, BlockType.GOLD_INGOT,
     BlockType.DIAMOND, BlockType.EMERALD, BlockType.LAPIS_LAZULI,
-    BlockType.STICK,
+    BlockType.STICK, BlockType.WHEAT,
+
+    // --- FOOD ---
+    BlockType.APPLE, BlockType.BANANA, BlockType.LUMEN_BERRY, BlockType.BREAD, BlockType.FORAGERS_BOWL,
 
     // --- FUNCTIONAL ---
     BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.CHEST, BlockType.TORCH, BlockType.BED_ITEM

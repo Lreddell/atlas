@@ -39,6 +39,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Two planks above two sticks make a wooden pickaxe, right in the inventory grid. Four planks make a Crafting Table for the 3x3 recipes.',
             'Mine stone for cobblestone: stone tools, and a Furnace (eight cobblestone in a ring) to smelt ore. Coal or charcoal on a stick makes torches.',
             "Food: apples fall from oak leaves, bananas from jungle leaves, and glowing Lumen Berries from cave glow lichen. One of each, in a row at a Crafting Table, makes a Forager's Bowl.",
+            'Farm for steady food: a hoe (right-click) tills grass or dirt into farmland, and wheat seeds from tall grass plant on it. Water within four blocks keeps the soil dark and moist, and the wheat grows much faster. Harvest it golden: three wheat in a row make bread.',
             'A bed (three wool over three planks) lets you sleep through the night and sets your respawn point. Four wheat seeds, found in tall grass, weave into one wool.'
         ]
     },

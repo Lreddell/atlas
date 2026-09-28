@@ -13,6 +13,11 @@ import { getBiome } from './world/biomes';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
 import { needsSupport, hasSupportBelow, getOpacity } from './world/blockProps';
+import { clearFarmIndex, cropDrops, cropStage, isCrop, isFarmland, noteFarmland, tickFarms, untillFarmland, type FarmWorld } from './world/farming';
+import { CROSS_RENDERED_BLOCKS } from '../data/spriteBlocks';
+import { clearLeafDecay, noteLogRemoved, tickLeafDecay, type LeafWorld } from './world/leafDecay';
+import { isLogBlock } from './registry/blockFamilies';
+import { isLeafType } from './world/trees';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
@@ -300,6 +305,8 @@ export class WorldManager {
     this.pendingMeshDark.clear();
     // Water still flowing in the last world must not flow on in the next.
     Fluids.clearFluidUpdates();
+    clearFarmIndex();
+    clearLeafDecay();
     this.pendingRelight = [];
     this.fluidJobsWaiting = false;
 
@@ -1575,9 +1582,13 @@ export class WorldManager {
   tick(delta: number) {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
+      // Water and falling leaves change many blocks a tick: their relights are
+      // batched together (see beginFluidTick).
+      this.leafClock += 1 / 20;
       this.beginFluidTick();
       try {
           Fluids.processFluids(this.state);
+          tickLeafDecay(this.leafWorld, this.leafClock);
       } finally {
           this.endFluidTick();
       }
@@ -1591,7 +1602,44 @@ export class WorldManager {
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
       });
+      tickFarms(this.farmWorld);
   }
+
+  /** Seconds of world ticks, for leaf decay's timing (the world clock can jump with /time). */
+  private leafClock = 0;
+
+  /** What leaf decay sees of the world (built once; leafDecay.ts owns the rules). */
+  private readonly leafWorld: LeafWorld = {
+      tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
+      getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+      setBlock: (x, y, z, type) => { this.setBlock(x, y, z, type); },
+      spawnDrop: (type, x, y, z) => this.spawnDrop(type, x, y, z),
+      isLeaf: (type) => isLeafType(type),
+      isLog: (type) => isLogBlock(type),
+      leafDrops: (type) => (BLOCKS[type]?.drops ?? []).filter((d) => Math.random() < d.chance).map((d) => d.type),
+      getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+      getTickCenter: () => this.desiredCenter,
+  };
+
+  /** A hard landing on farmland packs it back to dirt and knocks its crop off. */
+  trampleFarmland(x: number, y: number, z: number): void {
+      if (!isFarmland(this.getBlock(x, y, z, false), this.getMetadata(x, y, z))) return;
+      untillFarmland(this.farmWorld, x, y, z);
+  }
+
+  /** What the farm tick sees of the world (built once; farming.ts owns the rules). */
+  private readonly farmWorld: FarmWorld = {
+      tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
+      getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+      setBlockData: (x, y, z, meta) => this.setBlockData(x, y, z, meta),
+      setBlock: (x, y, z, type, meta) => { this.setBlock(x, y, z, type, meta ?? 0); },
+      spawnDrop: (type, x, y, z) => this.spawnDrop(type, x, y, z),
+      getLight: (x, y, z) => this.getLight(x, y, z),
+      getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+      getChunkMetadata: (cx, cz) => WorldStore.getMetadataData(this.state, cx, cz) ?? null,
+      getTickCenter: () => this.desiredCenter,
+      isOpenPlant: (type) => CROSS_RENDERED_BLOCKS.has(type) && !!BLOCKS[type]?.noCollision && !isCrop(type),
+  };
 
   getTime(): number { return this.state.time; }
   setTime(t: number) { this.state.time = t; }
@@ -1708,6 +1756,9 @@ export class WorldManager {
     chunk[index] = type;
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;
+    if (isFarmland(type, rotation)) noteFarmland(x, y, z);
+    // A log gone: the leaves it held up may fall.
+    if (oldType !== type && isLogBlock(oldType as BlockType) && !isLogBlock(type)) noteLogRemoved(x, y, z);
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
     if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, Fluids.fluidDelay(type)); }
@@ -1802,6 +1853,28 @@ export class WorldManager {
         this.fluidJobsWaiting = false;
         this.processStreamingJobs();
     }
+  }
+
+  /**
+   * A block's data changing in place, its type the same: a crop growing a
+   * stage, farmland drying or soaking, farmland packed back to plain dirt.
+   * Nothing about the cell's light changes, so it skips setBlock's relight,
+   * stair and support checks: new data, a remesh, and a save.
+   */
+  setBlockData(x: number, y: number, z: number, value: number): void {
+    if (y < MIN_Y || y > MAX_Y) return;
+    const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+    const chunk = this.getChunkData(cx, cz, true);
+    if (!chunk) return;
+    const index = WorldCoords.index3D(lx, y, lz);
+    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
+    if (meta[index] === value) return;
+    meta[index] = value;
+    if (isFarmland(chunk[index] as BlockType, value)) noteFarmland(x, y, z);
+    WorldStore.notifyChunk(this.state, cx, cz);
+    this.queueMesh(cx, cz, -500);
+    this.markQueuesDirty();
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
 
   /**
@@ -1919,8 +1992,14 @@ export class WorldManager {
     const t = this.getBlock(x, y, z, false);
     if (t === BlockType.AIR || !needsSupport(t)) return;
     const below = this.getBlock(x, y - 1, z, false);
-    if (hasSupportBelow(t, below)) return;
-    this.spawnDrop(t, x, y, z);
+    if (hasSupportBelow(t, below) && (!isCrop(t) || isFarmland(below, this.getMetadata(x, y - 1, z)))) return;
+    if (isCrop(t)) {
+        for (const drop of cropDrops(t, cropStage(this.getMetadata(x, y, z)))) {
+            for (let i = 0; i < drop.count; i++) this.spawnDrop(drop.type, x, y, z);
+        }
+    } else {
+        this.spawnDrop(t, x, y, z);
+    }
     this.setBlock(x, y, z, BlockType.AIR);
   }
   setWorkersEnabled(val: boolean) {

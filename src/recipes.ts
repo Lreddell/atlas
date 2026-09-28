@@ -357,6 +357,9 @@ for (const a of ARMOR_SETS) {
 // bed ingredient, i.e. respawn anchors) had no survival source at all.
 push(2, [BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS, BlockType.WHEAT_SEEDS], BlockType.WOOL, 1);
 
+// Bread from three wheat in a row (a 3x3 recipe: bake it at a Crafting Table).
+push(3, [BlockType.WHEAT, BlockType.WHEAT, BlockType.WHEAT, null, null, null, null, null, null], BlockType.BREAD, 1);
+
 // Packed ice from ice (Ice Spikes material, otherwise creative-only to build with).
 push(2, [BlockType.ICE, BlockType.ICE, BlockType.ICE, BlockType.ICE], BlockType.PACKED_ICE, 1);
 

@@ -32,6 +32,8 @@ export const CROSS_RENDERED_BLOCKS: ReadonlySet<BlockType> = new Set([
     BlockType.POINTED_DRIPSTONE,
     BlockType.GLOW_LICHEN,
     BlockType.AMETHYST_CLUSTER,
+    // Crops (a planted seed), drawn in a # of four planes by the mesher.
+    BlockType.WHEAT_SEEDS,
     // Resonant Vault crystal and hazard sprites (transparent-background tiles).
     BlockType.ECHO_CRYSTAL,
     BlockType.ECHO_SPIKES,
