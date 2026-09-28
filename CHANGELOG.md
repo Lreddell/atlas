@@ -102,10 +102,17 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Click a recipe to lay its ingredients into the grid, or shift-click for as many crafts as you can make. Whatever was in the grid goes back to your inventory first.
 
 ### Controls & Getting Started
-- A new Controls screen in Options sets mouse sensitivity and inverted look, and lists every key.
+- A new Controls screen in Options sets mouse sensitivity and inverted look, and rebinds any key: click an action and press its new key. Keys bound twice show in red, and every key can be reset.
 - Music & Sounds sliders are named for what they control: Ambient & Events, Enemies & Bosses, Player, and Interface. The unused Friendly Creatures slider is gone.
 - The Tutorial now covers the first recipes, where food comes from, beds, every key, and how to find the Magnetic Fields.
 - New worlds prefer to start outside dark forests, swamps, and jungles, and never inside the sealed Magnetic Fields.
+
+### Worlds & Menus
+- Each world now has Allow Commands. It is off for new Survival worlds and on for Creative and Spectator, unless you choose otherwise when creating the world. With it off, only /help, /sound and /music work.
+- World Options in the pause menu switches Allow Commands, Keep Inventory (which now saves with the world) and Show Coordinates, and shows the world's seed.
+- Show Coordinates puts your position in the corner of the screen.
+- The Magnetic Fields are much closer: the nearest is usually about two thousand blocks from where you start. Resonant Vaults never generate inside them.
+- The title screen is now Singleplayer, World Editor, Options and Tutorial or Quit. Panorama settings moved to Options > Menu Background, and saved worlds list their mode and seed.
 
 ### Performance & Memory
 - Adjacent full-block faces are combined into larger surfaces while preserving tiled textures, reducing the geometry needed to draw the world.
