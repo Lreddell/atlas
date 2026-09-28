@@ -43,6 +43,8 @@ export interface WorldMetadata {
     keepInventory?: boolean;
     /** The HUD shows the player's position. Absent -> off. */
     showCoordinates?: boolean;
+    /** Every item the player has held: the recipe book shows the recipes these go into. */
+    knownItems?: number[];
     player?: PlayerData; // Last known player state
     spawnPoint?: { x: number, y: number, z: number } | null;
     worldSpawn?: { x: number, y: number, z: number } | null;

@@ -36,6 +36,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         bullets: [
             'Create world: Singleplayer -> Create New World, then pick Survival, Creative, or Spectator.',
             'Hold left click on a tree for logs. In your inventory (E), one log makes four planks, and two planks stacked make four sticks.',
+            'The recipe book (the book beside the crafting grid) lists every recipe you have found an ingredient for. Click one to lay it into the grid; shift-click for as many as you can make.',
             'Two planks above two sticks make a wooden pickaxe, right in the inventory grid. Four planks make a Crafting Table for the 3x3 recipes.',
             'Mine stone for cobblestone: stone tools, and a Furnace (eight cobblestone in a ring) to smelt ore. Coal or charcoal on a stick makes torches.',
             "Food: apples fall from oak leaves, bananas from jungle leaves, and glowing Lumen Berries from cave glow lichen. One of each, in a row at a Crafting Table, makes a Forager's Bowl.",

@@ -150,6 +150,14 @@ export const CHANGELOG: ChangelogEntry[] = [
                 ]
             },
             {
+                "title": "Recipe Book",
+                "items": [
+                    "A recipe book opens beside the crafting grid, in your inventory and at a Crafting Table. It lists every recipe you have held an ingredient for, so a new world starts with planks and it fills in as you gather.",
+                    "Search it, sort it by Blocks, Tools & Gear, Food, or Materials, or show only what you can make now. Recipes you can make come first; red ones are missing an ingredient, and a table mark means it needs a Crafting Table.",
+                    "Click a recipe to lay its ingredients into the grid, or shift-click for as many crafts as you can make. Whatever was in the grid goes back to your inventory first."
+                ]
+            },
+            {
                 "title": "Controls & Getting Started",
                 "items": [
                     "A new Controls screen in Options sets mouse sensitivity and inverted look, and lists every key.",

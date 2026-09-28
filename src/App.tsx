@@ -103,6 +103,7 @@ import {
   ItemStack,
   Drop,
 } from './types';
+import type { Recipe } from './recipes';
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
 import { inputState, resetInputState } from './systems/player/playerInput';
@@ -606,7 +607,8 @@ const App: React.FC = () => {
       craftingGrid3x3, setCraftingGrid3x3,
       craftingOutput,
       handleInventoryAction,
-      addToInventory
+      addToInventory,
+      fillRecipe,
   } = useInventoryController({ 
       gameMode, 
       setDrops, 
@@ -615,6 +617,26 @@ const App: React.FC = () => {
       equipment,
       setEquipment,
   });
+
+  // Every item the player has held, saved with the world: the recipe book
+  // shows the recipes these go into.
+  const knownItemsRef = useRef<Set<BlockType>>(new Set());
+  const [knownItems, setKnownItems] = useState<ReadonlySet<BlockType>>(() => new Set());
+  useEffect(() => {
+      const known = knownItemsRef.current;
+      let learned = false;
+      const note = (stack: ItemStack | null | undefined) => {
+          if (stack && !known.has(stack.type)) { known.add(stack.type); learned = true; }
+      };
+      inventory.forEach(note);
+      note(cursorStack);
+      Object.values(equipment).forEach(note);
+      if (learned) setKnownItems(new Set(known));
+  }, [inventory, cursorStack, equipment]);
+  const recipeBook = useMemo(() => ({
+      known: gameMode === 'creative' ? 'all' as const : knownItems,
+      onFill: (recipe: Recipe, all: boolean) => { if (fillRecipe(recipe, all)) soundManager.play('ui.click', { pitch: 1.2 }); },
+  }), [gameMode, knownItems, fillRecipe]);
 
   const isInventoryOpenRef = useRef(false);
   const isCommandOpenRef = useRef(false);
@@ -818,7 +840,7 @@ const App: React.FC = () => {
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory, showCoordinates });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory, showCoordinates, known: knownItems.size });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -837,6 +859,7 @@ const App: React.FC = () => {
           meta.allowCommands = allowCommands;
           meta.keepInventory = keepInventory;
           meta.showCoordinates = showCoordinates;
+          meta.knownItems = [...knownItemsRef.current];
           meta.player = playerData;
           meta.spawnPoint = spawnPoint;
           meta.worldSpawn = worldSpawn;
@@ -863,7 +886,7 @@ const App: React.FC = () => {
               worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory, showCoordinates]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory, showCoordinates, knownItems]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -3028,6 +3051,8 @@ const App: React.FC = () => {
       setAllowCommands(meta.allowCommands ?? true);
       setKeepInventory(meta.keepInventory ?? false);
       setShowCoordinates(meta.showCoordinates ?? false);
+      knownItemsRef.current = new Set((meta.knownItems ?? []) as BlockType[]);
+      setKnownItems(new Set(knownItemsRef.current));
       setWorldInfo({ name: meta.name, seed: meta.seed.trim() || String(meta.seedNum) });
       worldManager.setTime(meta.time);
 
@@ -3351,7 +3376,7 @@ const App: React.FC = () => {
                     {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
                     {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
                     {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} worldOptions={worldInfo ? { ...worldInfo, gameMode, allowCommands, onAllowCommands: setAllowCommands, keepInventory, onKeepInventory: setKeepInventory, showCoordinates, onShowCoordinates: setShowCoordinates } : undefined} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} recipeBook={recipeBook} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
                             bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : 'Bell Titan'}

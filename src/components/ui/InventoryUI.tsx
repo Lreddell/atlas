@@ -21,6 +21,8 @@ import { canStacksMerge, cloneItemStack, getItemStackLimit } from '../../systems
 import type { EquipmentSlot } from '../../types';
 import { HOTBAR_KEY_ACTIONS } from '../../systems/player/keyBindings';
 import { isKeyFor } from '../../systems/player/keyBindingStore';
+import { RecipeBookButton, RecipeBookPanel } from './RecipeBookPanel';
+import type { Recipe } from '../../recipes';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
@@ -33,7 +35,17 @@ interface InventoryUIProps {
     cursorStack: ItemStack | null;
     handleInventoryAction: InventoryActionHandler;
     equipment: Equipment;
+    /** The recipe book beside the crafting grid: what the player knows, and filling the grid. */
+    recipeBook?: {
+        known: ReadonlySet<BlockType> | 'all';
+        onFill: (recipe: Recipe, all: boolean) => void;
+    };
 }
+
+const RECIPE_BOOK_OPEN_KEY = 'atlas.ui.recipeBookOpen.v1';
+const readBookOpen = (): boolean => {
+    try { return window.localStorage.getItem(RECIPE_BOOK_OPEN_KEY) !== 'false'; } catch { return true; }
+};
 
 type SlotCollection = DragTargetSlot['collection'];
 
@@ -145,8 +157,13 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     inventory, openContainer, setOpenContainer,
     craftingGrid2x2, craftingGrid3x3, craftingOutput,
     cursorStack, handleInventoryAction,
-    equipment
+    equipment, recipeBook,
 }) => {
+    const [bookOpen, setBookOpen] = useState(readBookOpen);
+    const toggleBook = () => setBookOpen((open) => {
+        try { window.localStorage.setItem(RECIPE_BOOK_OPEN_KEY, String(!open)); } catch { /* per-player convenience only */ }
+        return !open;
+    });
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, lines: TooltipLine[], x: number, y: number} | null>(null);
     const [activeTab, setActiveTab] = useState<CreativeTab>('building');
@@ -657,7 +674,17 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={handleBackdropContextMenu}
         >
-            <div className={`flex flex-col gap-0 relative atlas-panel-in ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
+            <div className={`flex items-start gap-3 atlas-panel-in ${openContainer.type === 'creative' || openContainer.type === 'inventory' ? '' : 'scale-110'}`} onClick={stopPropagation}>
+            {recipeBook && bookOpen && (openContainer.type === 'inventory' || openContainer.type === 'crafting') && (
+                <RecipeBookPanel
+                    gridWidth={openContainer.type === 'crafting' ? 3 : 2}
+                    inventory={inventory}
+                    known={recipeBook.known}
+                    onFill={recipeBook.onFill}
+                    onHover={setHoverInfo}
+                />
+            )}
+            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : ''}`}>
                 
                 {openContainer.type === 'creative' && (
                     <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">
@@ -738,7 +765,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                 {renderPlayerInventory()}
 
                                 {openContainer.type === 'inventory' && (
-                                    <div className="absolute left-full top-2 ml-6 flex w-[208px] items-center gap-1">
+                                    <div className="absolute left-full top-2 ml-6 flex w-[256px] items-center gap-1">
+                                        {recipeBook && <RecipeBookButton open={bookOpen} onToggle={toggleBook} />}
                                         <div className="grid w-[116px] shrink-0 grid-cols-2 gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
                                             {craftingGrid2x2.map((item, index) => renderSlot(item, 'crafting', index))}
                                         </div>
@@ -792,6 +820,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-6">
+                                            {recipeBook && <RecipeBookButton open={bookOpen} onToggle={toggleBook} />}
                                             <div className={`grid ${openContainer.type === 'crafting' ? 'grid-cols-3' : 'grid-cols-2'} gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white`}>
                                                 {(openContainer.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2).map((it, i) => renderSlot(it, 'crafting', i))}
                                             </div>
@@ -806,7 +835,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
                 </div>
             </div>
-            
+            </div>
+
             {hoverInfo && !isDragging && (
                 <div
                     className="fixed pointer-events-none z-[70] max-w-[280px] bg-black/90 text-white px-2 py-1 text-sm shadow-lg"

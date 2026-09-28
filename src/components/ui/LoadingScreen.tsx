@@ -6,6 +6,8 @@ import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 // World loading tips. Add more entries here to expand the tip pool.
 const LOADING_TIPS = [
     "Press E to open your inventory. Atlas includes both 2x2 and 3x3 crafting.",
+    "The recipe book beside the crafting grid learns a recipe the moment you pick up one of its ingredients.",
+    "Shift-click a recipe in the recipe book to fill the grid for as many crafts as your materials allow.",
     "Use the mouse wheel or number keys 1-9 to switch hotbar slots instantly.",
     "Press Q to drop the selected item. Ctrl+Q drops the whole stack.",
     "Press / to open command input with autocomplete for supported commands.",

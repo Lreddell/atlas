@@ -40,7 +40,8 @@ test('player inventory stays centered with evenly spaced equipment and crafting 
     assert.match(inventory, /absolute right-full top-2 mr-6 flex items-start gap-1/);
     assert.match(inventory, /renderEquipmentSlot\('accessory'\)/);
     assert.match(inventory, /ARMOR_EQUIPMENT_SLOTS\.map\(renderEquipmentSlot\)/);
-    assert.match(inventory, /absolute left-full top-2 ml-6 flex w-\[208px\] items-center gap-1/);
+    // The crafting group: the recipe book button, the 2x2 grid, the arrow and the output.
+    assert.match(inventory, /absolute left-full top-2 ml-6 flex w-\[256px\] items-center gap-1/);
 });
 
 test('survival crafting uses the crisp Minecraft arrow and a normal output slot', () => {
