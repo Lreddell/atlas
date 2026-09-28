@@ -17,6 +17,7 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Dodge, dash, and launch with a new movement kit, timed weapon attacks, and clearer combat feedback.
 - Play in free or over-the-shoulder third person, set up a detached camera, and choose or import your own skin.
 - Enjoy lighter chunk rendering, saved ground items, smoother menus, and the new Luminous Coast panorama.
+- Grow and bake with the new farming, find recipes in the recipe book, and play through a redrawn interface of ink, parchment and brass.
 
 ### Luminous World & Atmosphere
 - A shared sky and distance haze blend terrain and water into the horizon. Warm sunlight, cool shade, moon phases, stars, auroras, meteors, and blood moons give each time of day its own look.
@@ -73,6 +74,15 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Keep using your own captured or imported panoramas, with named built-in choices that are protected from deletion.
 - The short Video Settings fade now also appears on matching menu pages, tutorial and editor tabs, creative inventory categories, loading panels, and dialogs. These fades respect reduced-motion preferences.
 - What's New now includes this full update, with older releases still selectable. Its panel and version buttons use the same square, beveled styling as the rest of the menus.
+
+### Interface
+- Every menu, dialog and screen is redrawn: navy panels in brass frames, parchment text, and brass for the action that matters on each screen. Text uses the Pixelify Sans pixel font, sized so it stays crisp; chat, commands and the F3 screen use Monocraft.
+- The title screen has a new ATLAS wordmark.
+- New vitals: life crystals for health, loaves for hunger, steel plates for armor, and bubbles for breath, with the same ten pips and half pips as before. Together they are exactly as wide as the hotbar, and the selected hotbar slot has a brass frame.
+- The inventory is narrower and no longer runs off the screen beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.
+- Create New World picks a terrain preset with a World Type button instead of a drop-down list.
+- The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the colour from the world.
+- Chat stays clear of the hotbar on smaller screens, and the tutorial marks which section is open.
 
 ### Sound & Low Health
 - At four hearts or less, a heartbeat and crimson screen-edge pulse warn that health is low. The heartbeat speeds up as health falls and clears after you recover to five hearts.
