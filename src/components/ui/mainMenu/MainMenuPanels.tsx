@@ -19,6 +19,8 @@ interface CreateWorldPanelProps {
     onSeedChange: (value: string) => void;
     gameMode: GameMode;
     onCycleGameMode: () => void;
+    allowCommands: boolean;
+    onToggleAllowCommands: () => void;
     worldGenPresets: WorldGenPresetEntry[];
     selectedWorldGenPresetId: string;
     onSelectedWorldGenPresetIdChange: (value: string) => void;
@@ -33,6 +35,8 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
     onSeedChange,
     gameMode,
     onCycleGameMode,
+    allowCommands,
+    onToggleAllowCommands,
     worldGenPresets,
     selectedWorldGenPresetId,
     onSelectedWorldGenPresetIdChange,
@@ -75,6 +79,20 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
                     {gameMode === 'survival' && 'Gather resources, craft gear, and manage your health and hunger.'}
                     {gameMode === 'creative' && 'Unlimited resources, free flying and destroy blocks instantly.'}
                     {gameMode === 'spectator' && "You can look but don't touch."}
+                </p>
+            </div>
+
+            <div className="space-y-1">
+                <label className="pl-1 text-xs font-pixel uppercase text-gray-400">Commands</label>
+                <MenuButton
+                    label={`Allow Commands: ${allowCommands ? 'ON' : 'OFF'}`}
+                    onClick={onToggleAllowCommands}
+                    width="w-full"
+                />
+                <p className="pl-1 text-[10px] font-pixel italic leading-tight text-gray-500">
+                    {allowCommands
+                        ? 'Commands like /gamemode, /giveitem and /tp work in this world.'
+                        : 'No cheat commands. You can change this later in World Options.'}
                 </p>
             </div>
 

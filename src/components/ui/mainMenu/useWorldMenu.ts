@@ -24,6 +24,9 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     const [worldName, setWorldName] = useState('New World');
     const [seed, setSeed] = useState('');
     const [gameMode, setGameMode] = useState<GameMode>('survival');
+    // Commands follow the game mode (off for Survival) until the player sets them.
+    const [allowCommands, setAllowCommands] = useState(false);
+    const [allowCommandsChosen, setAllowCommandsChosen] = useState(false);
     const [worldGenPresets, setWorldGenPresets] = useState<WorldGenPresetEntry[]>([]);
     const [selectedWorldGenPresetId, setSelectedWorldGenPresetId] = useState('');
     const [menuNotice, setMenuNotice] = useState<UiNoticeState | null>(null);
@@ -75,7 +78,14 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
     }, [loadWorlds, refreshWorldGenPresets, refreshStorageInfo]);
 
     const cycleGameMode = useCallback(() => {
-        setGameMode((current) => WORLD_GAME_MODES[(WORLD_GAME_MODES.indexOf(current) + 1) % WORLD_GAME_MODES.length]);
+        const next = WORLD_GAME_MODES[(WORLD_GAME_MODES.indexOf(gameMode) + 1) % WORLD_GAME_MODES.length];
+        setGameMode(next);
+        if (!allowCommandsChosen) setAllowCommands(next !== 'survival');
+    }, [allowCommandsChosen, gameMode]);
+
+    const toggleAllowCommands = useCallback(() => {
+        setAllowCommands((current) => !current);
+        setAllowCommandsChosen(true);
     }, []);
 
     const handleCreateWorld = useCallback(async () => {
@@ -89,13 +99,14 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
                 selectedPreset?.config,
                 selectedPreset?.id ?? null,
                 selectedPreset?.name ?? null,
+                { allowCommands },
             );
             onStart(meta.id);
         } catch (error) {
             console.error('[MainMenu] Failed to create world:', error);
             setMenuNotice({ type: 'error', message: 'Failed to create the world.' });
         }
-    }, [gameMode, onStart, seed, selectedWorldGenPresetId, worldName]);
+    }, [allowCommands, gameMode, onStart, seed, selectedWorldGenPresetId, worldName]);
 
     const handlePlayWorld = useCallback(async (worldId?: string | null) => {
         const nextWorldId = worldId ?? selectedWorldId;
@@ -221,6 +232,8 @@ export const useWorldMenu = ({ onStart }: UseWorldMenuArgs) => {
         setSeed,
         gameMode,
         cycleGameMode,
+        allowCommands,
+        toggleAllowCommands,
         worldGenPresets,
         selectedWorldGenPresetId,
         setSelectedWorldGenPresetId,

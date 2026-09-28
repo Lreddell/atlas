@@ -78,3 +78,31 @@ test('/locate vault uses the deterministic vault locator and offers a surface te
     assert.match(worldManagerSource, /getVaultSurfaceApproach\(candidate, surfaceY\)/);
     assert.match(worldManagerSource, /Found Resonant Vault at X=\$\{tx\}, Z=\$\{tz\}[\s\S]{0,100}`\/tp \$\{tx\} \$\{ty\} \$\{tz\}`/);
 });
+
+test('with commands off, only help and sound settings are suggested or run', () => {
+    assert.deepEqual([...commandData.ALWAYS_ALLOWED_COMMANDS].sort(), ['/help', '/music', '/sound']);
+    assert.deepEqual(commandData.getAutocompleteCandidates('/', options, false), ['/help', '/sound', '/music']);
+    assert.deepEqual(commandData.getAutocompleteCandidates('/gamemode ', options, false), []);
+    assert.deepEqual(commandData.getAutocompleteCandidates('/sound ', options, false), ['reload', 'volume']);
+    assert.ok(commandData.getAutocompleteCandidates('/', options).includes('/gamemode'), 'on by default');
+
+    const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+    assert.match(app, /if \(!allowCommands && !opts\?\.force && !ALWAYS_ALLOWED_COMMANDS\.has\(parts\[0\]\)\)/);
+    assert.match(app, /getAutocompleteCandidates\(input, COMMAND_AUTOCOMPLETE_OPTIONS, allowCommands\)/);
+    // The world rules persist with the world; worlds from before keep commands on.
+    assert.match(app, /meta\.allowCommands = allowCommands;/);
+    assert.match(app, /meta\.keepInventory = keepInventory;/);
+    assert.match(app, /setAllowCommands\(meta\.allowCommands \?\? true\)/);
+    // Plain text is chat, not an unknown command.
+    assert.match(app, /if \(!cmd\.trim\(\)\.startsWith\('\/'\)\)/);
+});
+
+test('new Survival worlds start with commands off, others on, unless the player chooses', () => {
+    const storage = readFileSync(new URL('../systems/world/WorldStorage.ts', import.meta.url), 'utf8');
+    assert.match(storage, /allowCommands: options\.allowCommands \?\? gameMode !== 'survival'/);
+    const menu = readFileSync(new URL('../components/ui/mainMenu/useWorldMenu.ts', import.meta.url), 'utf8');
+    assert.match(menu, /if \(!allowCommandsChosen\) setAllowCommands\(next !== 'survival'\)/);
+    const pause = readFileSync(new URL('../components/ui/PauseMenu.tsx', import.meta.url), 'utf8');
+    assert.match(pause, /<MCToggle label="Allow Commands"/);
+    assert.match(pause, /<MCToggle label="Keep Inventory"/);
+});

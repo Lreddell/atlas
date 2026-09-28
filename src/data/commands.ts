@@ -33,6 +33,13 @@ export const COMMANDS = [
     '/magfields',
 ];
 
+/**
+ * Commands that work even where a world's commands are off: help and the
+ * player's own sound settings. Everything else changes the game, so it is a
+ * cheat and needs Allow Commands (set at world creation, or in World Options).
+ */
+export const ALWAYS_ALLOWED_COMMANDS: ReadonlySet<string> = new Set(['/help', '/sound', '/music']);
+
 export const SUBCOMMANDS: Record<string, string[]> = {
     '/help': [],
     '/gamemode': ['survival', 'creative', 'spectator'],
@@ -76,6 +83,7 @@ const filterPrefix = (values: string[], prefix: string): string[] =>
 export function getAutocompleteCandidates(
     input: string,
     options: CommandAutocompleteOptions,
+    commandsAllowed = true,
 ): string[] {
     const trimmed = input.trim();
     const parts = trimmed ? trimmed.split(/\s+/) : [];
@@ -83,9 +91,13 @@ export function getAutocompleteCandidates(
     const tokenIndex = endsWithSpace ? parts.length : Math.max(0, parts.length - 1);
     const prefix = endsWithSpace ? '' : (parts[tokenIndex] ?? '');
 
-    if (tokenIndex === 0) return filterPrefix(COMMANDS, prefix);
+    if (tokenIndex === 0) {
+        const available = commandsAllowed ? COMMANDS : COMMANDS.filter((command) => ALWAYS_ALLOWED_COMMANDS.has(command));
+        return filterPrefix(available, prefix);
+    }
 
     const command = parts[0];
+    if (!commandsAllowed && !ALWAYS_ALLOWED_COMMANDS.has(command)) return [];
     if (tokenIndex === 1) {
         switch (command) {
             case '/cleanse':

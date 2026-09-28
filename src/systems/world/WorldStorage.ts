@@ -108,6 +108,7 @@ class WorldStorageSystem {
         worldGenConfig?: unknown,
         worldGenPresetId?: string | null,
         worldGenPresetName?: string | null,
+        options: { allowCommands?: boolean } = {},
     ): Promise<WorldMetadata> {
         const id = crypto.randomUUID();
         // Seed hashing is part of the world's deterministic identity, unchanged.
@@ -137,6 +138,7 @@ class WorldStorageSystem {
             created: Date.now(),
             lastPlayed: Date.now(),
             gameMode,
+            allowCommands: options.allowCommands ?? gameMode !== 'survival',
             time: 1000,
             ...(worldGenConfigSnapshot ? { worldGenConfig: worldGenConfigSnapshot } : {}),
             ...(worldGenPresetId ? { worldGenPresetId } : {}),

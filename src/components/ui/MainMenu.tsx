@@ -101,6 +101,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         setSeed,
         gameMode,
         cycleGameMode,
+        allowCommands,
+        toggleAllowCommands,
         worldGenPresets,
         selectedWorldGenPresetId,
         setSelectedWorldGenPresetId,
@@ -286,6 +288,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onSeedChange={setSeed}
                     gameMode={gameMode}
                     onCycleGameMode={cycleGameMode}
+                    allowCommands={allowCommands}
+                    onToggleAllowCommands={toggleAllowCommands}
                     worldGenPresets={worldGenPresets}
                     selectedWorldGenPresetId={selectedWorldGenPresetId}
                     onSelectedWorldGenPresetIdChange={setSelectedWorldGenPresetId}

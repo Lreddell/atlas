@@ -62,9 +62,21 @@ interface PauseMenuProps {
     showMenuBackground?: boolean;
     initialScreen?: 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial';
     onTutorialClose?: () => void;
+    /** The open world's rules, shown in-game as World Options. */
+    worldOptions?: WorldOptions;
 }
 
-type MenuScreen = 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial';
+export interface WorldOptions {
+    name: string;
+    seed: string;
+    gameMode: 'survival' | 'creative' | 'spectator';
+    allowCommands: boolean;
+    onAllowCommands: (on: boolean) => void;
+    keepInventory: boolean;
+    onKeepInventory: (on: boolean) => void;
+}
+
+type MenuScreen = 'main' | 'video' | 'audio' | 'controls' | 'skins' | 'tutorial' | 'world';
 
 // Menu Slider Component
 const MenuSlider: React.FC<{
@@ -147,6 +159,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     showMenuBackground = true,
     initialScreen = 'main',
     onTutorialClose,
+    worldOptions,
 }) => {
     const [screen, setScreen] = useState<MenuScreen>(initialScreen);
     const graphics = useGraphicsSettings();
@@ -251,7 +264,14 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MenuButton label="Video Settings..." onClick={() => setScreen('video')} width="w-[9.5rem]" />
                     <MenuButton label="Music & Sounds..." onClick={() => setScreen('audio')} width="w-[9.5rem]" />
                 </div>
-                <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-80" />
+                {worldOptions ? (
+                    <div className="flex gap-3">
+                        <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-[9.5rem]" />
+                        <MenuButton label="World Options..." onClick={() => setScreen('world')} width="w-[9.5rem]" />
+                    </div>
+                ) : (
+                    <MenuButton label="Skins..." onClick={() => setScreen('skins')} width="w-80" />
+                )}
                 <div className="flex gap-3">
                     <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-[9.5rem]" />
                     <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-[9.5rem]" />
@@ -470,6 +490,30 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         </div>
     );
 
+    // World Options: this world's rules, and its seed to share.
+    const renderWorld = () => worldOptions && (
+        <div className="flex flex-col gap-2 items-center w-[480px]">
+            <h1 className="text-white text-xl mb-1 font-bold font-pixel text-shadow-lg">World Options</h1>
+            <p className="mb-4 text-sm font-pixel text-gray-300 text-shadow-md">{worldOptions.name}</p>
+
+            <MCToggle label="Allow Commands" value={worldOptions.allowCommands} onChange={worldOptions.onAllowCommands} width="w-80" />
+            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+                Cheat commands like /gamemode, /giveitem and /tp. /help, /sound and /music always work.
+            </p>
+
+            <MCToggle label="Keep Inventory" value={worldOptions.keepInventory} onChange={worldOptions.onKeepInventory} width="w-80" />
+            <p className="mb-3 w-80 text-center text-xs font-pixel text-gray-400 text-shadow-md">
+                Keep your items and armor when you die.
+            </p>
+
+            <p className="mb-4 w-80 select-text text-center text-xs font-pixel text-gray-300 text-shadow-md">
+                Seed: <span className="text-white">{worldOptions.seed}</span>
+            </p>
+
+            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+        </div>
+    );
+
     const renderTutorial = () => {
         const activeSection = TUTORIAL_SECTIONS.find((section) => section.id === tutorialTab) || TUTORIAL_SECTIONS[0];
 
@@ -550,6 +594,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     {screen === 'video' && renderVideo()}
                     {screen === 'audio' && renderAudio()}
                     {screen === 'controls' && renderControls()}
+                    {screen === 'world' && renderWorld()}
                     {screen === 'skins' && <SkinsMenu onDone={() => setScreen('main')} />}
                     {screen === 'tutorial' && renderTutorial()}
                 </div>

@@ -111,7 +111,7 @@ import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from 
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
-import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
+import { ALWAYS_ALLOWED_COMMANDS, getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
 import {
     BUILT_IN_MENU_PANORAMAS,
     DEFAULT_MENU_PANORAMA,
@@ -380,6 +380,10 @@ const App: React.FC = () => {
   const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
+  // Whether cheat commands work in this world (World Options / world creation).
+  const [allowCommands, setAllowCommands] = useState(true);
+  // The open world's name and seed, for World Options.
+  const [worldInfo, setWorldInfo] = useState<{ name: string; seed: string } | null>(null);
   // Entity id of the boat the player is riding, or null. Boats are real world
   // entities (placed, boarded, broken, persisted); see the boat handlers below.
   const [ridingBoatId, setRidingBoatId] = useState<number | null>(null);
@@ -809,7 +813,7 @@ const App: React.FC = () => {
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -825,6 +829,8 @@ const App: React.FC = () => {
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
           meta.gameMode = gameMode; // persist command-driven gamemode changes
+          meta.allowCommands = allowCommands;
+          meta.keepInventory = keepInventory;
           meta.player = playerData;
           meta.spawnPoint = spawnPoint;
           meta.worldSpawn = worldSpawn;
@@ -851,7 +857,7 @@ const App: React.FC = () => {
               worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -1901,9 +1907,30 @@ const App: React.FC = () => {
       setMenuBackgroundMode('dirt');
   }, [menuBackgroundMode, menuPanoramaDataUrl]);
 
-  const executeCommand = useCallback((cmd: string) => {
+  const executeCommand = useCallback((cmd: string, opts?: { force?: boolean }) => {
       const parts = cmd.trim().split(' ');
+      const finish = () => {
+          if (commandValue.trim()) {
+              commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
+              setHistoryIndex(-1);
+          }
+          setCommandValue('');
+          setShowSuggestions(false);
+          resumeGame();
+      };
+      // Plain text is just said in chat.
+      if (!cmd.trim().startsWith('/')) {
+          logMsg(`<You> ${cmd.trim()}`, 'info');
+          finish();
+          return;
+      }
       logMsg(`> ${cmd}`, 'info');
+      // Cheat commands need Allow Commands; help and sound settings always work.
+      if (!allowCommands && !opts?.force && !ALWAYS_ALLOWED_COMMANDS.has(parts[0])) {
+          logMsg('Commands are off in this world. Turn them on in Game Menu > World Options.', 'error');
+          finish();
+          return;
+      }
       
       if (parts[0] === '/gamemode' && parts[1]) {
           const mode = parts[1].toLowerCase();
@@ -2175,6 +2202,9 @@ const App: React.FC = () => {
               setShowMagneticFields(nextVisible);
               logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
           }
+      } else if (parts[0] === '/help' && !allowCommands) {
+          logMsg('Commands are off in this world; /help, /sound and /music still work.', 'info');
+          logMsg('Turn them on in Game Menu > World Options.', 'info');
       } else if (parts[0] === '/help') {
           // Grouped, compact command listing (autocomplete carries the details).
           logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
@@ -2183,22 +2213,16 @@ const App: React.FC = () => {
           logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
           logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
       } else { logMsg(`Unknown command: ${parts[0]}; try /help`, 'error'); }
-      if (commandValue.trim()) {
-          commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
-          setHistoryIndex(-1);
-      }
-      setCommandValue(''); 
-      setShowSuggestions(false);
-      resumeGame();
-  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory]);
+      finish();
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory, allowCommands]);
 
   const updateAutocomplete = useCallback((input: string) => {
-      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
+      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS, allowCommands);
 
       setAcCandidates(newCandidates);
       setAcIndex(0);
       setShowSuggestions(newCandidates.length > 0);
-  }, []);
+  }, [allowCommands]);
 
   const submitCommandInput = useCallback(() => {
       if (commandValue.trim()) {
@@ -2216,7 +2240,8 @@ const App: React.FC = () => {
       if (!import.meta.env.DEV) return;
       installDevQa();
       registerDevQaHandles({
-          command: executeCommand,
+          // QA drives worlds with commands whatever the world's setting.
+          command: (cmd: string) => executeCommand(cmd, { force: true }),
           camera: (yaw, pitch) => controlsRef.current?.setRotation(pitch, yaw),
           tp: (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
           hud: visible => setHudHidden(!visible),
@@ -2994,6 +3019,9 @@ const App: React.FC = () => {
       }
       
       setGameMode(meta.gameMode);
+      setAllowCommands(meta.allowCommands ?? true);
+      setKeepInventory(meta.keepInventory ?? false);
+      setWorldInfo({ name: meta.name, seed: meta.seed.trim() || String(meta.seedNum) });
       worldManager.setTime(meta.time);
 
       // 3. Restore Player State (if exists)
@@ -3312,7 +3340,7 @@ const App: React.FC = () => {
                         damage pulse can never be mistaken for positive polarity. */}
                     {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
                     {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
-                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
+                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} worldOptions={worldInfo ? { ...worldInfo, gameMode, allowCommands, onAllowCommands: setAllowCommands, keepInventory, onKeepInventory: setKeepInventory } : undefined} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
                     {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
