@@ -28,8 +28,8 @@ export function setLight(state: WorldState, x: number, y: number, z: number, sky
     lightData[index3D(lx, y, lz)] = (sky << 4) | (block & 0xF);
 }
 
-export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void) {
-    floodLightLocal(state, x, y, z, 15);
+export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void, radius: number = 15) {
+    floodLightLocal(state, x, y, z, Math.min(15, radius));
     const cx = Math.floor(x / CHUNK_SIZE);
     const cz = Math.floor(z / CHUNK_SIZE);
     for(let dx=-1; dx<=1; dx++) {

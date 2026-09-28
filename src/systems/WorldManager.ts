@@ -12,7 +12,7 @@ import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
-import { needsSupport, hasSupportBelow } from './world/blockProps';
+import { needsSupport, hasSupportBelow, getOpacity } from './world/blockProps';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
@@ -129,6 +129,20 @@ export type LoadingProgressCallback = (phase: string, done: number, total: numbe
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
 type DropCallback = (stack: ItemStack, x: number, y: number, z: number) => void;
 type ParticleCallback = (type: BlockType, x: number, y: number, z: number) => void;
+
+const FLUID_NEIGHBOURS: readonly (readonly [number, number, number])[] = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+/** Blocks the fluid tick has changed, waiting to be relit together. */
+interface RelightBox { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number; margin: number }
+/** Relit around a change that only dims or brightens light a little (water opacity 2, no light of its own). */
+const FAINT_RELIGHT_MARGIN = 5;
+/** Relit around anything else (lava's glow, stone, obsidian): the full reach of light. */
+const FULL_RELIGHT_MARGIN = 15;
+/** Widest a box of changes grows before it starts another. */
+const RELIGHT_BOX_SPAN = 8;
+/** Milliseconds of relighting a tick at most (at least one box always runs). */
+const RELIGHT_BUDGET_MS = 3;
+const lightFaint = (type: BlockType) => getOpacity(type) <= 2 && !(BLOCKS[type]?.lightLevel);
 
 export class WorldManager {
   private state: WorldTypes.WorldState;
@@ -284,6 +298,10 @@ export class WorldManager {
     this.meshStartedAt.clear();
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
+    // Water still flowing in the last world must not flow on in the next.
+    Fluids.clearFluidUpdates();
+    this.pendingRelight = [];
+    this.fluidJobsWaiting = false;
 
       if (this.workers.length > 0) {
           this.terminateWorkers();
@@ -415,6 +433,7 @@ export class WorldManager {
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
+          this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
               if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
@@ -1418,8 +1437,25 @@ export class WorldManager {
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
+          this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
           this.setStage(cx, cz, ChunkStage.GENERATED);
           // We don't mesh here, just ensure data exists for collision/spawn checks
+      }
+  }
+
+  /**
+   * Flowing water or lava saved mid-flow moves on once its chunk is loaded
+   * again, as Minecraft saves a chunk's scheduled fluid ticks with it (the
+   * tick queue here is not saved). Generation only places sources.
+   */
+  private wakeFlowingFluids(cx: number, cz: number, blocks: Uint8Array, meta: Uint8Array | undefined) {
+      if (!meta) return;
+      const layer = CHUNK_SIZE * CHUNK_SIZE;
+      for (let i = 0; i < blocks.length; i++) {
+          const type = blocks[i];
+          if (meta[i] === 0 || (type !== BlockType.WATER && type !== BlockType.LAVA)) continue;
+          const column = i % layer;
+          Fluids.scheduleFluidUpdate(cx * CHUNK_SIZE + (column % CHUNK_SIZE), Math.floor(i / layer) + MIN_Y, cz * CHUNK_SIZE + Math.floor(column / CHUNK_SIZE), type, Fluids.fluidDelay(type));
       }
   }
 
@@ -1521,7 +1557,12 @@ export class WorldManager {
   tick(delta: number) {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
-      Fluids.processFluids(this.state);
+      this.beginFluidTick();
+      try {
+          Fluids.processFluids(this.state);
+      } finally {
+          this.endFluidTick();
+      }
       tickPlantGrowth({
           getBlock: (x, y, z) => this.getBlock(x, y, z, false),
           tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
@@ -1620,11 +1661,11 @@ export class WorldManager {
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }
-  updateLightingAround(x: number, y: number, z: number) {
+  updateLightingAround(x: number, y: number, z: number, radius: number = 15) {
       Lighting.updateLightingAround(this.state, x, y, z, (cx, cz) => {
           WorldStore.notifyChunk(this.state, cx, cz);
           if (this.getStage(cx, cz) >= ChunkStage.GENERATED) this.queueMesh(cx, cz, 10);
-      });
+      }, radius);
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
@@ -1651,11 +1692,11 @@ export class WorldManager {
     meta[index] = rotation;
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
-    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
+    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, Fluids.fluidDelay(type)); }
     [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ].forEach(([dx, dy, dz]) => {
          const nx = x+dx; const ny = y+dy; const nz = z+dz;
          const nBlock = this.getBlock(nx, ny, nz, false);
-         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5); }
+         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, Fluids.fluidDelay(nBlock)); }
     });
     if (oldType !== type || oldRotation !== rotation) {
         // Re-resolve stair corner shapes for this cell and its horizontal neighbors
@@ -1663,7 +1704,8 @@ export class WorldManager {
         // occlusion. A placed/removed stair can turn neighbors into inner/outer corners.
         this.refreshStairShapes(x, y, z);
 
-        this.updateLightingAround(x, y, z);
+        if (this.fluidRelight) this.deferRelight(x, y, z, lightFaint(oldType as BlockType) && lightFaint(type) ? FAINT_RELIGHT_MARGIN : FULL_RELIGHT_MARGIN);
+        else this.updateLightingAround(x, y, z);
         this.queueMesh(cx, cz, -1000);
 
         // If editing at chunk borders, prioritize neighbor remesh immediately too.
@@ -1673,12 +1715,12 @@ export class WorldManager {
         else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
 
         this.markQueuesDirty();
-        this.processStreamingJobs();
+        this.runStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
         this.queueMesh(cx, cz, -500);
         this.markQueuesDirty();
-        this.processStreamingJobs();
+        this.runStreamingJobs();
     }
 
     // A type change here may have pulled the support out from a decoration above it.
@@ -1688,6 +1730,94 @@ export class WorldManager {
     this.markDirty(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
+  }
+
+  /**
+   * While the fluid tick runs, the blocks it adds or removes wait to be relit
+   * together, as Minecraft's light engine batches its updates: changes close
+   * together share one box, relit once, and water (which only dims light a
+   * little) is relit only a few blocks around the box rather than light's full
+   * reach. Boxes are relit under a time budget a tick, oldest first, and the
+   * chunk jobs the changes queue are started once a tick, not once a block.
+   */
+  private fluidRelight: RelightBox[] | null = null;
+  private pendingRelight: RelightBox[] = [];
+  private fluidJobsWaiting = false;
+
+  private deferRelight(x: number, y: number, z: number, margin: number) {
+    for (const box of this.pendingRelight) {
+        if (box.margin !== margin) continue;
+        const minX = Math.min(box.minX, x), maxX = Math.max(box.maxX, x);
+        const minY = Math.min(box.minY, y), maxY = Math.max(box.maxY, y);
+        const minZ = Math.min(box.minZ, z), maxZ = Math.max(box.maxZ, z);
+        if (maxX - minX > RELIGHT_BOX_SPAN || maxY - minY > RELIGHT_BOX_SPAN || maxZ - minZ > RELIGHT_BOX_SPAN) continue;
+        box.minX = minX; box.maxX = maxX; box.minY = minY; box.maxY = maxY; box.minZ = minZ; box.maxZ = maxZ;
+        return;
+    }
+    this.pendingRelight.push({ minX: x, maxX: x, minY: y, maxY: y, minZ: z, maxZ: z, margin });
+  }
+
+  private runStreamingJobs() {
+    if (this.fluidRelight) this.fluidJobsWaiting = true;
+    else this.processStreamingJobs();
+  }
+
+  beginFluidTick() {
+    this.fluidRelight = this.pendingRelight;
+  }
+
+  endFluidTick() {
+    this.fluidRelight = null;
+    const start = performance.now();
+    let done = 0;
+    for (; done < this.pendingRelight.length; done++) {
+        if (done > 0 && performance.now() - start > RELIGHT_BUDGET_MS) break;
+        const box = this.pendingRelight[done];
+        const half = Math.ceil(Math.max(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ) / 2);
+        this.updateLightingAround(
+            Math.round((box.minX + box.maxX) / 2), Math.round((box.minY + box.maxY) / 2), Math.round((box.minZ + box.maxZ) / 2),
+            half + box.margin,
+        );
+    }
+    this.pendingRelight.splice(0, done);
+    if (this.fluidJobsWaiting) {
+        this.fluidJobsWaiting = false;
+        this.processStreamingJobs();
+    }
+  }
+
+  /**
+   * A fluid's level changing in place (water or lava already there, only its
+   * flow level differs): no relight, no stair or support checks, just the
+   * level, a remesh, and a nudge to the fluid next to it. Anything else takes
+   * the full setBlock path.
+   */
+  setFluidLevel(x: number, y: number, z: number, type: BlockType, level: number): void {
+    if (y < MIN_Y || y > MAX_Y) return;
+    const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+    const chunk = this.getChunkData(cx, cz, true);
+    if (!chunk) return;
+    const index = WorldCoords.index3D(lx, y, lz);
+    if (chunk[index] !== type) { this.setBlock(x, y, z, type, level); return; }
+    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
+    if (meta[index] === level) return;
+    meta[index] = level;
+    Fluids.scheduleFluidUpdate(x, y, z, type, Fluids.fluidDelay(type));
+    for (const [dx, dy, dz] of FLUID_NEIGHBOURS) {
+        const nBlock = this.getBlock(x + dx, y + dy, z + dz, false);
+        if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) {
+            Fluids.scheduleFluidUpdate(x + dx, y + dy, z + dz, nBlock, Fluids.fluidDelay(nBlock));
+        }
+    }
+    // The surface slopes toward its neighbours' levels, across chunk borders too.
+    WorldStore.notifyChunk(this.state, cx, cz);
+    this.queueMesh(cx, cz, -500);
+    if (lx === 0) this.queueMesh(cx - 1, cz, -400);
+    else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -400);
+    if (lz === 0) this.queueMesh(cx, cz - 1, -400);
+    else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -400);
+    this.markQueuesDirty();
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
 
   /**

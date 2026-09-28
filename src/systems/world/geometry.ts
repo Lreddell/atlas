@@ -299,6 +299,9 @@ const SHAPED_FACES: { name: 'right' | 'left' | 'top' | 'bottom' | 'front' | 'bac
     { name: 'back', dx: 0, dy: 0, dz: -1 },
 ];
 
+/** A fluid cell's surface height (0..1) from its level: a source sits a little below full, flow drops with distance, falling fluid fills. */
+const fluidLevelHeight = (level: number): number => (level === 0 ? 0.88 : level >= 8 ? 1.0 : (8 - level) / 9.0);
+
 export function generateGeometryData(
     _cx: number,
     _cz: number,
@@ -344,6 +347,8 @@ export function generateGeometryData(
     const worldX0 = _cx * CHUNK_SIZE;
     const worldZ0 = _cz * CHUNK_SIZE;
 
+    // A fluid's top corners (x + 2z order), when its surface slopes.
+    const fluidCorners = new Float32Array(4);
     const getTypeFast = (x: number, y: number, z: number): BlockType => {
         if (y < MIN_Y || y > MAX_Y) return BlockType.AIR;
         if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
@@ -796,10 +801,26 @@ export function generateGeometryData(
               if (submerged) {
                   blockHeight = 1.0;
               } else {
-                  const level = rotation & 0xF; 
-                  if (level === 0) blockHeight = 0.88; 
-                  else if (level >= 8) blockHeight = 1.0; 
-                  else blockHeight = (8 - level) / 9.0; 
+                  blockHeight = fluidLevelHeight(rotation & 0xF);
+              }
+          }
+          // A fluid's surface slopes: each top corner stands at the average of the
+          // fluid cells that share it (full height where fluid lies on any of
+          // them), so flowing water runs down in a smooth sheet rather than steps.
+          const sloped = isFluid && blockHeight < 1.0;
+          if (sloped) {
+              for (let corner = 0; corner < 4; corner++) {
+                  const ox = corner & 1, oz = corner >> 1;
+                  let sum = 0, count = 0, full = false;
+                  for (let k = 0; k < 4 && !full; k++) {
+                      const sx = x + ox - 1 + (k & 1), sz = z + oz - 1 + (k >> 1);
+                      if (getTypeFast(sx, y, sz) !== type) continue;
+                      if (getTypeFast(sx, y + 1, sz) === type) { full = true; break; }
+                      const inChunk = sx >= 0 && sx < CHUNK_SIZE && sz >= 0 && sz < CHUNK_SIZE;
+                      sum += inChunk && metaData ? fluidLevelHeight(metaData[index3D(sx, y, sz)] & 0xF) : blockHeight;
+                      count++;
+                  }
+                  fluidCorners[corner] = full ? 1.0 : count > 0 ? sum / count : blockHeight;
               }
           }
 
@@ -881,7 +902,12 @@ export function generateGeometryData(
                  // Adjust height for fluids/beds
                  let cy0 = c0[1]; let cy1 = c1[1]; let cy2 = c2[1]; let cy3 = c3[1];
                  
-                 if ((isFluid || isBed) && dir !== 'bottom') {
+                 if (sloped && dir !== 'bottom') {
+                     if (cy0 === 1) cy0 = fluidCorners[c0[0] + c0[2] * 2];
+                     if (cy1 === 1) cy1 = fluidCorners[c1[0] + c1[2] * 2];
+                     if (cy2 === 1) cy2 = fluidCorners[c2[0] + c2[2] * 2];
+                     if (cy3 === 1) cy3 = fluidCorners[c3[0] + c3[2] * 2];
+                 } else if ((isFluid || isBed) && dir !== 'bottom') {
                      if (cy0 === 1) cy0 = blockHeight;
                      if (cy1 === 1) cy1 = blockHeight;
                      if (cy2 === 1) cy2 = blockHeight;
