@@ -19,6 +19,8 @@ import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/regi
 import { getItemTooltip, type TooltipLine } from '../../systems/registry/itemTooltips';
 import { canStacksMerge, cloneItemStack, getItemStackLimit } from '../../systems/inventory/itemStackPolicy';
 import type { EquipmentSlot } from '../../types';
+import { HOTBAR_KEY_ACTIONS } from '../../systems/player/keyBindings';
+import { isKeyFor } from '../../systems/player/keyBindingStore';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
@@ -216,16 +218,15 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             if (isEditableElement(e.target)) return;
             if (!hoveredSlot) return;
 
-            if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
-                const hotbarIdx = parseInt(e.code.replace('Digit', '')) - 1;
-                if (hotbarIdx >= 0 && hotbarIdx < 9) {
-                    const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
-                    handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index,
-                        creativeItem ? { hotbarIdx, creativeItem } : { hotbarIdx });
-                }
+            // The hotbar and drop keys, as the player bound them.
+            const hotbarIdx = HOTBAR_KEY_ACTIONS.findIndex((action) => isKeyFor(action, e));
+            if (hotbarIdx >= 0) {
+                const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
+                handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index,
+                    creativeItem ? { hotbarIdx, creativeItem } : { hotbarIdx });
             }
 
-            if (e.code === 'KeyQ') {
+            if (isKeyFor('drop', e)) {
                 const dropAll = e.ctrlKey || e.metaKey;
                 const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
                 handleInventoryAction('drop_key', hoveredSlot.collection, hoveredSlot.index,

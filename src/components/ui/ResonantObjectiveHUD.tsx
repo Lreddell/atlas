@@ -3,6 +3,8 @@ import { BlockType, type ItemStack } from '../../types';
 import { resonantVaultRuntime } from '../../systems/world/ResonantVaultRuntime';
 import { getVaultObjective } from '../../systems/world/resonantVaultObjectives';
 import { gameEvents } from '../../systems/events/GameEvents';
+import { isKeyFor } from '../../systems/player/keyBindingStore';
+import { isEditableElement } from '../../utils/dom';
 
 const ENVIRONMENT_ONLY_DISPLAY_MS = 4000;
 
@@ -27,7 +29,7 @@ export const ResonantObjectiveHUD: React.FC<{ inventory: (ItemStack | null)[] }>
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.code === 'KeyO' && !event.repeat) setRecall((value) => value + 1);
+            if (isKeyFor('vaultObjective', event) && !event.repeat && !isEditableElement(event.target)) setRecall((value) => value + 1);
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);

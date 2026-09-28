@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { musicController } from '../../systems/sound/MusicController';
 import { SoundCategory } from '../../systems/sound/soundTypes';
@@ -7,9 +7,13 @@ import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import { TUTORIAL_SECTIONS } from '../../data/tutorial';
 import { MenuButton } from './mainMenu/MainMenuControls';
 import { SkinsMenu } from './SkinsMenu';
-import { CONTROL_GROUPS } from '../../data/controls';
 import { controlSettings, useControlSettings } from '../../systems/player/controlStore';
 import { MAX_SENSITIVITY, MIN_SENSITIVITY } from '../../systems/player/controlSettings';
+import { keyBindingStore, useKeyBindings } from '../../systems/player/keyBindingStore';
+import {
+    FIXED_BINDINGS, KEY_ACTIONS, KEY_ACTION_GROUPS, UNBINDABLE_CODES,
+    bindingLabel, conflictsOf, isDefaultBinding, keyActionLabel, type KeyAction,
+} from '../../systems/player/keyBindings';
 import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
@@ -148,6 +152,11 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
     const graphics = useGraphicsSettings();
     const gfx = graphics.config;
     const controls = useControlSettings();
+    const keys = useKeyBindings();
+    // The action waiting for a key press on the Controls screen, if any.
+    const [listening, setListening] = useState<KeyAction | null>(null);
+    const listeningRef = useRef<KeyAction | null>(null);
+    listeningRef.current = listening;
     const [tutorialTab, setTutorialTab] = useState(() => TUTORIAL_SECTIONS[0]?.id ?? 'concept');
     const showMainMenuSubmenuOverlay = isMainMenu && screen !== 'main';
     
@@ -186,6 +195,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         if (screen === 'main') return;
         const handleSubmenuEscape = (event: KeyboardEvent) => {
             if (event.key !== 'Escape') return;
+            // Esc while a key is being bound cancels the binding, not the screen.
+            if (listeningRef.current) return;
             event.preventDefault();
             event.stopImmediatePropagation();
             if (screen === 'tutorial' && onTutorialClose) onTutorialClose();
@@ -194,6 +205,24 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         window.addEventListener('keydown', handleSubmenuEscape, true);
         return () => window.removeEventListener('keydown', handleSubmenuEscape, true);
     }, [onTutorialClose, screen]);
+
+    // Binding a key: the next key pressed becomes the action's key. Esc cancels.
+    useEffect(() => {
+        if (!listening) return;
+        const onKey = (event: KeyboardEvent) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (event.code === 'Escape') { setListening(null); return; }
+            if (UNBINDABLE_CODES.has(event.code)) return;
+            keyBindingStore.bind(listening, event.code);
+            soundManager.play('ui.click');
+            setListening(null);
+        };
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [listening]);
+
+    useEffect(() => { if (screen !== 'controls') setListening(null); }, [screen]);
 
     const updateVolume = (cat: string, val: number) => {
         setVolumes(p => ({...p, [cat]: val}));
@@ -387,21 +416,57 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 <MCToggle label="Invert Mouse" value={controls.invertY} onChange={(on) => controlSettings.set({ invertY: on })} width="w-64" />
             </div>
 
-            <div className="w-full max-h-[330px] overflow-y-auto bg-black/35 border-2 border-white/20 px-4 py-3 mb-4">
-                {CONTROL_GROUPS.map((group) => (
-                    <div key={group.title} className="mb-3 last:mb-0">
-                        <h2 className="text-blue-200 text-sm font-pixel mb-1">{group.title}</h2>
-                        {group.bindings.map(([keys, action]) => (
-                            <div key={keys} className="flex items-baseline justify-between gap-6 border-b border-white/5 py-[3px]">
-                                <span className="shrink-0 text-white text-sm font-pixel">{keys}</span>
-                                <span className="text-right text-gray-300 text-sm font-pixel">{action}</span>
-                            </div>
-                        ))}
+            <div className="w-full max-h-[340px] overflow-y-auto bg-black/35 border-2 border-white/20 px-4 py-3 mb-4">
+                {KEY_ACTION_GROUPS.map((group) => (
+                    <div key={group} className="mb-3">
+                        <h2 className="text-blue-200 text-sm font-pixel mb-1">{group}</h2>
+                        {KEY_ACTIONS.filter((action) => action.group === group).map((action) => {
+                            const conflicts = conflictsOf(keys.bindings, action.id);
+                            const waiting = listening === action.id;
+                            return (
+                                <div key={action.id} className="flex items-center justify-between gap-4 py-[2px]">
+                                    <span
+                                        className={`text-sm font-pixel ${conflicts.length > 0 ? 'text-red-300' : 'text-gray-100'}`}
+                                        title={conflicts.length > 0 ? `Also bound to ${conflicts.map(keyActionLabel).join(', ')}` : undefined}
+                                    >
+                                        {action.label}
+                                    </span>
+                                    <div className="flex shrink-0 gap-2">
+                                        <MenuButton
+                                            small
+                                            width="w-44"
+                                            pressed={waiting}
+                                            label={waiting ? '> Press a key <' : bindingLabel(keys.bindings, action.id, keys.layout)}
+                                            onClick={() => setListening(waiting ? null : action.id)}
+                                        />
+                                        <MenuButton
+                                            small
+                                            width="w-16"
+                                            label="Reset"
+                                            disabled={isDefaultBinding(keys.bindings, action.id)}
+                                            onClick={() => keyBindingStore.reset(action.id)}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 ))}
+                <div>
+                    <h2 className="text-blue-200 text-sm font-pixel mb-1">Mouse & Menus</h2>
+                    {FIXED_BINDINGS.map(([key, action]) => (
+                        <div key={key} className="flex items-baseline justify-between gap-6 py-[3px]">
+                            <span className="text-gray-100 text-sm font-pixel">{action}</span>
+                            <span className="text-right text-gray-400 text-sm font-pixel">{key}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
 
-            <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            <div className="flex gap-3">
+                <MenuButton label="Reset All Keys" onClick={() => { setListening(null); keyBindingStore.resetAll(); }} width="w-64" />
+                <MenuButton label="Done" onClick={() => setScreen('main')} width="w-64" />
+            </div>
         </div>
     );
 

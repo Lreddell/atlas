@@ -4,6 +4,7 @@ import { motionStatus } from '../../systems/player/playerMotion';
 import { climbSurfaces } from '../../systems/player/climbSurfaces';
 import { inputState } from '../../systems/player/playerInput';
 import { PolarityIndicator } from './PolarityIndicator';
+import { useKeyLabel } from '../../systems/player/keyBindingStore';
 
 const CIRCUMFERENCE = 2 * Math.PI * 17;
 
@@ -60,6 +61,7 @@ export const CombatFeedback: React.FC<{ magnetic?: boolean }> = ({ magnetic = fa
  */
 export const CombatOverlay: React.FC = () => {
     const view = useCombatView();
+    const flipKey = useKeyLabel('flipPolarity');
     return <div className="pointer-events-none absolute inset-0 z-40 select-none">
         {(view.cooldown > 0.001 || view.refused) && <svg
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
@@ -70,8 +72,8 @@ export const CombatOverlay: React.FC = () => {
                 strokeDasharray={CIRCUMFERENCE} strokeDashoffset={CIRCUMFERENCE * (view.refused ? 0 : view.cooldown)}
                 transform="rotate(-90 22 22)" opacity={view.refused ? 0.95 : 0.8} />
         </svg>}
-        {view.flux > 0 && !view.aligned && <div className="absolute left-1/2 top-[34%] w-[92px] -translate-x-1/2" role="status" aria-label="Tower flipping: press R to hold on">
-            <div className="mb-1 text-center font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]">R SWITCH</div>
+        {view.flux > 0 && !view.aligned && <div className="absolute left-1/2 top-[34%] w-[92px] -translate-x-1/2" role="status" aria-label={`Tower flipping: press ${flipKey} to hold on`}>
+            <div className="mb-1 text-center font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]">{flipKey} SWITCH</div>
             <div className="h-1 border border-black bg-black/60"><div className="h-full bg-white" style={{ width: `${view.flux * 100}%` }} /></div>
         </div>}
         {view.shocked && !view.flux && <div className="absolute left-1/2 top-[34%] -translate-x-1/2 font-pixel text-xs text-white [text-shadow:1px_1px_0_#000]" role="status" aria-label="Shocked off: wrong polarity">SHOCKED OFF</div>}

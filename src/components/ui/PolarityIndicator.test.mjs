@@ -8,7 +8,9 @@ const source = readFileSync(new URL('./PolarityIndicator.tsx', import.meta.url),
 test('restores centered polarity block textures and their switch zoom', () => {
     assert.match(source, /positive_magnet\.png/);
     assert.match(source, /negative_magnet\.png/);
-    assert.match(source, /<kbd[^>]*>R<\/kbd>/);
+    // The flip key as the player bound it (R by default).
+    assert.match(source, /<kbd[^>]*>\{flipKey\}<\/kbd>/);
+    assert.match(source, /const flipKey = useKeyLabel\('flipPolarity'\)/);
     assert.doesNotMatch(source, /Positive \(R\)|Negative \(R\)/);
     assert.match(source, /imageRendering: 'pixelated'/);
     assert.match(source, /scale-125 brightness-150/);

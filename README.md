@@ -52,8 +52,8 @@ npm run electron:dev
 ## Controls And Input Notes
 
 - Use `W`, `A`, `S`, and `D` to move, `Space` to jump, and `Ctrl` to sprint.
-- Mouse sensitivity and inverted look are in Options > Controls, which also lists
-  every key.
+- Every key below is a default: rebind any of them, and set mouse sensitivity and
+  inverted look, in Options > Controls.
 - Use left click to break or attack and right click to place, use, eat, or board.
 - Use the mouse wheel or number keys `1` through `9` to change the selected
   hotbar slot.

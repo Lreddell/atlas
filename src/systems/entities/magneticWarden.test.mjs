@@ -205,8 +205,10 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     // C is the kit key, and its press is a BUFFERED timestamp rather than a
     // one-frame flag: at 60 fps only every third frame runs a 20 Hz substep, so
     // a flag would drop two presses out of three ("I have to spam it").
-    assert.match(input, /'KeyC'\]/);
-    assert.match(input, /case 'KeyC':[\s\S]*?inputState\.dodgePressedAt = now/);
+    // (C by default; every key is rebindable in Options > Controls.)
+    const bindings = read('src/systems/player/keyBindings.ts');
+    assert.match(bindings, /id: 'dodge'.*defaults: \['KeyC'\]/);
+    assert.match(input, /case 'dodge':[\s\S]*?inputState\.dodgePressedAt = now/);
     // The press is queued as a timestamp and only expires AFTER the physics has
     // had a chance at it, so a slow frame cannot swallow one.
     assert.match(input, /const dodge = inputState\.dodgePressedAt > 0;/);
@@ -216,9 +218,11 @@ test('the player owns the dodge kit, the flux grace, the magnetic launch and the
     assert.doesNotMatch(input, /dodgeTrigger|viewToggleTrigger/);
     // F5/F6 live in App's global handler so they work with or without pointer
     // lock (and so the browser never reloads the page instead of switching views).
-    assert.match(app, /e\.code === 'F5' \|\| e\.code === 'F6'[\s\S]*?viewRig\.mode = next/);
+    assert.match(app, /freeViewKey \|\| hotkey\('shoulderView'\)[\s\S]*?viewRig\.mode = next/);
     // F5 is the FREE view (the body keeps its own heading); F6 is the welded one.
-    assert.match(app, /const view: ViewMode = e\.code === 'F5' \? 'free' : 'third';/);
+    assert.match(bindings, /id: 'freeView'.*defaults: \['F5'\]/);
+    assert.match(bindings, /id: 'shoulderView'.*defaults: \['F6'\]/);
+    assert.match(app, /const view: ViewMode = freeViewKey \? 'free' : 'third';/);
     assert.doesNotMatch(input, /'F5'/);
     // The kit resolves inside the fixed loop and owns the body during a roll or dash.
     assert.match(player, /if \(dodgePending && pressKit\(intent, height\)\)/);
@@ -288,8 +292,9 @@ test('the tripod suspends the free view without losing it, and still shows the b
     assert.doesNotMatch(input, /viewRig\.mode === 'free'/);
     // The FREE view (F5) is inert while the tripod is up; the mode is left alone
     // so releasing the tripod returns the player to the view they came from.
-    assert.match(app, /if \(e\.code === 'F5' && detachedCamera\.stage !== 'off'\) return;/);
-    assert.match(app, /e\.code === 'F7'[\s\S]*?detachedCamera\.stage = nextDetachedStage\(detachedCamera\.stage\)/);
+    assert.match(app, /if \(freeViewKey && detachedCamera\.stage !== 'off'\) return;/);
+    assert.match(app, /hotkey\('detachedCamera'\)[\s\S]*?detachedCamera\.stage = nextDetachedStage\(detachedCamera\.stage\)/);
+    assert.match(read('src/systems/player/keyBindings.ts'), /id: 'detachedCamera'.*defaults: \['F7'\]/);
     // Sprint survives the tripod: only the framing stage, where the walk keys fly
     // the camera, refuses to bank one for the body.
     assert.match(input, /!framingDetachedShot\(\) && sprintDriveHeldRule\(inputState, omniSprint\(\)\)/);
@@ -363,7 +368,9 @@ test('the HUD reads the forms, the crystal shield, the slam and the tower flip w
     assert.match(feedback, /strokeDashoffset/);
     assert.match(feedback, /motionStatus\.cooldown/);
     assert.match(feedback, /motionStatus\.refusedAt/);
-    assert.match(feedback, /Tower flipping: press R to hold on/);
+    // The flip key as the player bound it (R by default).
+    assert.match(feedback, /Tower flipping: press \$\{flipKey\} to hold on/);
+    assert.match(feedback, /const flipKey = useKeyLabel\('flipPolarity'\)/);
     assert.match(feedback, /climbSurfaces\.attachedZone/);
     assert.match(feedback, /Attack dodged/);
     assert.match(feedback, /<PolarityIndicator \/>/);
@@ -564,7 +571,8 @@ test('the Polarity Boots Upgrade drops, crafts, and grants an N toggle', () => {
     const equip = read('src/systems/registry/equipment.ts');
     assert.match(equip, /hasUpgradedPolarityBoots/);
     assert.match(input, /polarityPowerOn/);
-    assert.match(input, /'KeyN'/);
+    assert.match(input, /case 'polarityPower':/);
+    assert.match(read('src/systems/player/keyBindings.ts'), /id: 'polarityPower'.*defaults: \['KeyN'\]/);
     assert.match(input, /e\.ctrlKey \|\| e\.metaKey[\s\S]*?preventDefault\(\)/);
 });
 
@@ -595,7 +603,7 @@ test('the player position is not dragged by the cutscene camera (leave = stay pu
 });
 
 test('polarity flips while sprinting (Ctrl held) and boss death clears all bolts', () => {
-    assert.match(input, /case 'KeyR':[\s\S]*?if \(e && \(e\.ctrlKey \|\| e\.metaKey\)\) e\.preventDefault\(\);[\s\S]*?inputState\.magneticPolarity = inputState\.magneticPolarity >= 0 \? -1 : 1/);
+    assert.match(input, /case 'flipPolarity':[\s\S]*?if \(e && \(e\.ctrlKey \|\| e\.metaKey\)\) e\.preventDefault\(\);[\s\S]*?inputState\.magneticPolarity = inputState\.magneticPolarity >= 0 \? -1 : 1/);
     assert.match(manager, /addTrauma\(1\.0\);[\s\S]*?this\.projectiles = \[\];[\s\S]*?this\.shockwaves = \[\];/);
 });
 

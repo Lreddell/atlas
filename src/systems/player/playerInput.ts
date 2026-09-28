@@ -1,5 +1,7 @@
 
 import { gameEvents } from '../events/GameEvents';
+import { actionsForKey } from './keyBindingStore';
+import type { KeyAction } from './keyBindings';
 import { freeBodyActive, framingDetachedShot } from './viewRig';
 import {
     canDirectionSprint, isDoubleTap, isSprinting,
@@ -74,7 +76,8 @@ export const lookBridge = {
     dPitch: 0,
 };
 
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'KeyC']);
+/** Actions whose keys the browser must never see (page scroll, find, and the like). */
+const GAME_ACTIONS: ReadonlySet<KeyAction> = new Set<KeyAction>(['forward', 'back', 'left', 'right', 'jump', 'sneak', 'sprint', 'dodge']);
 
 /**
  * Whether every walk direction can sprint, rather than forward alone. That is
@@ -123,112 +126,104 @@ const releaseDirection = (dir: Direction): void => {
 };
 
 export const onKeyDown = (code: string, e?: KeyboardEvent) => {
+    // Every action this key is bound to (Options > Controls).
+    const actions = actionsForKey(code);
     // Intercept game keys to prevent browser/OS shortcuts
-    if (e && GAME_KEYS.has(code)) {
+    if (e && actions.some((action) => GAME_ACTIONS.has(action))) {
         e.preventDefault();
         e.stopPropagation();
     }
 
     const now = Date.now();
 
-    switch (code) {
-        case 'KeyW':
-        case 'ArrowUp':
-            pressDirection('forward', now);
-            break;
-        case 'KeyS':
-        case 'ArrowDown':
-            pressDirection('backward', now);
-            break;
-        case 'KeyA':
-        case 'ArrowLeft':
-            pressDirection('left', now);
-            break;
-        case 'KeyD':
-        case 'ArrowRight':
-            pressDirection('right', now);
-            break;
-        case 'Space': 
-            if (!inputState.jump) {
-                if (now - lastJumpPressTime < DOUBLE_TAP_WINDOW_MS) {
-                    inputState.flyToggleTrigger = true; 
+    for (const action of actions) {
+        switch (action) {
+            case 'forward':
+                pressDirection('forward', now);
+                break;
+            case 'back':
+                pressDirection('backward', now);
+                break;
+            case 'left':
+                pressDirection('left', now);
+                break;
+            case 'right':
+                pressDirection('right', now);
+                break;
+            case 'jump':
+                if (!inputState.jump) {
+                    if (now - lastJumpPressTime < DOUBLE_TAP_WINDOW_MS) {
+                        inputState.flyToggleTrigger = true;
+                    }
+                    lastJumpPressTime = now;
                 }
-                lastJumpPressTime = now;
-            }
-            inputState.jump = true; 
-            break;
-        case 'ShiftLeft': 
-        case 'ShiftRight':
-            inputState.sneak = true;
-            doubleTapSprintActive = false;
-            inputState.sprintLatch = false; // Sneak cancels sprint
-            break;
-        case 'ControlLeft':
-        case 'ControlRight':
-            if (e && e.repeat) break;
-            inputState.sprint = true;
-            // If a direction is already held when CTRL is pressed, latch sprint
-            if (sprintDriveHeld()) inputState.sprintLatch = true;
-            break;
-        case 'KeyR':
-            if (e && e.repeat) break;
-            // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity :
-            // the player is usually holding Ctrl (sprint) during a fight, and that
-            // must not eat the polarity swap. (The global shortcut block also stops
-            // reload; this is belt-and-suspenders.)
-            if (e && (e.ctrlKey || e.metaKey)) e.preventDefault();
-            // Flip magnetic polarity (only has an effect while wearing polarity boots).
-            inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
-            gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
-            break;
-        case 'KeyN':
-            // Toggle the polarity ability on/off (only effective with upgraded boots).
-            if (e && e.repeat) break;
-            inputState.polarityPowerOn = !inputState.polarityPowerOn;
-            gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
-            break;
-        case 'KeyC':
-            // The kit button: resolved by the player physics into a roll, a
-            // magnetic dash, a repel leap, or a launch off the wall. C sits
-            // under the left hand without leaving WASD, and is the only such
-            // key Atlas had free (Q drops, E opens, R flips, Shift/Ctrl/Space
-            // are sneak/sprint/jump).
-            if (e && e.repeat) break;
-            inputState.dodgePressedAt = now;
-            break;
+                inputState.jump = true;
+                break;
+            case 'sneak':
+                inputState.sneak = true;
+                doubleTapSprintActive = false;
+                inputState.sprintLatch = false; // Sneak cancels sprint
+                break;
+            case 'sprint':
+                if (e && e.repeat) break;
+                inputState.sprint = true;
+                // If a direction is already held when sprint is pressed, latch sprint
+                if (sprintDriveHeld()) inputState.sprintLatch = true;
+                break;
+            case 'flipPolarity':
+                if (e && e.repeat) break;
+                // Suppress the browser's Ctrl/Cmd+R reload, but STILL flip polarity :
+                // the player is usually holding Ctrl (sprint) during a fight, and that
+                // must not eat the polarity swap. (The global shortcut block also stops
+                // reload; this is belt-and-suspenders.)
+                if (e && (e.ctrlKey || e.metaKey)) e.preventDefault();
+                // Flip magnetic polarity (only has an effect while wearing polarity boots).
+                inputState.magneticPolarity = inputState.magneticPolarity >= 0 ? -1 : 1;
+                gameEvents.emit('ability:changed', { abilityId: 'polarity', active: inputState.magneticPolarity > 0 });
+                break;
+            case 'polarityPower':
+                // Toggle the polarity ability on/off (only effective with upgraded boots).
+                if (e && e.repeat) break;
+                inputState.polarityPowerOn = !inputState.polarityPowerOn;
+                gameEvents.emit('ability:changed', { abilityId: 'polarity-power', active: inputState.polarityPowerOn });
+                break;
+            case 'dodge':
+                // The kit button: resolved by the player physics into a roll, a
+                // magnetic dash, a repel leap, or a launch off the wall. C (its
+                // default) sits under the left hand without leaving WASD.
+                if (e && e.repeat) break;
+                inputState.dodgePressedAt = now;
+                break;
+        }
     }
 };
 
 export const onKeyUp = (code: string) => {
-    switch (code) {
-        case 'KeyW':
-        case 'ArrowUp':
-            releaseDirection('forward');
-            break;
-        case 'KeyS':
-        case 'ArrowDown':
-            releaseDirection('backward');
-            break;
-        case 'KeyA':
-        case 'ArrowLeft':
-            releaseDirection('left');
-            break;
-        case 'KeyD':
-        case 'ArrowRight':
-            releaseDirection('right');
-            break;
-        case 'Space': 
-            inputState.jump = false; 
-            break;
-        case 'ShiftLeft': 
-        case 'ShiftRight':
-            inputState.sneak = false; 
-            break;
-        case 'ControlLeft': 
-        case 'ControlRight':
-            inputState.sprint = false; 
-            // Do NOT reset sprintLatch here. That allows letting go of Ctrl while continuing to run.
-            break;
+    for (const action of actionsForKey(code)) {
+        switch (action) {
+            case 'forward':
+                releaseDirection('forward');
+                break;
+            case 'back':
+                releaseDirection('backward');
+                break;
+            case 'left':
+                releaseDirection('left');
+                break;
+            case 'right':
+                releaseDirection('right');
+                break;
+            case 'jump':
+                inputState.jump = false;
+                break;
+            case 'sneak':
+                inputState.sneak = false;
+                break;
+            case 'sprint':
+                inputState.sprint = false;
+                // Do NOT reset sprintLatch here. That allows letting go of sprint while continuing to run.
+                break;
+        }
     }
 };
 

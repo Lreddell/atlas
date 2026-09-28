@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { gameEvents } from '../events/GameEvents';
+import { isKeyFor } from '../player/keyBindingStore';
 import { addTrauma } from '../player/cameraShake';
 import { soundManager } from '../sound/SoundManager';
 import { particleFx, FX_CHARGED, polarityFxColor } from '../fx/particleFx';
@@ -111,7 +112,7 @@ class WardenDefeat {
 
         gameEvents.emit('cinematic:start', { source: 'magnetic_warden' });
         this.onKey = (e: KeyboardEvent) => {
-            if (e.code === 'Space') { e.preventDefault(); this.skip(); }
+            if (isKeyFor('jump', e)) { e.preventDefault(); this.skip(); }
         };
         window.addEventListener('keydown', this.onKey);
 

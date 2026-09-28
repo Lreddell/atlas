@@ -47,7 +47,7 @@ test('the camera, the magnetic-wall look and the Controls screen all use these s
     assert.match(menu, /label="Controls\.\.\." onClick=\{\(\) => setScreen\('controls'\)\}/);
     assert.match(menu, /label="Mouse Sensitivity"/);
     assert.match(menu, /label="Invert Mouse"/);
-    assert.match(menu, /CONTROL_GROUPS\.map/);
+    assert.match(menu, /KEY_ACTIONS\.filter/);
 });
 
 test('a new player never starts, or respawns, inside a still-sealed region', () => {

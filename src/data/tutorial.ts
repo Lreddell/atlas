@@ -48,7 +48,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
         subtitle: 'Core keyboard and mouse input',
         paragraphs: [
             'Movement and interaction follow familiar voxel-sandbox controls.',
-            'Some controls are context-dependent and only work while actively in-game. Mouse sensitivity, invert mouse, and the full key list are in Options > Controls.'
+            'These are the default keys. Rebind any of them, and set mouse sensitivity and invert, in Options > Controls. Some controls only work while actively in-game.'
         ],
         bullets: [
             'W A S D (or the arrow keys): Move',

@@ -4,6 +4,7 @@ import { inputState } from '../../systems/player/playerInput';
 import { getPolaritySoundEvent } from '../../systems/player/polarityFeedback';
 import { soundManager } from '../../systems/sound/SoundManager';
 import { motionStatus } from '../../systems/player/playerMotion';
+import { useKeyLabel } from '../../systems/player/keyBindingStore';
 
 // The player's current polarity: the magnet block icon, its key prompt, and (during
 // the Warden fight) the armed Magnet Slam. The centered HUD stacks it above
@@ -18,6 +19,7 @@ export const PolarityIndicator: React.FC = () => {
     const [switching, setSwitching] = useState(false);
     const [surge, setSurge] = useState({ armed: false, fraction: 0 });
     const resetTimerRef = useRef<number | null>(null);
+    const flipKey = useKeyLabel('flipPolarity');
 
     useEffect(() => {
         setPositive(inputState.magneticPolarity > 0);
@@ -67,7 +69,7 @@ export const PolarityIndicator: React.FC = () => {
                     </div>
                 </div>
             )}
-            <div className="relative h-12 w-12" role="img" aria-label={`${positive ? 'Positive' : 'Negative'} polarity. R to switch.`}>
+            <div className="relative h-12 w-12" role="img" aria-label={`${positive ? 'Positive' : 'Negative'} polarity. ${flipKey} to switch.`}>
                 <div
                     className={`h-12 w-12 border-4 border-[#1a1a1a] bg-[#777] p-1 shadow-[inset_2px_2px_0_#d8d8d8,inset_-2px_-2px_0_#3a3a3a,2px_2px_0_#000] transition-[transform,filter,box-shadow] duration-150 ${
                         switching ? 'scale-125 brightness-150' : 'scale-100 brightness-100'
@@ -80,7 +82,7 @@ export const PolarityIndicator: React.FC = () => {
                         style={{ imageRendering: 'pixelated' }}
                     />
                 </div>
-                <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">R</kbd>
+                <kbd className="absolute -bottom-1 -right-1 rounded-sm border border-white/40 bg-[#20221f] px-1 font-sans text-[10px] leading-4 text-white">{flipKey}</kbd>
             </div>
         </div>
     );

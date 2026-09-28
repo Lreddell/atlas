@@ -10,7 +10,7 @@ const LOADING_TIPS = [
     "Press Q to drop the selected item. Ctrl+Q drops the whole stack.",
     "Press / to open command input with autocomplete for supported commands.",
     "Press F3 to toggle the debug screen.",
-    "Mouse sensitivity and inverted look are in Options > Controls, along with every key.",
+    "Rebind any key, and set mouse sensitivity and inverted look, in Options > Controls.",
     "Press F4 to open the texture atlas viewer.",
     "Press F8 in-game to capture a panorama for the menu background.",
     "One log crafts into 4 planks, and 2 stacked planks craft into 4 sticks.",

@@ -84,6 +84,8 @@ import { worldManager } from './systems/WorldManager';
 import { resonantVaultRuntime } from './systems/world/ResonantVaultRuntime';
 import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
+import { isKeyFor, keyLabelFor } from './systems/player/keyBindingStore';
+import { HOTBAR_KEY_ACTIONS, type KeyAction } from './systems/player/keyBindings';
 import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
 import { requestPersistentStorage } from './systems/world/storage/storagePersistence';
@@ -128,7 +130,9 @@ const MENU_PANORAMA_DATA_KEY = 'atlas.menu.panoramaDataUrl';
 const MENU_PANORAMA_BLUR_KEY = 'atlas.menu.panoramaBlur';
 const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
-const PANORAMA_CAPTURE_KEY = 'F8';
+/** Function keys whose browser shortcuts (help, find, reload, caret browsing) stay blocked whatever they are bound to. */
+const BLOCKED_BROWSER_KEYS: ReadonlySet<string> = new Set(['F1', 'F3', 'F5', 'F6', 'F7']);
+
 const WEB_PANORAMA_PREFIX = 'web:';
 const DEFAULT_MENU_PANORAMA_URL = DEFAULT_MENU_PANORAMA.url;
 const DEFAULT_PANORAMA_ID = DEFAULT_MENU_PANORAMA.id;
@@ -1888,7 +1892,7 @@ const App: React.FC = () => {
   const toggleMenuBackgroundMode = useCallback(() => {
       if (menuBackgroundMode === 'dirt') {
           if (!menuPanoramaDataUrl) {
-              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.` });
+              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${keyLabelFor('panorama')}.` });
               return;
           }
           setMenuBackgroundMode('panorama');
@@ -2229,17 +2233,22 @@ const App: React.FC = () => {
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
+    if (BLOCKED_BROWSER_KEYS.has(e.code)) e.preventDefault();
+    // The player's bindings (Options > Controls). A shortcut bound to a letter
+    // never fires while typing in a text field; function keys work anywhere.
+    const hotkey = (action: KeyAction) => isKeyFor(action, e) && (!isEditableTarget || /^F\d{1,2}$/.test(e.code));
 
-    if (e.code === 'F1') {
+    if (hotkey('hideHud')) {
         e.preventDefault();
         if (!e.repeat && appState === 'game' && !isEditableTarget) setHudHidden(hidden => !hidden);
         return;
     }
-    if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    // F5 / F6: the two third-person views. Handled here rather than in the
-    // movement input so they work whether or not the pointer is locked (and so
-    // the browser never reloads or moves focus instead of switching the view).
-    if (e.code === 'F5' || e.code === 'F6') {
+    if (hotkey('debug')) { e.preventDefault(); setShowDebug(prev => !prev); return; }
+    // F5 / F6 by default: the two third-person views. Handled here rather than
+    // in the movement input so they work whether or not the pointer is locked
+    // (and so the browser never reloads or moves focus instead of switching the view).
+    const freeViewKey = hotkey('freeView');
+    if (freeViewKey || hotkey('shoulderView')) {
         e.preventDefault();
         if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             // F5 is the free view (the body keeps its own facing while the camera
@@ -2251,8 +2260,8 @@ const App: React.FC = () => {
             // against a camera that orbits the player, and F7 has none. The mode
             // the player came from is untouched, so putting the tripod away hands
             // the free view back.
-            if (e.code === 'F5' && detachedCamera.stage !== 'off') return;
-            const view: ViewMode = e.code === 'F5' ? 'free' : 'third';
+            if (freeViewKey && detachedCamera.stage !== 'off') return;
+            const view: ViewMode = freeViewKey ? 'free' : 'third';
             const next: ViewMode = viewRig.mode === view ? 'first' : view;
             viewRig.mode = next;
             gameEvents.emit('view:changed', { mode: next });
@@ -2261,7 +2270,7 @@ const App: React.FC = () => {
     }
     // F7 cycles the detached camera: place it, bolt it down, put it back. The
     // view mode is never touched, so releasing it returns to whatever was on.
-    if (e.code === 'F7') {
+    if (hotkey('detachedCamera')) {
         e.preventDefault();
         if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
             detachedCamera.stage = nextDetachedStage(detachedCamera.stage);
@@ -2269,7 +2278,7 @@ const App: React.FC = () => {
         }
         return;
     }
-    if (e.code === 'F4') {
+    if (hotkey('atlasViewer')) {
         if (showAtlasViewer) {
             e.preventDefault();
             setShowAtlasViewer(false);
@@ -2336,7 +2345,7 @@ const App: React.FC = () => {
     if (appState !== 'game') return;
     if (isEditableTarget && e.key !== 'Escape') return;
 
-    if (e.code === PANORAMA_CAPTURE_KEY) {
+    if (isKeyFor('panorama', e)) {
         e.preventDefault();
         if (!isPaused && !openContainer && !showCommandInput && !isDead && !isSleeping && !showAtlasViewer) {
             void captureAndSavePanorama();
@@ -2383,10 +2392,12 @@ const App: React.FC = () => {
         if (e.key === 'Enter') { e.preventDefault(); submitCommandInput(); } 
         return; 
     }
-    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
-    if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
-    if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
-    if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
+    const opensCommand = isKeyFor('command', e);
+    if ((opensCommand || isKeyFor('chat', e)) && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(opensCommand ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
+    const hotbarSlot = HOTBAR_KEY_ACTIONS.findIndex((action) => isKeyFor(action, e));
+    if (hotbarSlot >= 0 && !isDead && !openContainer) { setSelectedSlot(hotbarSlot); soundManager.play("ui.click", { pitch: 1.5 }); }
+    if (isKeyFor('drop', e) && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
+    if (isKeyFor('inventory', e) && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
   }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, cinematicMode, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
@@ -3197,7 +3208,7 @@ const App: React.FC = () => {
               panoramaFaceDataUrls={menuPanoramaFaceDataUrls}
               hasPanoramaBackground={!!menuPanoramaDataUrl}
               onToggleBackground={toggleMenuBackgroundMode}
-              panoramaCaptureHotkey={PANORAMA_CAPTURE_KEY}
+              panoramaCaptureHotkey={keyLabelFor('panorama')}
               panoramaEntries={[
                   ...menuPanoramaLibrary.filter((entry) => !getBuiltInMenuPanorama(entry)),
                   ...BUILT_IN_MENU_PANORAMAS.map((panorama) => panorama.id),
