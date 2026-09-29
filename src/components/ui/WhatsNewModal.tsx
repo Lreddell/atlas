@@ -80,7 +80,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
                             );
                         })}
                     </div>
-                    <MenuButton label="Done" onClick={onClose} width="w-[140px]" small />
+                    <MenuButton label="Got it!" onClick={onClose} width="w-[140px]" variant="primary" small />
                 </div>
             </div>
         </div>

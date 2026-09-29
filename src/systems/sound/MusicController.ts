@@ -91,7 +91,7 @@ const RESONANT_MUSIC_CONTEXTS = new Set(["VAULT", "VAULT_COMBAT", "BOSS_RESONANT
 const CONTINUOUS_MUSIC_CONTEXTS = new Set(["VAULT", "VAULT_COMBAT", "BOSS_RESONANT", "VAULT_ESCAPE", "BOSS_MAGNETIC"]);
 
 // Biome Switch Config
-const BIOME_STABILITY_THRESHOLD = 30000; // 30 seconds to confirm biome change
+const BIOME_STABILITY_THRESHOLD = 8000; // 8 seconds in a new biome before its music takes over
 const CAVE_STABILITY_THRESHOLD = 4000; // Underground should react much faster than biome travel
 const BLOOD_MOON_STABILITY_THRESHOLD = 0;
 const BLOOD_MOON_LOOP_CROSSFADE = 10.0;
@@ -101,7 +101,7 @@ const BLOOD_MOON_LOOP_DISABLE_WINDOW_TICKS = BLOOD_MOON_LOOP_CROSSFADE_TICKS * 2
 const BLOOD_MOON_FADE_IN = 10.0;
 const BLOOD_MOON_FADE_OUT = 10.0;
 const STANDARD_FADE_IN = 3.0;
-const TRANSITION_FADE_OUT = 5.0; // 5 seconds to fade out old track
+const TRANSITION_FADE_OUT = 3.0; // 3 seconds to fade out old track
 const TRANSITION_SILENCE = 0; // 0 seconds of absolute silence between tracks
 const PRIORITY_CROSSFADE_SECONDS = PRIORITY_CROSSFADE_MS / 1000;
 
@@ -463,7 +463,7 @@ class MusicController {
             this.contextStableTime = now;
         }
 
-        // Only switch if context has been stable for the threshold (6 seconds) OR if switching to/from MENU (instant)
+        // Only switch if context has been stable for the threshold (8 seconds for biomes) OR if switching to/from MENU (instant)
         const isMenuSwitch = targetContext === "MENU" || this.currentContext === "MENU";
         const isDeathSwitch = this.currentContext === "DEATH"; // leaving death resumes instantly
         const isBloodMoonSwitch = targetContext === 'BLOODMOON' || this.currentContext === 'BLOODMOON';

@@ -72,12 +72,12 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
             </label>
 
             <label className="flex flex-col gap-1">
-                <span className="atlas-label">Seed</span>
+                <span className="atlas-label">World Seed (Leave blank for random)</span>
                 <input
                     type="text"
                     value={seed}
                     onChange={(event) => onSeedChange(event.target.value)}
-                    placeholder="Leave blank for a random world"
+                    placeholder="e.g. atlas"
                     className="atlas-input"
                 />
             </label>
@@ -85,9 +85,9 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
             <div className="mt-2 flex flex-col gap-1">
                 <MenuButton label={`Game Mode: ${GAME_MODE_NAMES[gameMode]}`} onClick={onCycleGameMode} width="w-full" />
                 <p className="atlas-hint px-1">
-                    {gameMode === 'survival' && 'Gather resources, craft gear, and keep yourself fed and alive.'}
-                    {gameMode === 'creative' && 'Every block and item, free flight, and blocks break instantly.'}
-                    {gameMode === 'spectator' && 'Fly through anything and look around. Nothing can be touched.'}
+                    {gameMode === 'survival' && 'Search for resources, craft, gain levels, health and hunger.'}
+                    {gameMode === 'creative' && 'Unlimited resources, free flying and destroy blocks instantly.'}
+                    {gameMode === 'spectator' && "You can look but don't touch."}
                 </p>
             </div>
 
@@ -102,13 +102,13 @@ export const CreateWorldPanel: React.FC<CreateWorldPanelProps> = ({
 
             <div className="flex flex-col gap-1">
                 <MenuButton
-                    label={`World Type: ${presetName}`}
+                    label={`World Edit Preset: ${presetName}`}
                     onClick={cyclePreset}
                     disabled={worldGenPresets.length === 0}
                     tooltip={worldGenPresets.length === 0 ? 'Save a preset in the World Editor first' : undefined}
                     width="w-full"
                 />
-                <p className="atlas-hint px-1">Terrain presets are made and saved in the World Editor.</p>
+                <p className="atlas-hint px-1">Presets are saved from the World Editor.</p>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -161,7 +161,7 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
         <h1 className="atlas-title mb-4 text-center">Select World</h1>
         <div className="atlas-well mb-5 min-h-[120px] w-full flex-1 overflow-y-auto p-2 scrollbar-thin" role="listbox" aria-label="Saved worlds">
             {worlds.length === 0 && (
-                <div className="mt-16 text-center text-px-2 text-parchment-400">No worlds yet. Create one to begin.</div>
+                <div className="mt-16 text-center text-px-2 text-parchment-400">No worlds found. Create one!</div>
             )}
             {worlds.map((world) => {
                 const selected = selectedWorldId === world.id;
@@ -205,7 +205,7 @@ export const WorldSelectPanel: React.FC<WorldSelectPanelProps> = ({
                 tooltip={!canOpenSaveFolder ? 'Desktop build only' : undefined}
                 width="w-full"
             />
-            <MenuButton label="Back" onClick={onCancel} width="w-full" />
+            <MenuButton label="Cancel" onClick={onCancel} width="w-full" />
         </div>
         {storageInfo && (
             <div className="mt-3 text-center text-read text-parchment-400">{storageInfo}</div>
@@ -272,13 +272,13 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
     onBack,
 }) => (
     <div className={`atlas-panel relative z-10 my-6 flex w-[780px] max-w-[calc(100vw-2rem)] flex-col items-center px-6 pb-6 pt-5 ${panoramaSubmenu === 'manager' ? 'h-[calc(100%-3rem)] max-h-[720px]' : ''}`}>
-        <h1 className="atlas-title mb-4 text-center">Menu Background</h1>
+        <h1 className="atlas-title mb-4 text-center">Panorama Settings</h1>
 
         <div key={panoramaSubmenu} className="flex min-h-0 w-full flex-1 flex-col items-center atlas-fade-in">
         {panoramaSubmenu === 'manager' && (
             <>
                 <p className="atlas-hint mb-3 w-full px-1">
-                    Capture a panorama in-game with {panoramaCaptureHotkey}, or import a panorama PNG. Settings tunes the blur, shading and spin.
+                    Capture from in-game using {panoramaCaptureHotkey}, import an existing panorama PNG, and open Settings for panorama tuning.
                 </p>
 
                 <div className="atlas-well mb-5 min-h-[120px] w-full flex-1 overflow-y-auto p-2 scrollbar-thin">
@@ -299,12 +299,12 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                                 <div className="min-w-0">
                                     <div className="truncate text-px-2 text-parchment-50 text-shadow-md">{getPanoramaLabel(filePath)}{isDefault ? ' (Default)' : ''}</div>
                                     <div className="truncate text-read text-parchment-400">
-                                        {builtIn ? builtIn.description : filePath.startsWith('web:') ? 'Stored in this browser' : filePath}
+                                        {builtIn ? builtIn.description : filePath.startsWith('web:') ? 'Stored in browser local storage' : filePath}
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 gap-2">
                                     <MenuButton
-                                        label={isActive ? 'In Use' : 'Use'}
+                                        label={isActive ? 'Using' : 'Use'}
                                         onClick={() => onUsePanorama(filePath)}
                                         disabled={isActive}
                                         width="w-[104px]"
@@ -336,8 +336,8 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         tooltip={!canImportPanorama ? 'Desktop build only' : undefined}
                         width="w-full"
                     />
-                    <MenuButton label="Settings..." onClick={() => onPanoramaSubmenuChange('settings')} width="w-full" />
-                    <MenuButton label="Done" onClick={onBack} width="w-full" />
+                    <MenuButton label="Settings" onClick={() => onPanoramaSubmenuChange('settings')} width="w-full" />
+                    <MenuButton label="Back" onClick={onBack} width="w-full" />
                 </div>
             </>
         )}
@@ -345,7 +345,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
         {panoramaSubmenu === 'settings' && (
             <>
                 <p className="atlas-hint mb-4 w-full px-1 text-center">
-                    These apply to the title screen and the loading screen.
+                    Panorama appearance settings apply to menu and loading backgrounds.
                 </p>
 
                 <div className="mb-3 flex w-full justify-center">
@@ -353,14 +353,14 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         label={`Background: ${usingPanorama ? 'Panorama' : 'Dirt'}`}
                         onClick={onToggleBackground}
                         disabled={!hasPanoramaBackground && backgroundMode === 'dirt'}
-                        tooltip={!hasPanoramaBackground && backgroundMode === 'dirt' ? `Capture a panorama in-game (${panoramaCaptureHotkey})` : undefined}
+                        tooltip={!hasPanoramaBackground && backgroundMode === 'dirt' ? `Capture panorama in-game (${panoramaCaptureHotkey})` : undefined}
                         width="w-[460px]"
                     />
                 </div>
 
                 <div className="mb-6 grid w-full grid-cols-1 justify-items-center gap-3">
                     <MenuSlider
-                        label="Blur"
+                        label="Menu Panorama Blur"
                         value={panoramaBlur}
                         min={0}
                         max={12}
@@ -370,7 +370,7 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         formatValue={(value) => `${value.toFixed(1)} px`}
                     />
                     <MenuSlider
-                        label="Shading"
+                        label="Menu Gradient"
                         value={panoramaGradient}
                         min={0}
                         max={0.9}
@@ -387,11 +387,11 @@ export const PanoramaPanel: React.FC<PanoramaPanelProps> = ({
                         step={0.1}
                         onChange={setPanoramaRotationSpeed}
                         width="w-[460px]"
-                        formatValue={(value) => (value <= 0 ? 'Off' : `${value.toFixed(1)}x`)}
+                        formatValue={(value) => (value <= 0 ? 'Rotation Off' : `${value.toFixed(1)}x`)}
                     />
                 </div>
 
-                <MenuButton label="Done" onClick={() => onPanoramaSubmenuChange('manager')} width="w-[460px]" />
+                <MenuButton label="Back to Panorama" onClick={() => onPanoramaSubmenuChange('manager')} width="w-[460px]" />
             </>
         )}
         </div>
@@ -464,6 +464,7 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
         <button
             type="button"
             onClick={onShowWhatsNew}
+            data-tip="See what's new"
             className="absolute bottom-2 left-3 text-px-2 text-parchment-100 text-shadow-md hover:text-brass-200 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-star"
         >
             Atlas {APP_DISPLAY_VERSION}: What&apos;s New
@@ -490,11 +491,11 @@ export const TutorialPromptModal: React.FC<TutorialPromptModalProps> = ({ onAcce
         <div className="atlas-panel w-[560px] max-w-[calc(100vw-2rem)] px-8 pb-7 pt-5">
             <h2 className="atlas-title mb-3">First Time Here?</h2>
             <p className="mb-6 text-read text-parchment-200">
-                Atlas has a built-in tutorial covering the controls, crafting, farming, and the Magnetic Fields.
-                Open it now? It is always under Options &gt; Tutorial.
+                Atlas includes a built-in tutorial wiki for controls, mechanics, and core gameplay concepts.
+                Open it now?
             </p>
             <div className="grid grid-cols-2 gap-3">
-                <MenuButton label="Show Tutorial" onClick={onAccept} width="w-full" variant="primary" />
+                <MenuButton label="Yes, Show Tutorial" onClick={onAccept} width="w-full" variant="primary" />
                 <MenuButton label="No, Thanks" onClick={onDecline} width="w-full" />
             </div>
         </div>

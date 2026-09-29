@@ -71,7 +71,7 @@ const LOADING_TIPS = [
     "Use /setspawn to set your respawn point, and /keepinventory on to keep items on death.",
     "Worlds can be renamed, imported, and exported from the main menu.",
     "Desktop builds can open the active save folder directly from the world menu.",
-    "Options > Menu Background manages captured panoramas and tunes their blur, shading, and rotation.",
+    "Options > Panorama Settings manages captured panoramas and tunes their blur, gradient, and rotation.",
     "The built-in tutorial under Options covers controls, gear, boats, commands, and Magnetic Fields progression.",
     "Moon phases run on an 8-day cycle, and each phase changes nighttime brightness.",
     "Volcanic Crags use lava in place of normal water, which makes them one of Atlas's harshest biomes.",
@@ -95,6 +95,21 @@ const LOADING_TIPS = [
     "World generation presets can be selected when creating a new world.",
     "Launch pads are useful places to learn the polarity rules before entering the arena.",
     "The Warden fight rewards timing, preparation, and understanding polarity more than raw damage alone.",
+    "Options > Video Settings has Low, Medium, High, and Ultra graphics, and Visual Style switches between the Luminous and Classic looks.",
+    "Shadow Style draws shadows crisp on the textures' 16-pixel grid (Pixel) or smooth (Soft).",
+    "Press F7 for a detached camera: fly it into place, press again to park it while you play, and again to bring it back.",
+    "Press F1 to hide the HUD, your hand, and the block outline for a clean screenshot.",
+    "Pick a skin from the carousel in Options > Skins, or import your own Minecraft skin.",
+    "A key bound to two actions shows in red on the Controls screen, and every key can be reset to its default.",
+    "Commands like /gamemode, /time, and /tp need Allow Commands, set when you create a world or later in World Options. /help, /sound, and /music always work.",
+    "World Options in the pause menu switches Allow Commands, Keep Inventory, and Show Coordinates for the world you are in.",
+    "Water spreads seven blocks from its source and runs toward the nearest drop. Lava pouring down into water turns it to stone.",
+    "Hold the button with a hoe or seeds in hand to till or plant along a whole row.",
+    "Felled trees shed their leaves a few seconds later, dropping the saplings, apples, and sticks they held.",
+    "In the recipe book, a red recipe is missing an ingredient and a table mark means it needs a Crafting Table.",
+    "At four hearts or less a heartbeat warns you, quickening as your health falls.",
+    "When the Warden is out of view, an arrow around the crosshair points to it and shows how far away it is.",
+    "Press Jump (Space) to skip the Warden's defeat cinematic.",
 ];
 
 type GrassFaces = { top: string; side: string; bottom: string };
@@ -270,9 +285,9 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                         {details && <p className="mt-2 h-6 text-center text-read text-parchment-400">{details}</p>}
                     </div>
 
-                    {/* A tip, as a line from the explorer's notebook. */}
+                    {/* Tips section */}
                     <div className="atlas-well flex min-h-[112px] w-full flex-col gap-1 px-4 py-3">
-                        <span className="atlas-heading">Field Note</span>
+                        <span className="atlas-heading">Tip</span>
                         <p className="text-read text-parchment-100">
                             {LOADING_TIPS[tipIndex]}
                         </p>

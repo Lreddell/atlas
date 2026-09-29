@@ -30,7 +30,7 @@ const BUILD_CREDIT_URL = 'https://github.com/Lreddell/atlas';
 interface MainMenuProps {
     onStart: (worldId: string) => void;
     onChunkBase: () => void;
-    /** The view to open on (Options > Menu Background opens 'settings'). */
+    /** The view to open on (Options > Panorama Settings opens 'settings'). */
     initialView?: 'main' | 'settings';
     /** Where Back leads from the menu background settings when Options opened them. */
     onPanoramaDone?: () => void;

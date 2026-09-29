@@ -34,7 +34,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         "version": "v1.3.0-alpha",
         "displayVersion": "Alpha 1.3.0",
         "title": "Light & Polarity",
-        "date": "2026-09-25",
+        "date": "2026-09-29",
         "tagline": "A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and frame your adventure.",
         "highlights": [
             "Explore the Luminous visual style: a new sky and haze, readable moonlit nights, reflective water, swaying foliage, soft or pixel shadows, and clouds that reach the horizon and shade the ground.",
@@ -115,9 +115,10 @@ export const CHANGELOG: ChangelogEntry[] = [
             {
                 "title": "Menus & Panoramas",
                 "items": [
-                    "Tundra is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Menu Background.",
+                    "Tundra is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Panorama Settings.",
                     "Your own captured or imported panoramas still work, and the built-in ones can't be deleted.",
                     "Panoramas show the scene the right way round; before, they appeared mirrored, with left and right swapped.",
+                    "New splash texts on the title screen, and new loading screen tips covering this update.",
                     "Menus, dialogs, the inventory, and the loading and death screens ease in, and World Editor sections fade between pages. These skip their motion if your system asks for reduced motion."
                 ]
             },
@@ -128,11 +129,11 @@ export const CHANGELOG: ChangelogEntry[] = [
                     "The title screen has a new ATLAS wordmark.",
                     "New vitals: life crystals for health, loaves for hunger, steel plates for armor, and bubbles for breath, with the same ten pips and half pips as before. Together they are exactly as wide as the hotbar, and the selected hotbar slot has a brass frame.",
                     "The boss bar sits in a brass frame under a name plate, keeping its bright polarity colors.",
-                    "The hotbar is Minecraft's size, a little larger than before, and still floats above the bottom edge.",
+                    "The hotbar, the vitals above it and the item name grow with the window, the way Minecraft's automatic GUI scale does. At 1920x1080 the hotbar is Minecraft's size, half again as large as before, and every part keeps its original proportions. It still floats above the bottom edge.",
                     "The inventory is narrower, so it fits beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.",
-                    "Create New World picks a terrain preset with a World Type button instead of a drop-down list.",
+                    "Create New World picks its World Edit Preset with a button instead of a drop-down list.",
                     "The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the color from the world.",
-                    "Chat stays clear of the hotbar on smaller screens, and the tutorial marks which section is open.",
+                    "Chat stays clear of the hotbar at any size, and once it fills up, its oldest lines fade out at the top instead of being cut off. The tutorial marks which section is open.",
                     "Hover hints use the interface's own tooltips, and the Vault objective, the boss compass and the error screen match the rest of the interface.",
                     "Item tooltips keep a line explaining an item only where its name doesn't say it all: Vault machinery, crafting materials and weapons with a special trick.",
                     "Spelling is American English throughout."
@@ -145,7 +146,8 @@ export const CHANGELOG: ChangelogEntry[] = [
                     "The low-health pulse sits beneath the polarity rim, so the boss's red and blue cues stay readable.",
                     "New Magnetic Warden and Bell Titan fight music and steadier music changes during encounters. At night, a boss's frenzy now adds its pitch change to the night slowdown instead of replacing it.",
                     "Creative mode plays the normal biome and cave music when its own music folder is empty.",
-                    "New feedback sounds for magnetic movement and tower events."
+                    "New feedback sounds for magnetic movement and tower events.",
+                    "Biome music changes sooner: about 8 seconds after you enter a new biome instead of 30, with a shorter fade between songs."
                 ]
             },
             {
@@ -194,7 +196,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     "World Options in the pause menu switches Allow Commands, Keep Inventory (which now saves with the world) and Show Coordinates, and shows the world's seed.",
                     "Show Coordinates puts your position in the corner of the screen.",
                     "The Magnetic Fields are much closer: the nearest is usually about two thousand blocks from where you start. Resonant Vaults never generate inside them.",
-                    "The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama settings moved to Options > Menu Background, and saved worlds list their mode and seed."
+                    "The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama Settings moved into Options, and saved worlds list their mode and seed."
                 ]
             },
             {
@@ -223,7 +225,7 @@ export const CHANGELOG: ChangelogEntry[] = [
                     "The boss bar and the polarity block and tint no longer draw over the pause menu and inventory.",
                     "A new world starts you on the ground instead of on top of a tree.",
                     "Items show their names on hover again after shift-clicking items between a chest and your inventory.",
-                    "Ice and water no longer show lines along chunk borders."
+                    "Ice over water no longer shows lines or differently tinted bands along chunk borders."
                 ]
             }
         ]

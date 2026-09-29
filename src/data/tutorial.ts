@@ -142,7 +142,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             '/locate biome <name> and /locate vault',
             '/boss <spawn|kill> and /magfields <on|off|toggle>: encounter testing',
             '/playsound <id>, /sound volume <value>, /music skip',
-            'Tip: Options holds Video Settings, and Options > Menu Background the title screen panorama.'
+            'Tip: use Options and Panorama Settings to tune visuals and menu presentation.'
         ]
     }
 ];
