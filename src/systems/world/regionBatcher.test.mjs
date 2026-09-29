@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { performance } from 'node:perf_hooks';
+import { readFileSync } from 'node:fs';
+import { URL } from 'node:url';
 import { loadTs } from './storage/bundleTs.mjs';
 
 globalThis.__APP_VERSION__ = 'test';
@@ -8,9 +10,9 @@ globalThis.__APP_DISPLAY_VERSION__ = 'test';
 
 const mod = await loadTs(`
     export * as THREE from 'three';
-    export { RegionBatcher, mergeRegionLayer, REGION_CHUNKS, REBUILD_DEBOUNCE_MS, NEAR_TRANSPARENT_REGIONS, regionOf } from './src/systems/world/regionBatcher';
+    export { RegionBatcher, mergeRegionLayer, REGION_CHUNKS, REBUILD_DEBOUNCE_MS, NEAR_TRANSPARENT_REGIONS, regionOf, BACK_FACE_ORDER, WATER_ORDER } from './src/systems/world/regionBatcher';
 `);
-const { THREE, RegionBatcher, mergeRegionLayer, REGION_CHUNKS, REBUILD_DEBOUNCE_MS, NEAR_TRANSPARENT_REGIONS, regionOf } = mod;
+const { THREE, RegionBatcher, mergeRegionLayer, REGION_CHUNKS, REBUILD_DEBOUNCE_MS, NEAR_TRANSPARENT_REGIONS, regionOf, BACK_FACE_ORDER, WATER_ORDER } = mod;
 
 // A chunk-shaped geometry: one quad at (x, y, z), with every attribute the mesher writes.
 const quad = (x = 0, y = 0, z = 0) => {
@@ -25,10 +27,17 @@ const quad = (x = 0, y = 0, z = 0) => {
     return geometry;
 };
 
-const candidate = (geometry, water = null) => {
+const candidate = (geometry, water = null, glass = null) => {
     const mesh = new THREE.Mesh(geometry);
     const waterMesh = water ? new THREE.Mesh(water) : null;
-    return { mesh, waterMesh, candidate: { geometries: { opaque: geometry, cutout: null, transparent: water }, meshes: { opaque: mesh, cutout: null, transparent: waterMesh } } };
+    const glassMesh = glass ? new THREE.Mesh(glass) : null;
+    return {
+        mesh, waterMesh, glassMesh,
+        candidate: {
+            geometries: { opaque: geometry, cutout: null, transparent: glass, water },
+            meshes: { opaque: mesh, cutout: null, transparent: glassMesh, water: waterMesh },
+        },
+    };
 };
 
 const materials = () => ({
@@ -36,12 +45,42 @@ const materials = () => ({
     cutout: new THREE.MeshBasicMaterial(),
     transparent: new THREE.MeshBasicMaterial({ transparent: true, side: THREE.FrontSide }),
     transparentBack: new THREE.MeshBasicMaterial({ transparent: true, side: THREE.BackSide }),
+    water: new THREE.MeshBasicMaterial({ transparent: true, side: THREE.FrontSide }),
+    waterBack: new THREE.MeshBasicMaterial({ transparent: true, side: THREE.BackSide }),
     cutoutDepth: new THREE.MeshDepthMaterial(),
 });
 const later = () => performance.now() + REBUILD_DEBOUNCE_MS + 1;
 // A camera far from every region these tests use, unless a test says otherwise.
 const FAR = 1e5;
 const regionMeshes = (root) => root.children.filter(child => child.name === 'chunkRegion');
+
+// Ice over water: whichever chunk or region a ray meets them in, all the water
+// is drawn before any glass or ice, and every back face before both.
+test('water draws before glass and ice, and back faces before both', () => {
+    assert.ok(BACK_FACE_ORDER < WATER_ORDER && WATER_ORDER < 0);
+    const batcher = new RegionBatcher();
+    const root = new THREE.Group();
+    const mats = materials();
+    batcher.attach(root, mats);
+    const a = candidate(quad(), quad(0, 1, 0), quad(0, 2, 0));
+    batcher.offer(0, 0, a.candidate);
+    batcher.update(later(), FAR, FAR);
+    const order = (material) => regionMeshes(root).find(mesh => mesh.material === material)?.renderOrder;
+    assert.equal(order(mats.waterBack), BACK_FACE_ORDER);
+    assert.equal(order(mats.transparentBack), BACK_FACE_ORDER);
+    assert.equal(order(mats.water), WATER_ORDER);
+    assert.equal(order(mats.transparent), 0, 'glass and ice sort with the rest of the scene');
+    // Near the camera both hand over to the chunk's own meshes, and back.
+    batcher.update(performance.now(), 8, 8);
+    assert.equal(a.waterMesh.visible, true);
+    assert.equal(a.glassMesh.visible, true);
+    // The chunk meshes carry the same orders (ChunkMesh.tsx).
+    const chunkMesh = readFileSync(new URL('../../components/ChunkMesh.tsx', import.meta.url), 'utf8');
+    assert.match(chunkMesh, /ref=\{waterMeshRef\}[^>]*renderOrder=\{WATER_ORDER\}/);
+    assert.match(chunkMesh, /ref=\{waterBackMeshRef\}[^>]*renderOrder=\{BACK_FACE_ORDER\}/);
+    assert.match(chunkMesh, /ref=\{transparentBackMeshRef\}[^>]*renderOrder=\{BACK_FACE_ORDER\}/);
+    assert.doesNotMatch(chunkMesh, /ref=\{transparentMeshRef\}[^>]*renderOrder/);
+});
 
 test('regions group chunks by floor division, negatives included', () => {
     assert.equal(regionOf(0), 0);
@@ -173,16 +212,18 @@ test('shadow flags follow the setting, and detach hands every chunk back', () =>
 test('water and glass: merged far away, the chunk meshes near the camera', () => {
     const batcher = new RegionBatcher();
     const root = new THREE.Group();
-    batcher.attach(root, materials());
+    const mats = materials();
+    batcher.attach(root, mats);
     const a = candidate(quad(), quad(0, 1, 0));
     batcher.offer(0, 0, a.candidate);
     batcher.update(later(), FAR, FAR);
-    const merged = regionMeshes(root).find(mesh => mesh.material.transparent && mesh.material.side === THREE.FrontSide);
-    const back = regionMeshes(root).find(mesh => mesh.material.side === THREE.BackSide);
+    const merged = regionMeshes(root).find(mesh => mesh.material === mats.water);
+    const back = regionMeshes(root).find(mesh => mesh.material === mats.waterBack);
     assert.ok(merged, 'water merges too');
     assert.ok(back, 'with a back-face pass');
     assert.equal(back.geometry, merged.geometry, 'the two passes share one geometry');
-    assert.equal(back.renderOrder, -1, 'back faces draw before other water');
+    assert.equal(back.renderOrder, BACK_FACE_ORDER, 'back faces draw before other water');
+    assert.equal(merged.renderOrder, WATER_ORDER);
     assert.deepEqual(back.matrix.elements, merged.matrix.elements);
     assert.equal(merged.castShadow, false, 'water casts no shadow');
     assert.equal(merged.visible, true);

@@ -64,7 +64,14 @@ export const packTile = (texIdx: number, uvRot: number, variation: number): numb
 export interface GeometryResult {
     opaque: GeometryAttributes;
     cutout: GeometryAttributes;
+    /** Glass and ice. */
     transparent: GeometryAttributes;
+    /**
+     * Water, apart from glass and ice so that every chunk's water draws before
+     * any glass or ice (ChunkMesh.tsx): drawn chunk by chunk together, ice over
+     * water came out tinted differently on either side of every chunk border.
+     */
+    water: GeometryAttributes;
 }
 
 // Reusable scratch buffers that grow on demand. Starting small matters: these are
@@ -223,6 +230,7 @@ class GeometryBuffer {
 const opaqueBuffer = new GeometryBuffer();
 const cutoutBuffer = new GeometryBuffer();
 const transparentBuffer = new GeometryBuffer();
+const waterBuffer = new GeometryBuffer();
 // One slice's merge keys for the greedy pass, sized for the tallest slice (a side
 // face runs the chunk's width by its full height).
 const greedyKeys = new Float64Array(CHUNK_SIZE * WORLD_HEIGHT);
@@ -345,6 +353,7 @@ export function generateGeometryData(
     opaqueBuffer.reset();
     cutoutBuffer.reset();
     transparentBuffer.reset();
+    waterBuffer.reset();
     
     const getLightFast = (x: number, y: number, z: number): number => {
         if (y < MIN_Y || y > MAX_Y) return (15 << 4);
@@ -734,7 +743,8 @@ export function generateGeometryData(
         return {
             opaque: opaqueBuffer.slice(),
             cutout: cutoutBuffer.slice(),
-            transparent: transparentBuffer.slice()
+            transparent: transparentBuffer.slice(),
+            water: waterBuffer.slice(),
         };
     }
     for (let y = WORLD_HEIGHT - 1; y >= minOccY; y--) {
@@ -772,7 +782,7 @@ export function generateGeometryData(
           if (IS_CUTOUT[type] === 1) {
               targetBuffer = cutoutBuffer;
           } else if (IS_TRANSPARENT[type] === 1) {
-              targetBuffer = transparentBuffer;
+              targetBuffer = type === BlockType.WATER ? waterBuffer : transparentBuffer;
           }
           
           const isCross = IS_CROSS[type] === 1;
@@ -1071,6 +1081,7 @@ export function generateGeometryData(
     return {
         opaque: opaqueBuffer.slice(),
         cutout: cutoutBuffer.slice(),
-        transparent: transparentBuffer.slice()
+        transparent: transparentBuffer.slice(),
+        water: waterBuffer.slice(),
     };
 }

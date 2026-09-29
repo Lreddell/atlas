@@ -79,6 +79,6 @@ test('water against a slab keeps its face instead of opening a hole', () => {
     chunk[index3D(5, 2, 5)] = BlockType.WATER;
     chunk[index3D(6, 2, 5)] = BlockType.ECHO_STONE_SLAB;
     const res = generateGeometryData(0, 0, chunk, meta, {}, { center: light }, false);
-    const waterFacesTowardSlab = countFaces(res.transparent, 0, 1, 6);
+    const waterFacesTowardSlab = countFaces(res.water, 0, 1, 6);
     assert.ok(waterFacesTowardSlab >= 1, 'water face against a slab must render');
 });

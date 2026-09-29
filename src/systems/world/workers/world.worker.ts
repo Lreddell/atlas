@@ -51,7 +51,7 @@ ctx.onmessage = (e) => {
         const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces, neighborMeta);
 
         const buffers: Transferable[] = [];
-        [result.opaque, result.cutout, result.transparent].forEach(geo => {
+        [result.opaque, result.cutout, result.transparent, result.water].forEach(geo => {
             if (geo.positions.buffer) buffers.push(geo.positions.buffer);
             if (geo.normals.buffer) buffers.push(geo.normals.buffer);
             if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);

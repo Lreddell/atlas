@@ -22,9 +22,21 @@ import { CHUNK_SIZE } from '../../constants';
 // the ones around it) the chunks' own water and glass draw, sorted as ever,
 // and only farther out does the region's merged copy take over, where fog and
 // distance hide any overlap. Switching is a visibility flip, with no rebuild.
-// A region's water is drawn as two meshes over one geometry: every far
-// region's back faces first, then the front faces sorted with everything else
-// (createSplitTransparentMaterials in voxelMaterial.ts explains why).
+// A region's water, and its glass and ice, are each drawn as two meshes over
+// one geometry: every back face first, then the front faces (createVoxelMaterials
+// in voxelMaterial.ts explains why), all the water's before any glass or ice.
+
+/**
+ * Where see-through faces fall in the draw order (three sorts by renderOrder,
+ * then by distance), for chunks and regions alike: every back face first, then
+ * all the water, then glass and ice with the rest of the scene's see-through
+ * things (0). Water and ice drawn chunk by chunk instead, a ray through ice in
+ * one chunk that met the water beneath in the next could have that water
+ * blended over the ice: a band of differently tinted ice along each chunk
+ * border, widening toward the horizon.
+ */
+export const BACK_FACE_ORDER = -1;
+export const WATER_ORDER = -0.5;
 
 /** Chunks a region spans along x and along z. */
 export const REGION_CHUNKS = 4;
@@ -33,10 +45,14 @@ export const REBUILD_DEBOUNCE_MS = 1000;
 /** Regions this close to the camera's (in regions, either axis) draw their chunks' own water and glass. */
 export const NEAR_TRANSPARENT_REGIONS = 1;
 
-export type BatchLayer = 'opaque' | 'cutout' | 'transparent';
-const LAYERS: readonly BatchLayer[] = ['opaque', 'cutout', 'transparent'];
+export type BatchLayer = 'opaque' | 'cutout' | 'transparent' | 'water';
+const LAYERS: readonly BatchLayer[] = ['opaque', 'cutout', 'transparent', 'water'];
 /** Layers whose chunk meshes stay hidden (and free their GPU copies) while batched. */
 const SOLID_LAYERS: readonly BatchLayer[] = ['opaque', 'cutout'];
+/** Water, and glass and ice: drawn by the chunks near the camera, with a back-face pass. */
+type SeeThroughLayer = 'transparent' | 'water';
+const SEE_THROUGH_LAYERS: readonly SeeThroughLayer[] = ['transparent', 'water'];
+const isSeeThrough = (layer: BatchLayer): layer is SeeThroughLayer => layer === 'transparent' || layer === 'water';
 
 /** What a chunk offers: its geometry per layer, and its own meshes to hide while batched. */
 export interface BatchCandidate {
@@ -47,10 +63,14 @@ export interface BatchCandidate {
 export interface BatchMaterials {
     opaque: THREE.Material;
     cutout: THREE.Material;
-    /** Front faces of merged water and glass. */
+    /** Front faces of merged glass and ice. */
     transparent: THREE.Material;
-    /** Their back faces, drawn before every other water and glass (renderOrder -1). */
+    /** Their back faces, drawn before every other water, glass and ice (BACK_FACE_ORDER). */
     transparentBack: THREE.Material;
+    /** Front faces of merged water. */
+    water: THREE.Material;
+    /** Its back faces, drawn with the others. */
+    waterBack: THREE.Material;
     /** The shadow caster for cutout geometry (alpha-tested, swaying with the wind). */
     cutoutDepth: THREE.Material;
 }
@@ -63,8 +83,8 @@ interface Region {
     /** Chunks inside the region's current geometry: their index range per layer. */
     drawn: Map<string, { candidate: BatchCandidate; ranges: Partial<Record<BatchLayer, [number, number]>> }>;
     meshes: Record<BatchLayer, THREE.Mesh | null>;
-    /** The back-face pass of the transparent layer, sharing its geometry. */
-    transparentBack: THREE.Mesh | null;
+    /** The back-face passes of the see-through layers, sharing their geometry. */
+    backs: Record<SeeThroughLayer, THREE.Mesh | null>;
     /** When membership last changed (ms), or 0 when the geometry is current. */
     dirtyAt: number;
     /** Near the camera: the chunks draw their own water and glass (see above). */
@@ -212,8 +232,8 @@ export class RegionBatcher {
         if (!region) {
             region = {
                 rx, rz, members: new Map(), drawn: new Map(),
-                meshes: { opaque: null, cutout: null, transparent: null },
-                transparentBack: null,
+                meshes: { opaque: null, cutout: null, transparent: null, water: null },
+                backs: { transparent: null, water: null },
                 dirtyAt: 0,
                 near: this.isNear(rx, rz),
             };
@@ -273,7 +293,7 @@ export class RegionBatcher {
         let bytes = 0;
         for (const region of this.regions.values()) {
             batchedChunks += region.drawn.size;
-            if (region.transparentBack) regionMeshes++;
+            for (const layer of SEE_THROUGH_LAYERS) if (region.backs[layer]) regionMeshes++;
             for (const layer of LAYERS) {
                 const mesh = region.meshes[layer];
                 if (!mesh) continue;
@@ -289,14 +309,17 @@ export class RegionBatcher {
         return Math.abs(rx - this.cameraRx) <= NEAR_TRANSPARENT_REGIONS && Math.abs(rz - this.cameraRz) <= NEAR_TRANSPARENT_REGIONS;
     }
 
-    /** Water and glass for a region: its merged copy when far, the drawn chunks' own when near. */
+    /** Water, glass and ice for a region: its merged copy when far, the drawn chunks' own when near. */
     private showTransparent(region: Region): void {
-        const merged = region.meshes.transparent;
-        if (merged) merged.visible = !region.near;
-        if (region.transparentBack) region.transparentBack.visible = !region.near;
-        for (const { candidate } of region.drawn.values()) {
-            const own = candidate.meshes.transparent;
-            if (own) setChunkMeshVisible(own, region.near || !merged);
+        for (const layer of SEE_THROUGH_LAYERS) {
+            const merged = region.meshes[layer];
+            if (merged) merged.visible = !region.near;
+            const back = region.backs[layer];
+            if (back) back.visible = !region.near;
+            for (const { candidate } of region.drawn.values()) {
+                const own = candidate.meshes[layer];
+                if (own) setChunkMeshVisible(own, region.near || !merged);
+            }
         }
     }
 
@@ -330,7 +353,7 @@ export class RegionBatcher {
             if (mesh) {
                 mesh.geometry.dispose();
                 mesh.geometry = geometry;
-                if (layer === 'transparent' && region.transparentBack) region.transparentBack.geometry = geometry;
+                if (isSeeThrough(layer) && region.backs[layer]) region.backs[layer]!.geometry = geometry;
             } else {
                 mesh = new THREE.Mesh(geometry, materials[layer]);
                 mesh.name = 'chunkRegion';
@@ -341,19 +364,20 @@ export class RegionBatcher {
                 region.meshes[layer] = mesh;
                 this.root!.add(mesh);
                 mesh.updateMatrixWorld(true);
-                if (layer === 'transparent') {
-                    const back = new THREE.Mesh(geometry, materials.transparentBack);
+                if (isSeeThrough(layer)) {
+                    if (layer === 'water') mesh.renderOrder = WATER_ORDER;
+                    const back = new THREE.Mesh(geometry, layer === 'water' ? materials.waterBack : materials.transparentBack);
                     back.name = 'chunkRegion';
-                    back.renderOrder = -1;
+                    back.renderOrder = BACK_FACE_ORDER;
                     back.matrixAutoUpdate = false;
                     back.matrix.copy(mesh.matrix);
-                    region.transparentBack = back;
+                    region.backs[layer] = back;
                     this.root!.add(back);
                     back.updateMatrixWorld(true);
                 }
             }
-            // Water and glass never cast or catch shadows, as on chunks.
-            mesh.castShadow = mesh.receiveShadow = layer !== 'transparent' && this.shadows;
+            // Water, glass and ice never cast or catch shadows, as on chunks.
+            mesh.castShadow = mesh.receiveShadow = !isSeeThrough(layer) && this.shadows;
         }
 
         // Swap in the same frame: members now drawn by the region hide their own
@@ -395,9 +419,9 @@ export class RegionBatcher {
         mesh.removeFromParent();
         mesh.geometry.dispose();
         region.meshes[layer] = null;
-        if (layer === 'transparent' && region.transparentBack) {
-            region.transparentBack.removeFromParent();
-            region.transparentBack = null;
+        if (isSeeThrough(layer) && region.backs[layer]) {
+            region.backs[layer]!.removeFromParent();
+            region.backs[layer] = null;
         }
     }
 }

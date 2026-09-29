@@ -19,7 +19,7 @@ const mod = await loadTs(`
 `);
 const { generateChunk, reseedGlobalNoise, generateGeometryData, packMeshBorders, unpackMeshBorders, createBorderScratch, borderPlane, expandBorderPlane, CHUNK_SIZE, WORLD_HEIGHT, index3D, BlockType } = mod;
 
-const LAYERS = ['opaque', 'cutout', 'transparent'];
+const LAYERS = ['opaque', 'cutout', 'transparent', 'water'];
 const ARRAYS = ['positions', 'normals', 'uvs', 'colors', 'tiles', 'indices'];
 
 const sameMesh = (a, b, where) => {
@@ -78,6 +78,33 @@ test('meshing from border planes matches meshing from whole side chunks', () => 
     assert.equal(meshed, 16);
 });
 
+// Water meshes apart from glass and ice, so that it can draw first everywhere
+// (regionBatcher.ts): ice over water must not depend on which chunk drew first.
+test('water has a layer of its own, apart from glass and ice', () => {
+    const cells = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
+    const blocks = new Uint8Array(cells);
+    const light = new Uint8Array(cells).fill(15 << 4);
+    const y = 64;
+    for (let z = 0; z < CHUNK_SIZE; z++) {
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            blocks[index3D(x, y - 2, z)] = BlockType.STONE;
+            blocks[index3D(x, y - 1, z)] = BlockType.WATER;
+            blocks[index3D(x, y, z)] = x < 8 ? BlockType.ICE : BlockType.GLASS;
+        }
+    }
+    const mesh = generateGeometryData(0, 0, blocks, new Uint8Array(cells), {}, { center: light }, false);
+    const heights = (layer) => {
+        const found = new Set();
+        const positions = mesh[layer].positions;
+        for (let i = 1; i < positions.length; i += 3) found.add(Math.floor(positions[i]));
+        return [...found].sort((a, b) => a - b);
+    };
+    assert.ok(mesh.water.positions.length > 0, 'the water under the ice meshes');
+    assert.ok(heights('water').every((h) => h === y - 1), `water only: ${heights('water')}`);
+    assert.ok(mesh.transparent.positions.length > 0, 'the ice and glass mesh');
+    assert.ok(heights('transparent').every((h) => h >= y), `ice and glass only: ${heights('transparent')}`);
+});
+
 test('a missing side chunk stays missing', () => {
     const light = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT);
     const borders = packMeshBorders({ left: new Uint8Array(light.length) }, { center: light });
@@ -114,7 +141,7 @@ test('a flowing surface meets itself across a chunk border', () => {
     // The surface's corner heights on the border line: x = 16 in the west chunk, x = 0 in the east.
     const borderCorners = (mesh, x) => {
         const heights = new Map();
-        const positions = mesh.transparent.positions;
+        const positions = mesh.water.positions;
         for (let i = 0; i < positions.length; i += 3) {
             if (positions[i] === x && positions[i + 1] > y && positions[i + 1] < y + 1) heights.set(positions[i + 2], positions[i + 1]);
         }

@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
-import { regionBatcher } from '../systems/world/regionBatcher';
+import { BACK_FACE_ORDER, WATER_ORDER, regionBatcher } from '../systems/world/regionBatcher';
 import { chunkView } from '../systems/world/chunkView';
 import {
   getVoxelFadeMaterials,
@@ -72,6 +72,8 @@ export const ChunkRegionBatches: React.FC<{ shadowsEnabled: boolean }> = ({ shad
       cutout: sharedMaterials.cutout,
       transparent: sharedMaterials.transparent,
       transparentBack: sharedMaterials.transparentBack,
+      water: sharedMaterials.transparent,
+      waterBack: sharedMaterials.transparentBack,
       cutoutDepth: cutoutDepthMaterial,
     });
     return () => regionBatcher.detach();
@@ -88,9 +90,12 @@ type Geometries = {
   opaque: THREE.BufferGeometry | null;
   cutout: THREE.BufferGeometry | null;
   transparent: THREE.BufferGeometry | null;
+  water: THREE.BufferGeometry | null;
 };
 
-const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: null };
+const EMPTY_GEOMETRIES: Geometries = { opaque: null, cutout: null, transparent: null, water: null };
+const hasGeometry = (value: Geometries) => !!(value.opaque || value.cutout || value.transparent || value.water);
+
 
 const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = false, fadeInEnabled = true, fadingOut = false, onFadeOutComplete }) => {
   const [geometries, setGeometries] = useState<Geometries>(EMPTY_GEOMETRIES);
@@ -111,6 +116,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   const cutoutMeshRef = useRef<THREE.Mesh>(null);
   const transparentMeshRef = useRef<THREE.Mesh>(null);
   const transparentBackMeshRef = useRef<THREE.Mesh>(null);
+  const waterMeshRef = useRef<THREE.Mesh>(null);
+  const waterBackMeshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
     geometriesRef.current = geometries;
@@ -123,6 +130,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     value.opaque?.dispose();
     value.cutout?.dispose();
     value.transparent?.dispose();
+    value.water?.dispose();
   };
 
   // Replaced geometries are disposed only AFTER the new state commits. Disposing
@@ -130,7 +138,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   // re-uploading its GPU buffers, a leak (and a crash if arrays were released).
   const pendingDisposeRef = useRef<Geometries[]>([]);
   const queueDispose = useCallback((value: Geometries) => {
-    if (value.opaque || value.cutout || value.transparent) {
+    if (hasGeometry(value)) {
       pendingDisposeRef.current.push(value);
     }
   }, []);
@@ -148,6 +156,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     if (cutoutMeshRef.current) cutoutMeshRef.current.material = materials.cutout;
     if (transparentMeshRef.current) transparentMeshRef.current.material = materials.transparent;
     if (transparentBackMeshRef.current) transparentBackMeshRef.current.material = materials.transparentBack;
+    if (waterMeshRef.current) waterMeshRef.current.material = materials.transparent;
+    if (waterBackMeshRef.current) waterBackMeshRef.current.material = materials.transparentBack;
   }, []);
 
   // Ends a fade. The meshes go back to the shared materials, except at the end
@@ -207,7 +217,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         onFadeOutCompleteRef.current?.();
         return;
       }
-      const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
+      const hasAny = hasGeometry(geometriesRef.current);
       if (!hasAny) {
         onFadeOutCompleteRef.current?.();
         return;
@@ -233,7 +243,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         if (!data) {
           if (fadeModeRef.current === 'out') return;
           if (fadingOutRef.current) return;
-          const hasAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
+          const hasAny = hasGeometry(geometriesRef.current);
           if (fadeInEnabled && hasAny) {
             lastClearedMsRef.current = performance.now();
             startFade('out'); // geometry stays until fade-out completes
@@ -284,7 +294,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         const next = {
           opaque: buildGeo(data.opaque),
           cutout: buildGeo(data.cutout),
-          transparent: buildGeo(data.transparent)
+          transparent: buildGeo(data.transparent),
+          water: buildGeo(data.water),
         };
 
         if (fadeInEnabled) {
@@ -295,8 +306,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
             geometriesRef.current = EMPTY_GEOMETRIES;
           }
 
-          const hadAny = !!(geometriesRef.current.opaque || geometriesRef.current.cutout || geometriesRef.current.transparent);
-          const hasAny = !!(next.opaque || next.cutout || next.transparent);
+          const hadAny = hasGeometry(geometriesRef.current);
+          const hasAny = hasGeometry(next);
 
           if (hasAny && !hadAny) {
             const now = performance.now();
@@ -311,7 +322,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         queueDispose(geometriesRef.current);
         geometriesRef.current = next;
         setGeometries(next);
-        if (next.opaque || next.cutout || next.transparent) {
+        if (hasGeometry(next)) {
           hasRenderedMeshRef.current = true;
         }
     });
@@ -333,10 +344,10 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
   // takes it back in this same commit, so it is never missing or drawn twice.
   const batchable = !fading && !fadingOut;
   useLayoutEffect(() => {
-    if (!batchable || (!geometries.opaque && !geometries.cutout && !geometries.transparent)) return;
+    if (!batchable || !hasGeometry(geometries)) return;
     regionBatcher.offer(cx, cz, {
       geometries,
-      meshes: { opaque: opaqueMeshRef.current, cutout: cutoutMeshRef.current, transparent: transparentMeshRef.current },
+      meshes: { opaque: opaqueMeshRef.current, cutout: cutoutMeshRef.current, transparent: transparentMeshRef.current, water: waterMeshRef.current },
     });
     return () => regionBatcher.withdraw(cx, cz);
   }, [cx, cz, geometries, batchable]);
@@ -365,14 +376,20 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         {/* Always the shared materials here: a fade swaps its own onto the meshes. */}
         {geometries.opaque && <mesh ref={opaqueMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={sharedMaterials.solid} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
         {geometries.cutout && <mesh ref={cutoutMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={sharedMaterials.cutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
-        {/* Water and glass: the front faces, with the back faces as a child
-            over the same geometry. The back faces draw before any front face
-            (renderOrder -1), as the merged regions' do: drawn chunk by chunk,
-            a nearer chunk's undersides landed over the next chunk's surface
-            and drew a line along every chunk border on ice and water. */}
+        {/* Water, then glass and ice: the front faces, each with its back
+            faces as a child over the same geometry. The back faces draw before
+            any front face, as the merged regions' do: drawn chunk by chunk, a
+            nearer chunk's undersides landed over the next chunk's surface and
+            drew a line along every chunk border on ice and water. Water draws
+            before glass and ice for the same reason (WATER_ORDER, regionBatcher.ts). */}
+        {geometries.water && (
+          <mesh ref={waterMeshRef} name="chunk" matrixAutoUpdate={false} renderOrder={WATER_ORDER} geometry={geometries.water} material={sharedMaterials.transparent} castShadow={false} receiveShadow={false}>
+            <mesh ref={waterBackMeshRef} name="chunk" matrixAutoUpdate={false} renderOrder={BACK_FACE_ORDER} geometry={geometries.water} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
+          </mesh>
+        )}
         {geometries.transparent && (
           <mesh ref={transparentMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={sharedMaterials.transparent} castShadow={false} receiveShadow={false}>
-            <mesh ref={transparentBackMeshRef} name="chunk" matrixAutoUpdate={false} renderOrder={-1} geometry={geometries.transparent} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
+            <mesh ref={transparentBackMeshRef} name="chunk" matrixAutoUpdate={false} renderOrder={BACK_FACE_ORDER} geometry={geometries.transparent} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
           </mesh>
         )}
     </group>

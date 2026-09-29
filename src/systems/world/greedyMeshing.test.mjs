@@ -185,7 +185,7 @@ test('water leaves out faces toward an unloaded chunk, not toward loaded air', (
     // A strip of water along the chunk's west edge (x = 0).
     for (let z = 0; z < CHUNK_SIZE; z++) chunk[index3D(0, 1, z)] = BlockType.WATER;
     const westFaces = (result) => {
-        const { positions, normals } = result.transparent;
+        const { positions, normals } = result.water;
         let count = 0;
         for (let v = 0; v * 3 < positions.length; v += 4) if (normals[v * 4] === -127 && positions[v * 3] === 0) count++;
         return count;
