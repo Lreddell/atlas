@@ -55,7 +55,7 @@ const LOADING_TIPS = [
     "Rare Magnetic Fields are sealed against normal terrain editing until the Magnetic Warden is defeated.",
     "Magnetic Fields contain ruins, pylons, loot caches, spike hazards, and polarity launch pads between the rim and the arena.",
     "On a launch pad, matching polarity repels you while opposite polarity pulls you toward it.",
-    "Match the Warden's colour to shrug off its bolts; oppose it to strike. Same polarity repels, opposite attracts.",
+    "Match the Warden's color to shrug off its bolts; oppose it to strike. Same polarity repels, opposite attracts.",
     "The Warden's shield comes from its tower crystals, and it never fades: break every crystal of the form to expose it.",
     "A lit tower carries the Warden's polarity. Oppose it to climb, and flip (R) inside the flux window when the Warden swaps, or the tower throws you off.",
     "C is a dodge roll, a magnetic dash onto an opposite magnet, a repel leap from a matched Warden, or a launch off a wall, all by the one rule.",

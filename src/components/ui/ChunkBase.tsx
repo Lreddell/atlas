@@ -1077,7 +1077,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                         <div className="text-sm font-bold text-amber-400">Cave Cross-Section</div>
                                         <div className="text-[9px] text-gray-500 font-mono">x={center.x} · z={center.z}</div>
                                     </div>
-                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
+                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map center (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
                                     <CaveCrossSection centerX={center.x} centerZ={center.z} noiseSet={previewNoiseSet} version={configVersion} width={Math.max(200, sidebarWidth - 56)} />
                                     <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono"><span>◼ stone</span><span>◼ deepslate</span><span>◼ cave</span><span>◼ lava</span></div>
                                 </div>

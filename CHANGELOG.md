@@ -18,7 +18,7 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Play in free or over-the-shoulder third person, set up a detached camera, and choose or import your own skin.
 - Grow and bake with the new farming, find recipes in the recipe book, and rebind any key on the new Controls screen.
 - Play through a redrawn interface of ink, parchment and brass, with new vitals, menus and inventory screens.
-- Enjoy lighter chunk rendering, saved ground items, water that flows by Minecraft's rules, and the new Luminous Coast panorama.
+- Enjoy much faster chunk loading and a steadier frame rate at high render distances, saved ground items, water that flows by Minecraft's rules, and the new Tundra panorama.
 
 ### Luminous World & Atmosphere
 - One sky and distance haze blend terrain and water into the horizon. Warm sunlight and cool shade give each time of day its own look, and moonlit nights stay readable instead of going black.
@@ -72,19 +72,24 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - In boats you sit and row.
 
 ### Menus & Panoramas
-- Luminous Coast is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Menu Background.
+- Tundra is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Menu Background.
 - Your own captured or imported panoramas still work, and the built-in ones can't be deleted.
+- Panoramas show the scene the right way round; before, they appeared mirrored, with left and right swapped.
 - Menus, dialogs, the inventory, and the loading and death screens ease in, and World Editor sections fade between pages. These skip their motion if your system asks for reduced motion.
 
 ### Interface
 - Menus, dialogs, the HUD and the inventory are redrawn: navy panels in brass frames, parchment text, and brass for the action that matters on each screen. Text uses the Pixelify Sans pixel font, sized so it stays crisp; chat, commands and the F3 screen use Monocraft.
 - The title screen has a new ATLAS wordmark.
 - New vitals: life crystals for health, loaves for hunger, steel plates for armor, and bubbles for breath, with the same ten pips and half pips as before. Together they are exactly as wide as the hotbar, and the selected hotbar slot has a brass frame.
-- The boss bar sits in a brass frame under a name plate, keeping its bright polarity colours.
+- The boss bar sits in a brass frame under a name plate, keeping its bright polarity colors.
+- The hotbar is Minecraft's size, a little larger than before, and still floats above the bottom edge.
 - The inventory is narrower, so it fits beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.
 - Create New World picks a terrain preset with a World Type button instead of a drop-down list.
-- The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the colour from the world.
+- The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the color from the world.
 - Chat stays clear of the hotbar on smaller screens, and the tutorial marks which section is open.
+- Hover hints use the interface's own tooltips, and the Vault objective, the boss compass and the error screen match the rest of the interface.
+- Item tooltips keep a line explaining an item only where its name doesn't say it all: Vault machinery, crafting materials and weapons with a special trick.
+- Spelling is American English throughout.
 
 ### Sound & Low Health
 - At four hearts or less, a heartbeat and a crimson pulse around the screen warn that your health is low. The heartbeat quickens as health falls and stops once you are back to five hearts.
@@ -97,7 +102,7 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Water and lava now flow by Minecraft's rules. Water spreads seven blocks, one level lower each block, and runs toward the nearest drop within four blocks; lava spreads three blocks and moves six times slower.
 - Flowing water falls in columns and spreads out where it lands. A flow cut off from its source drains away, and water between two sources on solid ground becomes a new source.
 - Lava pouring down into water turns the water to stone.
-- Water and lava surfaces slope between neighbouring levels, and flows saved partway continue once their area loads again.
+- Water and lava surfaces slope between neighboring levels, and flows saved partway continue once their area loads again.
 - Large floods no longer stall the game: moving water relights the world in batches instead of block by block.
 - Caves no longer break through the sea floor and leave dark holes in the ocean.
 
@@ -112,6 +117,7 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - A recipe book opens beside the crafting grid, in your inventory and at a Crafting Table. It lists every recipe you have held an ingredient for, so a new world starts with planks and it fills in as you gather.
 - Search it, sort it by Blocks, Tools & Gear, Food, or Materials, or show only what you can make now. Recipes you can make come first; red ones are missing an ingredient, and a table mark means it needs a Crafting Table.
 - Click a recipe to lay its ingredients into the grid, or shift-click for as many crafts as you can make. Whatever was in the grid goes back to your inventory first.
+- The inventory stays in the middle of the screen, with the recipe book open beside it.
 
 ### Controls & Getting Started
 - A new Controls screen in Options sets mouse sensitivity and inverted look, and rebinds any key: click an action and press its new key. Keys bound twice show in red, and every key can be reset.
@@ -127,6 +133,8 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama settings moved to Options > Menu Background, and saved worlds list their mode and seed.
 
 ### Performance & Memory
+- New chunks generate about a third faster, and at high render distances the world loads nearly twice as fast: every spare processor core helps build it, and each chunk is built once its neighbors have arrived instead of up to four times. Every seed still builds the same world.
+- The frame rate holds steady while the world streams in and as you cross chunk borders, at any render distance. New chunks join a few at a time instead of all in one frame.
 - Adjacent full-block faces merge into larger surfaces while keeping their tiled textures, so the world takes far less geometry to draw.
 - Settled chunks draw together in small regions with tight visibility bounds, cutting repeated rendering work.
 - Chunk geometry uses more compact data, and empty chunks no longer reserve block metadata, so memory grows more slowly as chunks load.
@@ -143,6 +151,9 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - If blocks ever appear inside you, you are moved to the nearest open space instead of being stuck.
 - Desktop Ctrl+W, Ctrl+R, and Ctrl+Q no longer close, reload, or quit the game during movement and item dropping.
 - The boss bar and the polarity block and tint no longer draw over the pause menu and inventory.
+- A new world starts you on the ground instead of on top of a tree.
+- Items show their names on hover again after shift-clicking items between a chest and your inventory.
+- Ice and water no longer show lines along chunk borders.
 
 ## [v1.2.0-alpha]: 2026-08-01
 

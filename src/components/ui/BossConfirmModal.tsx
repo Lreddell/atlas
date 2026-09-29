@@ -42,7 +42,7 @@ export const BossConfirmModal: React.FC<BossConfirmModalProps> = ({
             >
                 <h2 id={titleId} className="atlas-title text-center">{title ?? `Summon ${bossName}?`}</h2>
                 <p className="text-center text-read text-parchment-200">
-                    {description ?? `The ${bossName} will awaken and attack across three forms, each shielded by its tower crystals. Same polarity repels, opposite attracts: match its colour to shrug off its bolts, oppose it to climb its towers and strike. Make sure you are ready.`}
+                    {description ?? `The ${bossName} will awaken and attack across three forms, each shielded by its tower crystals. Same polarity repels, opposite attracts: match its color to shrug off its bolts, oppose it to climb its towers and strike. Make sure you are ready.`}
                 </p>
                 <div className="mt-2 grid w-full grid-cols-2 gap-3">
                     <MenuButton label={confirmLabel} onClick={onConfirm} variant="primary" width="w-full" />

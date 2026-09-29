@@ -169,7 +169,7 @@ export const BossBar: React.FC = () => {
                     </div>
                 ) : (
                     <div className="animate-pulse text-px-2 text-[#ffd166] text-shadow-md">
-                        EXPOSED · oppose its colour and strike
+                        EXPOSED · oppose its color and strike
                     </div>
                 )
             )}
