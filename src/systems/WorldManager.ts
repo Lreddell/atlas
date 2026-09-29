@@ -190,6 +190,8 @@ export class WorldManager {
   private workerInbox: any[] = [];
   private inboxTimer: ReturnType<typeof setTimeout> | null = null;
   private lastInboxFrameAt = 0;
+  /** Mesh jobs for the player's own block edits: shown as soon as they are back, not queued. */
+  private urgentMeshTickets = new Set<number>();
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -314,6 +316,7 @@ export class WorldManager {
     this.genStartedAt.clear();
     this.meshStartedAt.clear();
     this.workerInbox = [];
+    this.urgentMeshTickets.clear();
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
     // Water still flowing in the last world must not flow on in the next.
@@ -392,10 +395,16 @@ export class WorldManager {
     this.workerJobs = [];
     this.nextWorkerIndex = 0;
     this.workerInbox = [];
+    this.urgentMeshTickets.clear();
   }
 
   /** Queues a finished chunk (generated, loaded or meshed) for applyWorkerResults. */
   private receiveResult(msg: any) {
+      // A block the player just broke or placed shows at once, a frame sooner.
+      if (msg?.type === 'MESH_DONE' && this.urgentMeshTickets.delete(msg.ticket)) {
+          this.handleWorkerMessage(msg);
+          return;
+      }
       this.workerInbox.push(msg);
       this.armInboxTimer();
   }
@@ -863,6 +872,8 @@ export class WorldManager {
           this.meshStartedAt.set(key, Date.now());
           const ticket = ++this.meshTicketCounter;
           this.activeMeshTickets.set(key, ticket);
+          // Block edits queue at -1000 to -800 (setBlock, refreshStairShapes).
+          if (job.priority <= -800) this.urgentMeshTickets.add(ticket);
 
           const cullDark = Math.max(
               Math.abs(job.cx - this.desiredCenter.cx),
@@ -1431,8 +1442,9 @@ export class WorldManager {
       }
 
       // Priority: scored land > any land > nearest water > emergency fallback
-      const pick = scored ?? land;
-      if (pick) {
+      const found = scored ?? land;
+      if (found) {
+          const pick = this.groundColumnNear(found.x, found.z);
           this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
           // Snap to a real air gap on top of the actual surface blocks (avoids
           // spawning inside trees / structures / overhangs the noise height misses).
@@ -1450,6 +1462,32 @@ export class WorldManager {
       // Emergency fallback, nothing scanned at all
       console.warn("[Spawn] No candidates found, emergency fallback to target.");
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
+  }
+
+  /**
+   * The nearest column within a few blocks of (x, z) that stands on the
+   * ground, dry. Candidates are scored on the noise height, which knows
+   * nothing of trees, and a column under one resolves onto its canopy
+   * (resolveClearStandY): a new player began up a tree, five or more blocks
+   * above the ground. (x, z) itself when nothing near qualifies.
+   */
+  private groundColumnNear(x: number, z: number): { x: number; z: number } {
+      const seaLevel = GenConfig.height.seaLevel;
+      for (let r = 0; r <= 6; r++) {
+          for (let dx = -r; dx <= r; dx++) {
+              for (let dz = -r; dz <= r; dz++) {
+                  if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+                  const cx = x + dx;
+                  const cz = z + dz;
+                  const ground = WorldGen.getTerrainHeight(cx, cz);
+                  if (ground <= seaLevel) continue;
+                  const y = this.resolveClearStandY(cx, cz);
+                  if (y !== ground + 1 || this.getBlock(cx, y, cz, false) === BlockType.WATER) continue;
+                  return { x: cx, z: cz };
+              }
+          }
+      }
+      return { x, z };
   }
 
   public getSeaLevel(): number {

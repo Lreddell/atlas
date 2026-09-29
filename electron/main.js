@@ -47,7 +47,8 @@ function createWindow() {
     height: 720,
     title: 'Atlas',
     icon: windowIcon,
-    backgroundColor: '#87CEEB',
+    // The page's own startup colour (index.html), so launch doesn't flash a second blue.
+    backgroundColor: '#2f5cab',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

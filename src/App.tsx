@@ -3524,7 +3524,9 @@ const App: React.FC = () => {
             )}
           </>
       )}
-      <Analytics />
+      {/* Vercel's analytics only exist on the hosted web build; the desktop
+          app would just request a script that isn't there. */}
+      {!isElectron && <Analytics />}
     </div>
   );
 };
