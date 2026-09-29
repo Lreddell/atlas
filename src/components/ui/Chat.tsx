@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useHudScale } from './hudScale';
 
 export interface ChatMessage {
     id: number;
@@ -51,6 +52,7 @@ export const Chat: React.FC<ChatProps> = ({
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const hudScale = useHudScale();
 
     useEffect(() => {
         if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -72,15 +74,18 @@ export const Chat: React.FC<ChatProps> = ({
         onSubmitInput?.();
     };
 
-    // Never wider than the space left of the hotbar (half its 552px, plus a margin).
+    // Never wider than the space left of the hotbar (half its 240 art pixels, plus a margin).
     return (
         <div
-            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[clamp(280px,calc(50vw-296px),560px)] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            className={`absolute bottom-2 left-2 flex flex-col gap-1 pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            style={{ width: `clamp(280px, calc(50vw - ${120 * hudScale + 16}px), 560px)` }}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}
         >
-            <div className="flex flex-col gap-0.5 justify-end max-h-[300px] overflow-hidden mask-fade-top pb-1">
+            {/* A fixed box, lines stacking up from its bottom: only once they reach
+                its top edge do the oldest start to fade, never the first few. */}
+            <div className="flex flex-col gap-0.5 justify-end h-[300px] overflow-hidden mask-fade-top pb-1">
                 {messages.map((msg) => (
                     <ChatLine
                         key={msg.id}

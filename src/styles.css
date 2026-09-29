@@ -361,10 +361,10 @@
         text-shadow: 4px 4px 0 theme('colors.ink.950');
     }
 
-    /* Chat fades out at the top instead of being cut. */
+    /* Chat fades out at the top of its box instead of being cut. */
     .mask-fade-top {
-        -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
-        mask-image: linear-gradient(to bottom, transparent 0, #000 32px);
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 48px);
+        mask-image: linear-gradient(to bottom, transparent 0, #000 48px);
     }
 
     /* Square pixel scrollbars for scroll boxes inside the game's panels. */
@@ -529,24 +529,25 @@
 }
 
 /* A hit: the hearts flash and jolt for a quarter of a second. --atlas-jolt
-   (per heart) sends neighbouring hearts different ways. */
+   (per heart) sends neighbouring hearts different ways; --hud-px is one pixel
+   of the HUD at its original size (hudScale.ts), so the jolt scales with it. */
 @keyframes atlas-heart-hit {
     0% {
-        transform: translateY(calc(var(--atlas-jolt, 1) * -2px));
+        transform: translateY(calc(var(--atlas-jolt, 1) * -2 * var(--hud-px, 1px)));
         filter: brightness(1.6) contrast(1.25);
     }
 
     25% {
-        transform: translateY(calc(var(--atlas-jolt, 1) * 1px));
+        transform: translateY(calc(var(--atlas-jolt, 1) * var(--hud-px, 1px)));
     }
 
     50% {
-        transform: translateY(calc(var(--atlas-jolt, 1) * -1px));
+        transform: translateY(calc(var(--atlas-jolt, 1) * -1 * var(--hud-px, 1px)));
         filter: brightness(1.45) contrast(1.2);
     }
 
     75% {
-        transform: translateY(calc(var(--atlas-jolt, 1) * 2px));
+        transform: translateY(calc(var(--atlas-jolt, 1) * 2 * var(--hud-px, 1px)));
     }
 
     100% {
@@ -555,22 +556,22 @@
     }
 }
 
-/* Uneasy pips (low health, no saturation left): mostly still, the odd 1px twitch. */
+/* Uneasy pips (low health, no saturation left): mostly still, the odd twitch. */
 @keyframes atlas-jitter {
     0%, 18%, 53%, 84%, 100% {
         transform: none;
     }
 
     12% {
-        transform: translateY(-1px);
+        transform: translateY(calc(-1 * var(--hud-px, 1px)));
     }
 
     47% {
-        transform: translateY(1px);
+        transform: translateY(var(--hud-px, 1px));
     }
 
     78% {
-        transform: translateY(-1px);
+        transform: translateY(calc(-1 * var(--hud-px, 1px)));
     }
 }
 

@@ -12,8 +12,9 @@ test('GUI item sprites stay on a synchronous 16px integer grid', () => {
     assert.match(slot, /React\.useLayoutEffect/);
     assert.match(slot, /getAtlasCanvas\(\)/);
     assert.match(slot, /16,\s*16,\s*0,\s*0,\s*backingSize,\s*backingSize/s);
-    // 2x in inventory slots, 3x in the hotbar's larger ones: whole pixels either way.
-    assert.match(slot, /const pxSize = size === 'hotbar' \? 48 : 32/);
+    // 2x in inventory slots, the HUD's whole-number scale in the hotbar.
+    assert.match(slot, /const artScale = size === 'hotbar' \? scale : 2;/);
+    assert.match(slot, /const pxSize = 16 \* artScale;/);
     assert.match(slot, /imageRendering:\s*'pixelated'/);
 });
 
@@ -68,8 +69,7 @@ test('selection and durability decorations overlay without resizing the item', (
     assert.match(slot, /absolute -inset-1[^\n]*atlas-select-frame/);
     assert.match(styles, /\.atlas-select-frame \{\s*border: 4px solid;/);
     // Thirteen steps at the item's own pixel scale: 26px under a 2x item, 39px under 3x.
-    assert.match(slot, /const artScale = size === 'hotbar' \? 3 : 2/);
-    assert.match(slot, /width: 13 \* artScale/);
+    assert.match(slot, /bottom: 5 \* artScale, width: 13 \* artScale, height: 2 \* artScale/);
     assert.match(slot, /Math\.round\(durabilityFrac \* 13\) \* artScale/);
     assert.doesNotMatch(slot, /selected \? 'border-4/);
 });

@@ -10,6 +10,7 @@ import { CombatFeedback, CombatOverlay } from './CombatFeedback';
 import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
 import { PixelArt } from './kit/PixelArt';
 import { ARMOR_PLATE, BREATH_BUBBLE, LIFE_CRYSTAL, PROVISIONS, type VitalIcon } from './kit/vitalIcons';
+import { useHudScale } from './hudScale';
 
 interface HUDProps {
     health: number;
@@ -25,22 +26,29 @@ interface HUDProps {
     magnetic?: boolean;
 }
 
+// The bottom-centre HUD (vitals, hotbar, item name and the readouts above it)
+// is laid out in art pixels, drawn `scale` screen pixels each (hudScale.ts), so
+// it keeps one set of proportions at every size.
+const HudScaleContext = React.createContext(2);
+
 // One vital pip: the icon's empty form, with the full form over it, clipped to
-// a half for odd values. Pips sit 20px apart and overlap by their one-pixel
-// margins, so ten of them span half the hotbar. `half` picks which side a half
-// pip keeps (health drains from the right, provisions from the left).
+// a half for odd values. Pips sit 10 art pixels apart and overlap by their
+// one-pixel margins, so ten of them span half the hotbar. `half` picks which
+// side a half pip keeps (health drains from the right, provisions from the
+// left); `clipTop` empties a bubble from the top, in art pixels.
 const VitalPip: React.FC<{ icon: VitalIcon; fill: number; half?: 'left' | 'right'; clipTop?: number }> = ({
     icon, fill, half = 'left', clipTop,
 }) => {
+    const scale = React.useContext(HudScaleContext);
     let clip: string | undefined;
-    if (clipTop !== undefined) clip = `inset(${clipTop}px 0 0 0)`;
-    else if (fill === 0.5) clip = half === 'left' ? 'inset(0 10px 0 0)' : 'inset(0 0 0 10px)';
+    if (clipTop !== undefined) clip = `inset(${clipTop * scale}px 0 0 0)`;
+    else if (fill === 0.5) clip = half === 'left' ? `inset(0 ${5 * scale}px 0 0)` : `inset(0 0 0 ${5 * scale}px)`;
     return (
-        <div className="relative h-[22px] w-[20px] overflow-visible" aria-hidden>
-            <PixelArt rows={icon.rows} palette={icon.empty} className="absolute left-0 top-0" />
+        <div className="relative overflow-visible" style={{ width: 10 * scale, height: 11 * scale }} aria-hidden>
+            <PixelArt rows={icon.rows} palette={icon.empty} scale={scale} className="absolute left-0 top-0" />
             {fill > 0 && (
-                <div className="absolute left-0 top-0 h-[22px] w-[22px]" style={clip ? { clipPath: clip } : undefined}>
-                    <PixelArt rows={icon.rows} palette={icon.full} />
+                <div className="absolute left-0 top-0" style={{ width: 11 * scale, height: 11 * scale, clipPath: clip }}>
+                    <PixelArt rows={icon.rows} palette={icon.full} scale={scale} />
                 </div>
             )}
         </div>
@@ -91,6 +99,9 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
 };
 
 export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment, magnetic = false }) => {
+    // Screen pixels per art pixel for the bottom-centre HUD; u(n) is n art pixels.
+    const scale = useHudScale();
+    const u = (artPixels: number) => artPixels * scale;
     const [showItemName, setShowItemName] = useState(true);
     const hotbarRef = useRef<HTMLDivElement>(null);
     const [selectionFrame, setSelectionFrame] = useState<{ x: number; y: number; size: number } | null>(null);
@@ -101,14 +112,15 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
         return () => window.clearTimeout(timer);
     }, [selectedSlot, selectedType]);
 
-    // The hotbar's selection frame glides between slots. Measured from the
-    // slots themselves so it always lines up with them.
+    // The hotbar's selection frame glides between slots, two art pixels out
+    // from the one selected. Measured from the slots themselves so it always
+    // lines up with them.
     useLayoutEffect(() => {
         const slot = hotbarRef.current?.children[selectedSlot] as HTMLElement | undefined;
         if (!slot) return;
-        const next = { x: slot.offsetLeft - 4, y: slot.offsetTop - 4, size: slot.offsetWidth + 8 };
+        const next = { x: slot.offsetLeft - 2 * scale, y: slot.offsetTop - 2 * scale, size: slot.offsetWidth + 4 * scale };
         setSelectionFrame(prev => (prev && prev.x === next.x && prev.y === next.y && prev.size === next.size ? prev : next));
-    }, [selectedSlot, gameMode]);
+    }, [selectedSlot, gameMode, scale]);
 
     // Hearts flash and jolt for a quarter second after a hit (a CSS animation,
     // replayed by keying the hearts to the hit), and twitch while health is low.
@@ -118,7 +130,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
     const hungerUneasy = saturation <= 0 && gameMode === 'survival' && hunger < 20;
 
     return (
-        <>
+        <HudScaleContext.Provider value={scale}>
             <ResonantObjectiveHUD inventory={inventory} />
             {gameMode === 'spectator' ? (
                  // Bottom centre, where the hotbar would be: clear of the boss bar at the top.
@@ -134,13 +146,17 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                 left, provisions (with breath above them) on the right, the two
                 together exactly as wide as the hotbar below. */}
             {gameMode === 'survival' && (
-                <div className="absolute bottom-[88px] left-1/2 -translate-x-1/2 flex w-[552px] items-end justify-between z-40 pb-2 pointer-events-none">
-                    <div className="flex flex-col gap-[2px] items-start">
+                <div
+                    className="absolute left-1/2 -translate-x-1/2 flex items-end justify-between z-40 pointer-events-none"
+                    // --hud-px: one pixel of the original HUD, for the pips' jolts and twitches.
+                    style={{ bottom: u(40), width: u(240), paddingBottom: u(4), '--hud-px': `${scale / 2}px` } as React.CSSProperties}
+                >
+                    <div className="flex flex-col items-start" style={{ gap: u(1) }}>
                         {/* Armor (defense) plates, shown above the life crystals
                             while any armor is worn; 1 plate = 2 defense points,
                             matching the applyArmor() reduction they represent. */}
                         {equipment && totalDefense(equipment) > 0 && (
-                            <div className="flex h-[22px]" data-tip={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
+                            <div className="flex" style={{ height: u(11) }} data-tip={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
                                 {Array.from({ length: 10 }).map((_, i) => {
                                     const def = Math.min(20, totalDefense(equipment));
                                     const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
@@ -149,7 +165,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             </div>
                         )}
                         {/* Life crystals */}
-                        <div className="flex h-[22px]">
+                        <div className="flex" style={{ height: u(11) }}>
                             {Array.from({length: 10}).map((_, i) => (
                                 <div
                                     key={heartsHit ? `${i}:${lastDamageTime}` : i}
@@ -164,15 +180,15 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-[2px] items-end">
+                    <div className="flex flex-col items-end" style={{ gap: u(1) }}>
                         {/* Breath, above the provisions while underwater. The
                             bubbles go from the right, each emptying from the top
                             a whole art pixel at a time. */}
                         {breath < MAX_BREATH && (
-                            <div className="flex h-[22px]">
+                            <div className="flex" style={{ height: u(11) }}>
                                 {Array.from({length: 10}).map((_, i) => {
                                     const left = breath / 30 - i;
-                                    const clipTop = left >= 1 ? 0 : left <= 0 ? 22 : Math.round((1 - left) * 11) * 2;
+                                    const clipTop = left >= 1 ? 0 : left <= 0 ? 11 : Math.round((1 - left) * 11);
                                     return <VitalPip key={i} icon={BREATH_BUBBLE} fill={left > 0 ? 1 : 0} clipTop={clipTop} />;
                                 })}
                             </div>
@@ -180,7 +196,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
 
                         {/* Provisions, flex-row-reverse, so index 0 is the
                             RIGHTMOST loaf and they deplete from the left. */}
-                        <div className="flex h-[22px] flex-row-reverse">
+                        <div className="flex flex-row-reverse" style={{ height: u(11) }}>
                             {Array.from({length: 10}).map((_, i) => (
                                 <div
                                     key={i}
@@ -201,10 +217,24 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Selected item name. Lifted clear of whatever else is stacked in the
                 bottom centre: the hotbar always, plus the hearts and (when worn)
                 the armor pips in survival, so the label never lands on them. */}
-            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-40 flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? ((equipment && totalDefense(equipment) > 0) || breath < MAX_BREATH ? 154 : 130) : 100 }}>
-                <CombatFeedback magnetic={magnetic} />
-                <div className="h-[26px] max-w-full">
-                    {inventory[selectedSlot] && <div className={`atlas-plate truncate text-center transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
+            {gameMode !== 'spectator' && <div
+                className="absolute left-1/2 z-40 flex max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center pointer-events-none"
+                style={{
+                    bottom: u(gameMode === 'survival' ? ((equipment && totalDefense(equipment) > 0) || breath < MAX_BREATH ? 73 : 61) : 46),
+                    width: u(160),
+                    gap: u(4),
+                }}
+            >
+                {/* The gauges above the name are drawn at the original scale:
+                    zoomed whole, their 2px art lands on the same grid. */}
+                <div className="flex w-full justify-center" style={{ zoom: scale / 2 }}>
+                    <CombatFeedback magnetic={magnetic} />
+                </div>
+                <div className="max-w-full" style={{ height: u(13) }}>
+                    {inventory[selectedSlot] && <div
+                        className={`atlas-plate truncate text-center transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}
+                        style={{ fontSize: u(11), lineHeight: `${u(13)}px`, padding: `0 ${u(4)}px`, textShadow: `${scale}px ${scale}px 0 #070917` }}
+                    >
                         {BLOCKS[inventory[selectedSlot]!.type].name}
                     </div>}
                 </div>
@@ -215,16 +245,22 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                 the inventory cover and blur it exactly as they do the rest. */}
             {gameMode !== 'spectator' && <CombatOverlay />}
 
-            {/* Hotbar: Minecraft's size (slots on a 60px pitch, 552px across),
-                floating above the bottom edge. */}
+            {/* Hotbar: nine 24-pixel slots, 2 apart, in a 3-pixel padding and a
+                1-pixel border (240 art pixels across), floating above the
+                bottom edge. 720px across at 1920x1080, Minecraft's size. */}
             {gameMode !== 'spectator' && (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
-                    <div ref={hotbarRef} className="relative flex gap-1 border-2 border-ink-950 bg-ink-900/80 p-1.5 shadow-[inset_0_2px_0_rgba(70,87,138,0.45)]">
+                <div className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center z-40" style={{ bottom: u(8) }}>
+                    <div
+                        ref={hotbarRef}
+                        className="relative flex border-ink-950 bg-ink-900/80"
+                        style={{ gap: u(2), padding: u(3), borderWidth: u(1), boxShadow: `inset 0 ${u(1)}px 0 rgba(70,87,138,0.45)` }}
+                    >
                         {inventory.slice(0, 9).map((it, i) => (
                             <Slot
                                 key={i}
                                 item={it}
                                 size="hotbar"
+                                scale={scale}
                                 selected={selectedSlot === i}
                                 animateChanges
                                 selectionFrame={false}
@@ -238,12 +274,14 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                                     width: selectionFrame.size,
                                     height: selectionFrame.size,
                                     transform: `translate(${selectionFrame.x}px, ${selectionFrame.y}px)`,
+                                    borderWidth: u(2),
+                                    boxShadow: `0 0 0 ${u(1)}px #070917, inset 0 0 0 ${u(1)}px #070917`,
                                 }}
                             />
                         )}
                     </div>
                 </div>
             )}
-        </>
+        </HudScaleContext.Provider>
     );
 };

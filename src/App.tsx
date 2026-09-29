@@ -17,6 +17,7 @@ import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
+import { useHudScale } from './components/ui/hudScale';
 import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
@@ -391,7 +392,7 @@ const App: React.FC = () => {
   const [allowCommands, setAllowCommands] = useState(true);
   // Whether the HUD shows the player's position (World Options).
   const [showCoordinates, setShowCoordinates] = useState(false);
-  // The main menu opens on this view (Options > Menu Background).
+  // The main menu opens on this view (Options > Panorama Settings).
   const [menuInitialView, setMenuInitialView] = useState<'main' | 'settings'>('main');
   // The open world's name and seed, for World Options.
   const [worldInfo, setWorldInfo] = useState<{ name: string; seed: string } | null>(null);
@@ -411,6 +412,7 @@ const App: React.FC = () => {
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
+    const hudScale = useHudScale();
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
   
@@ -3332,8 +3334,9 @@ const App: React.FC = () => {
                     <CinematicOverlay />
                     {!hudHidden && !showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
                     {!hudHidden && ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
-                        // Above the vitals, the armor or breath row, and the item name.
-                        <div className="atlas-plate absolute bottom-[184px] left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap">
+                        // Above the vitals, the armor or breath row, and the item name
+                        // (92 art pixels up at the HUD's scale).
+                        <div className="atlas-plate absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap" style={{ bottom: 92 * hudScale }}>
                             Sneak ({keyLabelFor('sneak')}) to hop out of the boat
                         </div>
                     )}

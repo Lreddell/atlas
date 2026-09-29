@@ -62,11 +62,37 @@ test('vitals keep ten pips, half pips and their drain directions', () => {
     assert.match(hud, /const left = breath \/ 30 - i;/);
     // Ten per row, and together exactly as wide as the hotbar.
     assert.equal((hud.match(/Array\.from\(\{ ?length: ?10 ?\}\)/g) ?? []).length, 4);
-    assert.match(hud, /flex w-\[552px\] items-end justify-between z-40/);
-    // The hotbar: nine 56px slots, 4px apart, 6px padding and a 2px border: 552px.
-    assert.match(hud, /size="hotbar"/);
-    assert.match(read('src/components/ui/Slot.tsx'), /size === 'hotbar' \? 'w-14 h-14'/);
+    assert.match(hud, /style=\{\{ bottom: u\(40\), width: u\(240\), paddingBottom: u\(4\)/);
+    // The hotbar, in art pixels: nine 24-pixel slots, 2 apart, 3 of padding and
+    // a 1-pixel border, 240 across like the vitals above it.
+    assert.match(hud, /size="hotbar"\s+scale=\{scale\}/);
+    assert.match(hud, /style=\{\{ gap: u\(2\), padding: u\(3\), borderWidth: u\(1\)/);
+    assert.match(read('src/components/ui/Slot.tsx'), /\{ width: 24 \* artScale, height: 24 \* artScale, borderWidth: bare \? undefined : artScale \}/);
+    // Hearts and loaves are drawn at the same scale as the slots.
+    assert.match(hud, /<PixelArt rows=\{icon\.rows\} palette=\{icon\.empty\} scale=\{scale\}/);
     assert.doesNotMatch(hud, /HEART_D|DRUM_MEAT_D|rounded-full/);
+});
+
+// The hotbar was 480px wide at the original scale (2). Its scale follows the
+// window like Minecraft's automatic GUI scale, as a whole number, so pixel art
+// stays on whole pixels: 720px at 1920x1080, where Minecraft's is 728px.
+test('the HUD scale is a whole number that follows the window', async () => {
+    const { hudScaleFor } = await loadTs(`export { hudScaleFor } from './src/components/ui/hudScale';`);
+    const hotbarWidth = (width, height) => 240 * hudScaleFor(width, height);
+    assert.equal(hotbarWidth(1920, 1080), 720);
+    // A browser window on the same screen, under its tabs and address bar.
+    assert.equal(hotbarWidth(1920, 955), 720);
+    assert.equal(hotbarWidth(1680, 1050), 720);
+    assert.equal(hotbarWidth(1366, 768), 480);
+    assert.equal(hotbarWidth(1280, 720), 480);
+    assert.equal(hotbarWidth(2560, 1440), 960);
+    // Never below the original size, however small the window.
+    assert.equal(hudScaleFor(800, 600), 2);
+    for (const [w, h] of [[1920, 1080], [1600, 900], [3840, 2160], [1024, 768]]) {
+        assert.ok(Number.isInteger(hudScaleFor(w, h)), `${w}x${h}`);
+        // The hotbar always leaves over half the screen's width free.
+        assert.ok(hotbarWidth(w, h) < w / 2, `${w}x${h}`);
+    }
 });
 
 test('every vital icon is 11x11 and fully coloured in both its full and empty forms', async () => {

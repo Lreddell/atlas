@@ -398,9 +398,9 @@ test('the kit readouts live in the HUD layer, not above it', () => {
     // bottom stack sits in the same layer as the vitals.
     assert.match(hud, /\{gameMode !== 'spectator' && <CombatOverlay \/>\}/);
     assert.match(hud, /<CombatFeedback magnetic=\{magnetic\} \/>/);
-    assert.match(hud, /absolute left-1\/2 z-40 flex w-\[320px\]/);
+    assert.match(hud, /absolute left-1\/2 z-40 flex max-w-\[calc\(100vw-32px\)\]/);
     // The rest of the HUD it has to match: armor, vitals, hotbar, crosshair.
-    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-\[88px\] left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/, /id="crosshair"[^>]*z-40/]) {
+    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute left-1\/2 -translate-x-1\/2 flex items-end justify-between z-40/, /absolute left-1\/2 transform -translate-x-1\/2 flex flex-col items-center z-40/, /id="crosshair"[^>]*z-40/]) {
         assert.match(hud, layer);
     }
     // Every other in-game overlay is in the same layer. Anything above the pause
