@@ -1,4 +1,3 @@
-
 import React from 'react';
 import * as THREE from 'three';
 import { MenuButton } from './mainMenu/MainMenuControls';
@@ -9,17 +8,17 @@ interface ErrorOverlayProps {
 }
 
 export const ErrorOverlay: React.FC<ErrorOverlayProps> = ({ error, playerPos }) => (
-    <div className="absolute top-0 left-0 w-full h-full z-[9999] pointer-events-auto p-8 flex flex-col items-start justify-center bg-black/80 text-white font-mono">
-        <h1 className="text-4xl font-bold text-red-500 mb-4">Runtime Error</h1>
-        <div className="bg-red-950/50 border border-red-500 p-4 rounded max-w-4xl max-h-[60vh] overflow-auto whitespace-pre-wrap mb-4">
-            {error}
-        </div>
-        {playerPos && (
-            <div className="text-yellow-400">
-                Last Known Position: {playerPos.x.toFixed(2)}, {playerPos.y.toFixed(2)}, {playerPos.z.toFixed(2)}
+    <div className="absolute inset-0 z-[9999] pointer-events-auto flex items-center justify-center bg-ink-950/85 p-8">
+        <div className="atlas-panel flex max-w-4xl flex-col items-start gap-4 px-6 pb-6 pt-4">
+            <h1 className="atlas-heading text-ember-300">Runtime Error</h1>
+            <div className="atlas-well max-h-[60vh] w-full overflow-auto whitespace-pre-wrap p-4 font-mono text-mono-2 text-parchment-100">
+                {error}
             </div>
-        )}
-        <div className="mt-8">
+            {playerPos && (
+                <div className="atlas-hint">
+                    Last known position: {playerPos.x.toFixed(2)}, {playerPos.y.toFixed(2)}, {playerPos.z.toFixed(2)}
+                </div>
+            )}
             <MenuButton label="Reload Application" onClick={() => window.location.reload()} width="w-[260px]" />
         </div>
     </div>

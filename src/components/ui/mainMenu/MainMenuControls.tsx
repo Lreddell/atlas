@@ -55,7 +55,7 @@ export const MenuButton: React.FC<MenuButtonProps> = ({
                     }
                 }}
                 className={`atlas-btn ${VARIANT_CLASS[variant]} w-full ${small ? 'h-8 leading-[22px]' : 'h-10'}`}
-                title={tooltip}
+                data-tip={disabled ? undefined : tooltip}
             >
                 <span className="atlas-btn-label">{label}</span>
             </button>

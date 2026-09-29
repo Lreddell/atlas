@@ -10,7 +10,6 @@ import { BLOCKS } from '../../data/blocks';
 import { getItemStats, getMaxDurability } from './itemStats';
 import { getPlayerWeaponProfile } from '../combat/vaultWeapons';
 import { getResonantHotbarSummary, getResonantPurpose } from '../../data/resonantGuide';
-import { farmingPurpose } from '../world/farmingItems';
 
 export interface TooltipLine {
     text: string;
@@ -86,9 +85,8 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
         lines.push({ text: `Food: +${def.nutrition} hunger, +${Math.round(saturation * 10) / 10} saturation`, tone: 'stat' });
     }
 
-    const farming = farmingPurpose(stack.type);
-    if (farming) lines.push({ text: farming, tone: 'purpose' });
-
+    // A line on what an item is for, only where its name doesn't tell you
+    // (resonantGuide.ts): hoes, seeds and wheat work as they do in Minecraft.
     for (const purpose of getResonantPurpose(stack.type)) {
         lines.push({ text: purpose, tone: 'purpose' });
     }

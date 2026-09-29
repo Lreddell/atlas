@@ -80,7 +80,7 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
                 const title = `${BLOCKS[item.type].name}: ${stats?.defense ?? 0} defense`
                     + (max !== undefined ? `, ${cur}/${max} durability` : ', unbreakable');
                 return (
-                    <div key={slot} title={title}
+                    <div key={slot} data-tip={title}
                         className={`relative ${low ? 'animate-pulse outline outline-2 outline-ember-300' : ''}`}>
                         <Slot item={item} size="small" />
                     </div>
@@ -134,13 +134,13 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                 left, provisions (with breath above them) on the right, the two
                 together exactly as wide as the hotbar below. */}
             {gameMode === 'survival' && (
-                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex w-[480px] items-end justify-between z-40 pb-2 pointer-events-none">
+                <div className="absolute bottom-[88px] left-1/2 -translate-x-1/2 flex w-[552px] items-end justify-between z-40 pb-2 pointer-events-none">
                     <div className="flex flex-col gap-[2px] items-start">
                         {/* Armor (defense) plates, shown above the life crystals
                             while any armor is worn; 1 plate = 2 defense points,
                             matching the applyArmor() reduction they represent. */}
                         {equipment && totalDefense(equipment) > 0 && (
-                            <div className="flex h-[22px]" title={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
+                            <div className="flex h-[22px]" data-tip={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
                                 {Array.from({ length: 10 }).map((_, i) => {
                                     const def = Math.min(20, totalDefense(equipment));
                                     const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
@@ -201,7 +201,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Selected item name. Lifted clear of whatever else is stacked in the
                 bottom centre: the hotbar always, plus the hearts and (when worn)
                 the armor pips in survival, so the label never lands on them. */}
-            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-40 flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? ((equipment && totalDefense(equipment) > 0) || breath < MAX_BREATH ? 146 : 122) : 92 }}>
+            {gameMode !== 'spectator' && <div className="absolute left-1/2 z-40 flex w-[320px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center gap-2 pointer-events-none" style={{ bottom: gameMode === 'survival' ? ((equipment && totalDefense(equipment) > 0) || breath < MAX_BREATH ? 154 : 130) : 100 }}>
                 <CombatFeedback magnetic={magnetic} />
                 <div className="h-[26px] max-w-full">
                     {inventory[selectedSlot] && <div className={`atlas-plate truncate text-center transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}>
@@ -215,7 +215,8 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                 the inventory cover and blur it exactly as they do the rest. */}
             {gameMode !== 'spectator' && <CombatOverlay />}
 
-            {/* Hotbar */}
+            {/* Hotbar: Minecraft's size (slots on a 60px pitch, 552px across),
+                floating above the bottom edge. */}
             {gameMode !== 'spectator' && (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
                     <div ref={hotbarRef} className="relative flex gap-1 border-2 border-ink-950 bg-ink-900/80 p-1.5 shadow-[inset_0_2px_0_rgba(70,87,138,0.45)]">
@@ -223,6 +224,7 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
                             <Slot
                                 key={i}
                                 item={it}
+                                size="hotbar"
                                 selected={selectedSlot === i}
                                 animateChanges
                                 selectionFrame={false}

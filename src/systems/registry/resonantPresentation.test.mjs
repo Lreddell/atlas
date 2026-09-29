@@ -53,8 +53,21 @@ test('slot rendering classifies cutout blocks from metadata rather than an excep
   assert.match(slot, /blockDef\.textureSlot \?\? 0/);
 });
 
-test('all Resonant blocks and items have player-facing purpose text', () => {
-  for (const name of CONTENT_NAMES) assert.match(guide, new RegExp(`BlockType\\.${name}`));
+test('Resonant content explains itself where its name does not', () => {
+  const purposeBlock = guide.match(/RESONANT_ITEM_PURPOSES:[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1] ?? '';
+  // Machinery, materials and the weapons with a trick say what they are for...
+  const explained = ['ECHO_CRYSTAL', 'RESONANCE_PYLON', 'PULSE_CONDUIT', 'PHASE_BLOCK', 'RESONANCE_PLATE', 'SENTINEL_CORE',
+    'LISTENING_STONE', 'VAULT_SEAL', 'ECHO_SHARD', 'ECHO_DUST', 'ECHO_CORE', 'FRACTURED_CORE', 'VAULTSTEEL_SPEAR',
+    'BELLBREAKER_MAUL', 'ECHO_TUNING_FORK', 'TITAN_HAMMER'];
+  // ...and plain masonry, the lamp, the spikes and the crossbow and its bolts don't need to.
+  const selfEvident = ['ECHO_STONE', 'ECHO_BRICKS', 'CRACKED_ECHO_BRICKS', 'CHISELED_ECHO_STONE', 'ECHO_MOSAIC', 'RESONANT_LAMP',
+    'ECHO_SPIKES', 'VAULT_CROSSBOW', 'VAULT_BOLT'];
+  for (const name of explained) assert.match(purposeBlock, new RegExp(`BlockType\\.${name}\\]`), `${name} should explain itself`);
+  for (const name of [...selfEvident, 'ECHO_STONE_SLAB', 'ECHO_STONE_STAIRS', 'ECHO_BRICK_SLAB', 'ECHO_BRICK_STAIRS']) {
+    assert.doesNotMatch(purposeBlock, new RegExp(`BlockType\\.${name}\\]`), `${name} needs no line`);
+  }
+  // Every piece of Resonant content is one or the other, on purpose.
+  for (const name of CONTENT_NAMES) assert.ok(explained.includes(name) || selfEvident.includes(name), `${name} is unclassified`);
   assert.match(tooltips, /tone:\s*'purpose'/);
   assert.match(inventory, /line\.tone === 'purpose'/);
   assert.match(inventory, /text-\[#c8dedb\]/);

@@ -25,7 +25,8 @@ interface SlotProps {
   onMouseLeave?: (e: React.MouseEvent) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseUp?: (e: React.MouseEvent) => void;
-  size?: 'large' | 'small';
+  /** 'hotbar' is Minecraft's hotbar size: 56px slots on a 60px pitch, items at 3x. */
+  size?: 'large' | 'small' | 'hotbar';
   isCursor?: boolean;
   /** Render only the item, for surfaces such as creative category tabs. */
   bare?: boolean;
@@ -158,12 +159,18 @@ export const Slot: React.FC<SlotProps> = ({
   const durabilityFrac = showDurability ? Math.max(0, curDurability / maxDurability) : 0;
   const durabilityColor = `rgb(${Math.round((1 - durabilityFrac) * 255)}, ${Math.round(durabilityFrac * 255)}, 0)`;
   const durabilityDimColor = `rgb(${Math.round((1 - durabilityFrac) * 63)}, 63, 0)`;
+  // Thirteen steps under the item, like Minecraft's; drawn at the item's own
+  // pixel scale (2x in inventories, 3x in the hotbar).
+  const artScale = size === 'hotbar' ? 3 : 2;
   const durabilityBar = showDurability ? (
-      <div className="absolute bottom-[10px] left-1/2 h-1 w-[26px] -translate-x-1/2 bg-black pointer-events-none z-20">
-          <div className="absolute left-0 top-0 h-0.5 w-6" style={{ background: durabilityDimColor }} />
+      <div
+          className="absolute left-1/2 -translate-x-1/2 bg-black pointer-events-none z-20"
+          style={{ bottom: size === 'hotbar' ? 5 : 10, width: 13 * artScale, height: 2 * artScale }}
+      >
+          <div className="absolute left-0 top-0" style={{ width: 12 * artScale, height: artScale, background: durabilityDimColor }} />
           <div
-              className="absolute left-0 top-0 h-0.5"
-              style={{ width: `${Math.round(durabilityFrac * 13) * 2}px`, background: durabilityColor }}
+              className="absolute left-0 top-0"
+              style={{ width: Math.round(durabilityFrac * 13) * artScale, height: artScale, background: durabilityColor }}
           />
       </div>
   ) : null;
@@ -225,7 +232,7 @@ export const Slot: React.FC<SlotProps> = ({
           const topTex = resolveTexture(parentType, 'top', 0, 1, 0, 0).texIdx;
           const frontTex = resolveTexture(parentType, 'front', 0, 0, 1, 0).texIdx;
           const leftTex = resolveTexture(parentType, 'left', -1, 0, 0, 0).texIdx;
-          const baseScale = size === 'large' ? 1.4 : 1.25;
+          const baseScale = size === 'hotbar' ? 2.1 : size === 'large' ? 1.4 : 1.25;
           const U = 16;
           // A fixed, readable orientation for the icon (step facing front-right).
           // Use a non-overlapping decomposition so faces don't seam: a slab is one
@@ -282,9 +289,9 @@ export const Slot: React.FC<SlotProps> = ({
           // Left Face (dx=-1) - Visual Left Side
           const leftTex = resolveTexture(item.type, 'left', -1, 0, 0, 0).texIdx;
           
-          const cubeSize = 16; 
+          const cubeSize = 16;
           const half = cubeSize / 2;
-          const baseScale = size === 'large' ? 1.4 : 1.25;
+          const baseScale = size === 'hotbar' ? 2.1 : size === 'large' ? 1.4 : 1.25;
           
           return (
               <div 
@@ -324,8 +331,9 @@ export const Slot: React.FC<SlotProps> = ({
           // Draw synchronously from the generated atlas. The canvas renderer
           // snaps the 16px source to whole physical pixels.
           // Keep the 16px source on an exact 2x grid. The next whole-pixel
-          // scale (48px) fills the slot edge-to-edge and reads oversized.
-          const pxSize = 32;
+          // scale (48px) fills a 48px slot edge-to-edge and reads oversized;
+          // the hotbar's larger slots take it, as Minecraft's hotbar does.
+          const pxSize = size === 'hotbar' ? 48 : 32;
           const texSlot = blockDef.textureSlot ?? 0;
           return (
               <PixelPerfectItemIcon
@@ -361,7 +369,7 @@ export const Slot: React.FC<SlotProps> = ({
         onMouseUp={onMouseUp}
         className={`
             group relative flex items-center justify-center
-            ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
+            ${size === 'hotbar' ? 'w-14 h-14' : size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
             ${bare ? 'pointer-events-none' : 'atlas-slot cursor-pointer'}
             ${selected ? 'z-10' : ''}
         `}

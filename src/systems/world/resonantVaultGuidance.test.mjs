@@ -39,9 +39,7 @@ test('the vault teaches each stage with a compact objective line', () => {
   assert.doesNotMatch(objectives, /Strike the exposed bell/);
   assert.match(objectives, /Grand: long, guarded \| Fracture: short, hazardous/);
 
-  assert.match(objectiveHud, /font-pixel/);
-  assert.match(objectiveHud, /bg-black\/65/);
-  assert.match(objectiveHud, /border-stone-500\/45/);
+  assert.match(objectiveHud, /atlas-tooltip/);
   assert.match(objectiveHud, /aria-live="polite"/);
   assert.doesNotMatch(objectiveHud, /neon|glow|gradient|cyan|purple/i);
   assert.match(objectiveHud, /vault:room-solved/);
@@ -72,7 +70,7 @@ test('current-facing copy removes prose tutorials and prototype items', () => {
 
 test('active content teaches conventional equipment and one machinery artifact', () => {
   const purposeBlock = guide.match(/RESONANT_ITEM_PURPOSES:[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1] ?? '';
-  assert.equal((purposeBlock.match(/\[BlockType\./g) ?? []).length, 29);
+  assert.equal((purposeBlock.match(/\[BlockType\./g) ?? []).length, 16);
   for (const id of ['VAULTSTEEL_SPEAR','VAULT_CROSSBOW','VAULT_BOLT','BELLBREAKER_MAUL','ECHO_TUNING_FORK','TITAN_HAMMER']) {
     assert.match(guide, new RegExp(`\\[BlockType\\.${id}\\]:\\s*'[^']+'`), `missing summary for ${id}`);
   }

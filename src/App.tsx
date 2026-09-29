@@ -6,6 +6,7 @@ import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama'
 import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
+import { TooltipHost } from './components/ui/kit/TooltipHost';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -3524,6 +3525,8 @@ const App: React.FC = () => {
             )}
           </>
       )}
+      {/* Hover hints (data-tip) in the kit's tooltip style. */}
+      <TooltipHost />
       {/* Vercel's analytics only exist on the hosted web build; the desktop
           app would just request a script that isn't there. */}
       {!isElectron && <Analytics />}

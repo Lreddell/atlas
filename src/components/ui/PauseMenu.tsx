@@ -394,7 +394,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                                 <div key={action.id} className="flex items-center justify-between gap-4 py-[2px]">
                                     <span
                                         className={`truncate text-px-2 text-shadow-md ${conflicts.length > 0 ? 'text-ember-300' : 'text-parchment-100'}`}
-                                        title={conflicts.length > 0 ? `Also bound to ${conflicts.map(keyActionLabel).join(', ')}` : undefined}
+                                        data-tip={conflicts.length > 0 ? `Also bound to ${conflicts.map(keyActionLabel).join(', ')}` : undefined}
                                     >
                                         {action.label}
                                     </span>

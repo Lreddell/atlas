@@ -465,7 +465,6 @@ export const MainLandingPanel: React.FC<MainLandingPanelProps> = ({
             type="button"
             onClick={onShowWhatsNew}
             className="absolute bottom-2 left-3 text-px-2 text-parchment-100 text-shadow-md hover:text-brass-200 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-star"
-            title="See what's new"
         >
             Atlas {APP_DISPLAY_VERSION}: What&apos;s New
         </button>

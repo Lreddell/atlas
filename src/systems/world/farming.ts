@@ -11,7 +11,7 @@
 import { BlockType } from '../../types';
 import { CHUNK_SIZE, MIN_Y } from '../../constants';
 
-export { HOE_TYPES, isHoe, farmingPurpose } from './farmingItems';
+export { HOE_TYPES, isHoe } from './farmingItems';
 
 /** Set in a DIRT block's data when it is tilled farmland. */
 export const TILLED_BIT = 0x08;

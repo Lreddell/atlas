@@ -124,7 +124,8 @@ export const RecipeBookPanel: React.FC<RecipeBookPanelProps> = ({ gridWidth, inv
                         type="button"
                         role="tab"
                         aria-selected={prefs.tab === tab.id}
-                        title={tab.name}
+                        aria-label={tab.name}
+                        data-tip={tab.name}
                         onClick={() => { soundManager.play('ui.click'); update({ tab: tab.id }); }}
                         className="atlas-btn h-10 w-10"
                     >
@@ -203,7 +204,8 @@ export const RecipeBookButton: React.FC<{ open: boolean; onToggle: () => void }>
         onClick={(e) => { e.stopPropagation(); soundManager.play('ui.click'); onToggle(); }}
         onMouseDown={(e) => e.stopPropagation()}
         aria-pressed={open}
-        title={open ? 'Close the recipe book' : 'Open the recipe book'}
+        aria-label={open ? 'Close the recipe book' : 'Open the recipe book'}
+        data-tip={open ? 'Close the recipe book' : 'Open the recipe book'}
         className="atlas-btn h-11 w-11 shrink-0"
     >
         <svg viewBox="0 0 16 16" width="28" height="28" shapeRendering="crispEdges" aria-hidden>

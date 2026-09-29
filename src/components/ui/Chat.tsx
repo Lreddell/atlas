@@ -72,10 +72,10 @@ export const Chat: React.FC<ChatProps> = ({
         onSubmitInput?.();
     };
 
-    // Never wider than the space left of the hotbar (half its 480px, plus a margin).
+    // Never wider than the space left of the hotbar (half its 552px, plus a margin).
     return (
         <div
-            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[clamp(280px,calc(50vw-260px),560px)] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[clamp(280px,calc(50vw-296px),560px)] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}

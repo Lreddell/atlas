@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import {
     type DragTargetSlot,
     type InventoryAction,
@@ -45,6 +45,11 @@ interface InventoryUIProps {
 }
 
 const RECIPE_BOOK_OPEN_KEY = 'atlas.ui.recipeBookOpen.v1';
+// The recipe book panel's width (RecipeBookPanel), its gap to the inventory,
+// and the least room kept between the book and the edge of the screen.
+const RECIPE_BOOK_WIDTH = 276;
+const RECIPE_BOOK_GAP = 12;
+const SCREEN_EDGE_MARGIN = 16;
 const readBookOpen = (): boolean => {
     try { return window.localStorage.getItem(RECIPE_BOOK_OPEN_KEY) !== 'false'; } catch { return true; }
 };
@@ -183,6 +188,34 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         try { window.localStorage.setItem(RECIPE_BOOK_OPEN_KEY, String(!open)); } catch { /* per-player convenience only */ }
         return !open;
     });
+    const showBook = !!recipeBook && bookOpen && (openContainer.type === 'inventory' || openContainer.type === 'crafting');
+
+    // The inventory stays in the middle of the screen with the recipe book
+    // open: the book hangs off its left edge. Only a window too narrow to fit
+    // the book there slides the two right, just far enough.
+    const backdropRef = useRef<HTMLDivElement>(null);
+    const inventoryPanelRef = useRef<HTMLDivElement>(null);
+    const [bookShift, setBookShift] = useState(0);
+    useLayoutEffect(() => {
+        if (!showBook) {
+            setBookShift(0);
+            return;
+        }
+        const measure = () => {
+            const backdrop = backdropRef.current;
+            const panel = inventoryPanelRef.current;
+            if (!backdrop || !panel) return;
+            const width = panel.offsetWidth;
+            const left = (backdrop.clientWidth - width) / 2;
+            const needed = RECIPE_BOOK_WIDTH + RECIPE_BOOK_GAP + SCREEN_EDGE_MARGIN - left;
+            const roomRight = left - SCREEN_EDGE_MARGIN;
+            setBookShift(Math.max(0, Math.min(needed, roomRight)));
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
+    }, [showBook, openContainer.type]);
+
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, lines: TooltipLine[], x: number, y: number} | null>(null);
     const [activeTab, setActiveTab] = useState<CreativeTab>('building');
@@ -435,10 +468,19 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         resetDrag();
     }, [dispatchSlotAction, handleInventoryAction, resetDrag]);
 
+    // The window listeners reach the latest finishDrag through a ref, so they
+    // are set up once. Re-subscribed whenever finishDrag changed, their cleanup
+    // cleared the drag mid-press: a shift-click moves its stack on the press,
+    // which changes finishDrag, so the release found no drag to end and the
+    // screen stayed "dragging", hiding every tooltip until the next drag.
+    const finishDragRef = useRef(finishDrag);
+    useLayoutEffect(() => {
+        finishDragRef.current = finishDrag;
+    }, [finishDrag]);
     useEffect(() => {
-        const onPointerUp = () => finishDrag();
-        const onPointerCancel = () => finishDrag(false);
-        const onBlur = () => finishDrag(false);
+        const onPointerUp = () => finishDragRef.current();
+        const onPointerCancel = () => finishDragRef.current(false);
+        const onBlur = () => finishDragRef.current(false);
         window.addEventListener('pointerup', onPointerUp, true);
         window.addEventListener('pointercancel', onPointerCancel, true);
         window.addEventListener('blur', onBlur);
@@ -451,7 +493,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             dragOriginRef.current = null;
             dragSlotsRef.current = new Set();
         };
-    }, [finishDrag]);
+    }, []);
 
     const handleSlotPointerDown = (collection: SlotCollection, index: number, e: React.PointerEvent) => {
         e.stopPropagation();
@@ -655,7 +697,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 onPointerCancel={() => finishDrag(false)}
                 onContextMenu={(e) => e.preventDefault()}
                 onAuxClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                title={slot}
+                data-tip={item ? undefined : slot.charAt(0).toUpperCase() + slot.slice(1)}
             >
                 <Slot item={item} size="large" />
                 {!item && (
@@ -684,7 +726,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         : cursorStack;
 
     return (
-        <div 
+        <div
+            ref={backdropRef}
             className="absolute inset-0 bg-ink-950/60 z-50 flex items-center justify-center atlas-fade-in"
             onPointerMove={handlePointerMove}
             onClick={handleBackdropClick} 
@@ -694,17 +737,20 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={handleBackdropContextMenu}
         >
-            <div className="flex items-start gap-3 atlas-panel-in" onClick={stopPropagation}>
-            {recipeBook && bookOpen && (openContainer.type === 'inventory' || openContainer.type === 'crafting') && (
-                <RecipeBookPanel
-                    gridWidth={openContainer.type === 'crafting' ? 3 : 2}
-                    inventory={inventory}
-                    known={recipeBook.known}
-                    onFill={recipeBook.onFill}
-                    onHover={setHoverInfo}
-                />
+            <div style={bookShift > 0 ? { transform: `translateX(${bookShift}px)` } : undefined}>
+            <div className="relative atlas-panel-in" onClick={stopPropagation}>
+            {recipeBook && showBook && (
+                <div className="absolute right-full top-0" style={{ marginRight: RECIPE_BOOK_GAP }}>
+                    <RecipeBookPanel
+                        gridWidth={openContainer.type === 'crafting' ? 3 : 2}
+                        inventory={inventory}
+                        known={recipeBook.known}
+                        onFill={recipeBook.onFill}
+                        onHover={setHoverInfo}
+                    />
+                </div>
             )}
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[860px]' : ''}`}>
+            <div ref={inventoryPanelRef} className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[860px]' : ''}`}>
 
                 {openContainer.type === 'creative' && (
                     <div className="mb-1 ml-4 flex gap-1" role="tablist" aria-label="Item categories">
@@ -716,7 +762,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className="atlas-btn h-11 w-11"
-                                title={tab.name}
+                                aria-label={tab.name}
+                                data-tip={tab.name}
                             >
                                 <Slot item={{ type: tab.icon, count: 1 }} size="small" bare />
                             </button>
@@ -842,6 +889,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                         </div>
                     )}
                 </div>
+            </div>
             </div>
             </div>
 

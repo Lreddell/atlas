@@ -40,7 +40,7 @@ export const BossCompass: React.FC = () => {
                 <svg width="34" height="34" viewBox="0 0 34 34" style={{ transform: `rotate(${degrees}deg)` }} shapeRendering="crispEdges">
                     <polygon points="17,2 30,28 17,21 4,28" fill={colour} stroke="#000" strokeWidth="2" />
                 </svg>
-                <div className="mt-[2px] whitespace-nowrap font-pixel text-[11px] text-white [text-shadow:1px_1px_0_#000,-1px_-1px_0_#000]">
+                <div className="mt-[2px] whitespace-nowrap text-px-1 text-parchment-50 text-shadow-md">
                     {view.above ? '▲ ' : ''}{view.distance}m
                 </div>
             </div>

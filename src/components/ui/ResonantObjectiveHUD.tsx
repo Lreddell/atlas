@@ -57,13 +57,14 @@ export const ResonantObjectiveHUD: React.FC<{ inventory: (ItemStack | null)[] }>
     }, [hasObjective, objectiveKey, objectivePersistent, recall]);
 
     if (!objective || !visible) return null;
+    // In the interface's own ink, like its tooltips: a quiet card.
     return (
         <div
             aria-live="polite"
-            className="absolute top-12 left-1/2 -translate-x-1/2 z-40 pointer-events-none w-[calc(100vw-24px)] max-w-[360px] bg-black/65 border border-stone-500/45 px-3 py-1.5 font-pixel text-sm text-shadow-sm text-center shadow-md"
+            className="atlas-tooltip absolute top-12 left-1/2 -translate-x-1/2 z-40 pointer-events-none w-[calc(100vw-24px)] max-w-[360px] text-center"
         >
-            <div className="text-white leading-5">{objective.primary}</div>
-            {objective.secondary && <div className="text-gray-300 leading-4">{objective.secondary}</div>}
+            <div className="text-px-2 text-parchment-50 text-shadow-md">{objective.primary}</div>
+            {objective.secondary && <div className="text-read text-parchment-300">{objective.secondary}</div>}
         </div>
     );
 };

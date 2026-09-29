@@ -80,7 +80,10 @@ test('vitals keep ten pips, half pips and their drain directions', () => {
     assert.match(hud, /const left = breath \/ 30 - i;/);
     // Ten per row, and together exactly as wide as the hotbar.
     assert.equal((hud.match(/Array\.from\(\{ ?length: ?10 ?\}\)/g) ?? []).length, 4);
-    assert.match(hud, /flex w-\[480px\] items-end justify-between z-40/);
+    assert.match(hud, /flex w-\[552px\] items-end justify-between z-40/);
+    // The hotbar: nine 56px slots, 4px apart, 6px padding and a 2px border: 552px.
+    assert.match(hud, /size="hotbar"/);
+    assert.match(read('src/components/ui/Slot.tsx'), /size === 'hotbar' \? 'w-14 h-14'/);
     assert.doesNotMatch(hud, /HEART_D|DRUM_MEAT_D|rounded-full/);
 });
 

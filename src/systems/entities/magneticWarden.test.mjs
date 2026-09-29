@@ -400,7 +400,7 @@ test('the kit readouts live in the HUD layer, not above it', () => {
     assert.match(hud, /<CombatFeedback magnetic=\{magnetic\} \/>/);
     assert.match(hud, /absolute left-1\/2 z-40 flex w-\[320px\]/);
     // The rest of the HUD it has to match: armor, vitals, hotbar, crosshair.
-    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-20 left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/, /id="crosshair"[^>]*z-40/]) {
+    for (const layer of [/absolute bottom-4 left-4 z-40/, /absolute bottom-\[88px\] left-1\/2[^"]*z-40/, /absolute bottom-4 left-1\/2[^"]*z-40/, /id="crosshair"[^>]*z-40/]) {
         assert.match(hud, layer);
     }
     // Every other in-game overlay is in the same layer. Anything above the pause
