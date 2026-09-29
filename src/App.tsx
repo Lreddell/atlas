@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
+import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo } from 'react';
 import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
 import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
@@ -7,6 +7,7 @@ import { Analytics } from '@vercel/analytics/react';
 
 import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
 import { TooltipHost } from './components/ui/kit/TooltipHost';
+import { chunkView } from './systems/world/chunkView';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -126,7 +127,6 @@ import {
 import { getSpawnSearchCenter } from './utils/noise';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
-type RenderedChunk = { cx: number; cz: number };
 
 const MENU_BACKGROUND_MODE_KEY = 'atlas.menu.backgroundMode';
 const MENU_PANORAMA_DATA_KEY = 'atlas.menu.panoramaDataUrl';
@@ -342,7 +342,6 @@ const App: React.FC = () => {
     const [bootReady, setBootReady] = useState(false);
   const [loadingState, setLoadingState] = useState({ phase: '', percent: 0, details: '' });
   
-  const [chunks, setChunks] = useState<{ cx: number; cz: number }[]>([]);
   const [drops, setDrops] = useState<Drop[]>([]);
   // Latest drops for saving (drops are mutated in place by DropManager, so the
   // array's entries are always current). Drops spawned this same tick, before
@@ -522,7 +521,6 @@ const App: React.FC = () => {
 
   const isDead = health <= 0;
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
-  const renderedChunks: RenderedChunk[] = chunks;
 
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
@@ -622,10 +620,8 @@ const App: React.FC = () => {
                 const nextRender = renderChunkOffsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz }));
 
                 worldManager.setDesiredChunks(nextDesired);
-
-                startTransition(() => {
-                    setChunks(nextRender);
-                });
+                // The scene's chunk field follows this list itself (chunkView.ts).
+                chunkView.set(nextRender);
             }, [desiredChunkOffsets, renderChunkOffsets]);
 
   // Sync currentSpawnPos with Player logic for safe reloading of Canvas
@@ -2913,6 +2909,7 @@ const App: React.FC = () => {
           setShowAtlasViewer(false);
           setIsPaused(false);
           lastAppliedChunkKeyRef.current = null;
+          chunkView.set([]);
           activeWorldIdRef.current = null;
           activeWorldGenConfigRef.current = null;
           worldManager.reset();
@@ -3328,7 +3325,7 @@ const App: React.FC = () => {
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
                     {isSleeping && <div className="absolute inset-0 z-[100] bg-ink-950 atlas-fade-in-sleep flex items-center justify-center"><span className="text-px-3 text-parchment-200 motion-safe:animate-pulse">Sleeping...</span></div>}
                     {!hudHidden && !showDebug && showCoordinates && !cinematicMode && !showDeathScreen && <CoordinatesReadout positionRef={playerPosRef} />}
-                    {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
+                    {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
                     {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
                     <div hidden={hudHidden}><BossBar /></div>
@@ -3465,7 +3462,7 @@ const App: React.FC = () => {
                 
                 <Suspense fallback={null}>
                     {/* Chunk meshes, and those fading out (ChunkMesh.tsx). */}
-                    <ChunkField chunks={renderedChunks} shadowsEnabled={shadowsEnabled} fadeEnabled={chunkFadeEnabled} />
+                    <ChunkField shadowsEnabled={shadowsEnabled} fadeEnabled={chunkFadeEnabled} />
                     <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} pickupsBlocked={pickupsBlocked} pickupLockUntilRef={pickupLockUntilRef} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
                 {gameMode !== 'spectator' && !isDead && !cinematicMode && !isCapturingPanorama && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}

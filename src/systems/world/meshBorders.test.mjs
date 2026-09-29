@@ -15,8 +15,9 @@ const mod = await loadTs(`
     export { packMeshBorders, unpackMeshBorders, createBorderScratch, borderPlane, expandBorderPlane } from './src/systems/world/meshBorders';
     export { CHUNK_SIZE, WORLD_HEIGHT } from './src/constants';
     export { index3D } from './src/systems/world/worldCoords';
+    export { BlockType } from './src/types';
 `);
-const { generateChunk, reseedGlobalNoise, generateGeometryData, packMeshBorders, unpackMeshBorders, createBorderScratch, borderPlane, expandBorderPlane, CHUNK_SIZE, WORLD_HEIGHT, index3D } = mod;
+const { generateChunk, reseedGlobalNoise, generateGeometryData, packMeshBorders, unpackMeshBorders, createBorderScratch, borderPlane, expandBorderPlane, CHUNK_SIZE, WORLD_HEIGHT, index3D, BlockType } = mod;
 
 const LAYERS = ['opaque', 'cutout', 'transparent'];
 const ARRAYS = ['positions', 'normals', 'uvs', 'colors', 'tiles', 'indices'];
@@ -64,10 +65,11 @@ test('meshing from border planes matches meshing from whole side chunks', () => 
             const sides = { left: at(-1, 0), right: at(1, 0), back: at(0, -1), front: at(0, 1) };
             const neighbors = Object.fromEntries(Object.entries(sides).map(([k, v]) => [k, v.blocks]));
             const lights = { center: center.light, ...Object.fromEntries(Object.entries(sides).map(([k, v]) => [k, v.light])) };
+            const metas = Object.fromEntries(Object.entries(sides).map(([k, v]) => [k, v.meta]));
             for (const cull of [false, true]) {
-                const whole = generateGeometryData(cx, cz, center.blocks, center.meta, neighbors, lights, cull);
-                const { neighbors: n2, lights: l2 } = unpackMeshBorders(packMeshBorders(neighbors, lights), center.light, scratch);
-                const planes = generateGeometryData(cx, cz, center.blocks, center.meta, n2, l2, cull);
+                const whole = generateGeometryData(cx, cz, center.blocks, center.meta, neighbors, lights, cull, metas);
+                const { neighbors: n2, lights: l2, neighborMeta: m2 } = unpackMeshBorders(packMeshBorders(neighbors, lights, metas), center.light, scratch);
+                const planes = generateGeometryData(cx, cz, center.blocks, center.meta, n2, l2, cull, m2);
                 sameMesh(whole, planes, `seed ${seed} chunk ${cx},${cz} cull ${cull}`);
                 meshed++;
             }
@@ -84,4 +86,44 @@ test('a missing side chunk stays missing', () => {
     assert.equal(neighbors.right, undefined);
     assert.equal(lights.left, undefined);
     assert.equal(lights.center, light);
+});
+
+// A flowing surface slopes toward its neighbours' levels. Each chunk used to
+// guess its side neighbours' levels from its own cell, so the two chunks put
+// the same corner at different heights: a step along every chunk border.
+test('a flowing surface meets itself across a chunk border', () => {
+    const cells = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
+    const make = () => ({ blocks: new Uint8Array(cells), light: new Uint8Array(cells).fill(15 << 4), meta: new Uint8Array(cells) });
+    const west = make();
+    const east = make();
+    const y = 64;
+    for (let z = 0; z < CHUNK_SIZE; z++) {
+        for (let x = 10; x < CHUNK_SIZE; x++) {
+            west.blocks[index3D(x, y - 1, z)] = BlockType.STONE;
+            west.blocks[index3D(x, y, z)] = BlockType.WATER;
+            west.meta[index3D(x, y, z)] = 2 + (z % 3);
+        }
+        for (let x = 0; x < 6; x++) {
+            east.blocks[index3D(x, y - 1, z)] = BlockType.STONE;
+            east.blocks[index3D(x, y, z)] = BlockType.WATER;
+            east.meta[index3D(x, y, z)] = 5 + (z % 2);
+        }
+    }
+    const westMesh = generateGeometryData(0, 0, west.blocks, west.meta, { right: east.blocks }, { center: west.light, right: east.light }, false, { right: east.meta });
+    const eastMesh = generateGeometryData(1, 0, east.blocks, east.meta, { left: west.blocks }, { center: east.light, left: west.light }, false, { left: west.meta });
+    // The surface's corner heights on the border line: x = 16 in the west chunk, x = 0 in the east.
+    const borderCorners = (mesh, x) => {
+        const heights = new Map();
+        const positions = mesh.transparent.positions;
+        for (let i = 0; i < positions.length; i += 3) {
+            if (positions[i] === x && positions[i + 1] > y && positions[i + 1] < y + 1) heights.set(positions[i + 2], positions[i + 1]);
+        }
+        return heights;
+    };
+    const fromWest = borderCorners(westMesh, CHUNK_SIZE);
+    const fromEast = borderCorners(eastMesh, 0);
+    assert.equal(fromWest.size, CHUNK_SIZE + 1);
+    // Along the border, not at its two ends: a chunk's very corner also averages
+    // a cell of the diagonal chunk, which a mesh job doesn't carry.
+    for (let z = 1; z < CHUNK_SIZE; z++) assert.equal(fromEast.get(z), fromWest.get(z), `corner at z ${z}`);
 });

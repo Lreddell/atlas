@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { regionBatcher } from '../systems/world/regionBatcher';
+import { chunkView } from '../systems/world/chunkView';
 import {
   getVoxelFadeMaterials,
   createCutoutDepthMaterial,
@@ -365,11 +366,13 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         {geometries.opaque && <mesh ref={opaqueMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.opaque} material={sharedMaterials.solid} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
         {geometries.cutout && <mesh ref={cutoutMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.cutout} material={sharedMaterials.cutout} customDepthMaterial={cutoutDepthMaterial} castShadow={shadowsEnabled} receiveShadow={shadowsEnabled} />}
         {/* Water and glass: the front faces, with the back faces as a child
-            over the same geometry. The child is created first, so the two sort
-            together with the back faces drawn first (voxelMaterial.ts). */}
+            over the same geometry. The back faces draw before any front face
+            (renderOrder -1), as the merged regions' do: drawn chunk by chunk,
+            a nearer chunk's undersides landed over the next chunk's surface
+            and drew a line along every chunk border on ice and water. */}
         {geometries.transparent && (
           <mesh ref={transparentMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={sharedMaterials.transparent} castShadow={false} receiveShadow={false}>
-            <mesh ref={transparentBackMeshRef} name="chunk" matrixAutoUpdate={false} geometry={geometries.transparent} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
+            <mesh ref={transparentBackMeshRef} name="chunk" matrixAutoUpdate={false} renderOrder={-1} geometry={geometries.transparent} material={sharedMaterials.transparentBack} castShadow={false} receiveShadow={false} />
           </mesh>
         )}
     </group>
@@ -387,73 +390,191 @@ export const ChunkMesh = React.memo(
 );
 
 type ChunkCoords = { cx: number; cz: number };
+type DisplayedChunk = ChunkCoords & { fadingOut: boolean };
+
+// Chunks are grouped into tiles of TILE x TILE on a fixed world grid. Crossing
+// into a new chunk changes only the tiles along the edges of the view; every
+// other tile keeps its very list, so React skips it without looking at its
+// chunks one by one.
+const TILE_SHIFT = 3; // 8 chunks
+const tileKeyOf = (c: ChunkCoords) => `${c.cx >> TILE_SHIFT},${c.cz >> TILE_SHIFT}`;
+
+interface ChunkTileProps {
+  chunks: readonly DisplayedChunk[];
+  shadowsEnabled: boolean;
+  fadeEnabled: boolean;
+  onFadeOutComplete: (cx: number, cz: number) => void;
+}
+
+const ChunkTileImpl: React.FC<ChunkTileProps> = ({ chunks, shadowsEnabled, fadeEnabled, onFadeOutComplete }) => (
+  <>
+    {chunks.map(c => (
+      <ChunkMesh
+        key={`${c.cx},${c.cz}`}
+        cx={c.cx}
+        cz={c.cz}
+        shadowsEnabled={shadowsEnabled}
+        fadeInEnabled={fadeEnabled}
+        fadingOut={c.fadingOut}
+        onFadeOutComplete={c.fadingOut ? () => onFadeOutComplete(c.cx, c.cz) : undefined}
+      />
+    ))}
+  </>
+);
+
+const ChunkTile = React.memo(ChunkTileImpl);
 
 interface ChunkFieldProps {
-  chunks: readonly ChunkCoords[];
   shadowsEnabled: boolean;
   fadeEnabled: boolean;
 }
 
+const keyOf = (cx: number, cz: number) => `${cx},${cz}`;
+
 /**
- * Every chunk's mesh, plus the ones fading out after leaving the render set.
- * Kept apart from App so that App re-rendering (the HUD, hunger, a fade
- * finishing) doesn't rebuild and re-diff some 1,800 chunk elements each time:
- * this renders only when the chunk set changes or a fade-out ends.
+ * Every chunk's mesh, plus the ones fading out after leaving the view. It
+ * mounts a chunk only once the chunk has a mesh, and keeps its chunks in tiles
+ * rebuilt only where something changed:
+ * - the view (chunkView.ts) changing on a border crossing touches only the
+ *   tiles along its edges, instead of all of the view's chunks at once;
+ * - chunks coming into view mount as their meshes arrive, a few a frame (the
+ *   world's per-frame budget), not all together on the crossing;
+ * - it re-renders as a transition, which React may spread over frames.
  */
-const ChunkFieldImpl: React.FC<ChunkFieldProps> = ({ chunks, shadowsEnabled, fadeEnabled }) => {
-  // Departing chunks stay in the list so their meshes can animate out. The refs
-  // are updated inside useMemo so there is never a frame where a chunk vanishes
-  // and then comes back as fading (an unmount and remount that loses its geometry).
-  const prevKeysRef = useRef<Map<string, ChunkCoords>>(new Map());
-  const fadingOutRef = useRef<Map<string, ChunkCoords>>(new Map());
-  const [fadingVersion, setFadingVersion] = useState(0);
+const ChunkFieldImpl: React.FC<ChunkFieldProps> = ({ shadowsEnabled, fadeEnabled }) => {
+  const [, setVersion] = useState(0);
+  const fadeEnabledRef = useRef(fadeEnabled);
+  const model = useRef({
+    /** Chunks in view. */
+    inView: new Set<string>(),
+    /** Their coordinates, and those of chunks still fading out. */
+    coords: new Map<string, ChunkCoords>(),
+    /** Chunks drawn: in view with a mesh, or fading out. */
+    shown: new Map<string, DisplayedChunk>(),
+    /** Each tile's shown chunks, and the list its ChunkTile draws. */
+    tileMembers: new Map<string, Set<string>>(),
+    tiles: new Map<string, DisplayedChunk[]>(),
+  });
 
-  const displayed = useMemo(() => {
-    void fadingVersion;
-    const currentKeys = new Set(chunks.map(c => `${c.cx},${c.cz}`));
-
-    // Newly departed chunks start fading.
-    if (fadeEnabled) {
-      for (const [key, chunk] of prevKeysRef.current) {
-        if (!currentKeys.has(key) && !fadingOutRef.current.has(key)) {
-          fadingOutRef.current.set(key, chunk);
+  const handlers = useMemo(() => {
+    const m = model.current;
+    let dirty = new Set<string>();
+    const tileOf = (key: string) => {
+      const c = m.coords.get(key)!;
+      return tileKeyOf(c);
+    };
+    const show = (key: string, fadingOut: boolean) => {
+      const c = m.coords.get(key);
+      if (!c) return;
+      const current = m.shown.get(key);
+      if (current && current.fadingOut === fadingOut) return;
+      m.shown.set(key, { cx: c.cx, cz: c.cz, fadingOut });
+      const tile = tileKeyOf(c);
+      let members = m.tileMembers.get(tile);
+      if (!members) m.tileMembers.set(tile, members = new Set());
+      members.add(key);
+      dirty.add(tile);
+    };
+    const hide = (key: string) => {
+      if (!m.shown.delete(key)) return;
+      const tile = tileOf(key);
+      m.tileMembers.get(tile)?.delete(key);
+      dirty.add(tile);
+    };
+    // Rebuilds the changed tiles' lists, then renders (as a transition).
+    const flush = () => {
+      if (dirty.size === 0) return;
+      for (const tile of dirty) {
+        const members = m.tileMembers.get(tile);
+        if (!members || members.size === 0) {
+          m.tileMembers.delete(tile);
+          m.tiles.delete(tile);
+          continue;
         }
+        m.tiles.set(tile, [...members].map(key => m.shown.get(key)!));
       }
-    }
+      dirty = new Set();
+      startTransition(() => setVersion(v => v + 1));
+    };
 
-    // Chunks that came back stop fading; with fades off, none fade.
-    if (!fadeEnabled) {
-      fadingOutRef.current.clear();
-    } else {
-      for (const key of fadingOutRef.current.keys()) {
-        if (currentKeys.has(key)) fadingOutRef.current.delete(key);
-      }
-    }
-
-    prevKeysRef.current = new Map(chunks.map(c => [`${c.cx},${c.cz}`, c]));
-
-    return [
-      ...chunks.map(c => ({ cx: c.cx, cz: c.cz, fadingOut: false })),
-      ...[...fadingOutRef.current.values()].map(c => ({ cx: c.cx, cz: c.cz, fadingOut: true })),
-    ];
-  }, [chunks, fadeEnabled, fadingVersion]);
-
-  const handleFadeOutComplete = useCallback((cx: number, cz: number) => {
-    fadingOutRef.current.delete(`${cx},${cz}`);
-    setFadingVersion(v => v + 1);
+    return {
+      /** The view changed: chunks leaving fade out (or go), chunks joining show once meshed. */
+      setView(list: readonly ChunkCoords[]) {
+        const next = new Set<string>();
+        for (const c of list) {
+          const key = keyOf(c.cx, c.cz);
+          next.add(key);
+          if (!m.inView.has(key)) m.coords.set(key, c);
+        }
+        for (const key of m.inView) {
+          if (next.has(key)) continue;
+          if (fadeEnabledRef.current && m.shown.has(key)) show(key, true);
+          else { hide(key); m.coords.delete(key); }
+        }
+        m.inView = next;
+        for (const key of next) {
+          if (worldManager.hasMesh(key)) show(key, false);
+          else hide(key);
+        }
+        flush();
+      },
+      /** A chunk got its first mesh or lost it (null: every chunk's changed). */
+      meshPresence(key: string | null, present: boolean) {
+        if (key === null) {
+          for (const k of m.inView) {
+            if (worldManager.hasMesh(k)) show(k, false);
+            else hide(k);
+          }
+        } else if (m.inView.has(key)) {
+          if (present) show(key, false);
+          else hide(key);
+        }
+        flush();
+      },
+      /** A chunk finished fading out. */
+      fadedOut(cx: number, cz: number) {
+        const key = keyOf(cx, cz);
+        if (m.inView.has(key)) return;
+        hide(key);
+        m.coords.delete(key);
+        flush();
+      },
+      /** Fades turned off: whatever is fading out goes now. */
+      dropFading() {
+        for (const [key, chunk] of [...m.shown]) {
+          if (!chunk.fadingOut) continue;
+          hide(key);
+          m.coords.delete(key);
+        }
+        flush();
+      },
+    };
   }, []);
+
+  useEffect(() => {
+    handlers.setView(chunkView.get());
+    const stopView = chunkView.subscribe(() => handlers.setView(chunkView.get()));
+    const stopMeshes = worldManager.subscribeMeshPresence(handlers.meshPresence);
+    return () => {
+      stopView();
+      stopMeshes();
+    };
+  }, [handlers]);
+
+  useEffect(() => {
+    fadeEnabledRef.current = fadeEnabled;
+    if (!fadeEnabled) handlers.dropFading();
+  }, [fadeEnabled, handlers]);
 
   return (
     <>
-      {displayed.map(c => (
-        <ChunkMesh
-          key={`${c.cx},${c.cz}`}
-          cx={c.cx}
-          cz={c.cz}
+      {[...model.current.tiles].map(([key, chunks]) => (
+        <ChunkTile
+          key={key}
+          chunks={chunks}
           shadowsEnabled={shadowsEnabled}
-          fadeInEnabled={fadeEnabled}
-          fadingOut={c.fadingOut}
-          onFadeOutComplete={c.fadingOut ? () => handleFadeOutComplete(c.cx, c.cz) : undefined}
+          fadeEnabled={fadeEnabled}
+          onFadeOutComplete={handlers.fadedOut}
         />
       ))}
     </>

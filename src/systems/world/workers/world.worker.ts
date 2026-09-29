@@ -47,8 +47,8 @@ ctx.onmessage = (e) => {
         }
 
         // Generate geometry using data provided in the message.
-        const { neighbors, lights } = unpackMeshBorders(borders, light, borderScratch);
-        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+        const { neighbors, lights, neighborMeta } = unpackMeshBorders(borders, light, borderScratch);
+        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces, neighborMeta);
 
         const buffers: Transferable[] = [];
         [result.opaque, result.cutout, result.transparent].forEach(geo => {

@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { worldManager } from '../../systems/WorldManager';
+import { chunkView } from '../../systems/world/chunkView';
 import { getClimateDebugInfo } from '../../systems/world/biomes';
 import { getBiomeAt } from '../../systems/world/chunkGeneration';
 import { BLOCKS } from '../../data/blocks';
@@ -13,13 +14,12 @@ interface DebugScreenProps {
     playerPosRef: React.MutableRefObject<THREE.Vector3>;
     cameraRef: React.MutableRefObject<{ getCamera: () => { pos: THREE.Vector3, dir: THREE.Vector3 } } | null>;
     dropsCount: number;
-    chunksCount: number;
     renderDistance: number;
     fpsRef: React.MutableRefObject<number>; // New Prop
 }
 
 export const DebugScreen: React.FC<DebugScreenProps> = ({ 
-    playerPosRef, cameraRef, dropsCount, chunksCount, renderDistance, fpsRef
+    playerPosRef, cameraRef, dropsCount, renderDistance, fpsRef
 }) => {
     const leftColRef = useRef<HTMLDivElement>(null);
     const rightColRef = useRef<HTMLDivElement>(null);
@@ -133,7 +133,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                         line(`Display: ${window.innerWidth}x${window.innerHeight}`),
                         line(``),
                         line(`Render Dist: ${renderDistance}`),
-                        line(`Chunks Loaded: ${chunksCount}`),
+                        line(`Chunks Loaded: ${chunkView.get().length}`),
                         line(`Entities: ${dropsCount}`),
                         line(``),
                         line(`Day: ${day}`),
@@ -145,7 +145,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
         };
         loop();
         return () => cancelAnimationFrame(rafId);
-    }, [dropsCount, chunksCount, renderDistance, fpsRef, cameraRef, playerPosRef]);
+    }, [dropsCount, renderDistance, fpsRef, cameraRef, playerPosRef]);
 
     return (
         <div className="absolute inset-0 pointer-events-none z-[100] text-white font-mono text-mono-2 leading-[20px] drop-shadow-[2px_2px_0_rgba(7,9,23,0.9)] select-none p-1 flex justify-between">

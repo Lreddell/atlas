@@ -336,7 +336,10 @@ export function generateGeometryData(
     // light are skipped entirely. Enclosed cave geometry is only ever visible from
     // inside the cave (i.e. when the chunk is near) so distant chunks don't need
     // it. This typically halves or better the triangle count of a full-depth chunk.
-    cullDarkFaces: boolean = false
+    cullDarkFaces: boolean = false,
+    // The side chunks' metadata: the fluid levels a sloped surface averages
+    // across a chunk border (missing means no metadata: every level 0).
+    neighborMeta: NeighborData = {},
 ): GeometryResult {
     // Reset pointers
     opaqueBuffer.reset();
@@ -399,6 +402,20 @@ export function generateGeometryData(
             return neighbors.front[index3D(lx, y, z - CHUNK_SIZE)] as BlockType;
         }
         return BlockType.AIR;
+    };
+
+    // A fluid cell's level, from this chunk's metadata or a side chunk's, read
+    // the way getTypeFast reads the side chunks (corners clamp onto the plane).
+    const getFluidLevelFast = (x: number, y: number, z: number): number => {
+        if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) return metaData ? metaData[index3D(x, y, z)] & 0xF : 0;
+        let side: Uint8Array | undefined;
+        let lx = Math.max(0, Math.min(CHUNK_SIZE - 1, x));
+        let lz = Math.max(0, Math.min(CHUNK_SIZE - 1, z));
+        if (x < 0) { side = neighborMeta.left; lx = CHUNK_SIZE + x; }
+        else if (x >= CHUNK_SIZE) { side = neighborMeta.right; lx = x - CHUNK_SIZE; }
+        else if (z < 0) { side = neighborMeta.back; lz = CHUNK_SIZE + z; }
+        else { side = neighborMeta.front; lz = z - CHUNK_SIZE; }
+        return side ? side[index3D(lx, y, lz)] & 0xF : 0;
     };
 
     // Slabs/stairs attenuate light by shape (getDirectionalOpacity), so getOpacity no
@@ -866,8 +883,9 @@ export function generateGeometryData(
                       const sx = x + ox - 1 + (k & 1), sz = z + oz - 1 + (k >> 1);
                       if (getTypeFast(sx, y, sz) !== type) continue;
                       if (getTypeFast(sx, y + 1, sz) === type) { full = true; break; }
-                      const inChunk = sx >= 0 && sx < CHUNK_SIZE && sz >= 0 && sz < CHUNK_SIZE;
-                      sum += inChunk && metaData ? fluidLevelHeight(metaData[index3D(sx, y, sz)] & 0xF) : blockHeight;
+                      // A side chunk's cells count at their own level, so the
+                      // chunks either side of a border agree on the corner.
+                      sum += fluidLevelHeight(getFluidLevelFast(sx, y, sz));
                       count++;
                   }
                   fluidCorners[corner] = full ? 1.0 : count > 0 ? sum / count : blockHeight;

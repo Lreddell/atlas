@@ -525,14 +525,11 @@ ${windGlsl('atlasVoxelClassHere', 'atlasSwayBit')}`);
  * Three draws a double-sided transparent material as back faces then front
  * faces by flipping the material's side, and every flip marks it for a program
  * check: two per water mesh per frame, the costliest thing in a frame near
- * water. Split, each side is an ordinary material:
- * - A chunk's water draws as a front mesh with a back mesh under it (same
- *   geometry, created first), so the two sort together, back faces first, as
- *   three's own two-pass draw did.
- * - A merged region draws every far region's back faces first (renderOrder -1)
- *   and then the front faces: at that size a farther region's back faces (the
- *   dark undersides round sunken plants) could otherwise land on a nearer
- *   region's surface.
+ * water. Split, each side is an ordinary material, and every back face, a
+ * chunk's (ChunkMesh.tsx) or a merged region's (regionBatcher.ts), draws
+ * before any front face (renderOrder -1). Drawn object by object instead, one
+ * chunk or region's undersides land over the next one's surface: lines along
+ * chunk borders on ice and water, dark undersides round sunken plants.
  */
 export function createVoxelMaterials(map: THREE.Texture | null): VoxelMaterials {
     const transparent = createVoxelMaterial('transparent', map);

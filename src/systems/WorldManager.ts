@@ -192,6 +192,8 @@ export class WorldManager {
   private lastInboxFrameAt = 0;
   /** Mesh jobs for the player's own block edits: shown as soon as they are back, not queued. */
   private urgentMeshTickets = new Set<number>();
+  /** Told when a chunk gains its first mesh or loses it (null: every chunk's changed). */
+  private meshPresenceListeners = new Set<(key: string | null, present: boolean) => void>();
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -292,6 +294,7 @@ export class WorldManager {
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
+      this.notifyMeshPresence(null, false);
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
       this.genQueue.clear();
@@ -577,11 +580,13 @@ export class WorldManager {
           if (wasDarkCulled) this.darkCulledMeshes.add(key);
           else this.darkCulledMeshes.delete(key);
 
+          const hadMesh = this.meshCache.has(key);
           this.meshCache.set(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
-          
+
           const subs = this.meshSubscribers.get(key);
           if (subs) subs.forEach(cb => cb(result));
+          if (!hadMesh) this.notifyMeshPresence(key, true);
 
           const pendingPriority = this.pendingRemesh.get(key);
           if (pendingPriority !== undefined) {
@@ -894,6 +899,13 @@ export class WorldManager {
                   front: WorldStore.getLightData(this.state, job.cx, job.cz+1),
                   back: WorldStore.getLightData(this.state, job.cx, job.cz-1)
               };
+              // Their fluid levels, so a flowing surface slopes evenly across the border.
+              const neighborMeta = {
+                  left: WorldStore.getMetadataData(this.state, job.cx-1, job.cz),
+                  right: WorldStore.getMetadataData(this.state, job.cx+1, job.cz),
+                  front: WorldStore.getMetadataData(this.state, job.cx, job.cz+1),
+                  back: WorldStore.getMetadataData(this.state, job.cx, job.cz-1)
+              };
 
               if (this.workersEnabled && this.workers.length > 0) {
                   this.postToPool({
@@ -906,13 +918,13 @@ export class WorldManager {
                       metaData: m,
                       light: l,
                       // Only the planes facing this chunk (meshBorders.ts).
-                      borders: packMeshBorders(neighbors, neighborLights),
+                      borders: packMeshBorders(neighbors, neighborLights, neighborMeta),
                       cullDarkFaces: cullDark
                   });
               } else {
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
+                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark, neighborMeta);
                       this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, result: res });
                   }, 0);
               }
@@ -952,7 +964,7 @@ export class WorldManager {
           if (!chunk) {
               if (stage >= ChunkStage.GENERATED) {
                   this.setStage(cx, cz, ChunkStage.EMPTY);
-                  this.meshCache.delete(key);
+                  if (this.meshCache.delete(key)) this.notifyMeshPresence(key, false);
                   this.pendingRemesh.delete(key);
                   this.genStartedAt.delete(key);
                   this.meshStartedAt.delete(key);
@@ -1247,7 +1259,7 @@ export class WorldManager {
 
       WorldStore.evictChunk(this.state, cx, cz);
       this.chunkStages.delete(key);
-      this.meshCache.delete(key);
+      if (this.meshCache.delete(key)) this.notifyMeshPresence(key, false);
       this.pendingRemesh.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
@@ -1647,6 +1659,25 @@ export class WorldManager {
           const column = i % layer;
           Fluids.scheduleFluidUpdate(cx * CHUNK_SIZE + (column % CHUNK_SIZE), Math.floor(i / layer) + MIN_Y, cz * CHUNK_SIZE + Math.floor(column / CHUNK_SIZE), type, Fluids.fluidDelay(type));
       }
+  }
+
+  /**
+   * Whether a chunk has a mesh to draw, and a cue whenever that changes: the
+   * scene mounts a chunk only once it does (ChunkField in ChunkMesh.tsx).
+   */
+  public hasMesh(key: string): boolean {
+      return this.meshCache.has(key);
+  }
+
+  public subscribeMeshPresence(listener: (key: string | null, present: boolean) => void): () => void {
+      this.meshPresenceListeners.add(listener);
+      return () => {
+          this.meshPresenceListeners.delete(listener);
+      };
+  }
+
+  private notifyMeshPresence(key: string | null, present: boolean) {
+      for (const listener of this.meshPresenceListeners) listener(key, present);
   }
 
   public subscribeMesh(cx: number, cz: number, cb: (geo: Geometry.GeometryResult | null) => void) {

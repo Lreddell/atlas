@@ -16,10 +16,11 @@ const LAYER = CHUNK_SIZE * CHUNK_SIZE;
 const PLANE = WORLD_HEIGHT * CHUNK_SIZE;
 const CHUNK_CELLS = LAYER * WORLD_HEIGHT;
 
-/** The side chunks' facing planes, blocks and light, as a mesh job carries them. */
+/** The side chunks' facing planes (blocks, light, metadata), as a mesh job carries them. */
 export interface MeshBorders {
     blocks: Partial<Record<Side, Uint8Array>>;
     light: Partial<Record<Side, Uint8Array>>;
+    meta: Partial<Record<Side, Uint8Array>>;
 }
 
 /**
@@ -64,14 +65,16 @@ export function expandBorderPlane(plane: Uint8Array, side: Side, into: Uint8Arra
     return into;
 }
 
-/** The borders a mesh job needs, from the side chunks' full blocks and light. */
-export function packMeshBorders(neighbors: NeighborData, lights: NeighborLight): MeshBorders {
-    const borders: MeshBorders = { blocks: {}, light: {} };
+/** The borders a mesh job needs, from the side chunks' full blocks, light and metadata. */
+export function packMeshBorders(neighbors: NeighborData, lights: NeighborLight, metas: NeighborData = {}): MeshBorders {
+    const borders: MeshBorders = { blocks: {}, light: {}, meta: {} };
     for (const side of SIDES) {
         const blocks = neighbors[side];
         if (blocks) borders.blocks[side] = borderPlane(blocks, side);
         const light = lights[side];
         if (light) borders.light[side] = borderPlane(light, side);
+        const meta = metas[side];
+        if (meta) borders.meta[side] = borderPlane(meta, side);
     }
     return borders;
 }
@@ -80,6 +83,7 @@ export function packMeshBorders(neighbors: NeighborData, lights: NeighborLight):
 export interface BorderScratch {
     blocks: Record<Side, Uint8Array>;
     light: Record<Side, Uint8Array>;
+    meta: Record<Side, Uint8Array>;
 }
 
 export function createBorderScratch(): BorderScratch {
@@ -89,7 +93,7 @@ export function createBorderScratch(): BorderScratch {
         back: new Uint8Array(CHUNK_CELLS),
         front: new Uint8Array(CHUNK_CELLS),
     });
-    return { blocks: set(), light: set() };
+    return { blocks: set(), light: set(), meta: set() };
 }
 
 /** The mesher's inputs back from a mesh job's borders (a missing side stays missing). */
@@ -97,14 +101,17 @@ export function unpackMeshBorders(
     borders: MeshBorders,
     centerLight: Uint8Array,
     scratch: BorderScratch,
-): { neighbors: NeighborData; lights: NeighborLight } {
+): { neighbors: NeighborData; lights: NeighborLight; neighborMeta: NeighborData } {
     const neighbors: NeighborData = {};
     const lights: NeighborLight = { center: centerLight };
+    const neighborMeta: NeighborData = {};
     for (const side of SIDES) {
         const blocks = borders.blocks[side];
         if (blocks) neighbors[side] = expandBorderPlane(blocks, side, scratch.blocks[side]);
         const light = borders.light[side];
         if (light) lights[side] = expandBorderPlane(light, side, scratch.light[side]);
+        const meta = borders.meta?.[side];
+        if (meta) neighborMeta[side] = expandBorderPlane(meta, side, scratch.meta[side]);
     }
-    return { neighbors, lights };
+    return { neighbors, lights, neighborMeta };
 }
