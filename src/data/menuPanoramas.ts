@@ -3,10 +3,10 @@ export const MENU_PANORAMA_LIBRARY_KEY = 'atlas.menu.panoramaLibrary';
 
 export const BUILT_IN_MENU_PANORAMAS = [
     {
-        id: 'default:luminous-coast',
-        name: 'Luminous Coast',
-        url: './assets/panoramas/luminous-coast.png',
-        description: 'Built-in default panorama',
+        id: 'default:tundra-1.3.0',
+        name: 'Tundra',
+        url: './assets/panoramas/tundra-1.3.0.png',
+        description: 'Alpha 1.3.0 panorama',
     },
     {
         id: 'default:alpha-1.0.1',
@@ -21,10 +21,14 @@ export const DEFAULT_MENU_PANORAMA = BUILT_IN_MENU_PANORAMAS[0];
 export const getBuiltInMenuPanorama = (id: string) =>
     BUILT_IN_MENU_PANORAMAS.find((panorama) => panorama.id === id);
 
+/** Built-in panoramas that have since been removed: a menu set to one falls back to the default. */
+const RETIRED_BUILT_IN_PANORAMA_IDS: ReadonlySet<string> = new Set(['default:luminous-coast']);
+
 export const readStoredMenuPanoramaPath = (): string | null => {
     if (typeof window === 'undefined') return null;
     const savedPath = window.localStorage.getItem(MENU_PANORAMA_PATH_KEY);
     if (!savedPath) return null;
+    if (RETIRED_BUILT_IN_PANORAMA_IDS.has(savedPath)) return null;
 
     // The old Electron build seeded this file as a default without adding it to
     // the user's library. Keep deliberate selections, but move that automatic

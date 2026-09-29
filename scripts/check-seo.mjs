@@ -27,7 +27,7 @@ expectIncludes(index, '<h1>Atlas</h1>', 'static Atlas heading');
 expectIncludes(index, `<p>${description}</p>`, 'static Atlas description');
 expectIncludes(index, "document.documentElement.classList.add('js');", 'pre-paint JavaScript marker');
 expectIncludes(index, ':root.js #atlas-static-fallback', 'JavaScript fallback visibility guard');
-expectIncludes(index, 'atlas.menu.startupPanoramaPreview.v1', 'startup panorama preview cache key');
+expectIncludes(index, 'atlas.menu.startupPanoramaPreview.v2', 'startup panorama preview cache key');
 expectIncludes(index, '__STARTUP_PREVIEW_VERSION__', 'startup preview build-version placeholder');
 expectIncludes(index, "document.documentElement.classList.add('has-startup-preview')", 'pre-paint panorama preview activation');
 expectIncludes(index, ':root.has-startup-preview body::before', 'startup preview image layer');
@@ -35,7 +35,7 @@ expectIncludes(index, 'background-color: #2f5cab', 'startup fallback color');
 
 const panoramaBackground = read('src/components/ui/MenuPanoramaBackground.tsx');
 expectIncludes(panoramaBackground, 'startupPreviewId?: string', 'startup preview panorama identity prop');
-expectIncludes(panoramaBackground, 'atlas.menu.startupPanoramaPreview.v1', 'runtime startup preview cache key');
+expectIncludes(panoramaBackground, 'atlas.menu.startupPanoramaPreview.v2', 'runtime startup preview cache key');
 expectIncludes(panoramaBackground, '__APP_DISPLAY_VERSION__', 'runtime startup preview version');
 expectIncludes(panoramaBackground, "toDataURL('image/webp'", 'compressed startup preview capture');
 expectIncludes(panoramaBackground, 'startupPreviewDataUrl', 'cached panorama placeholder state');

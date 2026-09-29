@@ -5,7 +5,7 @@ import { getDirtBackground } from '../../utils/textures';
 
 const PANORAMA_SPIN_DURATION_SECONDS = 520;
 const PANORAMA_REFERENCE_VERTICAL_FOV_DEG = 70;
-const STARTUP_PREVIEW_STORAGE_KEY = 'atlas.menu.startupPanoramaPreview.v1';
+const STARTUP_PREVIEW_STORAGE_KEY = 'atlas.menu.startupPanoramaPreview.v2';
 const DEFAULT_STARTUP_PREVIEW_ID = DEFAULT_MENU_PANORAMA.id;
 const STARTUP_PREVIEW_WIDTH = 256;
 
@@ -333,6 +333,12 @@ export const MenuPanoramaBackground: React.FC<MenuPanoramaBackgroundProps> = ({
         // this effect, recreating the WebGLRenderer per resize event was expensive.
         const boxSize = Math.max(window.innerWidth, window.innerHeight) * 4;
         const skybox = new THREE.Mesh(new THREE.BoxGeometry(boxSize, boxSize, boxSize), materials);
+        // A box seen from inside shows every face as its mirror image, and the
+        // captured side views sit on the opposite X faces (capturePanorama.ts):
+        // together the menu showed each panorama the wrong way round, left and
+        // right swapped. Mirrored across X, each face reads true and each side
+        // view stands on its own side, as the scene looked when captured.
+        skybox.scale.x = -1;
         scene.add(skybox);
 
         const keysDown = new Set<string>();
