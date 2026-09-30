@@ -3,6 +3,7 @@ import { generateGeometryData } from '../geometry';
 import { createBorderScratch, unpackMeshBorders } from '../meshBorders';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { buildFarTile } from '../farTerrain';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
@@ -63,6 +64,15 @@ ctx.onmessage = (e) => {
         const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
 
         ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
+    }
+    else if (type === 'FAR_TILE') {
+        // A far-terrain tile past the full-detail chunks (farTerrain.ts).
+        const { level, tx, tz } = e.data;
+        const result = buildFarTile(level, tx, tz);
+        ctx.postMessage({ type: 'FAR_TILE_DONE', id, result }, [
+            result.positions.buffer, result.normals.buffer, result.uvs.buffer,
+            result.colors.buffer, result.tiles.buffer, result.indices.buffer,
+        ]);
     }
     else if (type === 'EVICT') {
         // Stateless worker: nothing to evict locally.

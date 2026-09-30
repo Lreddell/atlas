@@ -40,6 +40,7 @@ import {
     type VaultCandidate,
 } from './world/resonantVaults';
 import { preflightVaultCandidate } from './world/resonantVaultPreflight';
+import { rollDrops } from './world/blockDrops';
 import {
     VAULT_CACHE_FLAG,
     decodeVaultCacheMetadata,
@@ -194,6 +195,11 @@ export class WorldManager {
   private urgentMeshTickets = new Set<number>();
   /** Told when a chunk gains its first mesh or loses it (null: every chunk's changed). */
   private meshPresenceListeners = new Set<(key: string | null, present: boolean) => void>();
+  /** Far-terrain tiles being built (farTerrain.ts): job id -> who wants it. */
+  private farJobs = new Map<string, (geometry: Geometry.GeometryAttributes) => void>();
+  /** Bumped whenever the world (or its seed) changes: far tiles from before are stale. */
+  private farEpoch = 0;
+  private farJobCounter = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -276,7 +282,9 @@ export class WorldManager {
       reseedGlobalNoise(this.activeSeed);
 
       this.syncWorkerWorldGenState();
-      
+      this.farJobs.clear();
+      this.farEpoch++;
+
       console.log(`[WorldManager] Context set: ID=${worldId}, Seed=${this.activeSeed}`);
   }
 
@@ -320,6 +328,8 @@ export class WorldManager {
     this.meshStartedAt.clear();
     this.workerInbox = [];
     this.urgentMeshTickets.clear();
+    this.farJobs.clear();
+    this.farEpoch++;
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
     // Water still flowing in the last world must not flow on in the next.
@@ -401,8 +411,36 @@ export class WorldManager {
     this.urgentMeshTickets.clear();
   }
 
+  /**
+   * Asks a worker for a far-terrain tile (farTerrain.ts); `done` gets its mesh
+   * unless the world changes first. False when there are no workers.
+   */
+  public requestFarTile(level: number, tx: number, tz: number, done: (geometry: Geometry.GeometryAttributes) => void): boolean {
+      if (!this.workersEnabled || this.workers.length === 0) return false;
+      const id = `far-${this.farEpoch}-${this.farJobCounter++}`;
+      this.farJobs.set(id, done);
+      this.postToPool({ type: 'FAR_TILE', id, level, tx, tz });
+      return true;
+  }
+
+  /** Changes whenever far tiles already built stop matching the world. */
+  public getFarEpoch(): number {
+      return this.farEpoch;
+  }
+
+  /** Chunk jobs still to run: far tiles wait while the full-detail chunks stream in. */
+  public pendingChunkJobs(): number {
+      return this.genQueue.length + this.meshQueue.length + this.inFlightGen + this.inFlightMesh;
+  }
+
   /** Queues a finished chunk (generated, loaded or meshed) for applyWorkerResults. */
   private receiveResult(msg: any) {
+      if (msg?.type === 'FAR_TILE_DONE') {
+          const done = this.farJobs.get(msg.id);
+          this.farJobs.delete(msg.id);
+          done?.(msg.result);
+          return;
+      }
       // A block the player just broke or placed shows at once, a frame sooner.
       if (msg?.type === 'MESH_DONE' && this.urgentMeshTickets.delete(msg.ticket)) {
           this.handleWorkerMessage(msg);
@@ -1812,7 +1850,7 @@ export class WorldManager {
       spawnDrop: (type, x, y, z) => this.spawnDrop(type, x, y, z),
       isLeaf: (type) => isLeafType(type),
       isLog: (type) => isLogBlock(type),
-      leafDrops: (type) => (BLOCKS[type]?.drops ?? []).filter((d) => Math.random() < d.chance).map((d) => d.type),
+      leafDrops: (type) => rollDrops(BLOCKS[type]?.drops),
       getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
       getTickCenter: () => this.desiredCenter,
   };

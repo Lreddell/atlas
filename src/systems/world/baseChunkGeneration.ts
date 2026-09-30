@@ -248,7 +248,7 @@ function getStrataBlock(y: number): BlockType {
  * Resolve the actual surface block at a world column, matching the terrain pass logic.
  * This accounts for beach/riverbank conversion to SAND, mesa RED_SAND, and GRASS→DIRT below sea level.
  */
-function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalNoise): BlockType {
+export function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalNoise): BlockType {
     const biome = getBiome(wx, wz, noiseSet);
     const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
 

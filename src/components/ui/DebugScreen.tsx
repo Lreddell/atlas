@@ -9,6 +9,7 @@ import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE } from '../../constants';
 import { APP_DISPLAY_VERSION } from '../../constants';
 import { BlockType } from '../../types';
+import { FULL_DETAIL_MAX } from '../../systems/world/farTerrain';
 
 interface DebugScreenProps {
     playerPosRef: React.MutableRefObject<THREE.Vector3>;
@@ -132,7 +133,7 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                         line(`CPU: ${navigator.hardwareConcurrency || '?'} cores`),
                         line(`Display: ${window.innerWidth}x${window.innerHeight}`),
                         line(``),
-                        line(`Render Dist: ${renderDistance}`),
+                        line(`Render Dist: ${renderDistance}${renderDistance > FULL_DETAIL_MAX ? ` (${FULL_DETAIL_MAX} full, far terrain beyond)` : ''}`),
                         line(`Chunks Loaded: ${chunkView.get().length}`),
                         line(`Entities: ${dropsCount}`),
                         line(``),

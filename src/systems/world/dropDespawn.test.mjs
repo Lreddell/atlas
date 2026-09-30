@@ -10,8 +10,9 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 test('drops only age toward despawn while loaded near the player (drop-aging rule)', () => {
     const app = read('src/App.tsx');
     // The despawn timer advances only while the drop is within the loaded range of
-    // the player, so wandering far pauses it instead of deleting the drop.
-    assert.match(app, /const loadedRange = renderDistance \* CHUNK_SIZE \+ CHUNK_SIZE/);
+    // the player (the full-detail chunks; far terrain loads none), so wandering
+    // far pauses it instead of deleting the drop.
+    assert.match(app, /const loadedRange = fullDetailDistance \* CHUNK_SIZE \+ CHUNK_SIZE/);
     assert.match(app, /if \(dx \* dx \+ dz \* dz <= loadedR2\) d\.age \+= TICK_MS/);
     assert.match(app, /d\.age < DROP_LIFETIME_MS/);
     // The old wall-clock despawn (deleted drops regardless of distance) is gone.

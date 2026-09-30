@@ -8,6 +8,9 @@ import { Analytics } from '@vercel/analytics/react';
 import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
 import { TooltipHost } from './components/ui/kit/TooltipHost';
 import { chunkView } from './systems/world/chunkView';
+import { farView } from './systems/world/farView';
+import { FULL_DETAIL_MAX, MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE } from './systems/world/farTerrain';
+import { FarTerrain } from './components/world/FarTerrain';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -221,6 +224,20 @@ const ShadowTypeSync: React.FC<{ type: THREE.ShadowMapType }> = ({ type }) => {
     return null;
 };
 
+// --- Camera reach ---
+// The far plane follows the render distance (far terrain and the clouds reach
+// past it), never nearer than the old 1000 blocks.
+const CameraReach: React.FC<{ renderDistance: number }> = ({ renderDistance }) => {
+    const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
+    useEffect(() => {
+        const far = Math.max(1000, (renderDistance + 24) * CHUNK_SIZE);
+        if (camera.far === far) return;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+    }, [camera, renderDistance]);
+    return null;
+};
+
 // --- Streaming Loop Component ---
 // Applies finished chunks a few milliseconds' worth a frame, then hands out
 // new jobs. Behind the loading screen nothing waits on frames, so it takes
@@ -392,7 +409,7 @@ const App: React.FC = () => {
   const [allowCommands, setAllowCommands] = useState(true);
   // Whether the HUD shows the player's position (World Options).
   const [showCoordinates, setShowCoordinates] = useState(false);
-  // The main menu opens on this view (Options > Panorama Settings).
+  // The main menu opens on this view (Options > Menu Background).
   const [menuInitialView, setMenuInitialView] = useState<'main' | 'settings'>('main');
   // The open world's name and seed, for World Options.
   const [worldInfo, setWorldInfo] = useState<{ name: string; seed: string } | null>(null);
@@ -411,7 +428,10 @@ const App: React.FC = () => {
   const [pendingPanoramaDelete, setPendingPanoramaDelete] = useState<{ filePath: string; fileName: string } | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
-    const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
+    const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE));
+    // Full chunks reach this far; past it, far terrain draws out to the render
+    // distance (farTerrain.ts), since a chunk costs about 0.6 MB of memory.
+    const fullDetailDistance = Math.min(renderDistance, FULL_DETAIL_MAX);
     const hudScale = useHudScale();
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
@@ -518,7 +538,7 @@ const App: React.FC = () => {
   const commandHistoryRef = useRef<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
+    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(fullDetailDistance), [fullDetailDistance]);
     const renderChunkOffsets = desiredChunkOffsets;
 
   const isDead = health <= 0;
@@ -622,9 +642,11 @@ const App: React.FC = () => {
                 const nextRender = renderChunkOffsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz }));
 
                 worldManager.setDesiredChunks(nextDesired);
-                // The scene's chunk field follows this list itself (chunkView.ts).
+                // The scene's chunk field follows this list itself (chunkView.ts),
+                // and far terrain draws past it (farView.ts).
                 chunkView.set(nextRender);
-            }, [desiredChunkOffsets, renderChunkOffsets]);
+                farView.set({ cx, cz, fullDetail: fullDetailDistance, renderDistance });
+            }, [desiredChunkOffsets, renderChunkOffsets, fullDetailDistance, renderDistance]);
 
   // Sync currentSpawnPos with Player logic for safe reloading of Canvas
   const safeSetSetting = useCallback(<T,>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
@@ -1035,7 +1057,7 @@ const App: React.FC = () => {
           // wandered away from keep their timer paused and persist, so going far away
           // never makes them "gone forever", they resume aging when you return.
           const px = playerPosRef.current.x, pz = playerPosRef.current.z;
-          const loadedRange = renderDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
+          const loadedRange = fullDetailDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
           const loadedR2 = loadedRange * loadedRange;
           setDrops(currentDrops => {
               let anyExpired = false;
@@ -1050,7 +1072,7 @@ const App: React.FC = () => {
           });
       }, TICK_MS);
       return () => clearInterval(interval);
-  }, [worldPaused, renderDistance]);
+  }, [worldPaused, fullDetailDistance]);
 
   useEffect(() => {
       const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
@@ -2244,7 +2266,7 @@ const App: React.FC = () => {
           closeContainers: () => { if (openContainer) closeInventory({ deferPointerLock: true }); },
           streaming: () => worldManager.getStreamingStatus(),
           position: () => ({ x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z }),
-          renderDistance: chunks => setRenderDistance(Math.max(4, Math.min(48, Math.round(chunks)))),
+          renderDistance: chunks => setRenderDistance(Math.max(MIN_RENDER_DISTANCE, Math.min(MAX_RENDER_DISTANCE, Math.round(chunks)))),
           vsync: enabled => { setVsync(enabled); if (!enabled) setMaxFps(260); },
           getBlock: (x, y, z) => worldManager.getBlock(x, y, z, false),
           setBlock: (x, y, z, type) => { worldManager.setBlock(x, y, z, type as BlockType); },
@@ -2912,6 +2934,7 @@ const App: React.FC = () => {
           setIsPaused(false);
           lastAppliedChunkKeyRef.current = null;
           chunkView.set([]);
+          farView.set(null);
           activeWorldIdRef.current = null;
           activeWorldGenConfigRef.current = null;
           worldManager.reset();
@@ -3455,6 +3478,9 @@ const App: React.FC = () => {
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
                 <ChunkRegionBatches shadowsEnabled={shadowsEnabled} />
+                {/* Past the full chunks, out to the render distance (farTerrain.ts). */}
+                {appState === 'game' && <FarTerrain />}
+                <CameraReach renderDistance={renderDistance} />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
                 <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />

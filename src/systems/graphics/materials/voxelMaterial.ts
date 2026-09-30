@@ -165,6 +165,10 @@ ${WORLD_LIGHT_DECLARATIONS}
 #ifdef ATLAS_VOXEL_FADE
 uniform float atlasVoxelFade;
 #endif
+#ifdef ATLAS_FAR_TERRAIN
+// x, z: the centre chunk; z: full-detail radius squared; w: render distance squared (chunks).
+uniform vec4 atlasFarView;
+#endif
 varying float vVoxelClass;
 varying float vVoxelEmission;
 varying float vVoxelFaceShade;
@@ -205,6 +209,14 @@ const CLASSIC_FLOOR = /* glsl */`
 `;
 
 const FRAGMENT_MAP = /* glsl */`
+#if defined( ATLAS_FAR_TERRAIN ) && defined( USE_FOG )
+	// Far terrain only past the full-detail chunks and within the render
+	// distance, measured chunk by chunk as the streaming measures it
+	// (farTerrain.ts): where full chunks are drawn, it stands aside.
+	vec2 atlasFarChunk = floor( ( cameraPosition.xz + vAtlasFogOffset.xz ) / 16.0 ) - atlasFarView.xy;
+	float atlasFarDistSq = dot( atlasFarChunk, atlasFarChunk );
+	if ( atlasFarDistSq <= atlasFarView.z || atlasFarDistSq > atlasFarView.w ) discard;
+#endif
 #ifdef USE_MAP
 	#ifdef ATLAS_VOXEL_TILED
 	vec4 sampledDiffuseColor = atlasSampleVoxel( vMapUv );
@@ -374,21 +386,28 @@ ${WORLD_LIGHT_END}
 
 // The clouds' light, for their reflections (after three declares its lights, before main()).
 const VOXEL_CLOUD_REFLECTION = /* glsl */`
-#if defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
+#if ( defined( ATLAS_VOXEL_TRANSPARENT ) || defined( ATLAS_FAR_TERRAIN ) ) && defined( USE_FOG )
 ${CLOUD_SHADE_GLSL}
 #endif
 `;
 
 const FRAGMENT_REFLECTIONS = /* glsl */`
-#if defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
+#if ( defined( ATLAS_VOXEL_TRANSPARENT ) || defined( ATLAS_FAR_TERRAIN ) ) && defined( USE_FOG )
 	// How many screen pixels one ripple texel (1/16 block) spans: taken before
 	// any branch. Once it drops to a pixel or two the ripples would only alias
 	// into grain, so they calm (seen from high up as well as far off).
 	vec2 atlasRippleCell = ( cameraPosition.xz + vAtlasFogOffset.xz ) * 16.0;
 	float atlasRippleSpan = max( length( dFdx( atlasRippleCell ) ), length( dFdy( atlasRippleCell ) ) );
 	float atlasRippleSharp = 1.0 - smoothstep( 0.25, 0.6, atlasRippleSpan );
+	#ifdef ATLAS_FAR_TERRAIN
+	// Far terrain's water and ice (opaque there) reflect as the near water does,
+	// or its surface changes look where full chunks stop: a ring on every sea.
+	bool atlasReflects = ( vVoxelClass > 2.5 && vVoxelClass < 3.5 ) || ( vVoxelClass > 4.5 && vVoxelClass < 5.5 );
+	#else
+	bool atlasReflects = true;
+	#endif
 	// Water and glass reflect the sky and the sun or moon, more at grazing angles.
-	if ( atlasVoxelStyle.y > 0.5 && gl_FrontFacing ) {
+	if ( atlasVoxelStyle.y > 0.5 && gl_FrontFacing && atlasReflects ) {
 		vec3 atlasEye = normalize( vAtlasFogOffset );
 		vec3 atlasN = normalize( vVoxelNormal );
 		bool atlasIsWater = vVoxelClass > 2.5 && vVoxelClass < 3.5;
@@ -427,10 +446,16 @@ const FRAGMENT_REFLECTIONS = /* glsl */`
 interface VoxelMaterialOptions {
     variant: VoxelVariant;
     fade: boolean;
+    /** Far terrain (farTerrain.ts): cut away inside the full-detail chunks and past the render distance. */
+    far?: boolean;
 }
+
+/** Where far terrain may draw: centre chunk x, z, full-detail radius squared, render distance squared. */
+export const FAR_VIEW_UNIFORM = { value: new THREE.Vector4(0, 0, 0, -1) };
 
 function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelMaterialOptions): void {
     const defines: Record<string, string> = {};
+    if (options.far) defines.ATLAS_FAR_TERRAIN = '';
     if (options.variant === 'cutout') {
         defines.ATLAS_VOXEL_CUTOUT = '';
         defines.ATLAS_VOXEL_FOLIAGE = '';
@@ -445,6 +470,7 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
     material.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, VOXEL_UNIFORMS, VOXEL_ATLAS_UNIFORMS);
         if (options.fade) shader.uniforms.atlasVoxelFade = material.userData.atlasFade;
+        if (options.far) shader.uniforms.atlasFarView = FAR_VIEW_UNIFORM;
 
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', `#include <common>\n${VERTEX_DECLARATIONS}`)
@@ -465,7 +491,7 @@ ${VOXEL_SAMPLE_FUNCTION}
 ${VOXEL_CLOUD_REFLECTION}`);
     };
     // One program per variant, however many clones share it.
-    const cacheKey = `atlas-voxel-v6:${options.variant}${options.fade ? ':fade' : ''}`;
+    const cacheKey = `atlas-voxel-v6:${options.variant}${options.fade ? ':fade' : ''}${options.far ? ':far' : ''}`;
     material.customProgramCacheKey = () => cacheKey;
     material.needsUpdate = true;
 }
@@ -484,6 +510,18 @@ function createVoxelMaterial(variant: VoxelVariant, map: THREE.Texture | null): 
         material.depthWrite = false;
     }
     installVoxelShader(material, { variant, fade: false });
+    return material;
+}
+
+/**
+ * Far terrain's material: the solid chunk material, cut away where full chunks
+ * draw and past the render distance (FAR_VIEW_UNIFORM). It neither casts nor
+ * catches shadows: shadows stop well inside the full-detail chunks.
+ */
+export function createFarTerrainMaterial(map: THREE.Texture | null): THREE.MeshLambertMaterial {
+    const material = new THREE.MeshLambertMaterial({ map, vertexColors: true });
+    material.side = THREE.FrontSide;
+    installVoxelShader(material, { variant: 'solid', fade: false, far: true });
     return material;
 }
 

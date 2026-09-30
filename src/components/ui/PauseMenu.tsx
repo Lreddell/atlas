@@ -15,6 +15,7 @@ import {
     bindingLabel, conflictsOf, isDefaultBinding, keyActionLabel, type KeyAction,
 } from '../../systems/player/keyBindings';
 import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
+import { MAX_RENDER_DISTANCE } from '../../systems/world/farTerrain';
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
     type CloudQuality, type GraphicsConfig, type GraphicsPresetId, type GraphicsQuality, type ShadowQuality,
@@ -269,7 +270,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                 />
                 <MenuSlider
                     label="Render Distance"
-                    value={renderDistance} min={4} max={48} step={1}
+                    value={renderDistance} min={8} max={MAX_RENDER_DISTANCE} step={1}
                     onChange={setRenderDistance} width="w-80"
                     formatValue={(v) => `${v} Chunks`}
                 />

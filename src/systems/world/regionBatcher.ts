@@ -42,6 +42,16 @@ export const WATER_ORDER = -0.5;
 export const REGION_CHUNKS = 4;
 /** A region is rebuilt once its membership has held still this long. */
 export const REBUILD_DEBOUNCE_MS = 1000;
+/**
+ * While the world streams in, a region's chunks keep arriving, so it never
+ * holds still and its chunks drew one by one: hundreds of extra draw calls a
+ * frame, the frame rate dip while chunks generate. A region with at least
+ * STREAMING_WAITING chunks waiting is rebuilt this soon after the first came,
+ * however many are still arriving. A single edited chunk still waits out the
+ * debounce, so building doesn't rebuild the region with every block.
+ */
+export const STREAMING_REBUILD_MS = 500;
+export const STREAMING_WAITING = 2;
 /** Regions this close to the camera's (in regions, either axis) draw their chunks' own water and glass. */
 export const NEAR_TRANSPARENT_REGIONS = 1;
 
@@ -87,11 +97,26 @@ interface Region {
     backs: Record<SeeThroughLayer, THREE.Mesh | null>;
     /** When membership last changed (ms), or 0 when the geometry is current. */
     dirtyAt: number;
+    /** When membership first changed since the last rebuild (ms), or 0. */
+    firstDirtyAt: number;
     /** Near the camera: the chunks draw their own water and glass (see above). */
     near: boolean;
 }
 
 export const regionOf = (chunk: number): number => Math.floor(chunk / REGION_CHUNKS);
+
+/** Notes a change to a region's membership: rebuilt once it settles, or sooner while it streams. */
+function markDirty(region: Region, now: number): void {
+    region.dirtyAt = now;
+    if (region.firstDirtyAt === 0) region.firstDirtyAt = now;
+}
+
+/** Chunks offered to a region and not yet in its geometry (drawing one by one meanwhile). */
+function waitingChunks(region: Region): number {
+    let waiting = 0;
+    for (const chunk of region.members.keys()) if (!region.drawn.has(chunk)) waiting++;
+    return waiting;
+}
 
 /**
  * Shows or hides a chunk's mesh, and its chunk group with it: a group whose
@@ -198,7 +223,7 @@ export class RegionBatcher {
         this.root = root;
         this.materials = materials;
         const now = performance.now();
-        for (const region of this.regions.values()) if (region.members.size > 0) region.dirtyAt = region.dirtyAt || now;
+        for (const region of this.regions.values()) if (region.members.size > 0 && region.dirtyAt === 0) markDirty(region, now);
     }
 
     /** Takes every chunk back out and drops the region meshes (the root is going away). */
@@ -235,12 +260,13 @@ export class RegionBatcher {
                 meshes: { opaque: null, cutout: null, transparent: null, water: null },
                 backs: { transparent: null, water: null },
                 dirtyAt: 0,
+                firstDirtyAt: 0,
                 near: this.isNear(rx, rz),
             };
             this.regions.set(key, region);
         }
         region.members.set(chunkKey(cx, cz), candidate);
-        region.dirtyAt = performance.now();
+        markDirty(region, performance.now());
     }
 
     /** A chunk that is about to change: it stops being drawn by its region now and shows its own meshes. */
@@ -252,7 +278,7 @@ export class RegionBatcher {
         const wasMember = region.members.delete(chunk);
         const wasDrawn = region.drawn.has(chunk);
         if (wasDrawn) this.withdrawDrawn(region, chunk);
-        if (wasMember || wasDrawn) region.dirtyAt = performance.now();
+        if (wasMember || wasDrawn) markDirty(region, performance.now());
         if (region.members.size === 0 && region.drawn.size === 0) {
             for (const layer of LAYERS) this.removeLayerMesh(region, layer);
             this.regions.delete(key);
@@ -279,8 +305,11 @@ export class RegionBatcher {
         }
         let due: Region | null = null;
         for (const region of this.regions.values()) {
-            if (region.dirtyAt === 0 || nowMs - region.dirtyAt < REBUILD_DEBOUNCE_MS) continue;
-            if (!due || region.dirtyAt < due.dirtyAt) due = region;
+            if (region.dirtyAt === 0) continue;
+            const settled = nowMs - region.dirtyAt >= REBUILD_DEBOUNCE_MS;
+            const streaming = nowMs - region.firstDirtyAt >= STREAMING_REBUILD_MS && waitingChunks(region) >= STREAMING_WAITING;
+            if (!settled && !streaming) continue;
+            if (!due || region.firstDirtyAt < due.firstDirtyAt) due = region;
         }
         if (due) this.rebuild(due);
     }
@@ -392,6 +421,7 @@ export class RegionBatcher {
         }
         region.drawn = nextDrawn;
         region.dirtyAt = 0;
+        region.firstDirtyAt = 0;
         this.showTransparent(region);
     }
 
