@@ -7,18 +7,19 @@ source of truth; mirror it into the in-game "What's New" popup
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the existing `vX.Y.Z-alpha` scheme.
 
-## [v1.3.0-alpha]: 2026-09-29 — Light & Polarity
+## [v1.3.0-alpha]: 2026-09-30 — Light & Polarity
 
-A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and frame your adventure.
+A brighter world that reaches the horizon, a rebuilt Magnetic Warden, and new ways to move, fight, and frame your adventure.
 
 ### Highlights
 - Explore the Luminous visual style: a new sky and haze, readable moonlit nights, reflective water, swaying foliage, soft or pixel shadows, and clouds that reach the horizon and shade the ground.
+- See the land beyond your render distance: the new Horizon Distance draws distant terrain up to 1024 chunks away and blends it seamlessly into the world around you.
 - Face the Magnetic Warden, Aegis, and Storm in a rebuilt three-form encounter driven by polarity and tower crystals.
 - Dodge, dash, and launch with a new movement kit, timed weapon attacks, and clearer combat feedback.
 - Play in free or over-the-shoulder third person, set up a detached camera, and choose or import your own skin.
 - Grow and bake with the new farming, find recipes in the recipe book, and rebind any key on the new Controls screen.
 - Play through a redrawn interface of ink, parchment and brass, with new vitals, menus and inventory screens.
-- Enjoy much faster chunk loading and a steadier frame rate at high render distances, saved ground items, water that flows by Minecraft's rules, and the new Tundra panorama.
+- Enjoy much faster chunk loading, a steadier frame rate, stutter-free building, saved ground items, recipes, drops and water that follow Minecraft's rules, and the new Riverlands panorama.
 
 ### Luminous World & Atmosphere
 - One sky and distance haze blend terrain and water into the horizon. Warm sunlight and cool shade give each time of day its own look, and moonlit nights stay readable instead of going black.
@@ -29,11 +30,18 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Torches, crystals and lava light the world warmly, and the player and Vault enemies take the light of the world around them. Underground your eyes adjust, so caves stay dark but readable at any time of day.
 - Block textures look the same every time you launch the game.
 
+### The Horizon
+- The new Horizon Distance in Video Settings draws the land past your render distance, from 64 up to 1024 chunks away, so far mountains, coasts and forests stay in view. The presets set it to 64 (Low), 128 (Medium), 256 (High) or 512 (Ultra), and it can be turned off.
+- As in the Distant Horizons mod, the horizon is drawn in a pass of its own, so far hills and seas stay crisp instead of flickering in rings and lines. Next to your chunks it matches the real terrain block for block, and it simplifies with distance; higher presets keep full detail further out.
+- It meets the real chunks without a seam. Chunks fade in and out over it instead of through white, and seas and coastlines run straight across the border without lines, dark bands or brown water.
+- It appears only once the chunks around you have loaded, after opening a world or teleporting, and then fades in as a whole. As you travel it updates without ever opening holes.
+- It is light: at 1024 chunks it takes about 400 MB of graphics memory, far less than the same area as full chunks. F3 shows how much of it is loaded.
+
 ### Video Settings
 - Choose Low, Medium, High, or Ultra graphics, or change any option for a Custom setup. On first launch the game picks a preset for your graphics card (never Ultra), and if it runs below about 40 fps through the first minute it suggests the next one down. It never lowers the preset by itself.
 - Visual Style switches between Luminous and Classic. Classic brings back the old look: flat light, the old sky and fog, and no glow, god rays, reflections, wind or particles.
-- Presets set shadows, bloom, god rays, water reflections, foliage wind, ambient particles, cloud quality, resolution, and motion blur.
-- New options: Resolution (the pixel density the world renders at on high-DPI screens), Shadow Style, Motion Blur, and View Bobbing. Sun Shadows is now Shadows, from Off to High, and Load Custom Clouds is gone.
+- Presets set shadows, bloom, god rays, water reflections, foliage wind, ambient particles, cloud quality, resolution, motion blur, and Horizon Distance.
+- New options: Horizon Distance, Resolution (the pixel density the world renders at on high-DPI screens), Shadow Style, Motion Blur, and View Bobbing. Sun Shadows is now Shadows, from Off to High, and Load Custom Clouds is gone.
 - Shadow Style is Pixel by default: crisp shadows stepped on the textures' 16-pixel grid, at Low quality or off. Soft shadows also go up to Medium and High.
 - Motion Blur blurs only the 3D scene, never the HUD or menus. Ultra turns it on and the other presets leave it off. It stays restrained and resets across camera cuts, teleports, respawns, and panorama captures.
 - The default render distance is 16 chunks, up from 8. A render distance you already chose is kept.
@@ -72,7 +80,8 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - In boats you sit and row.
 
 ### Menus & Panoramas
-- Tundra is the new default menu and loading background. The original panorama is still available as Classic Atlas in Options > Panorama Settings.
+- Riverlands, a river valley at sunset, is the new default menu and loading background. Tundra is new too, and the original panorama is still available as Classic Atlas, all in Options > Menu Background.
+- The built-in panoramas load much faster: all three together are a quarter the size of the old one alone.
 - Your own captured or imported panoramas still work, and the built-in ones can't be deleted.
 - Panoramas show the scene the right way round; before, they appeared mirrored, with left and right swapped.
 - New splash texts on the title screen, and new loading screen tips covering this update.
@@ -83,12 +92,12 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - The title screen has a new ATLAS wordmark.
 - New vitals: life crystals for health, loaves for hunger, steel plates for armor, and bubbles for breath, with the same ten pips and half pips as before. Together they are exactly as wide as the hotbar, and the selected hotbar slot has a brass frame.
 - The boss bar sits in a brass frame under a name plate, keeping its bright polarity colors.
-- The hotbar, the vitals above it and the item name grow with the window, the way Minecraft's automatic GUI scale does. At 1920x1080 the hotbar is Minecraft's size, half again as large as before, and every part keeps its original proportions. It still floats above the bottom edge.
 - The inventory is narrower, so it fits beside the recipe book. Empty armor slots show what goes in them, the furnace has a pixel flame and a filling arrow, and a chest labels your own inventory below it.
 - Create New World picks its World Edit Preset with a button instead of a drop-down list.
 - The crosshair is a pixel cross that inverts whatever it sits over. The death screen drains the color from the world.
 - Chat stays clear of the hotbar at any size, and once it fills up, its oldest lines fade out at the top instead of being cut off. The tutorial marks which section is open.
-- Hover hints use the interface's own tooltips, and the Vault objective, the boss compass and the error screen match the rest of the interface.
+- Hover hints use the interface's own tooltips and show above every screen, and the Vault objective, the boss compass and the error screen match the rest of the interface.
+- F3 is part of the HUD, as in Minecraft: the pause menu, the inventory, and the death and sleep screens now cover it.
 - Item tooltips keep a line explaining an item only where its name doesn't say it all: Vault machinery, crafting materials and weapons with a special trick.
 - Spelling is American English throughout.
 
@@ -121,6 +130,14 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - Click a recipe to lay its ingredients into the grid, or shift-click for as many crafts as you can make. Whatever was in the grid goes back to your inventory first.
 - The inventory stays in the middle of the screen, with the recipe book open beside it.
 
+### Crafting, Drops & Mining
+- Recipes follow Minecraft. The 2x2 wooden pickaxe is gone: a pickaxe takes three planks over two sticks at a Crafting Table. Mirrored axes are laid out correctly, and packed ice takes nine ice instead of four.
+- Planks of different woods mix wherever the wood doesn't matter (sticks, crafting tables, chests, wooden tools and beds), while slabs, stairs and boats keep to one wood. Cobblestone and cobbled deepslate mix for furnaces and stone tools, which no longer take andesite, diorite or granite. The recipe book shows mixed materials too.
+- Blocks drop their full range: copper ore gives 2 to 5 raw copper, lapis ore 4 to 9 lapis, and leaves 1 to 2 sticks, where each always gave one.
+- A burning furnace gives off light.
+- Obsidian needs a diamond pickaxe and magma blocks a pickaxe. Podzol drops dirt, and stone no longer smelts into itself.
+- Copper tools mine between stone and iron speed; they were as fast as diamond.
+
 ### Controls & Getting Started
 - A new Controls screen in Options sets mouse sensitivity and inverted look, and rebinds any key: click an action and press its new key. Keys bound twice show in red, and every key can be reset.
 - Music & Sounds sliders are named for what they play: Weather is now Ambient & Events, Hostile Creatures is Enemies & Bosses, Players is Player, and Voice/Speech is Interface. The unused Friendly Creatures slider is gone.
@@ -132,11 +149,12 @@ A brighter world, a rebuilt Magnetic Warden, and new ways to move, fight, and fr
 - World Options in the pause menu switches Allow Commands, Keep Inventory (which now saves with the world) and Show Coordinates, and shows the world's seed.
 - Show Coordinates puts your position in the corner of the screen.
 - The Magnetic Fields are much closer: the nearest is usually about two thousand blocks from where you start. Resonant Vaults never generate inside them.
-- The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama Settings moved into Options, and saved worlds list their mode and seed.
+- The title screen is now Singleplayer, World Editor, Options, and Tutorial or Quit: the World Editor opens directly, and the unfinished Multiplayer and Feature Editor buttons are gone. Panorama Settings moved into Options as Menu Background, and saved worlds list their mode and seed.
 
 ### Performance & Memory
 - New chunks generate about a third faster, and at high render distances the world loads nearly twice as fast: every spare processor core helps build it, and each chunk is built once its neighbors have arrived instead of up to four times. Every seed still builds the same world.
-- The frame rate holds steady while the world streams in and as you cross chunk borders, at any render distance. New chunks join a few at a time instead of all in one frame.
+- The frame rate holds steady while the world streams in and as you cross chunk borders, even flying at full speed at high render distances. New chunks join a few at a time, and settled chunks share graphics buffers that take new chunks in without being rebuilt.
+- Breaking and placing blocks no longer stutters: the world relights only what the change reaches and redraws one or two chunks instead of all nine around it.
 - Adjacent full-block faces merge into larger surfaces while keeping their tiled textures, so the world takes far less geometry to draw.
 - Settled chunks draw together in small regions with tight visibility bounds, cutting repeated rendering work.
 - Chunk geometry uses more compact data, and empty chunks no longer reserve block metadata, so memory grows more slowly as chunks load.
