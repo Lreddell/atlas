@@ -78,6 +78,8 @@ interface MenuSliderProps {
     width?: string;
     formatValue?: (value: number) => string;
     disabled?: boolean;
+    /** A hover hint (the kit's tooltips). */
+    tooltip?: string;
 }
 
 export const MenuSlider: React.FC<MenuSliderProps> = ({
@@ -90,6 +92,7 @@ export const MenuSlider: React.FC<MenuSliderProps> = ({
     width = 'w-80',
     formatValue,
     disabled = false,
+    tooltip,
 }) => {
     const fraction = Math.max(0, Math.min(1, (value - min) / (max - min)));
     const percentage = fraction * 100;
@@ -98,6 +101,7 @@ export const MenuSlider: React.FC<MenuSliderProps> = ({
         <div
             className={`atlas-slider h-10 ${width} ${disabled ? 'opacity-60' : ''}`}
             aria-disabled={disabled}
+            data-tip={tooltip}
             onMouseDown={(event) => { if (!disabled) event.stopPropagation(); }}
             onMouseUp={(event) => {
                 event.stopPropagation();

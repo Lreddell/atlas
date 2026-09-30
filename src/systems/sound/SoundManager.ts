@@ -29,6 +29,9 @@ const assetUrl = (path: string) => {
 class SoundManager {
     private ctx: AudioContext | null = null;
     private masterGain: GainNode | null = null;
+    /** After the master volume: silenced by setMuted, whatever the volumes say. */
+    private outputGain: GainNode | null = null;
+    private muted = false;
     
     // "World" Bus handles everything except UI. Used for muffling/ducking.
     private worldGain: GainNode | null = null;
@@ -126,7 +129,10 @@ class SoundManager {
             if (AudioContextClass) {
                 this.ctx = new AudioContextClass();
                 this.masterGain = this.ctx.createGain();
-                this.masterGain.connect(this.ctx.destination);
+                this.outputGain = this.ctx.createGain();
+                this.outputGain.gain.value = this.muted ? 0 : 1;
+                this.masterGain.connect(this.outputGain);
+                this.outputGain.connect(this.ctx.destination);
                 
                 // Create World Bus (Gain + LowPass Filter)
                 this.worldGain = this.ctx.createGain();
@@ -399,6 +405,12 @@ class SoundManager {
             }
         });
         await Promise.all(promises);
+    }
+
+    /** Silences every sound without touching the saved volumes (the dev QA harness mutes its sessions). */
+    public setMuted(muted: boolean) {
+        this.muted = muted;
+        if (this.outputGain) this.outputGain.gain.value = muted ? 0 : 1;
     }
 
     public setVolume(category: string, volume: number) {

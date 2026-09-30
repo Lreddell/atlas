@@ -8,9 +8,9 @@ import { Analytics } from '@vercel/analytics/react';
 import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
 import { TooltipHost } from './components/ui/kit/TooltipHost';
 import { chunkView } from './systems/world/chunkView';
-import { farView } from './systems/world/farView';
-import { FULL_DETAIL_MAX, MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE } from './systems/world/farTerrain';
-import { FarTerrain } from './components/world/FarTerrain';
+import { horizonView } from './systems/world/horizonView';
+import { HORIZON_QUALITY, MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, effectiveHorizon, viewDistance } from './systems/world/viewDistance';
+import { HorizonTerrain } from './components/world/HorizonTerrain';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -225,8 +225,8 @@ const ShadowTypeSync: React.FC<{ type: THREE.ShadowMapType }> = ({ type }) => {
 };
 
 // --- Camera reach ---
-// The far plane follows the render distance (far terrain and the clouds reach
-// past it), never nearer than the old 1000 blocks.
+// The far plane follows how far the world is drawn (the horizon and the
+// clouds reach past the chunks), never nearer than the old 1000 blocks.
 const CameraReach: React.FC<{ renderDistance: number }> = ({ renderDistance }) => {
     const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
     useEffect(() => {
@@ -429,9 +429,6 @@ const App: React.FC = () => {
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
     const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE));
-    // Full chunks reach this far; past it, far terrain draws out to the render
-    // distance (farTerrain.ts), since a chunk costs about 0.6 MB of memory.
-    const fullDetailDistance = Math.min(renderDistance, FULL_DETAIL_MAX);
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
   
@@ -444,6 +441,11 @@ const App: React.FC = () => {
     // (systems/graphics/graphicsStore.ts). Motion blur is off in every preset,
     // so it stays off until the player turns it on.
     const graphics = useGraphicsSettings();
+    // Past the chunks, the horizon (horizon/) out to the Horizon Distance, at
+    // the detail of the chosen preset; and how far anything is drawn at all.
+    const horizonDistance = effectiveHorizon(renderDistance, graphics.config.horizon);
+    const horizonQuality = HORIZON_QUALITY[graphics.state.preset];
+    const drawDistance = viewDistance(renderDistance, graphics.config.horizon);
     const shadowsEnabled = graphics.config.shadows !== 'off';
     const mipmapsEnabled = graphics.config.mipmaps;
     // Bloom, god rays or motion blur put a post pipeline in charge of the frame
@@ -537,7 +539,7 @@ const App: React.FC = () => {
   const commandHistoryRef = useRef<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(fullDetailDistance), [fullDetailDistance]);
+    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
     const renderChunkOffsets = desiredChunkOffsets;
 
   const isDead = health <= 0;
@@ -642,10 +644,10 @@ const App: React.FC = () => {
 
                 worldManager.setDesiredChunks(nextDesired);
                 // The scene's chunk field follows this list itself (chunkView.ts),
-                // and far terrain draws past it (farView.ts).
+                // and the horizon draws past it (horizonView.ts).
                 chunkView.set(nextRender);
-                farView.set({ cx, cz, fullDetail: fullDetailDistance, renderDistance });
-            }, [desiredChunkOffsets, renderChunkOffsets, fullDetailDistance, renderDistance]);
+                horizonView.set({ cx, cz, renderDistance, horizon: horizonDistance, quality: horizonQuality });
+            }, [desiredChunkOffsets, renderChunkOffsets, renderDistance, horizonDistance, horizonQuality]);
 
   // Sync currentSpawnPos with Player logic for safe reloading of Canvas
   const safeSetSetting = useCallback(<T,>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
@@ -1056,7 +1058,7 @@ const App: React.FC = () => {
           // wandered away from keep their timer paused and persist, so going far away
           // never makes them "gone forever", they resume aging when you return.
           const px = playerPosRef.current.x, pz = playerPosRef.current.z;
-          const loadedRange = fullDetailDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
+          const loadedRange = renderDistance * CHUNK_SIZE + CHUNK_SIZE; // a chunk of slack past the edge
           const loadedR2 = loadedRange * loadedRange;
           setDrops(currentDrops => {
               let anyExpired = false;
@@ -1071,7 +1073,7 @@ const App: React.FC = () => {
           });
       }, TICK_MS);
       return () => clearInterval(interval);
-  }, [worldPaused, fullDetailDistance]);
+  }, [worldPaused, renderDistance]);
 
   useEffect(() => {
       const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
@@ -2933,7 +2935,7 @@ const App: React.FC = () => {
           setIsPaused(false);
           lastAppliedChunkKeyRef.current = null;
           chunkView.set([]);
-          farView.set(null);
+          horizonView.set(null);
           activeWorldIdRef.current = null;
           activeWorldGenConfigRef.current = null;
           worldManager.reset();
@@ -3477,13 +3479,13 @@ const App: React.FC = () => {
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
                 <ChunkRegionBatches shadowsEnabled={shadowsEnabled} />
-                {/* Past the full chunks, out to the render distance (farTerrain.ts). */}
-                {appState === 'game' && <FarTerrain />}
-                <CameraReach renderDistance={renderDistance} />
+                {/* Past the full chunks, out to the Horizon Distance (horizon/, horizonPass.ts). */}
+                {appState === 'game' && <HorizonTerrain samples={graphics.config.antialiasing === 'off' ? 0 : 4} />}
+                <CameraReach renderDistance={drawDistance} />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
-                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
-                <Clouds isPaused={worldPaused} renderDistance={renderDistance} quality={graphics.config.clouds} />
+                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={drawDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
+                <Clouds isPaused={worldPaused} renderDistance={drawDistance} quality={graphics.config.clouds} />
                 {graphics.config.ambientParticles !== 'off' && appState === 'game' && (
                     <AmbientParticles density={graphics.config.ambientParticles} isPaused={worldPaused} />
                 )}

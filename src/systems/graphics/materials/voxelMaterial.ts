@@ -6,6 +6,7 @@ import { ATLAS_COLS } from '../../../data/blocks';
 import { ATLAS_PADDING, ATLAS_RAW_TILE_SIZE, ATLAS_STRIDE, getAtlasDimensions } from '../../../utils/textures';
 import { FACE_DATA } from '../../world/worldConstants';
 import { CLOUD_SHADE_GLSL } from '../cloudLayer';
+import { COVERAGE_SIZE, FULL_STEP, chunkCoverage } from '../../world/chunkCoverage';
 import {
     WORLD_LIGHT_DECLARATIONS,
     WORLD_LIGHT_END,
@@ -165,16 +166,45 @@ ${WORLD_LIGHT_DECLARATIONS}
 #ifdef ATLAS_VOXEL_FADE
 uniform float atlasVoxelFade;
 #endif
-#ifdef ATLAS_FAR_TERRAIN
-// x, z: the centre chunk; z: full-detail radius squared; w: render distance squared (chunks).
-uniform vec4 atlasFarView;
-#endif
 varying float vVoxelClass;
 varying float vVoxelEmission;
 varying float vVoxelFaceShade;
 varying vec3 vVoxelNormal;
 float atlasBayer2( vec2 a ) { a = floor( a ); return fract( a.x / 2.0 + a.y * a.y * 0.75 ); }
 float atlasBayer4( vec2 a ) { return atlasBayer2( 0.5 * a ) * 0.25 + atlasBayer2( a ); }
+#if defined( ATLAS_FAR_TERRAIN ) || defined( ATLAS_VOXEL_TRANSPARENT )
+// Each full chunk's dissolve step (chunkCoverage.ts), and the view: x, y the
+// centre chunk, z the Horizon Distance squared (chunks), w how far the horizon
+// has faded in (0..1).
+uniform highp usampler2D atlasCoverage;
+uniform vec4 atlasHorizonView;
+// The least any full chunk within a pixel of xz (pixel: a pixel's width on
+// the ground there) is drawn, in dissolve steps; none past the coverage. Along
+// a chunk's edge the horizon reaches a pixel under it, so where the chunk's own
+// edge covers only part of a pixel (with MSAA), the rest isn't sky.
+uint atlasCoverageAround( vec2 xz, vec2 pixel ) {
+	vec2 chunk = floor( xz / 16.0 );
+	vec2 rel = chunk - atlasHorizonView.xy;
+	if ( max( abs( rel.x ), abs( rel.y ) ) >= ${(COVERAGE_SIZE / 2 - 1.5).toFixed(1)} ) return 0u;
+	uint least = texelFetch( atlasCoverage, ivec2( mod( chunk, ${COVERAGE_SIZE.toFixed(1)} ) ), 0 ).r;
+	for ( int i = 0; i < 4; i++ ) {
+		vec2 nudge = vec2( i == 0 ? 1.0 : i == 1 ? -1.0 : 0.0, i == 2 ? 1.0 : i == 3 ? -1.0 : 0.0 ) * pixel;
+		least = min( least, texelFetch( atlasCoverage, ivec2( mod( floor( ( xz + nudge ) / 16.0 ), ${COVERAGE_SIZE.toFixed(1)} ) ), 0 ).r );
+	}
+	return least;
+}
+#endif
+#ifdef ATLAS_FAR_TERRAIN
+#ifdef ATLAS_VOXEL_TRANSPARENT
+// The horizon's land, drawn first in the same projection: its sea hides behind it.
+uniform sampler2D atlasHorizonDepth;
+uniform vec2 atlasHorizonSize;
+#endif
+#elif defined( ATLAS_VOXEL_TRANSPARENT )
+// How near the horizon draws (its near plane, in view depth): past the far
+// plane of the world while it draws nothing.
+uniform float atlasHorizonNear;
+#endif
 #ifdef ATLAS_VOXEL_TILED
 varying float vAtlasTile;
 varying vec3 vAtlasTileCell;
@@ -210,12 +240,35 @@ const CLASSIC_FLOOR = /* glsl */`
 
 const FRAGMENT_MAP = /* glsl */`
 #if defined( ATLAS_FAR_TERRAIN ) && defined( USE_FOG )
-	// Far terrain only past the full-detail chunks and within the render
-	// distance, measured chunk by chunk as the streaming measures it
-	// (farTerrain.ts): where full chunks are drawn, it stands aside.
-	vec2 atlasFarChunk = floor( ( cameraPosition.xz + vAtlasFogOffset.xz ) / 16.0 ) - atlasFarView.xy;
-	float atlasFarDistSq = dot( atlasFarChunk, atlasFarChunk );
-	if ( atlasFarDistSq <= atlasFarView.z || atlasFarDistSq > atlasFarView.w ) discard;
+	// The horizon (horizon/): out to the Horizon Distance, measured chunk by
+	// chunk as the streaming measures it, and under the full chunks only on
+	// the pixels their dissolve leaves (chunkCoverage.ts), so the two share
+	// every pixel between them while a chunk fades in or out.
+	vec2 atlasFarXZ = cameraPosition.xz + vAtlasFogOffset.xz;
+	// A pixel's width on the ground here, taken before any discard.
+	vec2 atlasFarPixel = fwidth( atlasFarXZ );
+	vec2 atlasFarRel = floor( atlasFarXZ / 16.0 ) - atlasHorizonView.xy;
+	if ( dot( atlasFarRel, atlasFarRel ) > atlasHorizonView.z ) discard;
+	float atlasDither = atlasBayer4( gl_FragCoord.xy );
+	if ( atlasDither < float( atlasCoverageAround( atlasFarXZ, atlasFarPixel ) ) / ${FULL_STEP.toFixed(1)} ) discard;
+	// The whole horizon fades in once it's ready, on the same pattern.
+	if ( atlasDither >= atlasHorizonView.w ) discard;
+	#ifdef ATLAS_VOXEL_TRANSPARENT
+	if ( texture2D( atlasHorizonDepth, gl_FragCoord.xy / atlasHorizonSize ).r < gl_FragCoord.z ) discard;
+	#endif
+#elif defined( ATLAS_VOXEL_TRANSPARENT ) && defined( USE_FOG )
+	// The chunks' water and ice give way wherever the horizon lays its own sea
+	// and ice (the block above, on the same surface), which along the border
+	// reaches a pixel under them: both see-through, the two would blend twice
+	// there, a pale line round every sea where the render distance ends.
+	// All of it outside any branch: the pixel width is a derivative, and some
+	// compilers take one again where it's used, where a branch leaves it
+	// undefined (a line of missing water along the horizon's near plane).
+	vec2 atlasSeaXZ = cameraPosition.xz + vAtlasFogOffset.xz;
+	float atlasSeaStep = float( atlasCoverageAround( atlasSeaXZ, fwidth( atlasSeaXZ ) ) ) / ${FULL_STEP.toFixed(1)};
+	float atlasSeaDither = atlasBayer4( gl_FragCoord.xy );
+	bool atlasSeaFace = ( vVoxelClass > 2.5 && vVoxelClass < 3.5 ) || ( vVoxelClass > 4.5 && vVoxelClass < 5.5 );
+	if ( atlasSeaFace && vViewPosition.z > atlasHorizonNear && atlasSeaDither < atlasHorizonView.w && atlasSeaDither >= atlasSeaStep ) discard;
 #endif
 #ifdef USE_MAP
 	#ifdef ATLAS_VOXEL_TILED
@@ -446,12 +499,20 @@ const FRAGMENT_REFLECTIONS = /* glsl */`
 interface VoxelMaterialOptions {
     variant: VoxelVariant;
     fade: boolean;
-    /** Far terrain (farTerrain.ts): cut away inside the full-detail chunks and past the render distance. */
+    /** The horizon's terrain (horizon/): past the full chunks' pixels, within the Horizon Distance. */
     far?: boolean;
 }
 
-/** Where far terrain may draw: centre chunk x, z, full-detail radius squared, render distance squared. */
-export const FAR_VIEW_UNIFORM = { value: new THREE.Vector4(0, 0, 0, -1) };
+/** Where the horizon draws: centre chunk x, z, the Horizon Distance squared (chunks), and how far it has faded in (0..1). */
+export const HORIZON_VIEW_UNIFORM = { value: new THREE.Vector4(0, 0, -1, 0) };
+/** The horizon's land depth and its size in pixels, for its sea to hide behind (horizonPass.ts). */
+export const HORIZON_DEPTH_UNIFORMS = {
+    atlasHorizonDepth: { value: null as THREE.Texture | null },
+    atlasHorizonSize: { value: new THREE.Vector2(1, 1) },
+};
+/** How near the horizon draws, in view depth (horizonPass.ts): the chunks' water gives way to its sea past that. */
+export const HORIZON_NEAR_UNIFORM = { value: 1e9 };
+const COVERAGE_UNIFORM = { value: chunkCoverage.texture };
 
 function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelMaterialOptions): void {
     const defines: Record<string, string> = {};
@@ -461,8 +522,8 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
         defines.ATLAS_VOXEL_FOLIAGE = '';
     }
     if (options.variant === 'transparent') defines.ATLAS_VOXEL_TRANSPARENT = '';
-    // Only solid chunks hold tiled faces (geometry.ts): the others sample as before.
-    if (options.variant === 'solid') defines.ATLAS_VOXEL_TILED = '';
+    // Only solid chunks hold tiled faces (geometry.ts), and all of the horizon: the others sample as before.
+    if (options.variant === 'solid' || options.far) defines.ATLAS_VOXEL_TILED = '';
     if (options.fade) defines.ATLAS_VOXEL_FADE = '';
     material.defines = defines;
     if (options.fade) material.userData.atlasFade = { value: 0 };
@@ -470,7 +531,12 @@ function installVoxelShader(material: THREE.MeshLambertMaterial, options: VoxelM
     material.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, VOXEL_UNIFORMS, VOXEL_ATLAS_UNIFORMS);
         if (options.fade) shader.uniforms.atlasVoxelFade = material.userData.atlasFade;
-        if (options.far) shader.uniforms.atlasFarView = FAR_VIEW_UNIFORM;
+        if (options.far || options.variant === 'transparent') {
+            shader.uniforms.atlasHorizonView = HORIZON_VIEW_UNIFORM;
+            shader.uniforms.atlasCoverage = COVERAGE_UNIFORM;
+        }
+        if (options.far && options.variant === 'transparent') Object.assign(shader.uniforms, HORIZON_DEPTH_UNIFORMS);
+        if (!options.far && options.variant === 'transparent') shader.uniforms.atlasHorizonNear = HORIZON_NEAR_UNIFORM;
 
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', `#include <common>\n${VERTEX_DECLARATIONS}`)
@@ -491,7 +557,7 @@ ${VOXEL_SAMPLE_FUNCTION}
 ${VOXEL_CLOUD_REFLECTION}`);
     };
     // One program per variant, however many clones share it.
-    const cacheKey = `atlas-voxel-v6:${options.variant}${options.fade ? ':fade' : ''}${options.far ? ':far' : ''}`;
+    const cacheKey = `atlas-voxel-v7:${options.variant}${options.fade ? ':fade' : ''}${options.far ? ':far' : ''}`;
     material.customProgramCacheKey = () => cacheKey;
     material.needsUpdate = true;
 }
@@ -514,15 +580,21 @@ function createVoxelMaterial(variant: VoxelVariant, map: THREE.Texture | null): 
 }
 
 /**
- * Far terrain's material: the solid chunk material, cut away where full chunks
- * draw and past the render distance (FAR_VIEW_UNIFORM). It neither casts nor
- * catches shadows: shadows stop well inside the full-detail chunks.
+ * The horizon's materials (horizon/): the chunk materials for its terrain and
+ * for its sea and ice, drawing only where full chunks leave it pixels and
+ * within the Horizon Distance (HORIZON_VIEW_UNIFORM). They neither cast nor
+ * catch shadows: shadows stop well inside the full chunks.
  */
-export function createFarTerrainMaterial(map: THREE.Texture | null): THREE.MeshLambertMaterial {
-    const material = new THREE.MeshLambertMaterial({ map, vertexColors: true });
-    material.side = THREE.FrontSide;
-    installVoxelShader(material, { variant: 'solid', fade: false, far: true });
-    return material;
+export function createHorizonMaterials(map: THREE.Texture | null): { opaque: THREE.MeshLambertMaterial; transparent: THREE.MeshLambertMaterial } {
+    const opaque = new THREE.MeshLambertMaterial({ map, vertexColors: true });
+    opaque.side = THREE.FrontSide;
+    installVoxelShader(opaque, { variant: 'solid', fade: false, far: true });
+    // It writes its depth, unlike the chunks' water: it is alone in its pass
+    // (horizonPass.ts), and its depth is where the world's render puts it.
+    const transparent = new THREE.MeshLambertMaterial({ map, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: true });
+    transparent.side = THREE.FrontSide;
+    installVoxelShader(transparent, { variant: 'transparent', fade: false, far: true });
+    return { opaque, transparent };
 }
 
 export interface VoxelMaterials {
@@ -584,6 +656,9 @@ export function createVoxelMaterials(map: THREE.Texture | null): VoxelMaterials 
 
 /** Steps of the chunk dissolve: its 4x4 ordered dither shows 0 to 16 of every 16 pixels. */
 const VOXEL_FADE_STEPS = 16;
+
+/** The dissolve step a fade amount (0 gone .. 1 whole) shows: the horizon takes the rest (chunkCoverage.ts). */
+export const voxelFadeStep = (amount: number): number => Math.min(VOXEL_FADE_STEPS, Math.max(0, Math.ceil(amount * VOXEL_FADE_STEPS)));
 const voxelFadeSteps: VoxelMaterials[] = [];
 
 /**
@@ -596,7 +671,7 @@ const voxelFadeSteps: VoxelMaterials[] = [];
  * dissolve through atlasVoxelFade, so they sort and occlude like the shared ones.
  */
 export function getVoxelFadeMaterials(shared: VoxelMaterials, amount: number): VoxelMaterials {
-    const step = Math.min(VOXEL_FADE_STEPS, Math.max(0, Math.ceil(amount * VOXEL_FADE_STEPS)));
+    const step = voxelFadeStep(amount);
     const existing = voxelFadeSteps[step];
     if (existing) return existing;
     const clone = (source: THREE.MeshLambertMaterial, variant: VoxelVariant) => {

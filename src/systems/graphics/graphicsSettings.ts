@@ -39,6 +39,8 @@ export interface QualityConfig {
     mipmaps: boolean;
     motionBlur: boolean;
     chunkFade: boolean;
+    /** The Horizon Distance, in chunks: simplified terrain past the render distance (0 off; viewDistance.ts). */
+    horizon: number;
 }
 
 /** Personal taste, kept apart from the quality presets. */
@@ -64,22 +66,22 @@ export const GRAPHICS_PRESETS: Readonly<Record<GraphicsPresetId, Readonly<Qualit
     low: {
         shadows: 'off', bloom: 'off', godRays: false, water: 'simple', foliageWind: false,
         ambientParticles: 'off', clouds: 'fast', antialiasing: 'msaa', maxPixelRatio: 1,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, horizon: 64,
     },
     medium: {
         shadows: 'low', bloom: 'half', godRays: false, water: 'fancy', foliageWind: true,
         ambientParticles: 'low', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 1.5,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, horizon: 128,
     },
     high: {
         shadows: 'low', bloom: 'half', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'medium', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
-        mipmaps: true, motionBlur: false, chunkFade: true,
+        mipmaps: true, motionBlur: false, chunkFade: true, horizon: 256,
     },
     ultra: {
         shadows: 'low', bloom: 'full', godRays: true, water: 'fancy', foliageWind: true,
         ambientParticles: 'high', clouds: 'fancy', antialiasing: 'msaa', maxPixelRatio: 2,
-        mipmaps: true, motionBlur: true, chunkFade: true,
+        mipmaps: true, motionBlur: true, chunkFade: true, horizon: 512,
     },
 };
 
@@ -169,6 +171,7 @@ const QUALITY_VALIDATORS: { [K in keyof QualityConfig]: (v: unknown) => v is Qua
     mipmaps: (v): v is boolean => typeof v === 'boolean',
     motionBlur: (v): v is boolean => typeof v === 'boolean',
     chunkFade: (v): v is boolean => typeof v === 'boolean',
+    horizon: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1024,
 };
 const PREFERENCE_VALIDATORS: { [K in keyof GraphicsPreferences]: (v: unknown) => v is GraphicsPreferences[K] } = {
     visualStyle: (v): v is VisualStyle => v === 'luminous' || v === 'classic',

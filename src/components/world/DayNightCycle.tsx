@@ -27,6 +27,7 @@ import { packDynamicLights } from '../../systems/graphics/dynamicLights';
 import { createShadowSnap, snapShadowCenter } from '../../systems/graphics/shadows';
 import { TONE_MAPPING_EXPOSURE_TRIM } from '../../systems/graphics/pipeline/pipelinePlan';
 import { SKY_FAR_PLANE_GLSL, SKY_ORDER, drawAtFarPlane, skyFrame, veilByClouds } from '../../systems/graphics/skyObjects';
+import { worldLights } from '../../systems/graphics/horizonPass';
 import { Aurora } from './sky/Aurora';
 import { Meteors } from './sky/Meteors';
 
@@ -282,6 +283,18 @@ export const DayNightCycle = forwardRef<DayNightCycleRef, {
     // Performance: shadows reach a fixed distance per quality (48/80/112 blocks),
     // never past the render distance.
     const shadowDist = Math.min(renderDistance * CHUNK_SIZE, shadowSettings.distance);
+
+    // The horizon draws in its own pass by the same light (horizonPass.ts).
+    useEffect(() => {
+        const hemi = hemiLightRef.current;
+        const key = keyLightRef.current;
+        worldLights.hemi = hemi;
+        worldLights.key = key;
+        return () => {
+            if (worldLights.hemi === hemi) worldLights.hemi = null;
+            if (worldLights.key === key) worldLights.key = null;
+        };
+    }, []);
 
     // three allocates a light's shadow map once; a new size only takes effect
     // after the old map is released.

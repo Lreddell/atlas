@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, startTransition } from 'react';
 import * as THREE from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { worldManager } from '../systems/WorldManager';
 import { CHUNK_SIZE } from '../constants';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
 import { BACK_FACE_ORDER, WATER_ORDER, regionBatcher } from '../systems/world/regionBatcher';
+import { WebGLArenaGpu } from '../systems/world/geometryArena';
 import { chunkView } from '../systems/world/chunkView';
+import { chunkCoverage, FULL_STEP } from '../systems/world/chunkCoverage';
 import {
+  voxelFadeStep,
   getVoxelFadeMaterials,
   createCutoutDepthMaterial,
   createVoxelMaterials,
@@ -56,17 +59,19 @@ export const ChunkFadeTicker: React.FC = () => {
   return null;
 };
 
-// Settled chunks draw through one merged mesh per region (regionBatcher.ts),
-// which cuts the draw calls a frame by about an order of magnitude. This owns
-// the region meshes' root and rebuilds at most one region a frame.
+// Settled chunks draw through one mesh per region (regionBatcher.ts), which
+// cuts the draw calls a frame by about an order of magnitude. This owns the
+// region meshes' root and lets waiting chunks join their regions each frame.
 export const ChunkRegionBatches: React.FC<{ shadowsEnabled: boolean }> = ({ shadowsEnabled }) => {
   const rootRef = useRef<THREE.Group>(null);
+  const gl = useThree((state) => state.gl);
   useLayoutEffect(() => {
     regionBatcher.setShadows(shadowsEnabled);
   }, [shadowsEnabled]);
   useLayoutEffect(() => {
     const root = rootRef.current;
-    if (!root) return;
+    // Regions write their buffers with WebGL 2 calls; without it chunks draw one by one.
+    if (!root || !gl.capabilities.isWebGL2) return;
     regionBatcher.attach(root, {
       opaque: sharedMaterials.solid,
       cutout: sharedMaterials.cutout,
@@ -75,9 +80,9 @@ export const ChunkRegionBatches: React.FC<{ shadowsEnabled: boolean }> = ({ shad
       water: sharedMaterials.transparent,
       waterBack: sharedMaterials.transparentBack,
       cutoutDepth: cutoutDepthMaterial,
-    });
+    }, new WebGLArenaGpu(gl.getContext() as WebGL2RenderingContext));
     return () => regionBatcher.detach();
-  }, []);
+  }, [gl]);
   useFrame(({ camera }) => regionBatcher.update(performance.now(), camera.position.x, camera.position.z));
   return <group ref={rootRef} name="chunkRegions" matrixAutoUpdate={false} />;
 };
@@ -171,8 +176,10 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     if (fadeModeRef.current === 'none') return;
     fadeModeRef.current = 'none';
     if (restore) applyMaterials(sharedMaterials);
+    // Whole again, or gone at the end of a fade-out: the horizon behind follows.
+    chunkCoverage.set(cx, cz, restore && hasGeometry(geometriesRef.current) ? FULL_STEP : 0);
     setFading(false);
-  }, [applyMaterials]);
+  }, [applyMaterials, cx, cz]);
 
   const startFade = useCallback((mode: 'in' | 'out') => {
     if (fadeModeRef.current === 'none') setFading(true);
@@ -180,6 +187,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
     fadeStartedAtRef.current = performance.now();
     if (mode === 'in') lastFadeStartMsRef.current = fadeStartedAtRef.current;
     applyMaterials(getVoxelFadeMaterials(sharedMaterials, mode === 'in' ? 0 : 1));
+    chunkCoverage.set(cx, cz, mode === 'in' ? 0 : FULL_STEP);
 
     if (!fadeAnimRef.current) {
       const anim: FadeAnimation = {
@@ -192,6 +200,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           // Every frame, which also dresses meshes mounted since the last one
           // (the ticker runs before the frame renders).
           applyMaterials(getVoxelFadeMaterials(sharedMaterials, eased));
+          // The horizon behind takes exactly the pixels the dissolve leaves.
+          chunkCoverage.set(cx, cz, voxelFadeStep(eased));
 
           if (progress >= 1) {
             const wasOut = fadeModeRef.current === 'out';
@@ -208,7 +218,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
       fadeAnimRef.current = anim;
       activeFadeAnimations.add(anim);
     }
-  }, [stopFade, queueDispose, applyMaterials]);
+  }, [stopFade, queueDispose, applyMaterials, cx, cz]);
 
   // Prop-driven fade-out (chunk left the render set)
   useEffect(() => {
@@ -255,6 +265,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
           queueDispose(geometriesRef.current);
           geometriesRef.current = EMPTY_GEOMETRIES;
           setGeometries(EMPTY_GEOMETRIES);
+          chunkCoverage.set(cx, cz, 0);
           return;
         }
 
@@ -325,6 +336,8 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         if (hasGeometry(next)) {
           hasRenderedMeshRef.current = true;
         }
+        // Drawn whole unless a fade is showing it step by step.
+        if (fadeModeRef.current === 'none') chunkCoverage.set(cx, cz, hasGeometry(next) ? FULL_STEP : 0);
     });
 
     return () => {
@@ -336,6 +349,7 @@ const ChunkMeshImpl: React.FC<ChunkMeshProps> = ({ cx, cz, shadowsEnabled = fals
         disposeGeometries(geometriesRef.current);
         geometriesRef.current = EMPTY_GEOMETRIES;
         hasRenderedMeshRef.current = false;
+        chunkCoverage.set(cx, cz, 0);
     };
   }, [cx, cz, fadeInEnabled, startFade, stopFade, queueDispose]);
 

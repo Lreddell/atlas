@@ -9,6 +9,7 @@ import * as Lighting from './world/lighting';
 import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
 import { packMeshBorders } from './world/meshBorders';
+import type { HorizonTileMeshes } from './world/horizon/buildHorizonTile';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
@@ -67,67 +68,93 @@ interface Job {
     priority: number;
 }
 
-// Optimized Queue class to avoid O(n) shift operations
+/**
+ * Chunk jobs by priority (lowest first): a binary heap with each chunk's place
+ * in it, so a job goes in, comes out or moves up in O(log n) and is found in
+ * O(1). While the world streams in thousands wait here, and every chunk that
+ * arrives queues or promotes its neighbours' jobs: sorting the whole queue
+ * and scanning it for each of those used to cost milliseconds a frame.
+ */
 class JobQueue {
-    private _data: Job[] = [];
-    private _head: number = 0;
-
-    push(job: Job) {
-        this._data.push(job);
-    }
-
-    shift(): Job | undefined {
-        if (this._head >= this._data.length) return undefined;
-        const item = this._data[this._head];
-        this._data[this._head] = undefined as any; // Clear reference
-        this._head++;
-        
-        // Compact only when significant space is wasted (>1000 items and >50% of array)
-        if (this._head > 1000 && this._head * 2 > this._data.length) {
-            this._data = this._data.slice(this._head);
-            this._head = 0;
-        }
-        return item;
-    }
-
-    unshift(job: Job) {
-        if (this._head > 0) {
-            this._head--;
-            this._data[this._head] = job;
-        } else {
-            this._data.unshift(job);
-        }
-    }
+    private heap: Job[] = [];
+    private at = new Map<string, number>();
 
     get length(): number {
-        return this._data.length - this._head;
+        return this.heap.length;
     }
 
-    forEach(callback: (job: Job) => void) {
-        for (let i = this._head; i < this._data.length; i++) {
-            callback(this._data[i]);
-        }
+    get(cx: number, cz: number): Job | undefined {
+        const i = this.at.get(WorldCoords.getChunkKey(cx, cz));
+        return i === undefined ? undefined : this.heap[i];
     }
 
-    find(predicate: (job: Job) => boolean): Job | undefined {
-        for (let i = this._head; i < this._data.length; i++) {
-            if (predicate(this._data[i])) return this._data[i];
+    /** Queues a job, or moves one already queued for that chunk up to this priority if it is sooner. */
+    offer(cx: number, cz: number, priority: number): void {
+        const key = WorldCoords.getChunkKey(cx, cz);
+        const i = this.at.get(key);
+        if (i !== undefined) {
+            if (priority < this.heap[i].priority) {
+                this.heap[i].priority = priority;
+                this.up(i);
+            }
+            return;
         }
-        return undefined;
+        this.heap.push({ cx, cz, priority });
+        this.at.set(key, this.heap.length - 1);
+        this.up(this.heap.length - 1);
     }
 
-    sort(compareFn: (a: Job, b: Job) => number) {
-        // Compact before sort to simplify logic
-        if (this._head > 0) {
-            this._data = this._data.slice(this._head);
-            this._head = 0;
+    /** The soonest job, out of the queue. */
+    shift(): Job | undefined {
+        const heap = this.heap;
+        if (heap.length === 0) return undefined;
+        const top = heap[0];
+        const last = heap.pop()!;
+        this.at.delete(WorldCoords.getChunkKey(top.cx, top.cz));
+        if (heap.length > 0) {
+            heap[0] = last;
+            this.at.set(WorldCoords.getChunkKey(last.cx, last.cz), 0);
+            this.down(0);
         }
-        this._data.sort(compareFn);
+        return top;
     }
 
     clear() {
-        this._data = [];
-        this._head = 0;
+        this.heap = [];
+        this.at.clear();
+    }
+
+    private swap(i: number, j: number) {
+        const heap = this.heap;
+        const a = heap[i];
+        heap[i] = heap[j];
+        heap[j] = a;
+        this.at.set(WorldCoords.getChunkKey(heap[i].cx, heap[i].cz), i);
+        this.at.set(WorldCoords.getChunkKey(heap[j].cx, heap[j].cz), j);
+    }
+
+    private up(i: number) {
+        const heap = this.heap;
+        while (i > 0) {
+            const parent = (i - 1) >> 1;
+            if (heap[parent].priority <= heap[i].priority) break;
+            this.swap(i, parent);
+            i = parent;
+        }
+    }
+
+    private down(i: number) {
+        const heap = this.heap;
+        for (;;) {
+            const left = i * 2 + 1;
+            const right = left + 1;
+            let least = i;
+            if (left < heap.length && heap[left].priority < heap[least].priority) least = left;
+            if (right < heap.length && heap[right].priority < heap[least].priority) least = right;
+            if (least === i) return;
+            this.swap(i, least);
+            i = least;
+        }
     }
 }
 
@@ -195,8 +222,8 @@ export class WorldManager {
   private urgentMeshTickets = new Set<number>();
   /** Told when a chunk gains its first mesh or loses it (null: every chunk's changed). */
   private meshPresenceListeners = new Set<(key: string | null, present: boolean) => void>();
-  /** Far-terrain tiles being built (farTerrain.ts): job id -> who wants it. */
-  private farJobs = new Map<string, (geometry: Geometry.GeometryAttributes) => void>();
+  /** Horizon tiles being built (horizon/buildHorizonTile.ts): job id -> who wants it. */
+  private farJobs = new Map<string, (meshes: HorizonTileMeshes) => void>();
   /** Bumped whenever the world (or its seed) changes: far tiles from before are stale. */
   private farEpoch = 0;
   private farJobCounter = 0;
@@ -221,7 +248,6 @@ export class WorldManager {
   private activeWorldId: string | null = null; // ID of the currently loaded world
   private gcCounter: number = 0; // Counter for periodic garbage collection
 
-  private queuesDirty = false;
   private knownMissingStorageChunks = new Set<string>();
   private vaultPreflightPromises = new Map<string, Promise<boolean>>();
   private acceptedVaultCandidates = new Set<string>();
@@ -293,7 +319,6 @@ export class WorldManager {
   }
 
   public reset() {
-    this.queuesDirty = false;
     this.knownMissingStorageChunks.clear();
       this.vaultPreflightPromises.clear();
       this.acceptedVaultCandidates.clear();
@@ -412,15 +437,21 @@ export class WorldManager {
   }
 
   /**
-   * Asks a worker for a far-terrain tile (farTerrain.ts); `done` gets its mesh
-   * unless the world changes first. False when there are no workers.
+   * Asks a worker for a tile of the horizon (horizon/buildHorizonTile.ts);
+   * `done` gets its meshes unless the world changes first. False when there
+   * are no workers.
    */
-  public requestFarTile(level: number, tx: number, tz: number, done: (geometry: Geometry.GeometryAttributes) => void): boolean {
+  public requestHorizonTile(level: number, tx: number, tz: number, done: (meshes: HorizonTileMeshes) => void): boolean {
       if (!this.workersEnabled || this.workers.length === 0) return false;
-      const id = `far-${this.farEpoch}-${this.farJobCounter++}`;
+      const id = `horizon-${this.farEpoch}-${this.farJobCounter++}`;
       this.farJobs.set(id, done);
-      this.postToPool({ type: 'FAR_TILE', id, level, tx, tz });
+      this.postToPool({ type: 'HORIZON_TILE', id, level, tx, tz });
       return true;
+  }
+
+  /** Workers in the pool (how many horizon tiles can build at once). */
+  public workerCount(): number {
+      return this.workersEnabled ? this.workers.length : 0;
   }
 
   /** Changes whenever far tiles already built stop matching the world. */
@@ -435,7 +466,7 @@ export class WorldManager {
 
   /** Queues a finished chunk (generated, loaded or meshed) for applyWorkerResults. */
   private receiveResult(msg: any) {
-      if (msg?.type === 'FAR_TILE_DONE') {
+      if (msg?.type === 'HORIZON_TILE_DONE') {
           const done = this.farJobs.get(msg.id);
           this.farJobs.delete(msg.id);
           done?.(msg.result);
@@ -535,7 +566,6 @@ export class WorldManager {
     }
 
   private resetPipeline() {
-    this.queuesDirty = true;
       this.inFlightGen = 0;
       this.inFlightMesh = 0;
       this.genStartedAt.clear();
@@ -630,7 +660,6 @@ export class WorldManager {
           if (pendingPriority !== undefined) {
               this.pendingRemesh.delete(key);
               this.queueMesh(cx, cz, pendingPriority);
-              this.meshQueue.sort((a, b) => a.priority - b.priority);
           }
           this.scheduleStreamingPump();
       }
@@ -638,32 +667,14 @@ export class WorldManager {
 
   private enqueueGen(cx: number, cz: number, priority: number) {
     const key = WorldCoords.getChunkKey(cx, cz);
-    if (this.queuedGenKeys.has(key)) {
-        const existing = this.genQueue.find(j => j.cx === cx && j.cz === cz);
-        if (existing && priority < existing.priority) {
-            existing.priority = priority;
-            this.markQueuesDirty();
-        }
-        return;
-    }
     this.queuedGenKeys.add(key);
-    this.genQueue.push({ cx, cz, priority });
-    this.markQueuesDirty();
+    this.genQueue.offer(cx, cz, priority);
   }
 
   private enqueueMesh(cx: number, cz: number, priority: number) {
     const key = WorldCoords.getChunkKey(cx, cz);
-    if (this.queuedMeshKeys.has(key)) {
-        const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-        if (existing && priority < existing.priority) {
-            existing.priority = priority;
-            this.markQueuesDirty();
-        }
-        return;
-    }
     this.queuedMeshKeys.add(key);
-    this.meshQueue.push({ cx, cz, priority });
-    this.markQueuesDirty();
+    this.meshQueue.offer(cx, cz, priority);
   }
 
   private queueGen(cx: number, cz: number, priority: number) {
@@ -716,12 +727,7 @@ export class WorldManager {
       }
 
       if (stage === ChunkStage.MESH_QUEUED) {
-          // Using .find() instead of array.find()
-          const job = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-          if (job && priority < job.priority) {
-            job.priority = priority;
-            this.markQueuesDirty();
-          }
+          this.meshQueue.offer(cx, cz, priority);
           return;
       }
       
@@ -820,7 +826,6 @@ export class WorldManager {
   }
 
   public processStreamingJobs() {
-    this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
       while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
@@ -1640,17 +1645,6 @@ export class WorldManager {
   }
 
   // Helper to synchronously force generation if missing (prevents falling through world on start)
-  private markQueuesDirty() {
-      this.queuesDirty = true;
-  }
-
-  private sortQueuesIfDirty() {
-      if (!this.queuesDirty) return;
-      this.genQueue.sort((a, b) => a.priority - b.priority);
-      this.meshQueue.sort((a, b) => a.priority - b.priority);
-      this.queuesDirty = false;
-  }
-
   public ensureChunk(cx: number, cz: number) {
       if (!WorldStore.getChunkData(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
@@ -2017,12 +2011,10 @@ export class WorldManager {
         if (lz === 0) this.queueMesh(cx, cz - 1, -900);
         else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
 
-        this.markQueuesDirty();
         this.runStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
         this.queueMesh(cx, cz, -500);
-        this.markQueuesDirty();
         this.runStreamingJobs();
     }
 
@@ -2107,7 +2099,6 @@ export class WorldManager {
     if (isFarmland(chunk[index] as BlockType, value)) noteFarmland(x, y, z);
     WorldStore.notifyChunk(this.state, cx, cz);
     this.queueMesh(cx, cz, -500);
-    this.markQueuesDirty();
     this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
 
@@ -2141,7 +2132,6 @@ export class WorldManager {
     else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -400);
     if (lz === 0) this.queueMesh(cx, cz - 1, -400);
     else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -400);
-    this.markQueuesDirty();
     this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
 
@@ -2186,7 +2176,6 @@ export class WorldManager {
       const [cx, cz] = key.split(',').map(Number);
       this.queueMesh(cx, cz, -1000);
     }
-    this.markQueuesDirty();
     this.processStreamingJobs();
   }
 

@@ -15,7 +15,7 @@ import {
     bindingLabel, conflictsOf, isDefaultBinding, keyActionLabel, type KeyAction,
 } from '../../systems/player/keyBindings';
 import { graphicsSettings, useGraphicsSettings } from '../../systems/graphics/graphicsStore';
-import { MAX_RENDER_DISTANCE } from '../../systems/world/farTerrain';
+import { HORIZON_STOPS, MAX_RENDER_DISTANCE } from '../../systems/world/viewDistance';
 import {
     GRAPHICS_PRESET_ORDER, GRAPHICS_PRESETS,
     type CloudQuality, type GraphicsConfig, type GraphicsPresetId, type GraphicsQuality, type ShadowQuality,
@@ -35,6 +35,8 @@ const VISUAL_STYLE_LABELS: Record<VisualStyle, string> = { luminous: 'Luminous',
 const SHADOW_STYLE_LABELS: Record<ShadowStyle, string> = { soft: 'Soft', pixel: 'Pixel' };
 
 const nextInCycle = <T,>(cycle: readonly T[], current: T): T => cycle[(cycle.indexOf(current) + 1) % cycle.length];
+/** The Horizon Distance stop nearest a setting (the slider steps through the stops). */
+const horizonStop = (chunks: number): number => HORIZON_STOPS.reduce((best, stop, i) => (Math.abs(stop - chunks) < Math.abs(HORIZON_STOPS[best] - chunks) ? i : best), 0);
 const nextPresetAfter = (preset: GraphicsPresetId): GraphicsPresetId => nextInCycle(GRAPHICS_PRESET_ORDER, preset);
 /** Turning clouds back on restores the preset's cloud quality. */
 const presetCloudsOrFancy = (preset: GraphicsPresetId): CloudQuality =>
@@ -263,16 +265,27 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
 
             <div className="mb-4 grid grid-cols-2 gap-3">
                 <MenuSlider
-                    label="Brightness"
-                    value={brightness} min={0} max={1} step={0.05}
-                    onChange={setBrightness} width="w-80"
-                    formatValue={(v) => v === 0 ? 'Moody' : (v === 1 ? 'Bright' : `+${Math.round(v*100)}%`)}
-                />
-                <MenuSlider
                     label="Render Distance"
                     value={renderDistance} min={8} max={MAX_RENDER_DISTANCE} step={1}
                     onChange={setRenderDistance} width="w-80"
                     formatValue={(v) => `${v} Chunks`}
+                />
+                {/* Past the render distance, the land is drawn simplified out to here. */}
+                <MenuSlider
+                    label="Horizon Distance"
+                    tooltip="Distant land drawn simplified past your render distance, out to the horizon"
+                    value={horizonStop(gfx.horizon)} min={0} max={HORIZON_STOPS.length - 1} step={1}
+                    onChange={(i) => graphicsSettings.setOption('horizon', HORIZON_STOPS[Math.round(i)])} width="w-80"
+                    formatValue={(i) => {
+                        const chunks = HORIZON_STOPS[Math.round(i)];
+                        return chunks === 0 ? 'Off' : `${chunks} Chunks`;
+                    }}
+                />
+                <MenuSlider
+                    label="Brightness"
+                    value={brightness} min={0} max={1} step={0.05}
+                    onChange={setBrightness} width="w-80"
+                    formatValue={(v) => v === 0 ? 'Moody' : (v === 1 ? 'Bright' : `+${Math.round(v*100)}%`)}
                 />
                 <MenuSlider
                     label="FOV"

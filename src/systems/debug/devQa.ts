@@ -4,6 +4,8 @@ import { VISUAL_TOUR_SEED, VISUAL_TOUR_SHOTS, type VisualTourShot } from './visu
 import { graphicsSettings } from '../graphics/graphicsStore';
 import type { GraphicsConfig, GraphicsPresetId } from '../graphics/graphicsSettings';
 import { entityManager } from '../entities/EntityManager';
+import { regionBatcher } from '../world/regionBatcher';
+import { soundManager } from '../sound/SoundManager';
 
 // DEV-only QA bridge for scripted screenshot and performance passes.
 //
@@ -154,6 +156,8 @@ function pump(enabled: boolean): void {
  */
 function installHiddenPaneFrames(): void {
     if (typeof window === 'undefined' || !new URLSearchParams(window.location.search).has('qaFrames')) return;
+    // Scripted passes play silently.
+    soundManager.setMuted(true);
     const nativeRequest = window.requestAnimationFrame.bind(window);
     const nativeCancel = window.cancelAnimationFrame.bind(window);
     const pending = new Map<number, { native: number; timer: ReturnType<typeof setTimeout> }>();
@@ -365,7 +369,6 @@ function sceneStats(): SceneStats {
     if (!sceneRef) throw new Error('sceneStats() needs a running world');
     const stats: SceneStats = { chunkMeshes: 0, batchedChunkMeshes: 0, regionMeshes: 0, triangles: 0, geometryMB: 0, regionMB: 0 };
     let chunkBytes = 0;
-    let regionBytes = 0;
     sceneRef.traverse((object) => {
         const mesh = object as THREE.Mesh;
         const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
@@ -375,8 +378,8 @@ function sceneStats(): SceneStats {
             // A region's water back-face pass shares the front pass's geometry.
             if (mesh.renderOrder === -1) return;
             stats.regionMeshes++;
-            stats.triangles += geometry.index.count / 3;
-            regionBytes += geometry.userData.bytes ?? 0;
+            // Region buffers are arenas (geometryArena.ts): they draw up to their draw range.
+            stats.triangles += Math.min(geometry.drawRange.count, geometry.index.count) / 3;
             return;
         }
         // A chunk's water back faces are a child mesh sharing the front's geometry (ChunkMesh.tsx).
@@ -391,7 +394,7 @@ function sceneStats(): SceneStats {
         stats.triangles += geometry.index.count / 3;
     });
     stats.geometryMB = Number((chunkBytes / 1048576).toFixed(1));
-    stats.regionMB = Number((regionBytes / 1048576).toFixed(1));
+    stats.regionMB = Number((regionBatcher.stats().bytes / 1048576).toFixed(1));
     return stats;
 }
 

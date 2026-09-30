@@ -9,7 +9,7 @@ import { BLOCKS } from '../../data/blocks';
 import { CHUNK_SIZE } from '../../constants';
 import { APP_DISPLAY_VERSION } from '../../constants';
 import { BlockType } from '../../types';
-import { FULL_DETAIL_MAX } from '../../systems/world/farTerrain';
+import { horizonStats, horizonView } from '../../systems/world/horizonView';
 
 interface DebugScreenProps {
     playerPosRef: React.MutableRefObject<THREE.Vector3>;
@@ -17,6 +17,14 @@ interface DebugScreenProps {
     dropsCount: number;
     renderDistance: number;
     fpsRef: React.MutableRefObject<number>; // New Prop
+}
+
+/** The horizon past the chunks: how far, and how many of its tiles are in. */
+function horizonLine(): string {
+    const view = horizonView.get();
+    if (!view || view.horizon <= view.renderDistance) return 'Horizon: Off';
+    const state = horizonStats.waiting ? ', waiting for chunks' : horizonStats.building > 0 ? `, ${horizonStats.building} building` : '';
+    return `Horizon: ${view.horizon} (${horizonStats.tiles}/${horizonStats.wanted} tiles, ${(horizonStats.bytes / 1048576).toFixed(0)} MB${state})`;
 }
 
 export const DebugScreen: React.FC<DebugScreenProps> = ({ 
@@ -133,7 +141,8 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
                         line(`CPU: ${navigator.hardwareConcurrency || '?'} cores`),
                         line(`Display: ${window.innerWidth}x${window.innerHeight}`),
                         line(``),
-                        line(`Render Dist: ${renderDistance}${renderDistance > FULL_DETAIL_MAX ? ` (${FULL_DETAIL_MAX} full, far terrain beyond)` : ''}`),
+                        line(`Render Dist: ${renderDistance}`),
+                        line(horizonLine()),
                         line(`Chunks Loaded: ${chunkView.get().length}`),
                         line(`Entities: ${dropsCount}`),
                         line(``),

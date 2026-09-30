@@ -231,7 +231,8 @@ export function getBiomeAt(x: number, y: number, z: number, noiseSet: NoiseSet =
     return BIOMES.CAVES;
 }
 
-function getStrataBlock(y: number): BlockType {
+/** A mesa's terracotta band at height y (the horizon's far terrain draws the same bands). */
+export function getStrataBlock(y: number): BlockType {
     const pattern = [
         BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_ORANGE,
         BlockType.TERRACOTTA_YELLOW, BlockType.TERRACOTTA_BROWN, BlockType.TERRACOTTA_BROWN,

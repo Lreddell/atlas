@@ -3,7 +3,7 @@ import { generateGeometryData } from '../geometry';
 import { createBorderScratch, unpackMeshBorders } from '../meshBorders';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
-import { buildFarTile } from '../farTerrain';
+import { buildHorizonTile } from '../horizon/buildHorizonTile';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
@@ -65,14 +65,17 @@ ctx.onmessage = (e) => {
 
         ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
     }
-    else if (type === 'FAR_TILE') {
-        // A far-terrain tile past the full-detail chunks (farTerrain.ts).
+    else if (type === 'HORIZON_TILE') {
+        // A tile of the horizon, past the full chunks (horizon/buildHorizonTile.ts).
         const { level, tx, tz } = e.data;
-        const result = buildFarTile(level, tx, tz);
-        ctx.postMessage({ type: 'FAR_TILE_DONE', id, result }, [
-            result.positions.buffer, result.normals.buffer, result.uvs.buffer,
-            result.colors.buffer, result.tiles.buffer, result.indices.buffer,
-        ]);
+        const result = buildHorizonTile(level, tx, tz);
+        const buffers: ArrayBuffer[] = [];
+        for (const mesh of [result.opaque, result.transparent]) {
+            if (!mesh) continue;
+            buffers.push(mesh.positions.buffer as ArrayBuffer, mesh.normals.buffer as ArrayBuffer, mesh.uvs.buffer as ArrayBuffer,
+                mesh.colors.buffer as ArrayBuffer, mesh.tiles.buffer as ArrayBuffer, mesh.indices.buffer as ArrayBuffer);
+        }
+        ctx.postMessage({ type: 'HORIZON_TILE_DONE', id, result }, buffers);
     }
     else if (type === 'EVICT') {
         // Stateless worker: nothing to evict locally.
