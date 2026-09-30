@@ -25,12 +25,17 @@ interface SlotProps {
   onMouseLeave?: (e: React.MouseEvent) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseUp?: (e: React.MouseEvent) => void;
-  size?: 'large' | 'small';
+  /** 'hotbar' is a 'large' slot drawn at the HUD's pixel scale (hudScale.ts). */
+  size?: 'large' | 'small' | 'hotbar';
+  /** For hotbar slots: screen pixels per art pixel (2 is the size of a 'large' slot). */
+  scale?: number;
   isCursor?: boolean;
   /** Render only the item, for surfaces such as creative category tabs. */
   bare?: boolean;
   /** Reproduce Minecraft's five-tick hotbar pop when a stack is added. */
   animateChanges?: boolean;
+  /** Draw the brass selection frame on this slot (the hotbar draws one sliding frame instead). */
+  selectionFrame?: boolean;
   cooldownFraction?: number;
 }
 
@@ -131,9 +136,12 @@ const PixelPerfectItemIcon: React.FC<PixelPerfectItemIconProps> = ({ texSlot, ta
 
 export const Slot: React.FC<SlotProps> = ({ 
     item, selected, onClick, onContextMenu, onDoubleClick, onAuxClick,
-    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', isCursor = false,
-    bare = false, animateChanges = false, cooldownFraction = 0,
+    onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, size = 'large', scale = 2, isCursor = false,
+    bare = false, animateChanges = false, cooldownFraction = 0, selectionFrame = true,
 }) => {
+  // Screen pixels per art pixel. A slot is 24 art pixels with a 16-pixel item,
+  // 2x in inventories; hotbar slots keep those proportions at the HUD's scale.
+  const artScale = size === 'hotbar' ? scale : 2;
   const contentRef = React.useRef<HTMLDivElement>(null);
   const previousItemRef = React.useRef<{ type: BlockType; count: number } | null | undefined>(undefined);
   const [, setAtlasVersion] = React.useState(0);
@@ -156,12 +164,16 @@ export const Slot: React.FC<SlotProps> = ({
   const durabilityFrac = showDurability ? Math.max(0, curDurability / maxDurability) : 0;
   const durabilityColor = `rgb(${Math.round((1 - durabilityFrac) * 255)}, ${Math.round(durabilityFrac * 255)}, 0)`;
   const durabilityDimColor = `rgb(${Math.round((1 - durabilityFrac) * 63)}, 63, 0)`;
+  // Thirteen steps under the item, like Minecraft's, at the item's own pixel scale.
   const durabilityBar = showDurability ? (
-      <div className="absolute bottom-[10px] left-1/2 h-1 w-[26px] -translate-x-1/2 bg-black pointer-events-none z-20">
-          <div className="absolute left-0 top-0 h-0.5 w-6" style={{ background: durabilityDimColor }} />
+      <div
+          className="absolute left-1/2 -translate-x-1/2 bg-black pointer-events-none z-20"
+          style={{ bottom: 5 * artScale, width: 13 * artScale, height: 2 * artScale }}
+      >
+          <div className="absolute left-0 top-0" style={{ width: 12 * artScale, height: artScale, background: durabilityDimColor }} />
           <div
-              className="absolute left-0 top-0 h-0.5"
-              style={{ width: `${Math.round(durabilityFrac * 13) * 2}px`, background: durabilityColor }}
+              className="absolute left-0 top-0"
+              style={{ width: Math.round(durabilityFrac * 13) * artScale, height: artScale, background: durabilityColor }}
           />
       </div>
   ) : null;
@@ -223,7 +235,7 @@ export const Slot: React.FC<SlotProps> = ({
           const topTex = resolveTexture(parentType, 'top', 0, 1, 0, 0).texIdx;
           const frontTex = resolveTexture(parentType, 'front', 0, 0, 1, 0).texIdx;
           const leftTex = resolveTexture(parentType, 'left', -1, 0, 0, 0).texIdx;
-          const baseScale = size === 'large' ? 1.4 : 1.25;
+          const baseScale = size === 'small' ? 1.25 : 0.7 * artScale;
           const U = 16;
           // A fixed, readable orientation for the icon (step facing front-right).
           // Use a non-overlapping decomposition so faces don't seam: a slab is one
@@ -280,9 +292,9 @@ export const Slot: React.FC<SlotProps> = ({
           // Left Face (dx=-1) - Visual Left Side
           const leftTex = resolveTexture(item.type, 'left', -1, 0, 0, 0).texIdx;
           
-          const cubeSize = 16; 
+          const cubeSize = 16;
           const half = cubeSize / 2;
-          const baseScale = size === 'large' ? 1.4 : 1.25;
+          const baseScale = size === 'small' ? 1.25 : 0.7 * artScale;
           
           return (
               <div 
@@ -321,9 +333,10 @@ export const Slot: React.FC<SlotProps> = ({
           // 2D Item / Sprite Render
           // Draw synchronously from the generated atlas. The canvas renderer
           // snaps the 16px source to whole physical pixels.
-          // Keep the 16px source on an exact 2x grid. The next whole-pixel
-          // scale (48px) fills the slot edge-to-edge and reads oversized.
-          const pxSize = 32;
+          // Keep the 16px source on an exact whole-pixel grid: 2x in a 48px
+          // slot (3x would fill it edge-to-edge and read oversized), and the
+          // same two-thirds of a hotbar slot at the HUD's scale.
+          const pxSize = 16 * artScale;
           const texSlot = blockDef.textureSlot ?? 0;
           return (
               <PixelPerfectItemIcon
@@ -339,7 +352,7 @@ export const Slot: React.FC<SlotProps> = ({
         <div className="relative w-12 h-12 flex items-center justify-center pointer-events-none">
             {renderContent()}
             {item && item.count > 1 && (
-                <span className="absolute bottom-1 right-1 text-white text-[14px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,1)] select-none z-20">
+                <span className="atlas-count absolute bottom-0 right-[2px] select-none z-20">
                     {item.count}
                 </span>
             )}
@@ -347,6 +360,8 @@ export const Slot: React.FC<SlotProps> = ({
       );
   }
 
+  // Hotbar slots are sized in art pixels; the rest by their classes.
+  const hotbar = size === 'hotbar';
   return (
     <div 
         onClick={onClick}
@@ -359,35 +374,42 @@ export const Slot: React.FC<SlotProps> = ({
         onMouseUp={onMouseUp}
         className={`
             group relative flex items-center justify-center
-            ${size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
-            ${bare
-                ? 'pointer-events-none'
-                : 'cursor-pointer bg-[#8b8b8b] border-2 border-t-[#373737] border-l-[#373737] border-b-[#ffffff] border-r-[#ffffff]'}
+            ${hotbar ? '' : size === 'large' ? 'w-12 h-12' : 'w-9 h-9'}
+            ${bare ? 'pointer-events-none' : 'atlas-slot cursor-pointer'}
             ${selected ? 'z-10' : ''}
         `}
+        style={hotbar ? { width: 24 * artScale, height: 24 * artScale, borderWidth: bare ? undefined : artScale } : undefined}
     >
         <div ref={contentRef} className="pointer-events-none flex items-center justify-center">
             {renderContent()}
         </div>
 
         {!bare && (
-            <span className="absolute inset-0 z-10 pointer-events-none bg-white/30 opacity-0 group-hover:opacity-100" />
+            <span className="absolute inset-0 z-10 pointer-events-none bg-parchment-100/20 opacity-0 group-hover:opacity-100" />
         )}
 
         {!bare && cooldownFraction > 0 && (
             <span
                 data-resonant-cooldown="true"
-                className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-black/65 border-t border-white/25"
-                style={{ height: `${Math.round(Math.max(0, Math.min(1, cooldownFraction)) * 100)}%` }}
+                className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none bg-ink-950/70 border-t-2 border-parchment-300/40"
+                style={{ height: `${Math.round(Math.max(0, Math.min(1, cooldownFraction)) * 100)}%`, borderTopWidth: artScale }}
             />
         )}
 
-        {selected && !bare && (
-            <span className="absolute -inset-1 z-30 pointer-events-none border-4 border-white shadow-lg" />
+        {selected && !bare && selectionFrame && (
+            <span className="absolute -inset-1 z-30 pointer-events-none atlas-select-frame" />
         )}
 
         {item && item.count > 1 && (
-            <span className="absolute bottom-1 right-1 text-white text-[12px] font-bold drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] select-none pointer-events-none z-20">
+            <span
+                className="atlas-count absolute bottom-0 right-[2px] select-none pointer-events-none z-20"
+                style={hotbar ? {
+                    right: artScale,
+                    fontSize: 11 * artScale,
+                    lineHeight: `${11 * artScale}px`,
+                    textShadow: `${artScale}px ${artScale}px 0 #070917`,
+                } : undefined}
+            >
                 {item.count}
             </span>
         )}

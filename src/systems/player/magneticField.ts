@@ -243,6 +243,9 @@ export interface BossFieldSource extends Vector3Like {
     range: number;
     /** Peak acceleration (blocks/s²) at point-blank, falling off linearly. */
     force: number;
+    /** Top drift speed (blocks/s) at point-blank; defaults to BOSS_FIELD_MAX_DRIFT.
+     *  The Warden's Draw raises it so the pull reads as a real drag, not a nudge. */
+    maxDrift?: number;
 }
 
 /** Top drift speed (blocks/s) the field pushes the player to at point-blank. */
@@ -297,7 +300,7 @@ export function bossFieldVelocityDelta(
         // Ramp the player's speed along the push direction up to the target
         // drift, but never decelerate or overshoot, that is what makes it
         // air-safe. `force` controls how fast it ramps (blocks/s²).
-        const target = BOSS_FIELD_MAX_DRIFT * falloff;
+        const target = (s.maxDrift ?? BOSS_FIELD_MAX_DRIFT) * falloff;
         const along = vx * ux + vy * uy + vz * uz;
         let add = target - along;
         if (add <= 0) continue;

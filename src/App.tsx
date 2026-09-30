@@ -1,10 +1,16 @@
 
-import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo, startTransition } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useState, useEffect, useLayoutEffect, Suspense, useCallback, useRef, useMemo } from 'react';
+import { Canvas, useFrame, useThree, type RootState } from '@react-three/fiber';
 import * as THREE from 'three';
+import { capturePanoramaFaces, type CubeFaceKey } from './utils/capturePanorama';
 import { Analytics } from '@vercel/analytics/react';
 
-import { ChunkMesh, ChunkFadeTicker } from './components/ChunkMesh';
+import { ChunkField, ChunkFadeTicker, ChunkRegionBatches } from './components/ChunkMesh';
+import { TooltipHost } from './components/ui/kit/TooltipHost';
+import { chunkView } from './systems/world/chunkView';
+import { horizonView } from './systems/world/horizonView';
+import { HORIZON_QUALITY, MAX_RENDER_DISTANCE, MIN_RENDER_DISTANCE, effectiveHorizon, viewDistance } from './systems/world/viewDistance';
+import { HorizonTerrain } from './components/world/HorizonTerrain';
 import { Player, PlayerRefUpdater, PlayerHandle } from './components/Player';
 import { DropManager } from './components/DropManager';
 import { ParticleManager } from './components/ParticleManager';
@@ -14,17 +20,30 @@ import { Clouds } from './components/world/Clouds';
 import { InteractionController } from './components/controllers/InteractionController';
 import { InventoryUI } from './components/ui/InventoryUI';
 import { HUD } from './components/ui/HUD';
+import { HUD_SCALE } from './components/ui/hudScale';
 import { BossBar } from './components/ui/BossBar';
 import { BossConfirmModal } from './components/ui/BossConfirmModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
 import { UiNotice, type UiNoticeState } from './components/ui/UiNotice';
-import { PolarityIndicator } from './components/ui/PolarityIndicator';
 import { PolarityVignette } from './components/ui/PolarityVignette';
+import { LowHealthVignette } from './components/ui/LowHealthVignette';
+import { RenderPipeline } from './systems/graphics/pipeline/RenderPipeline';
+import { TONE_MAPPING, planPipeline, wantsContextAntialias } from './systems/graphics/pipeline/pipelinePlan';
+import { lowHealthState } from './systems/player/lowHealthState';
+import { resetMotionBlurHistory } from './systems/render/motionBlur';
+import { BossCompass } from './components/ui/BossCompass';
+import { motionStatus } from './systems/player/playerMotion';
+import {
+    viewRig, detachedCamera, nextDetachedStage, releaseDetachedCamera, type ViewMode,
+} from './systems/player/viewRig';
 import { CinematicOverlay } from './components/ui/CinematicOverlay';
 import { BossCinematic } from './components/BossCinematic';
 import { BellTitanCinematic } from './components/BellTitanCinematic';
 import { bossSummon } from './systems/boss/bossSummon';
+import { magneticWardenEncounter } from './systems/boss/MagneticWardenEncounter';
 import { bellTitanCinematic } from './systems/boss/bellTitanCinematic';
+import { wardenDefeat } from './systems/boss/wardenDefeat';
+import { WardenDefeatCinematic } from './components/WardenDefeatCinematic';
 import { MagneticFieldDebug } from './components/MagneticFieldDebug';
 import { EntityRenderer } from './components/EntityRenderer';
 import { entityManager, BOSS_DEFEAT_ALTAR_DELAY_MS } from './systems/entities/EntityManager';
@@ -33,11 +52,12 @@ import { ENTITY_KINDS } from './systems/entities/Entity';
 import { getMaxDurability } from './systems/registry/itemStats';
 import { createEmptyEquipment, applyArmor, damageArmor, slotForItem, hasPolarityBoots, hasUpgradedPolarityBoots, isWearingIronArmor, EQUIPMENT_SLOTS, type Equipment } from './systems/registry/equipment';
 import { extractEquipmentItems } from './systems/registry/equipmentLifecycle';
-import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges, stripArenaClimbMagnets } from './systems/world/magneticArena';
+import { getShieldCrystalPositions, restoreArenaDais, restoreArenaBridges } from './systems/world/magneticArena';
 import type { MagneticMode } from './systems/player/magnetism';
 import { BLOCKS } from './data/blocks';
 import { PauseMenu } from './components/ui/PauseMenu';
 import { MainMenu } from './components/ui/MainMenu';
+import { PlayerModel } from './components/PlayerModel';
 import { HeldItem } from './components/HeldItem';
 import { Chat, ChatMessage } from './components/ui/Chat';
 import { DeathScreen } from './components/ui/DeathScreen';
@@ -55,19 +75,32 @@ import { shouldUseCaveMusic } from './systems/sound/caveMusic';
 import { GameLoop } from './components/GameLoop';
 import { FPSLimiter } from './components/FPSLimiter';
 import { RenderStats } from './components/RenderStats';
+import { DevQaProbe } from './components/DevQaProbe';
+import { useGraphicsSettings } from './systems/graphics/graphicsStore';
+import { setVoxelStyle } from './systems/graphics/materials/voxelMaterial';
+import { AmbientParticles } from './components/world/AmbientParticles';
+import { CRACK_STAGES, crackStage, createCrackMaterial } from './systems/fx/crackMaterial';
+import { MINING_STRIKE_AT, MINING_SWING_SECONDS } from './systems/fx/blockChips';
+import { playerMining } from './systems/combat/playerAttack';
+import { lowerPreset } from './systems/graphics/graphicsSettings';
+import { installDevQa, registerDevQaHandles } from './systems/debug/devQa';
 import { isEditableElement } from './utils/dom';
 
 import { worldManager } from './systems/WorldManager';
 import { resonantVaultRuntime } from './systems/world/ResonantVaultRuntime';
 import { progression } from './systems/progression/ProgressionStore';
 import { gameEvents } from './systems/events/GameEvents';
+import { isKeyFor, keyLabelFor } from './systems/player/keyBindingStore';
+import { CoordinatesReadout } from './components/ui/CoordinatesReadout';
+import { HOTBAR_KEY_ACTIONS, type KeyAction } from './systems/player/keyBindings';
 import { getAllRegions, getRegionById, getRegionAt } from './systems/world/regions';
 import { WorldStorage } from './systems/world/WorldStorage';
 import { requestPersistentStorage } from './systems/world/storage/storagePersistence';
 import { BIOMES, getBiome } from './systems/world/biomes';
 import { textureAtlasManager } from './systems/textures/TextureAtlasManager';
 import { RENDER_DISTANCE as DEFAULT_RENDER_DISTANCE, CHUNK_SIZE, WORKERS_ENABLED, DROP_LIFETIME_MS } from './constants';
-import { MAX_BREATH } from './systems/player/playerConstants';
+import { MAX_BREATH, EYE_HEIGHT_STANDING } from './systems/player/playerConstants';
+import { serializeDrops, restoreDrops } from './systems/world/dropPersistence';
 import {
   type BreakingVisual,
   type GameMode,
@@ -76,33 +109,57 @@ import {
   ItemStack,
   Drop,
 } from './types';
+import type { Recipe } from './recipes';
 import { useInventoryController } from './hooks/useInventoryController';
 import { createFoodState } from './systems/player/playerFood';
-import { resetInputState } from './systems/player/playerInput';
+import { inputState, resetInputState } from './systems/player/playerInput';
 import { loadGenConfig, normalizeGenConfigSnapshot, resetGenConfig, type WorldGenConfigSnapshot } from './systems/world/genConfig';
 import { clearBloodMoonOverride, getLunarNightEventState, getMoonCycleIndex, hasBloodMoonOverride, isBloodMoonMusicActive, setBloodMoonOverride } from './systems/world/celestialEvents';
 import { deleteWebPanoramaBlob, readWebPanoramaBlob, saveWebPanoramaBlob } from './systems/storage/webPanoramaBlobStore';
 import { soundManager } from './systems/sound/SoundManager';
 import { musicController } from './systems/sound/MusicController';
 import { DEFAULT_SOUND_MANIFEST } from './systems/sound/soundDefaults';
-import { getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
+import { ALWAYS_ALLOWED_COMMANDS, getAutocompleteCandidates, type CommandAutocompleteOptions } from './data/commands';
+import {
+    BUILT_IN_MENU_PANORAMAS,
+    DEFAULT_MENU_PANORAMA,
+    MENU_PANORAMA_LIBRARY_KEY,
+    MENU_PANORAMA_PATH_KEY,
+    getBuiltInMenuPanorama,
+    readStoredMenuPanoramaPath,
+} from './data/menuPanoramas';
 import { getSpawnSearchCenter } from './utils/noise';
 
 type AppState = 'menu' | 'options' | 'loading' | 'game' | 'chunkbase' | 'featureEditor';
-type RenderedChunk = { cx: number; cz: number };
 
 const MENU_BACKGROUND_MODE_KEY = 'atlas.menu.backgroundMode';
-const MENU_PANORAMA_PATH_KEY = 'atlas.menu.panoramaPath';
-const MENU_PANORAMA_LIBRARY_KEY = 'atlas.menu.panoramaLibrary';
 const MENU_PANORAMA_DATA_KEY = 'atlas.menu.panoramaDataUrl';
 const MENU_PANORAMA_BLUR_KEY = 'atlas.menu.panoramaBlur';
 const MENU_PANORAMA_GRADIENT_KEY = 'atlas.menu.panoramaGradient';
 const MENU_PANORAMA_ROTATION_SPEED_KEY = 'atlas.menu.panoramaRotationSpeed';
-const PANORAMA_CAPTURE_KEY = 'F8';
+/** Function keys whose browser shortcuts (help, find, reload, caret browsing) stay blocked whatever they are bound to. */
+const BLOCKED_BROWSER_KEYS: ReadonlySet<string> = new Set(['F1', 'F3', 'F5', 'F6', 'F7']);
+
 const WEB_PANORAMA_PREFIX = 'web:';
-const DEFAULT_MENU_PANORAMA_URL = './assets/panoramas/alpha-1.0.1.png';
-const DEFAULT_PANORAMA_ID = 'default:alpha-1.0.1';
+const DEFAULT_MENU_PANORAMA_URL = DEFAULT_MENU_PANORAMA.url;
+const DEFAULT_PANORAMA_ID = DEFAULT_MENU_PANORAMA.id;
 const toCommandArgument = (name: string) => name.toLowerCase().trim().replace(/\s+/g, '_');
+/**
+ * Resolve an item by its display name for the chat commands. Spaces and
+ * underscores are both accepted, so "polarity boots" (what the HUD calls it)
+ * and "polarity_boots" (what autocomplete offers) both find the same item.
+ */
+const normalizeItemName = (label: string) => label.toLowerCase().replace(/[\s_]+/g, '');
+const findBlockByName = (label: string): BlockType | null => {
+    const norm = normalizeItemName(label);
+    if (!norm) return null;
+    for (const key in BLOCKS) {
+        const t = Number(key) as BlockType;
+        const def = BLOCKS[t];
+        if (def?.name && normalizeItemName(def.name) === norm) return t;
+    }
+    return null;
+};
 const commandItems = Array.from(new Set(
     Object.values(BLOCKS)
         .filter(Boolean)
@@ -125,13 +182,11 @@ const SETTINGS_RENDER_DISTANCE_KEY = 'atlas.settings.renderDistance';
 const SETTINGS_FOV_KEY = 'atlas.settings.fov';
 const SETTINGS_BRIGHTNESS_KEY = 'atlas.settings.brightness';
 const SETTINGS_WORKERS_ENABLED_KEY = 'atlas.settings.workersEnabled';
-const SETTINGS_SHADOWS_ENABLED_KEY = 'atlas.settings.shadowsEnabled';
-const SETTINGS_CLOUDS_ENABLED_KEY = 'atlas.settings.cloudsEnabled';
-const SETTINGS_MIPMAPS_ENABLED_KEY = 'atlas.settings.mipmapsEnabled';
-const SETTINGS_ANTIALIASING_KEY = 'atlas.settings.antialiasing';
+// Shadows, clouds, mipmaps, antialiasing, chunk fade and motion blur moved into
+// the graphics store (atlas.settings.graphics.v1); their old keys are only read
+// once, by migrateLegacyGraphics, on the first launch of this build.
 const SETTINGS_MAX_FPS_KEY = 'atlas.settings.maxFps';
 const SETTINGS_VSYNC_KEY = 'atlas.settings.vsync';
-const SETTINGS_CHUNK_FADE_ENABLED_KEY = 'atlas.settings.chunkFadeEnabled';
 
 const readNumberSetting = (key: string, fallback: number, min?: number, max?: number) => {
     if (typeof window === 'undefined') return fallback;
@@ -149,10 +204,49 @@ const readBooleanSetting = (key: string, fallback: boolean) => {
     return raw === 'true';
 };
 
+// --- Shadow style switches ---
+// three builds each material's shader for the shadow map type it first sees and
+// keeps it (it only rebuilds for VSM), so switching Soft and Pixel shadows has
+// to ask every material in the scene to recompile.
+const ShadowTypeSync: React.FC<{ type: THREE.ShadowMapType }> = ({ type }) => {
+    const { scene, gl } = useThree();
+    const applied = useRef(type);
+    useEffect(() => {
+        if (applied.current === type) return;
+        applied.current = type;
+        scene.traverse((object) => {
+            const material = (object as THREE.Mesh).material;
+            if (!material) return;
+            for (const each of Array.isArray(material) ? material : [material]) each.needsUpdate = true;
+        });
+        gl.shadowMap.needsUpdate = true;
+    }, [type, scene, gl]);
+    return null;
+};
+
+// --- Camera reach ---
+// The far plane follows how far the world is drawn (the horizon and the
+// clouds reach past the chunks), never nearer than the old 1000 blocks.
+const CameraReach: React.FC<{ renderDistance: number }> = ({ renderDistance }) => {
+    const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
+    useEffect(() => {
+        const far = Math.max(1000, (renderDistance + 24) * CHUNK_SIZE);
+        if (camera.far === far) return;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+    }, [camera, renderDistance]);
+    return null;
+};
+
 // --- Streaming Loop Component ---
-const ChunkStreamer: React.FC<{ active: boolean }> = React.memo(({ active }) => {
+// Applies finished chunks a few milliseconds' worth a frame, then hands out
+// new jobs. Behind the loading screen nothing waits on frames, so it takes
+// far more a frame there and the world comes in sooner.
+const ChunkStreamer: React.FC<{ active: boolean; loading: boolean }> = React.memo(({ active, loading }) => {
     useFrame(() => {
         if (!active) return;
+        if (loading) worldManager.applyWorkerResults(12, 64);
+        else worldManager.applyWorkerResults(3, 6);
         worldManager.processStreamingJobs();
     });
     return null;
@@ -170,14 +264,16 @@ const setBreakingVisualDirect: React.Dispatch<React.SetStateAction<BreakingVisua
 const BREAKING_COLOR_NORMAL = new THREE.Color('#000000');
 const BREAKING_COLOR_NO_DROP = new THREE.Color('#4b0000');
 
+// Pixel cracks that spread across the block in ten stages as it weakens, and
+// flare for an instant each time a swing lands (systems/fx/crackMaterial.ts).
 const BreakingVisualMesh: React.FC<{ suspended: boolean }> = ({ suspended }) => {
     const meshRef = useRef<THREE.Mesh>(null);
-    const matRef = useRef<THREE.MeshBasicMaterial>(null);
+    const material = useMemo(() => createCrackMaterial(), []);
+    useEffect(() => () => material.dispose(), [material]);
 
     useFrame(() => {
         const mesh = meshRef.current;
-        const mat = matRef.current;
-        if (!mesh || !mat) return;
+        if (!mesh) return;
         const v = suspended ? null : breakingVisualStore.value;
         if (!v) {
             mesh.visible = false;
@@ -185,14 +281,18 @@ const BreakingVisualMesh: React.FC<{ suspended: boolean }> = ({ suspended }) => 
         }
         mesh.visible = true;
         mesh.position.set(v.pos[0] + 0.5, v.pos[1] + 0.5, v.pos[2] + 0.5);
-        mat.color.copy(v.noDrop ? BREAKING_COLOR_NO_DROP : BREAKING_COLOR_NORMAL);
-        mat.opacity = v.progress * 0.7;
+        const u = material.uniforms;
+        u.uTint.value.copy(v.noDrop ? BREAKING_COLOR_NO_DROP : BREAKING_COLOR_NORMAL);
+        u.uStage.value = crackStage(v.progress) / CRACK_STAGES;
+        u.uSeed.value.set(v.pos[0], v.pos[1], v.pos[2]);
+        // The flare peaks as the chop lands (halfway through each swing) and fades.
+        const swing = (playerMining.elapsed % MINING_SWING_SECONDS) / MINING_SWING_SECONDS;
+        u.uStrike.value = playerMining.active ? Math.max(0, 1 - Math.abs(swing - MINING_STRIKE_AT - 0.08) / 0.18) : 0;
     });
 
     return (
-        <mesh ref={meshRef} visible={false}>
+        <mesh ref={meshRef} visible={false} material={material}>
             <boxGeometry args={[1.01, 1.01, 1.01]} />
-            <meshBasicMaterial ref={matRef} transparent opacity={0} depthTest={true} depthWrite={false} />
         </mesh>
     );
 };
@@ -227,22 +327,6 @@ function waitForAnimationFrames(count: number) {
     });
 }
 
-async function waitForFovToSettle(getCurrentFov: () => number, targetFov: number, maxFrames = 120) {
-    let stableFrames = 0;
-    for (let frame = 0; frame < maxFrames; frame += 1) {
-        await waitForAnimationFrames(1);
-        const current = getCurrentFov();
-        if (Math.abs(current - targetFov) < 0.25) {
-            stableFrames += 1;
-            if (stableFrames >= 3) return;
-        } else {
-            stableFrames = 0;
-        }
-    }
-}
-
-type CubeFaceKey = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
-
 function buildPanoramaAtlas(faces: Record<CubeFaceKey, HTMLCanvasElement>, faceSize: number): string {
     const atlas = document.createElement('canvas');
     atlas.width = faceSize * 4;
@@ -276,8 +360,14 @@ const App: React.FC = () => {
     const [bootReady, setBootReady] = useState(false);
   const [loadingState, setLoadingState] = useState({ phase: '', percent: 0, details: '' });
   
-  const [chunks, setChunks] = useState<{ cx: number; cz: number }[]>([]);
   const [drops, setDrops] = useState<Drop[]>([]);
+  // Latest drops for saving (drops are mutated in place by DropManager, so the
+  // array's entries are always current). Drops spawned this same tick, before
+  // React commits them, are held in spawnedDropsRef so a save right after (quit
+  // straight after a kill) still includes them.
+  const dropsRef = useRef<Drop[]>([]);
+  const spawnedDropsRef = useRef<Drop[]>([]);
+  useEffect(() => { dropsRef.current = drops; spawnedDropsRef.current = []; }, [drops]);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [isPaused, setIsPaused] = useState(false); 
@@ -304,17 +394,33 @@ const App: React.FC = () => {
   const daisRestoreRef = useRef<{ id: number; run: () => void } | null>(null);
   // True while handleStartGame is running (guards against double-click double-open).
   const startingWorldRef = useRef(false);
-  // True while the towers' magnet climb faces are present (placed for a fight, until
-  // stripped at 50% or on reset), so we never strip/place redundantly.
-  const climbMagnetsActiveRef = useRef(false);
+  // The player's current magnetic mode, readable from fixed-step entity ticks
+  // (the polarity rule needs to know whether the player controls a polarity).
+  const magneticModeRef = useRef<MagneticMode>('none');
+  // First person, the free third person (F5) and the welded one (F6). A boss fight
+  // switches to third person on its own when neither is already on, and hands the
+  // previous view back when it ends; the held item hides behind the camera in
+  // third person (the body model carries the pose instead).
+  const [, setViewMode] = useState<ViewMode>(viewRig.mode);
+  const preFightViewRef = useRef<ViewMode | null>(null);
   // When on, death does not drop/clear the inventory (the /keepinventory command).
   const [keepInventory, setKeepInventory] = useState(false);
+  // Whether cheat commands work in this world (World Options / world creation).
+  const [allowCommands, setAllowCommands] = useState(true);
+  // Whether the HUD shows the player's position (World Options).
+  const [showCoordinates, setShowCoordinates] = useState(false);
+  // The main menu opens on this view (Options > Menu Background).
+  const [menuInitialView, setMenuInitialView] = useState<'main' | 'settings'>('main');
+  // The open world's name and seed, for World Options.
+  const [worldInfo, setWorldInfo] = useState<{ name: string; seed: string } | null>(null);
   // Entity id of the boat the player is riding, or null. Boats are real world
   // entities (placed, boarded, broken, persisted); see the boat handlers below.
   const [ridingBoatId, setRidingBoatId] = useState<number | null>(null);
   const [isSleeping, setIsSleeping] = useState(false);
     const pendingBedSpawnRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [hudHidden, setHudHidden] = useState(false);
+  const gameRendererRef = useRef<RootState | null>(null);
   const [showMagneticFields, setShowMagneticFields] = useState(false);
   const [showAtlasViewer, setShowAtlasViewer] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -322,7 +428,7 @@ const App: React.FC = () => {
   const [pendingPanoramaDelete, setPendingPanoramaDelete] = useState<{ filePath: string; fileName: string } | null>(null);
     const [openOptionsInHelp, setOpenOptionsInHelp] = useState(false);
 
-    const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, 4, 48));
+    const [renderDistance, setRenderDistance] = useState(() => readNumberSetting(SETTINGS_RENDER_DISTANCE_KEY, DEFAULT_RENDER_DISTANCE, MIN_RENDER_DISTANCE, MAX_RENDER_DISTANCE));
     const [fov, setFov] = useState(() => readNumberSetting(SETTINGS_FOV_KEY, 70, 30, 110));
     const [brightness, setBrightness] = useState(() => readNumberSetting(SETTINGS_BRIGHTNESS_KEY, 0.5, 0, 1)); 
   
@@ -331,19 +437,39 @@ const App: React.FC = () => {
   const [commandValue, setCommandValue] = useState('');
   
     const [workersEnabled] = useState(() => readBooleanSetting(SETTINGS_WORKERS_ENABLED_KEY, WORKERS_ENABLED));
-    const [shadowsEnabled, setShadowsEnabled] = useState(() => readBooleanSetting(SETTINGS_SHADOWS_ENABLED_KEY, false));
-    const [cloudsEnabled, setCloudsEnabled] = useState(() => readBooleanSetting(SETTINGS_CLOUDS_ENABLED_KEY, true));
-    const [mipmapsEnabled, setMipmapsEnabled] = useState(() => readBooleanSetting(SETTINGS_MIPMAPS_ENABLED_KEY, true));
-    const [antialiasing, setAntialiasing] = useState(() => readBooleanSetting(SETTINGS_ANTIALIASING_KEY, true));
-    const [chunkFadeEnabled, setChunkFadeEnabled] = useState(() => readBooleanSetting(SETTINGS_CHUNK_FADE_ENABLED_KEY, true));
-  
+    // Graphics options come from the quality preset plus the player's overrides
+    // (systems/graphics/graphicsStore.ts). Motion blur is off in every preset,
+    // so it stays off until the player turns it on.
+    const graphics = useGraphicsSettings();
+    // Past the chunks, the horizon (horizon/) out to the Horizon Distance, at
+    // the detail of the chosen preset; and how far anything is drawn at all.
+    const horizonDistance = effectiveHorizon(renderDistance, graphics.config.horizon);
+    const horizonQuality = HORIZON_QUALITY[graphics.state.preset];
+    const drawDistance = viewDistance(renderDistance, graphics.config.horizon);
+    const shadowsEnabled = graphics.config.shadows !== 'off';
+    const mipmapsEnabled = graphics.config.mipmaps;
+    // Bloom, god rays or motion blur put a post pipeline in charge of the frame
+    // (systems/graphics/pipeline); without them R3F draws straight to the canvas.
+    // The pipeline brings its own MSAA or FXAA, so the context only needs MSAA
+    // when there is no pipeline.
+    const pipelinePlan = useMemo(() => planPipeline(graphics.config, { maxSamples: 4 }), [graphics.config]);
+    const antialiasing = wantsContextAntialias(graphics.config, pipelinePlan);
+    const chunkFadeEnabled = graphics.config.chunkFade;
+    // Pixel shadows (the Shadow Style option) take one hard lookup per texture
+    // pixel (voxelMaterial.ts); Soft filters them, lighter-weight on Low.
+    const shadowMapType = graphics.config.shadowStyle === 'pixel'
+        ? THREE.BasicShadowMap
+        : graphics.config.shadows === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    const classicStyle = graphics.config.visualStyle === 'classic';
+    // Wind and water detail are uniforms on the shared chunk materials: no recompile.
+    const foliageWind = graphics.config.foliageWind;
+    const fancyWater = graphics.config.water === 'fancy';
+    useEffect(() => { setVoxelStyle({ wind: foliageWind, fancyWater }); }, [foliageWind, fancyWater]);
+
     const [maxFps, setMaxFps] = useState(() => readNumberSetting(SETTINGS_MAX_FPS_KEY, 260, 10, 260)); 
     const [vsync, setVsync] = useState(() => readBooleanSetting(SETTINGS_VSYNC_KEY, true)); 
     const [menuBackgroundMode, setMenuBackgroundMode] = useState<'dirt' | 'panorama'>('panorama');
-  const [menuPanoramaPath, setMenuPanoramaPath] = useState<string | null>(() => {
-      if (typeof window === 'undefined') return null;
-      return window.localStorage.getItem(MENU_PANORAMA_PATH_KEY);
-  });
+  const [menuPanoramaPath, setMenuPanoramaPath] = useState<string | null>(readStoredMenuPanoramaPath);
   const [menuPanoramaLibrary, setMenuPanoramaLibrary] = useState<string[]>(() => {
       if (typeof window === 'undefined') return [];
       try {
@@ -357,6 +483,10 @@ const App: React.FC = () => {
   });
         const [menuPanoramaDataUrl, setMenuPanoramaDataUrl] = useState<string | null>(() => {
             if (typeof window === 'undefined') return DEFAULT_MENU_PANORAMA_URL;
+            const savedPath = readStoredMenuPanoramaPath();
+            if (!savedPath) return DEFAULT_MENU_PANORAMA_URL;
+            const builtIn = getBuiltInMenuPanorama(savedPath);
+            if (builtIn) return builtIn.url;
             return window.localStorage.getItem(MENU_PANORAMA_DATA_KEY) || DEFAULT_MENU_PANORAMA_URL;
         });
         const [menuPanoramaBlur, setMenuPanoramaBlur] = useState<number>(() => {
@@ -390,8 +520,11 @@ const App: React.FC = () => {
 
   const isNativeLoop = vsync;
   const canvasFrameloop = isNativeLoop ? 'always' : 'never';
-  // Include antialiasing in the key to force WebGL context recreation when changed
-  const canvasKey = `${canvasFrameloop}-${antialiasing}`;
+  // The context's MSAA flag can only be set at creation, so it lives in its own
+  // state and changes through safeSetSetting (below), which parks the player at
+  // their current position before the Canvas is recreated.
+  const [contextAntialias, setContextAntialias] = useState(antialiasing);
+  const canvasKey = `${canvasFrameloop}-${contextAntialias}`;
   const effectiveMaxFps = maxFps;
 
   const dayNightRef = useRef<DayNightCycleRef>(null);
@@ -411,53 +544,6 @@ const App: React.FC = () => {
 
   const isDead = health <= 0;
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
-  const renderedChunks: RenderedChunk[] = chunks;
-
-  // ── Chunk fade-out tracking ──
-  // We keep departing chunks in the render list so their ChunkMesh can animate out.
-  // Using refs mutated inside useMemo guarantees no one-frame gap where a chunk
-  // vanishes and then reappears as fading (which would unmount+remount and lose geometry).
-  const prevRenderedKeysRef = useRef<Map<string, RenderedChunk>>(new Map());
-  const fadingOutMapRef = useRef<Map<string, RenderedChunk>>(new Map());
-  const [fadingVersion, setFadingVersion] = useState(0);
-
-  const allDisplayedChunks = useMemo(() => {
-      void fadingVersion;
-      const currentKeys = new Set(renderedChunks.map(c => `${c.cx},${c.cz}`));
-
-      // Detect newly departed chunks
-      if (chunkFadeEnabled) {
-          for (const [key, chunk] of prevRenderedKeysRef.current) {
-              if (!currentKeys.has(key) && !fadingOutMapRef.current.has(key)) {
-                  fadingOutMapRef.current.set(key, chunk);
-              }
-          }
-      }
-
-      // Remove fading chunks that returned to active, or all if fade disabled
-      if (!chunkFadeEnabled) {
-          fadingOutMapRef.current.clear();
-      } else {
-          for (const key of fadingOutMapRef.current.keys()) {
-              if (currentKeys.has(key)) {
-                  fadingOutMapRef.current.delete(key);
-              }
-          }
-      }
-
-      prevRenderedKeysRef.current = new Map(renderedChunks.map(c => [`${c.cx},${c.cz}`, c]));
-
-      const result: (RenderedChunk & { fadingOut: boolean })[] = [
-          ...renderedChunks.map(c => ({ ...c, fadingOut: false })),
-          ...[...fadingOutMapRef.current.values()].map(c => ({ ...c, fadingOut: true }))
-      ];
-      return result;
-  }, [renderedChunks, chunkFadeEnabled, fadingVersion]);
-
-  const handleChunkFadeOutComplete = useCallback((cx: number, cz: number) => {
-      fadingOutMapRef.current.delete(`${cx},${cz}`);
-      setFadingVersion(v => v + 1);
-  }, []);
 
     const isElectron = useMemo(() => {
         return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf(' electron/') > -1;
@@ -502,7 +588,8 @@ const App: React.FC = () => {
       craftingGrid3x3, setCraftingGrid3x3,
       craftingOutput,
       handleInventoryAction,
-      addToInventory
+      addToInventory,
+      fillRecipe,
   } = useInventoryController({ 
       gameMode, 
       setDrops, 
@@ -511,6 +598,26 @@ const App: React.FC = () => {
       equipment,
       setEquipment,
   });
+
+  // Every item the player has held, saved with the world: the recipe book
+  // shows the recipes these go into.
+  const knownItemsRef = useRef<Set<BlockType>>(new Set());
+  const [knownItems, setKnownItems] = useState<ReadonlySet<BlockType>>(() => new Set());
+  useEffect(() => {
+      const known = knownItemsRef.current;
+      let learned = false;
+      const note = (stack: ItemStack | null | undefined) => {
+          if (stack && !known.has(stack.type)) { known.add(stack.type); learned = true; }
+      };
+      inventory.forEach(note);
+      note(cursorStack);
+      Object.values(equipment).forEach(note);
+      if (learned) setKnownItems(new Set(known));
+  }, [inventory, cursorStack, equipment]);
+  const recipeBook = useMemo(() => ({
+      known: gameMode === 'creative' ? 'all' as const : knownItems,
+      onFill: (recipe: Recipe, all: boolean) => { if (fillRecipe(recipe, all)) soundManager.play('ui.click', { pitch: 1.2 }); },
+  }), [gameMode, knownItems, fillRecipe]);
 
   const isInventoryOpenRef = useRef(false);
   const isCommandOpenRef = useRef(false);
@@ -536,11 +643,11 @@ const App: React.FC = () => {
                 const nextRender = renderChunkOffsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz }));
 
                 worldManager.setDesiredChunks(nextDesired);
-
-                startTransition(() => {
-                    setChunks(nextRender);
-                });
-            }, [desiredChunkOffsets, renderChunkOffsets]);
+                // The scene's chunk field follows this list itself (chunkView.ts),
+                // and the horizon draws past it (horizonView.ts).
+                chunkView.set(nextRender);
+                horizonView.set({ cx, cz, renderDistance, horizon: horizonDistance, quality: horizonQuality });
+            }, [desiredChunkOffsets, renderChunkOffsets, renderDistance, horizonDistance, horizonQuality]);
 
   // Sync currentSpawnPos with Player logic for safe reloading of Canvas
   const safeSetSetting = useCallback(<T,>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
@@ -549,6 +656,38 @@ const App: React.FC = () => {
       }
       setter(value);
   }, [appState]);
+
+  // A graphics change that needs a new WebGL context (MSAA on/off) goes through
+  // the same safe path as the VSync toggle.
+  useEffect(() => {
+      if (antialiasing !== contextAntialias) safeSetSetting(setContextAntialias, antialiasing);
+  }, [antialiasing, contextAntialias, safeSetSetting]);
+
+  // The first session on a new build picks a preset from the GPU. If that pick
+  // runs slowly, say so once, suggesting one step down. Never lowered silently.
+  const fpsHintShownRef = useRef(false);
+  const autoPickedPreset = graphics.autoDetected && graphics.quality !== 'custom' ? graphics.state.preset : null;
+  useEffect(() => {
+      if (appState !== 'game' || !autoPickedPreset || fpsHintShownRef.current) return;
+      const suggestion = lowerPreset(autoPickedPreset);
+      if (!suggestion) return;
+      const samples: number[] = [];
+      const timer = window.setInterval(() => {
+          // Skip the first seconds of chunk streaming, then average one minute.
+          samples.push(fpsRef.current);
+          if (samples.length < 70) return;
+          window.clearInterval(timer);
+          const measured = samples.slice(10);
+          const average = measured.reduce((sum, fps) => sum + fps, 0) / measured.length;
+          if (average >= 40) return;
+          fpsHintShownRef.current = true;
+          setAppNotice({
+              type: 'info',
+              message: `Running at about ${Math.round(average)} fps. The ${suggestion[0].toUpperCase()}${suggestion.slice(1)} graphics preset may play smoother (Options > Video Settings).`,
+          });
+      }, 1000);
+      return () => window.clearInterval(timer);
+  }, [appState, autoPickedPreset]);
 
   useEffect(() => {
       if (appState === 'game' && playerPosRef.current && Number.isFinite(playerPosRef.current.x)) {
@@ -578,6 +717,7 @@ const App: React.FC = () => {
   // drowning), which armor does not reduce.
   const applyRawDamage = useCallback((d: number) => {
       if (gameMode !== 'survival' || d <= 0) return;
+      gameEvents.emit('player:damaged', { amount: d });
       setHealth(h => {
           const newHealth = Math.max(0, h - d);
           if (newHealth > 0) { soundManager.play('entity.player.hurt'); setLastDamageTime(Date.now()); }
@@ -612,6 +752,11 @@ const App: React.FC = () => {
           // Authored hazard recovery uses the same physics-safe teleport path as
           // commands and respawn, which also clears velocity and fall distance.
           (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
+          // The polarity rule: +1 / -1 with Polarity Boots, 0 (neutral) without.
+          () => (magneticModeRef.current === 'controlled' ? inputState.magneticPolarity : 0),
+          // The kit's invulnerability windows (a roll's i-frames, a dash, a leap):
+          // every attack, bolt, ring and contact hit passes through.
+          () => motionStatus.invulnerable,
       );
   }, [damagePlayer]);
 
@@ -627,6 +772,7 @@ const App: React.FC = () => {
   const magneticMode: MagneticMode = controllable
       ? 'controlled'
       : (!magnetShielded && isWearingIronArmor(equipment) ? 'ferro' : 'none');
+  magneticModeRef.current = magneticMode;
   // Polarity boots soften falls while the ability is active; the upgraded pair
   // softens them further. 1 = no reduction.
   const fallDamageFactor = magneticMode === 'controlled'
@@ -670,10 +816,12 @@ const App: React.FC = () => {
       const worldSpawn = worldManager.getWorldSpawn();
       const progressionData = progression.serialize();
       const boatsData = entityManager.serializeBoats();
+      const pendingDrops = spawnedDropsRef.current.filter((d) => !dropsRef.current.includes(d));
+      const dropsData = serializeDrops(pendingDrops.length > 0 ? [...dropsRef.current, ...pendingDrops] : dropsRef.current, DROP_LIFETIME_MS);
 
       // Change-detection: skip the metadata write + chunk flush when an autosave
       // tick finds nothing dirty and no player/world change since the last save.
-      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData });
+      const signature = JSON.stringify({ playerData, spawnPoint, worldSpawn, progressionData, boatsData, dropsData, gameMode, allowCommands, keepInventory, showCoordinates, known: knownItems.size });
       if (!opts?.force && !worldManager.hasUnsavedChunks() && signature === lastSaveSignatureRef.current) {
           return;
       }
@@ -689,6 +837,10 @@ const App: React.FC = () => {
           meta.lastPlayed = Date.now();
           meta.time = worldManager.getTime();
           meta.gameMode = gameMode; // persist command-driven gamemode changes
+          meta.allowCommands = allowCommands;
+          meta.keepInventory = keepInventory;
+          meta.showCoordinates = showCoordinates;
+          meta.knownItems = [...knownItemsRef.current];
           meta.player = playerData;
           meta.spawnPoint = spawnPoint;
           meta.worldSpawn = worldSpawn;
@@ -701,6 +853,7 @@ const App: React.FC = () => {
               }
           }
           meta.boats = boatsData;
+          meta.drops = dropsData;
           await WorldStorage.saveWorldMeta(meta);
           await worldManager.forceSave(); // Save chunks
           lastSaveSignatureRef.current = signature;
@@ -714,7 +867,7 @@ const App: React.FC = () => {
               worldManager.log(`World save failed: your latest progress may not be saved. (${msg})`, 'error');
           }
       }
-  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack]);
+  }, [inventory, health, hunger, saturation, breath, gameMode, selectedSlot, equipment, cursorStack, allowCommands, keepInventory, showCoordinates, knownItems]);
 
   // Auto-save timer. saveGame's identity changes on every inventory/health/breath
   // update, so depending on it directly restarted the interval constantly and starved
@@ -766,6 +919,15 @@ const App: React.FC = () => {
           setFatalError(event.message || "Unknown Error");
       };
       const handleRejection = (event: PromiseRejectionEvent) => {
+          // The browser may refuse a pointer lock (just after Escape, in a window
+          // without focus); requestPointerLock's promise then rejects. That is no
+          // failure: the game stays unlocked until the next click.
+          const reason = event.reason as { name?: string; message?: string } | undefined;
+          if (reason?.name && /pointer lock|exited the lock/i.test(reason.message ?? '')) {
+              console.warn("Pointer lock refused:", reason.message);
+              event.preventDefault();
+              return;
+          }
           console.error("Unhandled Rejection:", event.reason);
           setFatalError(typeof event.reason === 'string' ? event.reason : (event.reason?.message || "Promise Rejected"));
       };
@@ -915,7 +1077,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
       const unsub = worldManager.subscribeToDrops((stack, x, y, z) => {
-          setDrops(p => [...p, {
+          const drop: Drop = {
                 id: Math.random().toString(), 
                 type: stack.type,
                 count: stack.count,
@@ -925,7 +1087,9 @@ const App: React.FC = () => {
                 createdAt: Date.now(),
                 pickupDelay: Date.now() + 500,
                 age: 0,
-          }]);
+          };
+          spawnedDropsRef.current.push(drop);
+          setDrops(p => [...p, drop]);
       });
       return unsub;
   }, []);
@@ -1000,11 +1164,8 @@ const App: React.FC = () => {
       if (!a) return;
       summonArenaRef.current = null;
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      // Never leave the magnet climb faces on the walls after a fight.
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
+      // (The encounter itself strips the towers' magnet climb faces and any
+      // standing crystals when the boss leaves, defeated or not.)
       const restoreDais = () => restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       if (daisDelayMs > 0) {
           // Tracked (id + the restore itself) so quitting the world inside the
@@ -1040,8 +1201,13 @@ const App: React.FC = () => {
           daisRestoreRef.current = null;
           flush();
       }
+      // Same for the defeated Warden's loot, which lands after the dais rebuilds,
+      // so the save we are about to make keeps it.
+      entityManager.flushPendingLoot();
       bossSummon.cancel();
+      releaseDetachedCamera();
       bellTitanCinematic.cancel();
+      wardenDefeat.cancel();
       setCinematicMode(false);
       // Despawns a live boss (clears its crystals + fires boss:cleared → restores
       // the arena and nulls the ref). If there was no live boss (e.g. quit during
@@ -1054,10 +1220,6 @@ const App: React.FC = () => {
       worldManager.setBlocks(crystals.map((c) => ({ x: c.x, y: c.y, z: c.z, type: BlockType.AIR })));
       restoreArenaDais(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
       restoreArenaBridges(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      if (climbMagnetsActiveRef.current) {
-          climbMagnetsActiveRef.current = false;
-          stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-      }
   }, []);
 
   // Sealed-region feedback: blocked edits and cleanse notifications. The denied
@@ -1091,13 +1253,28 @@ const App: React.FC = () => {
           restoreSummonAltar(BOSS_DEFEAT_ALTAR_DELAY_MS);
       });
       // The summon cutscene pauses player control while the camera is scripted.
-      const offCineStart = gameEvents.on('cinematic:start', () => setCinematicMode(true));
+      const offCineStart = gameEvents.on('cinematic:start', () => {
+          releaseDetachedCamera();
+          setCinematicMode(true);
+      });
       const offCineEnd = gameEvents.on('cinematic:end', ({ source, returnPosition, returnPitch, returnYaw }) => {
           setCinematicMode(false);
-          if (source === 'bell_titan' && returnPosition) {
+          if ((source === 'bell_titan' || source === 'magnetic_warden') && returnPosition) {
+              // Skipping the cinematic can beat the delayed reconstruction.
+              if (source === 'magnetic_warden' && daisRestoreRef.current) {
+                  const pending = daisRestoreRef.current;
+                  daisRestoreRef.current = null;
+                  clearTimeout(pending.id);
+                  pending.run();
+              }
               const feet = new THREE.Vector3(returnPosition.x, returnPosition.y, returnPosition.z);
+              controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               playerRef.current?.teleport(feet);
               playerPosRef.current.copy(feet);
+              return;
+          }
+          if (source === 'magnetic_warden') {
+              // Cancellation restores the look without moving the player.
               controlsRef.current?.setRotation(returnPitch ?? 0, returnYaw ?? 0);
               return;
           }
@@ -1105,48 +1282,116 @@ const App: React.FC = () => {
           // altar) looking straight at the energy ball, room to run before it blows.
           const rp = bossSummon.returnPos;
           const feet = new THREE.Vector3(rp.x, playerPosRef.current.y, rp.z);
-          playerRef.current?.teleport(feet);
-          playerPosRef.current.copy(feet);
           const euler = new THREE.Euler().setFromQuaternion(bossSummon.returnQuat, 'YXZ');
           controlsRef.current?.setRotation(euler.x, euler.y);
+          playerRef.current?.teleport(feet);
+          playerPosRef.current.copy(feet);
       });
       // When the boss leaves (despawn), put the raised dais + summoner altar back.
       const offCleared = gameEvents.on('boss:cleared', () => restoreSummonAltar());
-      // The boss launched a deflectable parry bolt, telegraph it with a cue.
-      const offParry = gameEvents.on('boss:parry', () => {
-          soundManager.play('entity.magnetic_warden.parry', { volume: 0.8 });
-      });
-      // The Warden took a hit (a deflected bolt landing, etc.), a hurt grunt.
+      // The Warden took a hit: a hurt grunt (a punish-window hit lands harder).
       const offDamagedSfx = gameEvents.on('boss:damaged', ({ bossId }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.hurt', { volume: 0.7 });
       });
-      // Slam attack: a rise telegraph, then the shockwave impact.
+      // Every authored Warden action announces itself: windups get their own
+      // cues (editable slots under sounds/magnetic_warden/), so the telegraph
+      // is audible as well as visible.
+      const offAction = gameEvents.on('boss:action', ({ bossId, action }) => {
+          if (bossId !== 'magnetic_warden') return;
+          switch (action) {
+              case 'volley_windup': soundManager.play('entity.magnetic_warden.volley', { volume: 0.6 }); break;
+              case 'lash_windup': soundManager.play('entity.magnetic_warden.lash', { volume: 0.7 }); break;
+              case 'draw_windup': soundManager.play('entity.magnetic_warden.draw', { volume: 0.8 }); break;
+              case 'draw_recovery': soundManager.play('entity.magnetic_warden.repel', { volume: 0.9 }); break;
+              case 'swap_windup': soundManager.play('entity.magnetic_warden.swap_charge', { volume: 0.6 }); break;
+              case 'stagger': soundManager.play('entity.magnetic_warden.stagger', { volume: 0.8 }); break;
+              case 'shatter': soundManager.play('entity.magnetic_warden.shatter', { volume: 1.0 }); break;
+              case 'crash': soundManager.play('entity.magnetic_warden.crash', { volume: 1.0 }); break;
+              case 'storm_rise': soundManager.play('entity.magnetic_warden.storm', { volume: 1.0 }); break;
+              default: break;
+          }
+      });
+      // The Charge: a coil, then the lunge itself.
+      const offCharge = gameEvents.on('boss:charge', ({ phase }) => {
+          if (phase === 'windup') soundManager.play('entity.magnetic_warden.charge_windup', { volume: 0.75 });
+          else if (phase === 'lunge') soundManager.play('entity.magnetic_warden.charge_lunge', { volume: 0.9 });
+      });
+      // Plunge: a rise telegraph, then the ring impact (also every Storm beat ring).
       const offSlam = gameEvents.on('boss:slam', ({ phase }) => {
           soundManager.play(phase === 'rise' ? 'entity.magnetic_warden.slam_rise' : 'entity.magnetic_warden.slam',
               { volume: phase === 'rise' ? 0.7 : 0.95 });
       });
-      // Phase escalation (50% slam phase / 25% frenzy): an enrage cue. At frenzy
+      // The Storm metronome: two ticks count the beat in, then the beat itself.
+      const offBeatTick = gameEvents.on('boss:beat-tick', ({ remaining }) => {
+          soundManager.play('entity.magnetic_warden.beat_tick', { volume: 0.55, pitch: remaining <= 0.5 ? 1.25 : 1.0 });
+      });
+      const offBeat = gameEvents.on('boss:beat', ({ second }) => {
+          soundManager.play('entity.magnetic_warden.beat', { volume: second ? 0.8 : 0.9, pitch: second ? 1.15 : 1.0 });
+      });
+      // The tower crystals: a form ignites its own; each lost crystal is a flinch
+      // until the last one drops the shield; the towers announce every flip.
+      const offCrystals = gameEvents.on('boss:crystals', ({ mode }) => {
+          if (mode === 'ignite') soundManager.play('entity.magnetic_warden.crystal_ignite', { volume: 0.85 });
+      });
+      const offLost = gameEvents.on('boss:crystal-lost', ({ remaining }) => {
+          if (remaining > 0) soundManager.play('entity.magnetic_warden.flinch', { volume: 0.7 });
+      });
+      const offShieldBroken = gameEvents.on('boss:shield-broken', () => soundManager.play('entity.magnetic_warden.shield_break', { volume: 1.0 }));
+      const offTowers = gameEvents.on('boss:towers', ({ phase }) => {
+          soundManager.play(phase === 'flux' ? 'entity.magnetic_warden.tower_flux' : 'entity.magnetic_warden.tower_flip', { volume: phase === 'flux' ? 0.6 : 0.7 });
+      });
+      // The polarity rule, audibly: a matched bolt clinks off the boots (a
+      // matched strike clinks off the Warden via the melee 'blocked' result).
+      const offRepelled = gameEvents.on('bolt:repelled', () => {
+          soundManager.play('entity.magnetic_warden.repelled', { volume: 0.45, pitch: 1.3 + Math.random() * 0.35 });
+      });
+      // The player's kit.
+      const offDodge = gameEvents.on('player:dodge', ({ kind }) => {
+          const slot = kind === 'roll' ? 'entity.player.roll' : kind === 'dash' ? 'entity.player.dash' : kind === 'leap' ? 'entity.player.leap' : 'entity.player.launch';
+          soundManager.play(slot);
+      });
+      const offDodged = gameEvents.on('player:dodged', () => soundManager.play('entity.player.dodged'));
+      const offSurge = gameEvents.on('player:surge', ({ armed }) => { if (armed) soundManager.play('entity.player.surge'); });
+      const offPlayerSlam = gameEvents.on('player:slam', ({ landed }) => {
+          soundManager.play(landed ? 'entity.player.slam' : 'entity.magnetic_warden.shielded', { volume: landed ? 1.0 : 0.6 });
+      });
+      const offShocked = gameEvents.on('player:shocked', () => soundManager.play('entity.player.shocked'));
+      // The view (F5 / F6), and the framing every boss fight opens in.
+      const offView = gameEvents.on('view:changed', ({ mode }) => setViewMode(mode));
+      // The free view is the house style for boss fights: it keeps the body's own
+      // heading while the camera orbits, which is what lets you read a telegraph
+      // coming from behind you while still running somewhere else. Applied to
+      // EVERY boss rather than a named one, so a fight added later inherits it
+      // without a second place to remember. Whatever the player was in is put
+      // back when the fight ends.
+      const offSpawnView = gameEvents.on('boss:spawned', () => {
+          if (viewRig.mode === 'free') return;
+          preFightViewRef.current = viewRig.mode;
+          viewRig.mode = 'free';
+          gameEvents.emit('view:changed', { mode: 'free' });
+      });
+      const restoreView = () => {
+          const previous = preFightViewRef.current;
+          preFightViewRef.current = null;
+          if (previous === null || viewRig.mode === previous) return;
+          viewRig.mode = previous;
+          gameEvents.emit('view:changed', { mode: previous });
+      };
+      const offDefeatView = gameEvents.on('boss:defeated', restoreView);
+      const offClearView = gameEvents.on('boss:cleared', restoreView);
+      // Form changes (Aegis at 2/3, Storm at 1/3): an enrage cue. At the Storm
       // (phase 3) the fight music speeds up + pitches up +100 cents, mid-song.
       const offPhase = gameEvents.on('boss:phase', ({ bossId, phase }) => {
           if (bossId === 'magnetic_warden') soundManager.play('entity.magnetic_warden.enrage', { volume: 0.9 });
-          if (phase >= 3) musicController.setBossFrenzy(true);
-          // Entering the slam phase (≤50%): strip the towers' magnet climb faces so
-          // the player can't climb up to perch above the slam. The shield is already
-          // broken by now (the towers stay as cover, just unclimbable).
-          const a = summonArenaRef.current;
-          if (phase >= 2 && a && climbMagnetsActiveRef.current) {
-              climbMagnetsActiveRef.current = false;
-              stripArenaClimbMagnets(a.cx, a.cz, a.baseY, (edits) => worldManager.setBlocks(edits));
-          }
+          if (bossId === 'magnetic_warden' && phase >= 3) musicController.setBossFrenzy(true);
       });
       // Reset the frenzy music whenever a fight begins or ends.
-      const offSpawnFrenzy = gameEvents.on('boss:spawned', () => musicController.setBossFrenzy(false));
-      const offDefeatFrenzy = gameEvents.on('boss:defeated', () => musicController.setBossFrenzy(false));
+      const offSpawnFrenzy = gameEvents.on('boss:spawned', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
+      const offDefeatFrenzy = gameEvents.on('boss:defeated', ({ bossId }) => { if (bossId === 'magnetic_warden') musicController.setBossFrenzy(false); });
       const offClearFrenzy = gameEvents.on('boss:cleared', () => musicController.setBossFrenzy(false));
-      // Breaking an arena shield crystal weakens the Magnetic Warden's shield (and
-      // its tracking beam dissipates, BossCinematic handles the visual).
-      const offCrystal = gameEvents.on('crystal:broken', ({ regionId }) => {
-          entityManager.onShieldCrystalBroken(regionId);
+      // Breaking a tower crystal: the encounter drops the shield layer it powers
+      // (it listens itself); here only the shatter cue.
+      const offCrystal = gameEvents.on('crystal:broken', () => {
           soundManager.play('entity.magnetic_warden.crystal_break', { volume: 0.85 });
       });
       // Upgraded-boots ability toggle (N) → recompute magneticMode.
@@ -1154,7 +1399,10 @@ const App: React.FC = () => {
           if (abilityId === 'polarity-power') setPolarityPowerOn(active);
       });
       return () => {
-          offDenied(); offCleansed(); offDefeated(); offParry(); offDamagedSfx(); offSlam(); offPhase(); offCrystal(); offPower();
+          offDenied(); offCleansed(); offDefeated(); offDamagedSfx(); offAction(); offCharge(); offSlam(); offPhase(); offCrystal(); offPower();
+          offBeatTick(); offBeat(); offCrystals(); offLost(); offShieldBroken(); offTowers(); offRepelled();
+          offDodge(); offDodged(); offSurge(); offPlayerSlam(); offShocked();
+          offView(); offSpawnView(); offDefeatView(); offClearView();
           offCineStart(); offCineEnd(); offCleared();
           offSpawnFrenzy(); offDefeatFrenzy(); offClearFrenzy();
       };
@@ -1189,8 +1437,13 @@ const App: React.FC = () => {
         return () => window.removeEventListener('wheel', onWheel, { passive: false } as EventListenerOptions);
   }, [openContainer, isPaused, isLocked, showCommandInput, isDead, isSleeping, appState]);
 
+  // Item pickup is off while dead and for a short grace after respawning: the
+  // tracked player position lags at the death spot for a few frames while the
+  // Player remounts, which would otherwise vacuum up the dropped inventory.
+  const pickupLockUntilRef = useRef(0);
+  const pickupsBlocked = isDead;
   const handleCollect = useCallback((id: string, stack: ItemStack) => {
-    if (health <= 0) return false;
+    if (health <= 0 || performance.now() < pickupLockUntilRef.current) return false;
     const remainder = addToInventory(stack);
     const pickedUp = stack.count - (remainder?.count ?? 0);
     if (pickedUp <= 0) return false;
@@ -1448,99 +1701,20 @@ const App: React.FC = () => {
       setMessages(prev => [...prev.slice(-19), { id: Date.now() + Math.random(), text: text, type, timestamp: Date.now(), clickAction }]);
   }, []);
 
-    const capturePanoramaDataUrl = useCallback(async () => {
-      const controls = controlsRef.current;
-      const sourceCanvas = document.querySelector('canvas') as HTMLCanvasElement | null;
-
-      if (!controls || !sourceCanvas) {
-          throw new Error('Camera or render canvas unavailable.');
-      }
-
-      if (sourceCanvas.width <= 0 || sourceCanvas.height <= 0) {
-          throw new Error('Render canvas is not ready yet.');
-      }
-
-      const captureSize = Math.min(sourceCanvas.width, sourceCanvas.height);
-      const cropX = Math.floor((sourceCanvas.width - captureSize) / 2);
-      const cropY = Math.floor((sourceCanvas.height - captureSize) / 2);
-      const previousFov = fov;
-      if (previousFov !== 90) {
-          setFov(90);
-          await waitForFovToSettle(() => controls.getFov(), 90);
-      }
-
-      const makeFaceCanvas = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = captureSize;
-          canvas.height = captureSize;
-          return canvas;
-      };
-
-      const faces: Record<CubeFaceKey, HTMLCanvasElement> = {
-          px: makeFaceCanvas(),
-          nx: makeFaceCanvas(),
-          py: makeFaceCanvas(),
-          ny: makeFaceCanvas(),
-          pz: makeFaceCanvas(),
-          nz: makeFaceCanvas(),
-      };
-
-      const drawFace = (face: CubeFaceKey) => {
-          const ctx = faces[face].getContext('2d');
-          if (!ctx) throw new Error('Failed to initialize face canvas context.');
-          ctx.drawImage(sourceCanvas, cropX, cropY, captureSize, captureSize, 0, 0, captureSize, captureSize);
-      };
-
-    const originalRotation = controls.getRotation();
-      const baseYaw = originalRotation.y;
-      const basePitch = 0;
-      try {
-          controls.setRotation(basePitch, baseYaw + Math.PI / 2);
-          await waitForAnimationFrames(3);
-          drawFace('px');
-
-          controls.setRotation(basePitch, baseYaw - Math.PI / 2);
-          await waitForAnimationFrames(3);
-          drawFace('nx');
-
-          controls.setRotation(-Math.PI / 2, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('py');
-
-          controls.setRotation(Math.PI / 2, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('ny');
-
-          controls.setRotation(basePitch, baseYaw + Math.PI);
-          await waitForAnimationFrames(3);
-          drawFace('pz');
-
-          controls.setRotation(basePitch, baseYaw);
-          await waitForAnimationFrames(3);
-          drawFace('nz');
-      } finally {
-          controls.setRotation(originalRotation.x, originalRotation.y);
-          await waitForAnimationFrames(2);
-          if (previousFov !== 90) {
-              setFov(previousFov);
-              await waitForFovToSettle(() => controls.getFov(), previousFov);
-          }
-      }
-
-      const orderedFaceDataUrls = [
-          faces.pz.toDataURL('image/png'),
-          faces.px.toDataURL('image/png'),
-          faces.nz.toDataURL('image/png'),
-          faces.nx.toDataURL('image/png'),
-          faces.py.toDataURL('image/png'),
-          faces.ny.toDataURL('image/png'),
-      ];
-
+  const capturePanoramaDataUrl = useCallback(async () => {
+      // Let React hide the player and hand before taking a world-only capture.
+      await waitForAnimationFrames(2);
+      const state = gameRendererRef.current;
+      if (!state || state.gl.getContext().isContextLost()) throw new Error('Game renderer unavailable.');
+      const { gl, scene, camera } = state;
+      const captureSize = Math.min(2048, gl.domElement.width, gl.domElement.height, gl.capabilities.maxTextureSize);
+      if (captureSize <= 0) throw new Error('Game renderer is not ready yet.');
+      const faces = capturePanoramaFaces(gl, scene, camera, captureSize);
       return {
           atlasDataUrl: buildPanoramaAtlas(faces, captureSize),
-          cubeFaces: orderedFaceDataUrls,
+          cubeFaces: [faces.pz, faces.px, faces.nz, faces.nx, faces.py, faces.ny].map(face => face.toDataURL('image/png')),
       };
-  }, [fov]);
+  }, []);
 
   const captureAndSavePanorama = useCallback(async () => {
       const desktopApi = window.atlasDesktop;
@@ -1625,7 +1799,9 @@ const App: React.FC = () => {
       }
       setMenuPanoramaPath(filePath);
       setMenuBackgroundMode('panorama');
-      setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
+      if (!getBuiltInMenuPanorama(filePath)) {
+          setMenuPanoramaLibrary(prev => prev.includes(filePath) ? prev : [filePath, ...prev]);
+      }
   }, []);
 
   const removePanoramaFromLibrary = useCallback((filePath: string) => {
@@ -1732,7 +1908,7 @@ const App: React.FC = () => {
   const toggleMenuBackgroundMode = useCallback(() => {
       if (menuBackgroundMode === 'dirt') {
           if (!menuPanoramaDataUrl) {
-              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${PANORAMA_CAPTURE_KEY}.` });
+              setAppNotice({ type: 'info', message: `No panorama is available. Capture one in-game with ${keyLabelFor('panorama')}.` });
               return;
           }
           setMenuBackgroundMode('panorama');
@@ -1741,9 +1917,30 @@ const App: React.FC = () => {
       setMenuBackgroundMode('dirt');
   }, [menuBackgroundMode, menuPanoramaDataUrl]);
 
-  const executeCommand = useCallback((cmd: string) => {
+  const executeCommand = useCallback((cmd: string, opts?: { force?: boolean }) => {
       const parts = cmd.trim().split(' ');
+      const finish = () => {
+          if (commandValue.trim()) {
+              commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
+              setHistoryIndex(-1);
+          }
+          setCommandValue('');
+          setShowSuggestions(false);
+          resumeGame();
+      };
+      // Plain text is just said in chat.
+      if (!cmd.trim().startsWith('/')) {
+          logMsg(`<You> ${cmd.trim()}`, 'info');
+          finish();
+          return;
+      }
       logMsg(`> ${cmd}`, 'info');
+      // Cheat commands need Allow Commands; help and sound settings always work.
+      if (!allowCommands && !opts?.force && !ALWAYS_ALLOWED_COMMANDS.has(parts[0])) {
+          logMsg('Commands are off in this world. Turn them on in Game Menu > World Options.', 'error');
+          finish();
+          return;
+      }
       
       if (parts[0] === '/gamemode' && parts[1]) {
           const mode = parts[1].toLowerCase();
@@ -1940,25 +2137,21 @@ const App: React.FC = () => {
           if (!region) { logMsg('No sealable region here. Usage: /seal [regionId]', 'error'); }
           else { progression.sealRegion(region.id); logMsg(`${region.displayName} re-sealed.`, 'success'); }
       } else if (parts[0] === '/giveitem' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
-          if (found === null) { logMsg(`Unknown item: ${parts[1]}`, 'error'); }
-          else { const n = Math.max(1, parseInt(parts[2]) || 1); addToInventory(found, n); logMsg(`Gave ${n}x ${BLOCKS[found].name}`, 'success'); }
+          // Item names are several words ("Polarity Boots", "Magnetite Bricks"),
+          // so everything after the command is the name, minus a trailing count.
+          const tail = parts.slice(1);
+          const count = tail.length > 1 && /^\d+$/.test(tail[tail.length - 1])
+              ? Math.max(1, parseInt(tail.pop() as string, 10))
+              : 1;
+          const label = tail.join(' ');
+          const found = findBlockByName(label);
+          if (found === null) { logMsg(`Unknown item: ${label}`, 'error'); }
+          else { addToInventory(found, count); logMsg(`Gave ${count}x ${BLOCKS[found].name}`, 'success'); }
       } else if (parts[0] === '/equip' && parts[1]) {
-          const norm = parts[1].toLowerCase().replace(/[\s_]+/g, '');
-          let found: BlockType | null = null;
-          for (const key in BLOCKS) {
-              const t = Number(key) as BlockType;
-              const def = BLOCKS[t];
-              if (def?.name && def.name.toLowerCase().replace(/[\s_]+/g, '') === norm) { found = t; break; }
-          }
+          const label = parts.slice(1).join(' ');
+          const found = findBlockByName(label);
           const slot = found !== null ? slotForItem(found) : undefined;
-          if (found === null) logMsg(`Unknown item: ${parts[1]}`, 'error');
+          if (found === null) logMsg(`Unknown item: ${label}`, 'error');
           else if (!slot) logMsg(`${BLOCKS[found].name} is not equippable`, 'error');
           else { const t = found; setEquipment(prev => ({ ...prev, [slot]: { type: t, count: 1 } })); logMsg(`Equipped ${BLOCKS[t].name} (${slot})`, 'success'); }
       } else if (parts[0] === '/unequip' && parts[1]) {
@@ -2019,6 +2212,9 @@ const App: React.FC = () => {
               setShowMagneticFields(nextVisible);
               logMsg(`Magnetic field vectors ${nextVisible ? 'enabled' : 'disabled'}`, 'success');
           }
+      } else if (parts[0] === '/help' && !allowCommands) {
+          logMsg('Commands are off in this world; /help, /sound and /music still work.', 'info');
+          logMsg('Turn them on in Game Menu > World Options.', 'info');
       } else if (parts[0] === '/help') {
           // Grouped, compact command listing (autocomplete carries the details).
           logMsg('Commands: world: /tp /locate /setspawn /spawn /time /phase', 'info');
@@ -2027,22 +2223,16 @@ const App: React.FC = () => {
           logMsg('Audio/FX: /sound /music /playsound /shootingstar /bloodmoon', 'info');
           logMsg('Tab-complete any command for its subcommands and arguments.', 'info');
       } else { logMsg(`Unknown command: ${parts[0]}; try /help`, 'error'); }
-      if (commandValue.trim()) {
-          commandHistoryRef.current = [commandValue.trim(), ...commandHistoryRef.current];
-          setHistoryIndex(-1);
-      }
-      setCommandValue(''); 
-      setShowSuggestions(false);
-      resumeGame();
-  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory]);
+      finish();
+  }, [commandValue, logMsg, resumeGame, addToInventory, showMagneticFields, keepInventory, allowCommands]);
 
   const updateAutocomplete = useCallback((input: string) => {
-      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS);
+      const newCandidates = getAutocompleteCandidates(input, COMMAND_AUTOCOMPLETE_OPTIONS, allowCommands);
 
       setAcCandidates(newCandidates);
       setAcIndex(0);
       setShowSuggestions(newCandidates.length > 0);
-  }, []);
+  }, [allowCommands]);
 
   const submitCommandInput = useCallback(() => {
       if (commandValue.trim()) {
@@ -2053,11 +2243,85 @@ const App: React.FC = () => {
       resumeGame();
   }, [commandValue, executeCommand, resumeGame]);
 
+  // DEV-only QA bridge (window.__atlasQA) for the scripted visual tour: an
+  // automated browser pane can't take pointer lock, so it drives the camera,
+  // commands and HUD through these handles instead. Stripped from production.
+  useEffect(() => {
+      if (!import.meta.env.DEV) return;
+      installDevQa();
+      registerDevQaHandles({
+          // QA drives worlds with commands whatever the world's setting.
+          command: (cmd: string) => executeCommand(cmd, { force: true }),
+          camera: (yaw, pitch) => controlsRef.current?.setRotation(pitch, yaw),
+          tp: (x, y, z) => playerRef.current?.teleport(new THREE.Vector3(x, y, z)),
+          hud: visible => setHudHidden(!visible),
+          openInventory,
+          openContainer: type => {
+              const p = playerPosRef.current;
+              const [x, y, z] = [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+              if (type === 'chest') worldManager.ensureChest(x, y, z);
+              setOpenContainer({ type, x, y, z });
+              isInventoryOpenRef.current = true;
+              enterUIMode();
+          },
+          closeContainers: () => { if (openContainer) closeInventory({ deferPointerLock: true }); },
+          streaming: () => worldManager.getStreamingStatus(),
+          position: () => ({ x: playerPosRef.current.x, y: playerPosRef.current.y, z: playerPosRef.current.z }),
+          renderDistance: chunks => setRenderDistance(Math.max(MIN_RENDER_DISTANCE, Math.min(MAX_RENDER_DISTANCE, Math.round(chunks)))),
+          vsync: enabled => { setVsync(enabled); if (!enabled) setMaxFps(260); },
+          getBlock: (x, y, z) => worldManager.getBlock(x, y, z, false),
+          setBlock: (x, y, z, type) => { worldManager.setBlock(x, y, z, type as BlockType); },
+      });
+  }, [executeCommand, openInventory, closeInventory, openContainer, setOpenContainer, enterUIMode]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const isEditableTarget = isEditableElement(e.target);
+    if (BLOCKED_BROWSER_KEYS.has(e.code)) e.preventDefault();
+    // The player's bindings (Options > Controls). A shortcut bound to a letter
+    // never fires while typing in a text field; function keys work anywhere.
+    const hotkey = (action: KeyAction) => isKeyFor(action, e) && (!isEditableTarget || /^F\d{1,2}$/.test(e.code));
 
-    if (e.code === 'F3') { e.preventDefault(); setShowDebug(prev => !prev); return; }
-    if (e.code === 'F4') {
+    if (hotkey('hideHud')) {
+        e.preventDefault();
+        if (!e.repeat && appState === 'game' && !isEditableTarget) setHudHidden(hidden => !hidden);
+        return;
+    }
+    if (hotkey('debug')) { e.preventDefault(); setShowDebug(prev => !prev); return; }
+    // F5 / F6 by default: the two third-person views. Handled here rather than
+    // in the movement input so they work whether or not the pointer is locked
+    // (and so the browser never reloads or moves focus instead of switching the view).
+    const freeViewKey = hotkey('freeView');
+    if (freeViewKey || hotkey('shoulderView')) {
+        e.preventDefault();
+        if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
+            // F5 is the free view (the body keeps its own facing while the camera
+            // orbits) — the primary third person, and what a boss fight puts you
+            // in. F6 is the welded over-the-shoulder one, where the body turns
+            // with the camera.
+            //
+            // F5 is inert while a tripod owns the camera: the free view is defined
+            // against a camera that orbits the player, and F7 has none. The mode
+            // the player came from is untouched, so putting the tripod away hands
+            // the free view back.
+            if (freeViewKey && detachedCamera.stage !== 'off') return;
+            const view: ViewMode = freeViewKey ? 'free' : 'third';
+            const next: ViewMode = viewRig.mode === view ? 'first' : view;
+            viewRig.mode = next;
+            gameEvents.emit('view:changed', { mode: next });
+        }
+        return;
+    }
+    // F7 cycles the detached camera: place it, bolt it down, put it back. The
+    // view mode is never touched, so releasing it returns to whatever was on.
+    if (hotkey('detachedCamera')) {
+        e.preventDefault();
+        if (!e.repeat && appState === 'game' && !isEditableTarget && !isCapturingPanorama && !cinematicMode) {
+            detachedCamera.stage = nextDetachedStage(detachedCamera.stage);
+            resetMotionBlurHistory('detached-camera');
+        }
+        return;
+    }
+    if (hotkey('atlasViewer')) {
         if (showAtlasViewer) {
             e.preventDefault();
             setShowAtlasViewer(false);
@@ -2124,7 +2388,7 @@ const App: React.FC = () => {
     if (appState !== 'game') return;
     if (isEditableTarget && e.key !== 'Escape') return;
 
-    if (e.code === PANORAMA_CAPTURE_KEY) {
+    if (isKeyFor('panorama', e)) {
         e.preventDefault();
         if (!isPaused && !openContainer && !showCommandInput && !isDead && !isSleeping && !showAtlasViewer) {
             void captureAndSavePanorama();
@@ -2171,11 +2435,13 @@ const App: React.FC = () => {
         if (e.key === 'Enter') { e.preventDefault(); submitCommandInput(); } 
         return; 
     }
-    if ((e.key === '/' || e.key === 't' || e.key === 'T') && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(e.key === '/' ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
-    if (e.code.startsWith('Digit') && !isDead && !openContainer) { const val = parseInt(e.code.replace('Digit', '')) - 1; if (val >= 0 && val < 9) { setSelectedSlot(val); soundManager.play("ui.click", { pitch: 1.5 }); } }
-    if (e.code === 'KeyQ' && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
-    if (e.code === 'KeyE' && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
-  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, historyIndex, submitCommandInput, updateAutocomplete, logMsg]);
+    const opensCommand = isKeyFor('command', e);
+    if ((opensCommand || isKeyFor('chat', e)) && !openContainer && !isPaused && !isDead && !isSleeping && !showAtlasViewer) { e.preventDefault(); setShowCommandInput(true); setCommandValue(opensCommand ? '/' : ''); setHistoryIndex(-1); isCommandOpenRef.current = true; enterUIMode(); return; }
+    const hotbarSlot = HOTBAR_KEY_ACTIONS.findIndex((action) => isKeyFor(action, e));
+    if (hotbarSlot >= 0 && !isDead && !openContainer) { setSelectedSlot(hotbarSlot); soundManager.play("ui.click", { pitch: 1.5 }); }
+    if (isKeyFor('drop', e) && !isDead && !openContainer && !showCommandInput) { if (inventory[selectedSlot] && controlsRef.current) { const dropAll = e.ctrlKey || e.metaKey; handleInventoryAction('drop_key', 'inventory', selectedSlot, { dropAll }); } }
+    if (isKeyFor('inventory', e) && !isDead) { if (openContainer) { e.preventDefault(); closeInventory(); } else if (isLocked && !isPaused && gameMode !== 'spectator' && !isSleeping) { e.preventDefault(); openInventory(); } }
+  }, [showCommandInput, openContainer, isPaused, isDead, isSleeping, showAtlasViewer, closeInventory, resumeGame, enterUIMode, openInventory, commandValue, gameMode, isLocked, requestPointerLockBurst, suppressAutoPauseFor, inventory, selectedSlot, handleInventoryAction, acCandidates, acIndex, showSuggestions, appState, saveGame, captureAndSavePanorama, isCapturingPanorama, cinematicMode, historyIndex, submitCommandInput, updateAutocomplete, logMsg, setShowDebug]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2190,19 +2456,6 @@ const App: React.FC = () => {
           window.localStorage.removeItem(MENU_PANORAMA_PATH_KEY);
       }
   }, [menuPanoramaPath]);
-
-  // On first launch (no saved panorama), seed the default built-in panorama path
-  useEffect(() => {
-      if (!isElectron) return;
-      const desktopApi = window.atlasDesktop;
-      if (!desktopApi?.getDefaultPanoramaPath) return;
-      if (window.localStorage.getItem(MENU_PANORAMA_PATH_KEY)) return;
-      desktopApi.getDefaultPanoramaPath().then((result: { filePath: string | null }) => {
-          if (result?.filePath) {
-              setMenuPanoramaPath(result.filePath);
-          }
-      });
-  }, [isElectron]);
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -2263,26 +2516,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
       if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_SHADOWS_ENABLED_KEY, String(shadowsEnabled));
-  }, [shadowsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_CLOUDS_ENABLED_KEY, String(cloudsEnabled));
-  }, [cloudsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_MIPMAPS_ENABLED_KEY, String(mipmapsEnabled));
-  }, [mipmapsEnabled]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_ANTIALIASING_KEY, String(antialiasing));
-  }, [antialiasing]);
-
-  useEffect(() => {
-      if (typeof window === 'undefined') return;
       window.localStorage.setItem(SETTINGS_MAX_FPS_KEY, String(maxFps));
   }, [maxFps]);
 
@@ -2291,10 +2524,47 @@ const App: React.FC = () => {
       window.localStorage.setItem(SETTINGS_VSYNC_KEY, String(vsync));
   }, [vsync]);
 
+  // --- Low health ---------------------------------------------------------
+  // The ONE input to the low-health state: whatever `health` settled on, from any
+  // path (post-armor damage, fall, fire, drowning, starvation, regen, healing, a
+  // loaded save, a respawn). Driven by the state transition, never polled.
+  // Spectator/creative cannot be hurt, so they never enter it.
   useEffect(() => {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(SETTINGS_CHUNK_FADE_ENABLED_KEY, String(chunkFadeEnabled));
-  }, [chunkFadeEnabled]);
+      if (appState !== 'game' || gameMode !== 'survival') {
+          lowHealthState.reset();
+          return;
+      }
+      lowHealthState.setHealth(health, 20);
+  }, [health, appState, gameMode]);
+
+  // Presentation is muted while something else owns the screen; the state itself
+  // stays correct underneath, so gameplay resumes exactly where it left off.
+  useEffect(() => {
+      lowHealthState.setSuppression({
+          dead: isDead || showDeathScreen,
+          paused: isPaused || isSleeping,
+          cinematic: cinematicMode || isCapturingPanorama,
+          inactive: appState !== 'game',
+      });
+  }, [isDead, showDeathScreen, isPaused, isSleeping, cinematicMode, isCapturingPanorama, appState]);
+
+  // --- Motion blur history ------------------------------------------------
+  // Reprojection compares this frame's camera against the last one, so every
+  // discontinuity has to be declared or the first frame after it streaks. The
+  // pass also carries a distance/angle guard for anything that slips through.
+  useEffect(() => {
+      const offView = gameEvents.on('view:changed', () => resetMotionBlurHistory('view-mode'));
+      const offStart = gameEvents.on('cinematic:start', () => resetMotionBlurHistory('cinematic'));
+      const offEnd = gameEvents.on('cinematic:end', () => resetMotionBlurHistory('cinematic'));
+      // Teleports reset from Player's own teleport handle, which every
+      // instantaneous move already goes through.
+      return () => { offView(); offStart(); offEnd(); };
+  }, []);
+  useEffect(() => { resetMotionBlurHistory('fov'); }, [fov]);
+  useEffect(() => { resetMotionBlurHistory('cinematic'); }, [cinematicMode]);
+  useEffect(() => { resetMotionBlurHistory('panorama'); }, [isCapturingPanorama]);
+  useEffect(() => { resetMotionBlurHistory('resume'); }, [isPaused]);
+  useEffect(() => { resetMotionBlurHistory('world-load'); }, [appState, respawnKey]);
 
   useEffect(() => {
       let disposed = false;
@@ -2307,12 +2577,14 @@ const App: React.FC = () => {
           }
       };
 
-      if (!menuPanoramaPath) {
+      const builtIn = getBuiltInMenuPanorama(menuPanoramaPath ?? DEFAULT_PANORAMA_ID);
+      if (builtIn) {
           revokeCurrentWebObjectUrl();
-          setMenuPanoramaDataUrl(DEFAULT_MENU_PANORAMA_URL);
+          setMenuPanoramaDataUrl(builtIn.url);
           setMenuPanoramaFaceDataUrls(null);
           return;
       }
+      if (!menuPanoramaPath) return;
 
       if (!isElectron) {
           if (menuPanoramaPath.startsWith(WEB_PANORAMA_PREFIX)) {
@@ -2511,6 +2783,9 @@ const App: React.FC = () => {
 
   const handleRespawn = () => {
     soundManager.play("ui.click");
+    // Respawning moves the body; a tripod left at the death site would frame an
+    // empty room, so the camera comes back with the player.
+    releaseDetachedCamera();
     setShowDeathScreen(false);
     deathScreenActiveRef.current = false;
     setHealth(20); setHunger(20); setSaturation(5); foodStateRef.current = createFoodState(); setBreath(MAX_BREATH); setRespawnKey(prev => prev + 1); setIsOnFire(false);
@@ -2568,6 +2843,10 @@ const App: React.FC = () => {
 
     setCurrentSpawnPos(spawnVec);
     playerPosRef.current.copy(spawnVec);
+    // Move the tracked eye to the spawn too, so PlayerRefUpdater can't write the
+    // death position back into playerPosRef before the new Player takes over.
+    viewRig.eye.x = spawnVec.x; viewRig.eye.y = spawnVec.y + EYE_HEIGHT_STANDING; viewRig.eye.z = spawnVec.z;
+    pickupLockUntilRef.current = performance.now() + 1500;
     setRidingBoatId((riding) => {
         if (riding !== null) entityManager.setRidden(riding, false);
         return null;
@@ -2612,6 +2891,11 @@ const App: React.FC = () => {
       });
   }, []);
 
+  // The QA bridge boards boats directly: a hidden pane can't take pointer lock to right-click one.
+  useEffect(() => {
+      if (import.meta.env.DEV) registerDevQaHandles({ enterBoat: handleEnterBoat });
+  }, [handleEnterBoat]);
+
   const handleExitBoat = useCallback(() => {
       setRidingBoatId((riding) => {
           if (riding === null) return riding;
@@ -2650,6 +2934,8 @@ const App: React.FC = () => {
           setShowAtlasViewer(false);
           setIsPaused(false);
           lastAppliedChunkKeyRef.current = null;
+          chunkView.set([]);
+          horizonView.set(null);
           activeWorldIdRef.current = null;
           activeWorldGenConfigRef.current = null;
           worldManager.reset();
@@ -2723,12 +3009,17 @@ const App: React.FC = () => {
       entityManager.clear();
       vaultProjectileSystem.clear();
       bossSummon.cancel();
+      releaseDetachedCamera();
       setCinematicMode(false);
       summonArenaRef.current = null;
       // Per-world React state: item entities and chat/log lines belong to the
       // previous session, without this, World A's ground drops render (and are
       // collectible) at their old coordinates inside World B.
-      setDrops([]);
+      // This world's saved ground items (none on worlds saved before drops were).
+      const restoredDrops = restoreDrops(meta.drops, DROP_LIFETIME_MS, Date.now(), () => Math.random().toString());
+      dropsRef.current = restoredDrops;
+      spawnedDropsRef.current = [];
+      setDrops(restoredDrops);
       setMessages([]);
       setRidingBoatId(null);
 
@@ -2748,6 +3039,12 @@ const App: React.FC = () => {
       }
       
       setGameMode(meta.gameMode);
+      setAllowCommands(meta.allowCommands ?? true);
+      setKeepInventory(meta.keepInventory ?? false);
+      setShowCoordinates(meta.showCoordinates ?? false);
+      knownItemsRef.current = new Set((meta.knownItems ?? []) as BlockType[]);
+      setKnownItems(new Set(knownItemsRef.current));
+      setWorldInfo({ name: meta.name, seed: meta.seed.trim() || String(meta.seedNum) });
       worldManager.setTime(meta.time);
 
       // 3. Restore Player State (if exists)
@@ -2885,9 +3182,14 @@ const App: React.FC = () => {
       pendingBedSpawnRef.current = { x, y, z };
   }, []);
 
-  let overlayColor = 'transparent';
-  if (headBlockType === BlockType.WATER) overlayColor = 'rgba(0, 0, 100, 0.4)';
-  else if (headBlockType === BlockType.LAVA) overlayColor = 'rgba(255, 50, 0, 0.8)';
+  // Under water the world itself fogs blue-green (DayNightCycle), so the overlay
+  // only darkens the edges; lava keeps its strong orange as a damage cue.
+  let overlayStyle: React.CSSProperties = { backgroundColor: 'transparent' };
+  // Classic tints the whole screen blue under water, as the old renderer did; Luminous fogs the world instead.
+  if (headBlockType === BlockType.WATER) overlayStyle = classicStyle
+      ? { backgroundColor: 'rgba(0, 0, 100, 0.4)' }
+      : { background: 'radial-gradient(ellipse at center, rgba(3, 18, 36, 0) 55%, rgba(3, 18, 36, 0.5) 100%)' };
+  else if (headBlockType === BlockType.LAVA) overlayStyle = { backgroundColor: 'rgba(255, 50, 0, 0.8)' };
 
       const hideGameplayCursor =
           appState === 'game' &&
@@ -2907,7 +3209,7 @@ const App: React.FC = () => {
       {pendingPanoramaDelete && (
           <ConfirmModal
               title="Remove Panorama?"
-              message={<>Remove <span className="text-white">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
+              message={<>Remove <span className="text-parchment-50">{pendingPanoramaDelete.fileName}</span>? This cannot be undone.</>}
               confirmLabel="Remove"
               danger
               onConfirm={() => void confirmDeletePanorama()}
@@ -2943,10 +3245,11 @@ const App: React.FC = () => {
       )}
 
       {bootReady && appState === 'menu' && (
-          <MainMenu 
+          <MainMenu
               onStart={handleStartGame}
               onChunkBase={() => setAppState('chunkbase')}
-              onFeatureEditor={() => setAppState('featureEditor')}
+              initialView={menuInitialView}
+              onPanoramaDone={menuInitialView === 'settings' ? () => { setMenuInitialView('main'); setAppState('options'); } : undefined}
               onOptions={(opts) => {
                   setOpenOptionsInHelp(!!opts?.openTutorial);
                   setAppState('options');
@@ -2957,8 +3260,11 @@ const App: React.FC = () => {
               panoramaFaceDataUrls={menuPanoramaFaceDataUrls}
               hasPanoramaBackground={!!menuPanoramaDataUrl}
               onToggleBackground={toggleMenuBackgroundMode}
-              panoramaCaptureHotkey={PANORAMA_CAPTURE_KEY}
-              panoramaEntries={[...menuPanoramaLibrary, DEFAULT_PANORAMA_ID]}
+              panoramaCaptureHotkey={keyLabelFor('panorama')}
+              panoramaEntries={[
+                  ...menuPanoramaLibrary.filter((entry) => !getBuiltInMenuPanorama(entry)),
+                  ...BUILT_IN_MENU_PANORAMAS.map((panorama) => panorama.id),
+              ]}
               activePanoramaPath={menuPanoramaPath ?? DEFAULT_PANORAMA_ID}
               defaultPanoramaId={DEFAULT_PANORAMA_ID}
               onUsePanorama={setActivePanorama}
@@ -3002,12 +3308,9 @@ const App: React.FC = () => {
                   setAppState('menu');
               }} 
               renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov}
-              shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled}
-              cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled}
-              antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)}
-              chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled}
               maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness}
               initialScreen={openOptionsInHelp ? 'tutorial' : 'main'}
+              onOpenPanorama={() => { setMenuInitialView('settings'); setAppState('menu'); }}
               onTutorialClose={openOptionsInHelp ? () => { setOpenOptionsInHelp(false); setAppState('menu'); } : undefined}
               panoramaBlur={menuPanoramaBlur}
               panoramaGradient={menuPanoramaGradient}
@@ -3043,24 +3346,30 @@ const App: React.FC = () => {
           <>
             {appState === 'game' && (
                 <>
-                    <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={{ backgroundColor: overlayColor }} />
-                    {isOnFire && !isDead && <FireOverlay />}
+                    {!hudHidden && <div className="absolute inset-0 z-30 pointer-events-none transition-colors duration-300" style={overlayStyle} />}
+                    {!hudHidden && isOnFire && !isDead && <FireOverlay />}
                     {showDeathScreen && <DeathScreen onRespawn={handleRespawn} />}
-                    {isSleeping && <div className="absolute inset-0 z-[100] bg-black animate-in fade-in duration-[3000ms] flex items-center justify-center"><span className="text-white text-2xl font-bold animate-pulse">Sleeping...</span></div>}
-                    {showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} chunksCount={renderedChunks.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
+                    {isSleeping && <div className="absolute inset-0 z-[100] bg-ink-950 atlas-fade-in-sleep flex items-center justify-center"><span className="text-px-3 text-parchment-200 motion-safe:animate-pulse">Sleeping...</span></div>}
+                    {!hudHidden && !showDebug && showCoordinates && !cinematicMode && !showDeathScreen && <CoordinatesReadout positionRef={playerPosRef} />}
+                    {!hudHidden && showDebug && <DebugScreen playerPosRef={playerPosRef} cameraRef={controlsRef} dropsCount={drops.length} renderDistance={renderDistance} fpsRef={fpsRef} />}
                     {showAtlasViewer && <TextureAtlasViewer onClose={() => { setShowAtlasViewer(false); isAtlasViewerOpenRef.current = false; resumeGame(); }} />}
-                    {!openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} />}
-                    <BossBar />
+                    {!hudHidden && !openContainer && !showCommandInput && !showDeathScreen && !showAtlasViewer && !cinematicMode && <HUD health={health} hunger={hunger} saturation={saturation} breath={breath} inventory={inventory} selectedSlot={selectedSlot} gameMode={gameMode} headBlockType={headBlockType} lastDamageTime={lastDamageTime} equipment={equipment} magnetic={magneticMode === 'controlled'} />}
+                    <div hidden={hudHidden}><BossBar /></div>
                     <CinematicOverlay />
-                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityIndicator />}
-                    {ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
-                        <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-white/85 font-pixel text-xs bg-black/40 px-3 py-1 rounded">
-                            Sneak (Shift) to hop out of the boat
+                    {!hudHidden && !showDeathScreen && !cinematicMode && !openContainer && <BossCompass />}
+                    {!hudHidden && ridingBoatId !== null && !showDeathScreen && !cinematicMode && !openContainer && (
+                        // Above the vitals, the armor or breath row, and the item name
+                        // (92 art pixels up at the HUD's scale).
+                        <div className="atlas-plate absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap" style={{ bottom: 92 * HUD_SCALE }}>
+                            Sneak ({keyLabelFor('sneak')}) to hop out of the boat
                         </div>
                     )}
-                    {!showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
-                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} shadowsEnabled={shadowsEnabled} setShadowsEnabled={setShadowsEnabled} cloudsEnabled={cloudsEnabled} setCloudsEnabled={setCloudsEnabled} mipmapsEnabled={mipmapsEnabled} setMipmapsEnabled={setMipmapsEnabled} antialiasing={antialiasing} setAntialiasing={(val) => safeSetSetting(setAntialiasing, val)} chunkFadeEnabled={chunkFadeEnabled} setChunkFadeEnabled={setChunkFadeEnabled} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
-                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} />}
+                    {/* Low health sits UNDER the polarity rim (z-20 vs z-30) so a red
+                        damage pulse can never be mistaken for positive polarity. */}
+                    {!hudHidden && !showDeathScreen && !cinematicMode && <LowHealthVignette />}
+                    {!hudHidden && !showDeathScreen && magneticMode === 'controlled' && !cinematicMode && <PolarityVignette />}
+                    {isPaused && !isDead && !showDeathScreen && !isSleeping && <PauseMenu onResume={() => { suppressAutoPauseFor(350); resumeFromUserGesture('button'); }} onQuitToTitle={handleQuitToTitle} worldOptions={worldInfo ? { ...worldInfo, gameMode, allowCommands, onAllowCommands: setAllowCommands, keepInventory, onKeepInventory: setKeepInventory, showCoordinates, onShowCoordinates: setShowCoordinates } : undefined} renderDistance={renderDistance} setRenderDistance={setRenderDistance} fov={fov} setFov={setFov} maxFps={maxFps} setMaxFps={setMaxFps} vsync={vsync} setVsync={(val) => safeSetSetting(setVsync, val)} brightness={brightness} setBrightness={setBrightness} panoramaBlur={menuPanoramaBlur} panoramaGradient={menuPanoramaGradient} panoramaRotationSpeed={menuPanoramaRotationSpeed} backgroundMode={menuBackgroundMode} panoramaBackgroundDataUrl={menuPanoramaDataUrl} panoramaFaceDataUrls={menuPanoramaFaceDataUrls} />}
+                    {openContainer && openContainer.type !== 'boss_confirm' && <InventoryUI inventory={inventory} openContainer={openContainer} setOpenContainer={handleInventoryContainerChange} selectedSlot={selectedSlot} craftingGrid2x2={craftingGrid2x2} craftingGrid3x3={craftingGrid3x3} craftingOutput={craftingOutput} cursorStack={cursorStack} handleInventoryAction={handleInventoryAction} equipment={equipment} recipeBook={recipeBook} />}
                     {openContainer?.type === 'boss_confirm' && (
                         <BossConfirmModal
                             bossName={openContainer.bossId === 'magnetic_warden' ? 'Magnetic Warden' : 'Bell Titan'}
@@ -3086,9 +3395,6 @@ const App: React.FC = () => {
                                 const centerX = x, centerZ = z, baseY = y - 4;
                                 const crystals = getShieldCrystalPositions(centerX, centerZ, baseY);
                                 summonArenaRef.current = { cx: centerX, cz: centerZ, baseY };
-                                // The climb-face magnets light up tower-by-tower as each crystal
-                                // spawns (in the cutscene); flag it so the reset strips them.
-                                climbMagnetsActiveRef.current = true;
 
                                 const cam = controlsRef.current?.getCamera();
                                 const startPos = cam ? cam.pos.clone() : new THREE.Vector3(centerX + 0.5, baseY + 2, centerZ + 0.5);
@@ -3098,17 +3404,19 @@ const App: React.FC = () => {
                                     startQuat.setFromRotationMatrix(lookM);
                                 }
                                 handleInventoryContainerChange(null);
+                                releaseDetachedCamera();
                                 bossSummon.begin({
                                     centerX, centerZ, baseY, startPos, startQuat,
                                     onSpawnBoss: () => {
                                         // baseY is the platform floor; spawn one above so the boss
                                         // settles on top of it (the dais is flattened by now). The
                                         // run-away grace already happened (the energy-ball charge),
-                                        // so it spawns aggro and the fight starts immediately.
-                                        entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
+                                        // so it spawns aggro and the fight starts immediately. The
+                                        // encounter takes the tower crystals that shield its forms.
+                                        const boss = entityManager.spawn(bossId, centerX + 0.5, baseY + 1, centerZ + 0.5, {
                                             bossId, regionId: regionId ?? undefined,
-                                            shieldCrystalPositions: crystals,
                                         });
+                                        if (boss) magneticWardenEncounter.begin(boss.id, { centerX, centerZ, baseY, crystals });
                                     },
                                 });
                             }}
@@ -3120,7 +3428,7 @@ const App: React.FC = () => {
                             }}
                         />
                     )}
-                    <Chat 
+                    {(!hudHidden || showCommandInput) && <Chat
                         messages={messages} 
                         showInput={showCommandInput} 
                         inputValue={commandValue} 
@@ -3134,49 +3442,79 @@ const App: React.FC = () => {
                         onMessageClick={(action) => executeCommand(action)} 
                         showSuggestions={showSuggestions}
                         interactionsDisabled={!!openContainer || isPaused || showAtlasViewer || showDeathScreen}
-                    />
+                    />}
                 </>
             )}
 
             <Canvas 
                 key={canvasKey} 
-                shadows={shadowsEnabled ? { type: THREE.BasicShadowMap } : false} 
-                gl={{ antialias: antialiasing, preserveDrawingBuffer: isElectron }}
+                onCreated={state => {
+                    gameRendererRef.current = state;
+                    // The scene itself never moves. Left on, its own matrix update marks
+                    // it dirty every frame, and three then recomputes the world matrix of
+                    // every object under it (~7,000 at render distance 24), static
+                    // terrain included. Moving objects still update themselves.
+                    state.scene.matrixAutoUpdate = false;
+                    state.scene.updateMatrix();
+                }}
+                shadows={shadowsEnabled ? { type: shadowMapType } : false}
+                gl={{
+                    antialias: contextAntialias, alpha: false, preserveDrawingBuffer: isElectron,
+                    toneMapping: TONE_MAPPING === 'agx' ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping,
+                }}
+                dpr={[1, graphics.config.maxPixelRatio]}
                 camera={{ fov: 70, near: 0.1, far: 1000, position: [currentSpawnPos.x, currentSpawnPos.y, currentSpawnPos.z] }} 
                 frameloop={canvasFrameloop}
             >
                 {!isNativeLoop && <FPSLimiter limit={effectiveMaxFps} />}
+                <ShadowTypeSync type={shadowMapType} />
                 {!isCapturingPanorama && <RenderStats fpsRef={fpsRef} />}
+                {import.meta.env.DEV && <DevQaProbe />}
+                {/* Scene-only motion blur. Unmounted when off, which restores R3F's
+                    own render path and costs nothing; never mounted during a
+                    panorama capture. */}
+                {pipelinePlan.active && !isCapturingPanorama && <RenderPipeline plan={pipelinePlan} />}
                 {/* Streamer runs logic loop for loading */}
-                <ChunkStreamer active={appState === 'game' || appState === 'loading'} />
+                <ChunkStreamer active={appState === 'game' || appState === 'loading'} loading={appState === 'loading'} />
                 {/* Single ticker driving all chunk fade animations */}
                 <ChunkFadeTicker />
+                <ChunkRegionBatches shadowsEnabled={shadowsEnabled} />
+                {/* Past the full chunks, out to the Horizon Distance (horizon/, horizonPass.ts). */}
+                {appState === 'game' && <HorizonTerrain samples={graphics.config.antialiasing === 'off' ? 0 : 4} />}
+                <CameraReach renderDistance={drawDistance} />
                 <AudioListenerUpdater isPaused={isPaused} gameMode={gameMode} keepMenuMusicContext={appState !== 'game'} suspendMusic={isDead || showDeathScreen} />
                 <GameLoop isPaused={worldPaused} foodStateRef={foodStateRef} setHealth={setHealth} setHunger={setHunger} setSaturation={setSaturation} health={health} gameMode={gameMode} isDead={isDead} />
-                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={renderDistance} shadowsEnabled={shadowsEnabled} brightness={brightness} />
-                <Clouds isPaused={worldPaused} renderDistance={renderDistance} fadeInEnabled={chunkFadeEnabled} visible={cloudsEnabled} />
+                <DayNightCycle ref={dayNightRef} isPaused={worldPaused} renderDistance={drawDistance} shadowQuality={graphics.config.shadows} brightness={brightness} visualStyle={graphics.config.visualStyle} />
+                <Clouds isPaused={worldPaused} renderDistance={drawDistance} quality={graphics.config.clouds} />
+                {graphics.config.ambientParticles !== 'off' && appState === 'game' && (
+                    <AmbientParticles density={graphics.config.ambientParticles} isPaused={worldPaused} />
+                )}
                 
                 <Suspense fallback={null}>
-                    {allDisplayedChunks.map(c => <ChunkMesh key={`${c.cx},${c.cz}`} cx={c.cx} cz={c.cz} shadowsEnabled={shadowsEnabled} fadeInEnabled={chunkFadeEnabled} fadingOut={c.fadingOut} onFadeOutComplete={c.fadingOut ? () => handleChunkFadeOutComplete(c.cx, c.cz) : undefined} />)}
-                    <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} isPaused={worldPaused} brightness={brightness} />
+                    {/* Chunk meshes, and those fading out (ChunkMesh.tsx). */}
+                    <ChunkField shadowsEnabled={shadowsEnabled} fadeEnabled={chunkFadeEnabled} />
+                    <DropManager drops={drops} playerPos={playerPosRef.current} onCollect={handleCollect} onDestroy={handleDestroy} pickupsBlocked={pickupsBlocked} pickupLockUntilRef={pickupLockUntilRef} isPaused={worldPaused} brightness={brightness} />
                     <EntityRenderer />
+                {gameMode !== 'spectator' && !isDead && !cinematicMode && !isCapturingPanorama && <PlayerModel itemType={inventory[selectedSlot]?.type ?? null} equipment={equipment} />}
                     <BossCinematic />
                     <BellTitanCinematic />
+                    <WardenDefeatCinematic />
                     {/* Add Particle Manager to the Scene */}
                     <ParticleManager isPaused={worldPaused} brightness={brightness} />
                     <FxParticles isPaused={worldPaused} />
                 </Suspense>
 
                 <InteractionController
-                    isLocked={isLocked && !isDead && appState === 'game' && !isCapturingPanorama} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
+                    hideHighlights={hudHidden || isCapturingPanorama || cinematicMode}
+                    isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode} selectedSlot={selectedSlot} inventory={inventory} consumeItem={consumeItem} damageHeldItem={damageHeldItem}
                     spawnDrop={handleSpawnDrop} setBreakingVisual={setBreakingVisualDirect}
                     setOpenContainer={handleInteractionContainerOpen}
                     openContainer={openContainer} gameMode={gameMode} setInventory={setInventory} isDead={isDead} foodStateRef={foodStateRef} setIsSleeping={setIsSleeping} onSleepInBed={handleSleepInBed}
                     onPlaceBoat={handlePlaceBoat} onEnterBoat={handleEnterBoat}
                 />
 
-                <BreakingVisualMesh suspended={isCapturingPanorama} />
-                {appState === 'game' && showMagneticFields && (
+                <BreakingVisualMesh suspended={hudHidden || isCapturingPanorama || cinematicMode} />
+                {appState === 'game' && !hudHidden && !isCapturingPanorama && showMagneticFields && (
                     <MagneticFieldDebug playerPosRef={playerPosRef} />
                 )}
 
@@ -3187,7 +3525,6 @@ const App: React.FC = () => {
                             ref={playerRef} key={respawnKey} position={currentSpawnPos}
                             isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isDead && !isSleeping && appState === 'game' && !isCapturingPanorama && !cinematicMode}
                             isPaused={worldPaused || cinematicMode} gameMode={gameMode} baseFov={fov} setHeadBlock={setHeadBlockType}
-                            forcedFov={isCapturingPanorama ? 90 : null}
                             onChunkChange={(cx, cz) => { 
                                 applyChunkCenter(cx, cz);
                             }} 
@@ -3201,21 +3538,25 @@ const App: React.FC = () => {
                     </>
                 )}
                 
-                {gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
+                {!hudHidden && gameMode !== 'spectator' && !isDead && !isCapturingPanorama && !cinematicMode && <HeldItem selectedSlot={selectedSlot} inventory={inventory} isLocked={isLocked && !openContainer && !isPaused && !showCommandInput && !isSleeping} brightness={brightness} />}
                 
                 <CameraControls ref={controlsRef} onLock={onLock} onUnlock={onUnlock} disableMouseLook={isCapturingPanorama || cinematicMode} />
             </Canvas>
 
             {isCapturingPanorama && (
-                <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-black/30 flex items-center justify-center">
-                    <div className="px-4 py-2 bg-black/70 border border-white/20 text-white font-pixel text-sm">
+                <div className="absolute inset-0 z-[450] pointer-events-auto cursor-wait bg-ink-950/30 flex items-center justify-center">
+                    <div className="atlas-panel px-8 py-4 text-px-2 text-parchment-100">
                         Capturing panorama… input locked
                     </div>
                 </div>
             )}
           </>
       )}
-      <Analytics />
+      {/* Hover hints (data-tip) in the kit's tooltip style. */}
+      <TooltipHost />
+      {/* Vercel's analytics only exist on the hosted web build; the desktop
+          app would just request a script that isn't there. */}
+      {!isElectron && <Analytics />}
     </div>
   );
 };

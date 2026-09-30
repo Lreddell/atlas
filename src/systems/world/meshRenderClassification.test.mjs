@@ -32,7 +32,7 @@ const countFaces = (buffer, axis, normalValue, plane) => {
     const { positions, normals } = buffer;
     let quads = 0;
     for (let v = 0; v * 3 < positions.length; v += 4) {
-        if (normals[v * 3 + axis] === normalValue && positions[v * 3 + axis] === plane) quads++;
+        if (normals[v * 4 + axis] === normalValue * 127 && positions[v * 3 + axis] === plane) quads++;
     }
     return quads;
 };
@@ -79,6 +79,6 @@ test('water against a slab keeps its face instead of opening a hole', () => {
     chunk[index3D(5, 2, 5)] = BlockType.WATER;
     chunk[index3D(6, 2, 5)] = BlockType.ECHO_STONE_SLAB;
     const res = generateGeometryData(0, 0, chunk, meta, {}, { center: light }, false);
-    const waterFacesTowardSlab = countFaces(res.transparent, 0, 1, 6);
+    const waterFacesTowardSlab = countFaces(res.water, 0, 1, 6);
     assert.ok(waterFacesTowardSlab >= 1, 'water face against a slab must render');
 });

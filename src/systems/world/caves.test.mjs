@@ -137,7 +137,10 @@ test('GenConfig.caves exposes every carving + decoration knob', () => {
 test('the generator drives caves from config + the shared caves.ts sampler', () => {
     assert.match(chunkGen, /from '\.\/caves'/);
     assert.match(chunkGen, /const caveCfg = GenConfig\.caves/);
-    assert.match(chunkGen, /isCaveCarved\(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg\)/);
+    // Carved a column at a time (CaveColumn: isCaveCarved's tests, sampled down the column).
+    assert.match(chunkGen, /new CaveColumn\(caveCfg, \(\) => noiseSet\.cave\.column\(\)\)/);
+    assert.match(chunkGen, /caves\.begin\(cwx, cwz\)/);
+    assert.match(chunkGen, /caves\.isCarved\(y, depth, taper\)/);
     // Deep-stone substitution and the decoration + geode passes are wired in.
     assert.match(chunkGen, /isDeepslateAt\(y, seededRand01\(wx, y, wz, 71\), caveCfg\)/);
     assert.match(chunkGen, /BlockType\.DEEPSLATE/);
@@ -208,4 +211,33 @@ test('the World Editor exposes a CAVES tab and a live cross-section preview', ()
     for (const key of ['wormFreq', 'wormThreshold', 'cavernThreshold', 'noodleThreshold', 'deepslateStartY', 'glowLichenChance', 'geodeRarity']) {
         assert.ok(chunkBase.includes(`'${key}'`), `editor missing control for ${key}`);
     }
+});
+
+// The chunk generator carves through CaveColumn and the editor preview through
+// isCaveCarved: every answer must match, or the preview would lie.
+test('carving a column at a time answers exactly as isCaveCarved does', () => {
+    const configs = [
+        cfg,
+        { ...cfg, wormFreq: 0.031, wormYScale: 0.8, cavernMinDepth: 4, cavernMaskThreshold: -0.2, noodleMaskThreshold: -0.3, deepCheeseMaxY: 40 },
+        { ...cfg, wormEnabled: false, noodleThreshold: 0.2 },
+    ];
+    let carved = 0;
+    for (const c of configs) {
+        const column = new caves.CaveColumn(c, () => ns.cave.column());
+        for (let i = 0; i < 60; i++) {
+            const cwx = ox + i * 37 - 900;
+            const cwz = oz + i * 53 - 1200;
+            const isBreach = caves.isBreachColumn(cwx, cwz, n2, c);
+            const surface = 50 + (i % 7) * 12;
+            column.begin(cwx, cwz);
+            for (let y = surface; y > -64; y--) {
+                const depth = surface - y;
+                const taper = caves.caveSurfaceTaper(depth, isBreach, c);
+                const want = caves.isCaveCarved(cwx, y, cwz, depth, taper, n3, c);
+                assert.equal(column.isCarved(y, depth, taper), want, `column ${cwx},${cwz} at y ${y}`);
+                if (want) carved++;
+            }
+        }
+    }
+    assert.ok(carved > 100, 'the columns must cross some caves');
 });

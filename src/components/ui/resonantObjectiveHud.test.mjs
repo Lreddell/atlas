@@ -37,10 +37,13 @@ test('the world owns every teaching cue instead of floating instructions', () =>
 
 test('the HUD uses Atlas tokens, stays compact, and can be recalled without neon treatment', () => {
   assert.match(hud, /max-w-\[360px\]/);
-  assert.match(hud, /KeyO/);
+  // Recalled by its rebindable key, O by default.
+  assert.match(hud, /isKeyFor\('vaultObjective', event\)/);
+  assert.match(fs.readFileSync(path.join(root, 'src/systems/player/keyBindings.ts'), 'utf8'), /id: 'vaultObjective'.*defaults: \['KeyO'\]/);
   assert.match(hud, /4000/);
-  assert.match(hud, /font-pixel/);
-  assert.match(hud, /bg-black\/65/);
-  assert.match(hud, /border-stone-500\/45/);
+  // The kit's quiet ink card and parchment type, like the item tooltips.
+  assert.match(hud, /atlas-tooltip/);
+  assert.match(hud, /text-px-2 text-parchment-50/);
+  assert.doesNotMatch(hud, /bg-black|border-stone|text-white|text-gray/);
   assert.doesNotMatch(hud, /neon|glow|gradient|scanline|hologram|cyan|purple/i);
 });

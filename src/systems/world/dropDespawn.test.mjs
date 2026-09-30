@@ -10,7 +10,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 test('drops only age toward despawn while loaded near the player (drop-aging rule)', () => {
     const app = read('src/App.tsx');
     // The despawn timer advances only while the drop is within the loaded range of
-    // the player, so wandering far pauses it instead of deleting the drop.
+    // the player (the full chunks; the horizon loads none), so wandering
+    // far pauses it instead of deleting the drop.
     assert.match(app, /const loadedRange = renderDistance \* CHUNK_SIZE \+ CHUNK_SIZE/);
     assert.match(app, /if \(dx \* dx \+ dz \* dz <= loadedR2\) d\.age \+= TICK_MS/);
     assert.match(app, /d\.age < DROP_LIFETIME_MS/);
@@ -25,9 +26,9 @@ test('drops only age toward despawn while loaded near the player (drop-aging rul
 test('turning off boss frenzy does not snap the fading track pitch (no glitch)', () => {
     const mc = read('src/systems/sound/MusicController.ts');
     // Only the ON path applies the rate live; OFF leaves the fading track alone so
-    // the next track (death/world) starts fresh at 1.0 via playNextTrack().
-    assert.match(mc, /if \(active\) \{[\s\S]*?setMusicPlaybackRate\(FRENZY_PLAYBACK_RATE\)/);
-    assert.doesNotMatch(mc, /setMusicPlaybackRate\(active \? FRENZY_PLAYBACK_RATE : 1\.0\)/);
+    // the next track (death/world) starts fresh via playNextTrack().
+    assert.match(mc, /if \(active\) \{[\s\S]{0,200}this\.applyMusicRate\(\);[\s\S]{0,40}return;/);
+    assert.doesNotMatch(mc, /setMusicPlaybackRate\(1\.0\)\s*;?\s*\}\s*$/m);
 });
 
 test('the death screen no longer shows a score', () => {

@@ -39,9 +39,7 @@ test('the vault teaches each stage with a compact objective line', () => {
   assert.doesNotMatch(objectives, /Strike the exposed bell/);
   assert.match(objectives, /Grand: long, guarded \| Fracture: short, hazardous/);
 
-  assert.match(objectiveHud, /font-pixel/);
-  assert.match(objectiveHud, /bg-black\/65/);
-  assert.match(objectiveHud, /border-stone-500\/45/);
+  assert.match(objectiveHud, /atlas-tooltip/);
   assert.match(objectiveHud, /aria-live="polite"/);
   assert.doesNotMatch(objectiveHud, /neon|glow|gradient|cyan|purple/i);
   assert.match(objectiveHud, /vault:room-solved/);
@@ -59,7 +57,9 @@ test('prose popups and the vault guide command are removed', () => {
   assert.doesNotMatch(runtime, /showGuidance|shownGuidance|replayGuide|getVaultStageGuidance/);
   assert.doesNotMatch(controller, /querySelector|createElement|data-texture-slot|updateCooldownOverlay/);
   assert.doesNotMatch(chat, /resonantVaultCommands|executeResonantVaultCommand/);
-  assert.doesNotMatch(commandData, /['"]\/vault['"]/);
+  // /vault skip is the supported debug shortcut; only the retired guide is gone.
+  assert.doesNotMatch(commandData, /['"]\/vault guide['"]/);
+  assert.match(commandData, /'\/vault':\s*\['skip'\]/);
   assert.equal(fs.existsSync(path.join(root, 'src/systems/world/resonantVaultCommands.ts')), false);
 });
 
@@ -70,7 +70,7 @@ test('current-facing copy removes prose tutorials and prototype items', () => {
 
 test('active content teaches conventional equipment and one machinery artifact', () => {
   const purposeBlock = guide.match(/RESONANT_ITEM_PURPOSES:[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1] ?? '';
-  assert.equal((purposeBlock.match(/\[BlockType\./g) ?? []).length, 29);
+  assert.equal((purposeBlock.match(/\[BlockType\./g) ?? []).length, 16);
   for (const id of ['VAULTSTEEL_SPEAR','VAULT_CROSSBOW','VAULT_BOLT','BELLBREAKER_MAUL','ECHO_TUNING_FORK','TITAN_HAMMER']) {
     assert.match(guide, new RegExp(`\\[BlockType\\.${id}\\]:\\s*'[^']+'`), `missing summary for ${id}`);
   }

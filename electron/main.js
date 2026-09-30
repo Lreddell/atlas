@@ -47,7 +47,8 @@ function createWindow() {
     height: 720,
     title: 'Atlas',
     icon: windowIcon,
-    backgroundColor: '#87CEEB',
+    // The page's own startup colour (index.html), so launch doesn't flash a second blue.
+    backgroundColor: '#2f5cab',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
@@ -69,6 +70,16 @@ function createWindow() {
       event.preventDefault();
       void openExternalUrl(url);
     }
+  });
+
+  // The default menu binds Ctrl+W (close window), Ctrl+R (reload) and Ctrl+Q
+  // (quit). Ctrl is sprint, W is forward and Q is drop, so those fire mid-game and
+  // close or reload the window. Ignore the menu shortcuts for these keys while
+  // still delivering the key to the game.
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    const mod = input.control || input.meta;
+    const key = String(input.key || '').toLowerCase();
+    mainWindow.webContents.setIgnoreMenuShortcuts(mod && (key === 'w' || key === 'r' || key === 'q'));
   });
 
   // Production vs Development Logic
@@ -321,17 +332,6 @@ ipcMain.handle('panorama:delete', async (_event, payload) => {
     return { ok: true };
   } catch (error) {
     return { ok: false, error: String(error?.message || error) };
-  }
-});
-
-ipcMain.handle('panorama:getDefaultPath', async () => {
-  try {
-    const dir = getPanoramaStorageDir();
-    const defaultFile = path.join(dir, 'panorama-2026-03-10-07-06-34.png');
-    await fs.access(defaultFile);
-    return { filePath: defaultFile };
-  } catch {
-    return { filePath: null };
   }
 });
 

@@ -10,7 +10,12 @@ import {
     type VaultEnemyKind,
 } from '../systems/entities/resonantVaultEnemies';
 import { gameEvents } from '../systems/events/GameEvents';
+import { worldManager } from '../systems/WorldManager';
+import { blockDust } from '../systems/fx/blockChips';
+import { BLOCKS } from '../data/blocks';
+import { BlockType } from '../types';
 import { RESONANT_ENTITY_MATERIAL_UVS } from '../systems/textures/resonantEntityTexturePixels';
+import { useEntityWorldLight } from '../systems/graphics/entityWorldLight';
 import {
     VAULT_ENEMY_MODELS,
     sampleVaultEnemyAnimation,
@@ -30,6 +35,25 @@ const MATERIAL_TINTS: Readonly<Record<VaultEnemyMaterialId, number>> = {
 
 type VaultEnemyMaterials = Readonly<Record<VaultEnemyMaterialId, THREE.MeshLambertMaterial>>;
 
+const ACCENT_EMISSIVE = 0x2b2619;
+const ACCENT_EMISSIVE_INTENSITY = 0.14;
+/**
+ * The hit flash: white, plus a soft glow of its own, because the enemies take
+ * the vault's light (entityWorldLight.ts) and a white tint alone would read
+ * as grey in a dim hall.
+ */
+const HURT_EMISSIVE = 0xffffff;
+const HURT_EMISSIVE_INTENSITY = 0.45;
+
+function setHurtLook(materials: VaultEnemyMaterials, hurt: boolean): void {
+    for (const [materialId, material] of Object.entries(materials) as [VaultEnemyMaterialId, THREE.MeshLambertMaterial][]) {
+        material.color.setHex(hurt ? 0xffffff : MATERIAL_TINTS[materialId]);
+        const accent = materialId === 'accent';
+        material.emissive.setHex(hurt ? HURT_EMISSIVE : accent ? ACCENT_EMISSIVE : 0x000000);
+        material.emissiveIntensity = hurt ? HURT_EMISSIVE_INTENSITY : accent ? ACCENT_EMISSIVE_INTENSITY : 1;
+    }
+}
+
 function useVaultEnemyMaterials(texturePath: string): VaultEnemyMaterials {
     const source = useTexture(texturePath);
     const materials = useMemo(() => {
@@ -48,8 +72,8 @@ function useVaultEnemyMaterials(texturePath: string): VaultEnemyMaterials {
             map.needsUpdate = true;
             const material = new THREE.MeshLambertMaterial({ map, color: MATERIAL_TINTS[materialId] });
             if (materialId === 'accent') {
-                material.emissive.setHex(0x2b2619);
-                material.emissiveIntensity = 0.14;
+                material.emissive.setHex(ACCENT_EMISSIVE);
+                material.emissiveIntensity = ACCENT_EMISSIVE_INTENSITY;
             }
             result[materialId] = material;
         }
@@ -117,6 +141,8 @@ function actionClip(entity: Entity): VaultEnemyAnimationClip | null {
 const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id, kind }) => {
     const model = VAULT_ENEMY_MODELS[kind];
     const materials = useVaultEnemyMaterials(model.texture);
+    // Lit by the vault around it: its lamps, its dark corners.
+    const worldLight = useEntityWorldLight(materials);
     const rootRef = useRef<THREE.Group>(null);
     const partRefs = useRef(new Map<string, THREE.Group>());
     const lastPosition = useRef<THREE.Vector3 | null>(null);
@@ -195,6 +221,7 @@ const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id
             entity.pos.z + pose.rootPosition[2],
         );
         root.rotation.set(pose.rootRotation[0], entity.yaw + pose.rootRotation[1], pose.rootRotation[2]);
+        worldLight.update(entity.pos.x, entity.pos.y + entity.height * 0.5, entity.pos.z, delta);
         const hurtScale = Date.now() < entity.hurtUntil ? 1.025 : 1;
         root.scale.set(
             model.visualScale[0] * hurtScale,
@@ -212,10 +239,7 @@ const VaultEnemyInstance: React.FC<{ id: number; kind: VaultEnemyKind }> = ({ id
             group.rotation.set(...rotation);
             group.scale.set(...scale);
         }
-        const hurt = Date.now() < entity.hurtUntil;
-        for (const [materialId, material] of Object.entries(materials) as [VaultEnemyMaterialId, THREE.MeshLambertMaterial][]) {
-            material.color.setHex(hurt ? 0xffffff : MATERIAL_TINTS[materialId]);
-        }
+        setHurtLook(materials, Date.now() < entity.hurtUntil);
     });
 
     return (
@@ -243,9 +267,21 @@ interface VaultEnemyDeathVisual {
     startedAt: number;
 }
 
+/** The toppled body lies still until here, then settles into the floor. */
+const DEATH_FALL_MS = 920;
+const DEATH_SETTLE_MS = 180;
+
+/** The block a body lands on, for its dust; plain stone when it lands on nothing solid. */
+function floorDustBlock(x: number, y: number, z: number): BlockType {
+    const floor = worldManager.getBlock(Math.floor(x), Math.floor(y - 0.05), Math.floor(z), false);
+    const def = BLOCKS[floor];
+    return floor === BlockType.AIR || !def || def.noCollision || floor === BlockType.WATER ? BlockType.STONE : floor;
+}
+
 const VaultEnemyDeathInstance: React.FC<{ visual: VaultEnemyDeathVisual }> = ({ visual }) => {
     const model = VAULT_ENEMY_MODELS[visual.kind];
     const materials = useVaultEnemyMaterials(model.texture);
+    const worldLight = useEntityWorldLight(materials);
     const rootRef = useRef<THREE.Group>(null);
     const partRefs = useRef(new Map<string, THREE.Group>());
     const childrenByParent = useMemo(() => {
@@ -259,23 +295,34 @@ const VaultEnemyDeathInstance: React.FC<{ visual: VaultEnemyDeathVisual }> = ({ 
         return result;
     }, [model]);
     const roots = useMemo(() => model.parts.filter((part) => !part.parent), [model]);
+    const dusted = useRef(false);
     const register = (partId: string, group: THREE.Group | null): void => {
         if (group) partRefs.current.set(partId, group);
         else partRefs.current.delete(partId);
     };
 
-    useFrame(() => {
+    useFrame((_, delta) => {
         const root = rootRef.current;
         if (!root) return;
-        const progress = Math.max(0, Math.min(1, (Date.now() - visual.startedAt) / 920));
+        worldLight.update(visual.x, visual.y + 0.5, visual.z, delta);
+        const elapsed = Date.now() - visual.startedAt;
+        const progress = Math.max(0, Math.min(1, elapsed / DEATH_FALL_MS));
         const pose = sampleVaultEnemyAnimation(visual.kind, 'death', progress, progress);
+        // Once down, the body sinks and shrinks away into a puff of floor dust
+        // rather than blinking out.
+        const settle = Math.max(0, Math.min(1, (elapsed - DEATH_FALL_MS) / DEATH_SETTLE_MS));
+        const remain = 1 - settle * settle;
+        if (!dusted.current && elapsed >= DEATH_FALL_MS - 80) {
+            dusted.current = true;
+            blockDust.emit(floorDustBlock(visual.x, visual.y, visual.z), visual.x, visual.y, visual.z, visual.kind === 'bell_hound' ? 0.6 : 0.85);
+        }
         root.position.set(
             visual.x + pose.rootPosition[0],
-            visual.y + pose.rootPosition[1],
+            visual.y + pose.rootPosition[1] - settle * 0.3,
             visual.z + pose.rootPosition[2],
         );
         root.rotation.set(pose.rootRotation[0], visual.yaw + pose.rootRotation[1], pose.rootRotation[2]);
-        root.scale.set(...model.visualScale);
+        root.scale.set(model.visualScale[0] * remain, model.visualScale[1] * remain, model.visualScale[2] * remain);
         for (const part of model.parts) {
             const group = partRefs.current.get(part.id);
             if (!group) continue;

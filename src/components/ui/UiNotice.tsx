@@ -1,4 +1,5 @@
 import React from 'react';
+import { CloseMark } from './kit/PixelArt';
 
 export interface UiNoticeState {
     type: 'success' | 'info' | 'error';
@@ -10,10 +11,12 @@ interface UiNoticeProps {
     onDismiss: () => void;
 }
 
+// A notice is an ink strip with a coloured bar on its left edge: green done,
+// brass for information, ember for a problem.
 const NOTICE_STYLES: Record<UiNoticeState['type'], string> = {
-    success: 'border-green-500/60 bg-green-950/95 text-green-200',
-    info: 'border-blue-500/60 bg-blue-950/95 text-blue-100',
-    error: 'border-red-500/60 bg-red-950/95 text-red-200',
+    success: 'shadow-[inset_6px_0_0_#6fae5a] text-parchment-100',
+    info: 'shadow-[inset_6px_0_0_#c99a4a] text-parchment-100',
+    error: 'shadow-[inset_6px_0_0_#d8644c] text-parchment-50',
 };
 
 export const UiNotice: React.FC<UiNoticeProps> = ({ notice, onDismiss }) => {
@@ -24,16 +27,16 @@ export const UiNotice: React.FC<UiNoticeProps> = ({ notice, onDismiss }) => {
             <div
                 role={notice.type === 'error' ? 'alert' : 'status'}
                 aria-live={notice.type === 'error' ? 'assertive' : 'polite'}
-                className={`pointer-events-auto flex items-center gap-3 border-2 px-4 py-3 font-pixel text-xs shadow-2xl ${NOTICE_STYLES[notice.type]}`}
+                className={`pointer-events-auto flex items-center gap-3 border-2 border-ink-950 bg-ink-800 py-2 pl-6 pr-3 text-px-2 atlas-panel-in ${NOTICE_STYLES[notice.type]}`}
             >
-                <span className="min-w-0 flex-1 text-center">{notice.message}</span>
+                <span className="min-w-0 flex-1 text-shadow-md">{notice.message}</span>
                 <button
                     type="button"
                     onClick={onDismiss}
-                    className="flex h-6 w-6 flex-shrink-0 items-center justify-center border border-current/40 text-sm hover:bg-white/10"
+                    className="atlas-btn h-8 w-8 flex-shrink-0"
                     aria-label="Dismiss message"
                 >
-                    ×
+                    <CloseMark />
                 </button>
             </div>
         </div>

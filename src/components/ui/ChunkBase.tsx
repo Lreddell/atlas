@@ -804,7 +804,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
     const biomeKeys = Object.keys(GenConfig.biomes);
 
     return (
-        <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden">
+        <div className="absolute inset-0 bg-[#222] flex z-[200] overflow-hidden font-tool">
             <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
             {editorStatus && (
                 <div
@@ -833,7 +833,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                     <button onClick={() => setActiveSection('noise')} className={`flex-1 py-3 text-xs font-bold ${activeSection === 'noise' ? 'bg-[#333] text-white border-b-2 border-orange-500' : 'text-gray-400 hover:bg-[#2a2a2a]'}`}>NOISE</button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                <div key={activeSection} className="flex-1 overflow-y-auto p-4 space-y-6 atlas-fade-in">
                     {/* --- NOISE SECTION --- */}
                     {activeSection === 'noise' && (
                         <div className="bg-[#1a1a1a] rounded p-3 border border-white/10">
@@ -1077,7 +1077,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                         <div className="text-sm font-bold text-amber-400">Cave Cross-Section</div>
                                         <div className="text-[9px] text-gray-500 font-mono">x={center.x} · z={center.z}</div>
                                     </div>
-                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map centre (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
+                                    <div className="text-[10px] text-gray-500 mb-2 leading-relaxed">A live side view down the map center (pan the map to move it). Same carve math the world uses; tune a slider and watch the caves change.</div>
                                     <CaveCrossSection centerX={center.x} centerZ={center.z} noiseSet={previewNoiseSet} version={configVersion} width={Math.max(200, sidebarWidth - 56)} />
                                     <div className="flex justify-between text-[9px] text-gray-500 mt-1 font-mono"><span>◼ stone</span><span>◼ deepslate</span><span>◼ cave</span><span>◼ lava</span></div>
                                 </div>
@@ -1133,7 +1133,7 @@ export const ChunkBase: React.FC<ChunkBaseProps> = ({ onBack }) => {
                                 type="text" 
                                 value={localSeedInput} 
                                 onChange={e => setLocalSeedInput(e.target.value)}
-                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-pixel focus:border-blue-500 outline-none placeholder:text-gray-800"
+                                className="flex-1 bg-black border border-[#333] px-2 py-1.5 text-[10px] text-white font-tool focus:border-blue-500 outline-none placeholder:text-gray-800"
                                 placeholder="Seed..."
                             />
                             {localSeedInput !== worldManager.getSeed().toString() && (

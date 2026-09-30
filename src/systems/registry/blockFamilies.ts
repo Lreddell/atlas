@@ -98,11 +98,10 @@ export const GRASS_BLOCKS = [
     BlockType.JUNGLE_GRASS,
 ] as const;
 
+/** Minecraft's stone crafting materials: stone tools and furnaces take either, mixed or not. */
 export const STONE_TOOL_MATERIALS = [
     BlockType.COBBLESTONE,
-    BlockType.ANDESITE,
-    BlockType.DIORITE,
-    BlockType.GRANITE,
+    BlockType.COBBLED_DEEPSLATE,
 ] as const;
 
 export const LOG_BLOCKS = WOOD_FAMILIES.map(({ log }) => log);

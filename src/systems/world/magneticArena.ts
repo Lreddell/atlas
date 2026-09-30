@@ -467,16 +467,19 @@ export function restoreArenaBridges(
 //     no lighting flood, only a remesh. ---
 
 /** The climbable magnet inner-face cells of the towers (baseY..top), each with its
- *  magnet type. Pass `onlyPillar` to restrict to a single tower. */
-function collectClimbFaceCells(
-    centerX: number, centerZ: number, baseY: number, onlyPillar?: number,
+ *  magnet type. Pass `onlyPillar` to restrict to a single tower, and `polarity`
+ *  to override the tower's default (the Warden lights its towers in its own
+ *  polarity and flips them with every swap). */
+export function collectClimbFaceCells(
+    centerX: number, centerZ: number, baseY: number, onlyPillar?: number, polarity?: number,
 ): { x: number; y: number; z: number; magnet: BlockType }[] {
     const out: { x: number; y: number; z: number; magnet: BlockType }[] = [];
     const top = baseY + ARENA_PILLAR_HEIGHT;
     for (let i = 0; i < ARENA_PILLAR_COUNT; i++) {
         if (onlyPillar !== undefined && i !== onlyPillar) continue;
         const c = arenaPillarCenter(centerX, centerZ, i);
-        const magnet = arenaPillarPolarity(i) > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
+        const sign = polarity === undefined ? arenaPillarPolarity(i) : polarity;
+        const magnet = sign > 0 ? BlockType.POSITIVE_MAGNET : BlockType.NEGATIVE_MAGNET;
         const dirX = Math.sign(c.x - centerX), dirZ = Math.sign(c.z - centerZ);
         for (let ox = -3; ox <= 3; ox++) {
             for (let oz = -3; oz <= 3; oz++) {
@@ -491,23 +494,49 @@ function collectClimbFaceCells(
     return out;
 }
 
-/** Place ONE tower's magnet climb faces (called as each shield crystal spawns, so
- *  the climb lights up pillar-by-pillar during the summon cutscene). */
+/** Place ONE tower's magnet climb faces in the given polarity (the Warden ignites
+ *  a tower when its crystal powers the shield, and rewrites it on every swap). */
 export function placePillarClimbMagnets(
+    centerX: number, centerZ: number, baseY: number, pillarIndex: number,
+    setBlocks: (edits: ArenaEdit[]) => void,
+    polarity?: number,
+): void {
+    setBlocks(collectClimbFaceCells(centerX, centerZ, baseY, pillarIndex, polarity)
+        .map((e) => ({ x: e.x, y: e.y, z: e.z, type: e.magnet })));
+}
+
+/** Strip ONE tower's climb faces back to brick (its crystal is gone). */
+export function stripPillarClimbMagnets(
     centerX: number, centerZ: number, baseY: number, pillarIndex: number,
     setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
     setBlocks(collectClimbFaceCells(centerX, centerZ, baseY, pillarIndex)
-        .map((e) => ({ x: e.x, y: e.y, z: e.z, type: e.magnet })));
+        .map((e) => ({ x: e.x, y: e.y, z: e.z, type: BlockType.MAGNETITE_BRICKS })));
 }
 
-/** Strip the magnet climb faces back to brick (boss past 50%, and on arena reset). */
+/** Strip every tower's climb faces back to brick (fight over, arena reset). */
 export function stripArenaClimbMagnets(
     centerX: number, centerZ: number, baseY: number,
     setBlocks: (edits: ArenaEdit[]) => void,
 ): void {
     setBlocks(collectClimbFaceCells(centerX, centerZ, baseY)
         .map((e) => ({ x: e.x, y: e.y, z: e.z, type: BlockType.MAGNETITE_BRICKS })));
+}
+
+/** Inclusive block bounds of one tower's climb-face cells (the flux zone the
+ *  player physics consults while the tower flips). */
+export function getPillarClimbFaceBounds(
+    centerX: number, centerZ: number, baseY: number, pillarIndex: number,
+): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
+    const cells = collectClimbFaceCells(centerX, centerZ, baseY, pillarIndex);
+    if (cells.length === 0) return null;
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const cell of cells) {
+        min.x = Math.min(min.x, cell.x); min.y = Math.min(min.y, cell.y); min.z = Math.min(min.z, cell.z);
+        max.x = Math.max(max.x, cell.x); max.y = Math.max(max.y, cell.y); max.z = Math.max(max.z, cell.z);
+    }
+    return { min, max };
 }
 
 /** World positions of the four shield crystals (raised pedestal tops). */

@@ -97,7 +97,8 @@ function nearestBoxHit(
 export function voxelRaycast(
     ox: number, oy: number, oz: number,
     dx: number, dy: number, dz: number,
-    maxDist: number
+    maxDist: number,
+    accepts?: (type: BlockType) => boolean
 ): VoxelHit | null {
     let vx = Math.floor(ox);
     let vy = Math.floor(oy);
@@ -141,7 +142,7 @@ export function voxelRaycast(
 
         const type = worldManager.tryGetBlock(vx, vy, vz);
         if (type === null) continue; // unloaded chunk, pass through, like a missing mesh
-        if (type !== BlockType.AIR) {
+        if (type !== BlockType.AIR && (!accepts || accepts(type))) {
             // Full-cell blocks (the common case): the cell boundary the DDA crossed
             // is the hit, with the entry-face normal.
             if (isFullCubeSelection(type)) {

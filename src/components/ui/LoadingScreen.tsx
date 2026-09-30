@@ -1,15 +1,21 @@
 
 import React, { useEffect, useState } from 'react';
-import { getDirtBackground } from '../../utils/textures';
+import { ATLAS_PADDING, ATLAS_STRIDE, getAtlasCanvas, getDirtBackground } from '../../utils/textures';
+import { ATLAS_COLS } from '../../data/blocks';
+import { BlockType } from '../../types';
+import { resolveTexture } from '../../systems/world/textureResolver';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 
 // World loading tips. Add more entries here to expand the tip pool.
 const LOADING_TIPS = [
     "Press E to open your inventory. Atlas includes both 2x2 and 3x3 crafting.",
+    "The recipe book beside the crafting grid learns a recipe the moment you pick up one of its ingredients.",
+    "Shift-click a recipe in the recipe book to fill the grid for as many crafts as your materials allow.",
     "Use the mouse wheel or number keys 1-9 to switch hotbar slots instantly.",
     "Press Q to drop the selected item. Ctrl+Q drops the whole stack.",
     "Press / to open command input with autocomplete for supported commands.",
     "Press F3 to toggle the debug screen.",
+    "Rebind any key, and set mouse sensitivity and inverted look, in Options > Controls.",
     "Press F4 to open the texture atlas viewer.",
     "Press F8 in-game to capture a panorama for the menu background.",
     "One log crafts into 4 planks, and 2 stacked planks craft into 4 sticks.",
@@ -27,6 +33,7 @@ const LOADING_TIPS = [
     "Use /phase set 0-7 to change the moon phase.",
     "Use /tp <x> <y> <z> to teleport to exact coordinates.",
     "Use /locate biome <name> to search for biomes like cherry_grove or magnetic_fields.",
+    "Use /locate vault to find the nearest Resonant Vault and its listening spire.",
     "In Creative, the inventory is organized into Building, Natural, Functional, Tools, Food, and Ingredients tabs.",
     "While hovering an item in the inventory, press 1-9 to swap it directly into a hotbar slot.",
     "Inventory tooltips show combat, mining, defense, durability, and food stats when they apply.",
@@ -40,12 +47,22 @@ const LOADING_TIPS = [
     "Parked boats stay in the world, save with the world, and can be broken back into items.",
     "Boats can be launched on water inside sealed regions because they are traversal entities, not terrain edits.",
     "Wheat seeds from tall grass weave into wool. Three wool over three planks makes a bed.",
+    "Food grows wild: apples fall from oak leaves, bananas from jungle leaves, and Lumen Berries from cave glow lichen.",
+    "Till grass or dirt with a hoe and plant wheat seeds on it. Water within four blocks makes the wheat grow much faster.",
+    "Harvest wheat when it turns gold: it drops wheat and extra seeds. Three wheat in a row bake a loaf of bread.",
+    "Jumping onto farmland from a height tramples it back to dirt. Walk, or roll as you land.",
     "Armor is craftable from iron, gold, diamond, and copper. Defense pips and armor durability appear on the HUD.",
     "Rare Magnetic Fields are sealed against normal terrain editing until the Magnetic Warden is defeated.",
     "Magnetic Fields contain ruins, pylons, loot caches, spike hazards, and polarity launch pads between the rim and the arena.",
     "On a launch pad, matching polarity repels you while opposite polarity pulls you toward it.",
-    "Summon the Magnetic Warden at the central altar and break its four shield crystals before damaging the boss.",
-    "The Warden's deflectable bolts can be struck back at it. Aim through the boss when you swing.",
+    "Match the Warden's color to shrug off its bolts; oppose it to strike. Same polarity repels, opposite attracts.",
+    "The Warden's shield comes from its tower crystals, and it never fades: break every crystal of the form to expose it.",
+    "A lit tower carries the Warden's polarity. Oppose it to climb, and flip (R) inside the flux window when the Warden swaps, or the tower throws you off.",
+    "C is a dodge roll, a magnetic dash onto an opposite magnet, a repel leap from a matched Warden, or a launch off a wall, all by the one rule.",
+    "Roll (C) as you land and the fall costs nothing. You can roll in mid-air too, which is how you get back to the platform after a launch.",
+    "Dash into an exposed, opposed Warden to arm a Magnet Slam: the next strike lands harder and staggers it.",
+    "Launch off a tower from high up and aim for its landing pool: water breaks the fall.",
+    "Press F5 for free third person, where the body runs its own way while the camera orbits; every boss fight starts in it. F6 is the over-the-shoulder view.",
     "Polarity Boots use R to flip polarity. Matching polarity repels and opposite polarity attracts.",
     "Upgraded Polarity Boots use N to switch magnetic power on or off.",
     "Iron armor is ferromagnetic. Without active magnetic protection, nearby magnets can pull you around.",
@@ -54,7 +71,7 @@ const LOADING_TIPS = [
     "Use /setspawn to set your respawn point, and /keepinventory on to keep items on death.",
     "Worlds can be renamed, imported, and exported from the main menu.",
     "Desktop builds can open the active save folder directly from the world menu.",
-    "Panorama Settings lets you manage captured backgrounds and tune blur, gradient, and rotation.",
+    "Options > Menu Background manages captured panoramas and tunes their blur, shading, and rotation.",
     "The built-in tutorial under Options covers controls, gear, boats, commands, and Magnetic Fields progression.",
     "Moon phases run on an 8-day cycle, and each phase changes nighttime brightness.",
     "Volcanic Crags use lava in place of normal water, which makes them one of Atlas's harshest biomes.",
@@ -78,10 +95,53 @@ const LOADING_TIPS = [
     "World generation presets can be selected when creating a new world.",
     "Launch pads are useful places to learn the polarity rules before entering the arena.",
     "The Warden fight rewards timing, preparation, and understanding polarity more than raw damage alone.",
+    "Options > Video Settings has Low, Medium, High, and Ultra graphics, and Visual Style switches between the Luminous and Classic looks.",
+    "Shadow Style draws shadows crisp on the textures' 16-pixel grid (Pixel) or smooth (Soft).",
+    "Press F7 for a detached camera: fly it into place, press again to park it while you play, and again to bring it back.",
+    "Press F1 to hide the HUD, your hand, and the block outline for a clean screenshot.",
+    "Pick a skin from the carousel in Options > Skins, or import your own Minecraft skin.",
+    "A key bound to two actions shows in red on the Controls screen, and every key can be reset to its default.",
+    "Commands like /gamemode, /time, and /tp need Allow Commands, set when you create a world or later in World Options. /help, /sound, and /music always work.",
+    "World Options in the pause menu switches Allow Commands, Keep Inventory, and Show Coordinates for the world you are in.",
+    "Water spreads seven blocks from its source and runs toward the nearest drop. Lava pouring down into water turns it to stone.",
+    "Hold the button with a hoe or seeds in hand to till or plant along a whole row.",
+    "Felled trees shed their leaves a few seconds later, dropping the saplings, apples, and sticks they held.",
+    "In the recipe book, a red recipe is missing an ingredient and a table mark means it needs a Crafting Table.",
+    "At four hearts or less a heartbeat warns you, quickening as your health falls.",
+    "When the Warden is out of view, an arrow around the crosshair points to it and shows how far away it is.",
+    "Press Jump (Space) to skip the Warden's defeat cinematic.",
 ];
 
-// Mirrors the procedural drawing in utils/textures.ts for the grass block faces.
-function buildGrassTextures(): { top: string; side: string; bottom: string } {
+type GrassFaces = { top: string; side: string; bottom: string };
+
+// The spinning cube wears the game's own grass once the texture atlas exists.
+function atlasGrassTextures(): GrassFaces | null {
+    const atlas = getAtlasCanvas();
+    if (!atlas) return null;
+    const tile = (slot: number) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return '';
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+            atlas,
+            (slot % ATLAS_COLS) * ATLAS_STRIDE + ATLAS_PADDING,
+            Math.floor(slot / ATLAS_COLS) * ATLAS_STRIDE + ATLAS_PADDING,
+            16, 16, 0, 0, 16, 16,
+        );
+        return canvas.toDataURL();
+    };
+    return {
+        top: tile(resolveTexture(BlockType.GRASS, 'top', 0, 1, 0, 0).texIdx),
+        side: tile(resolveTexture(BlockType.GRASS, 'front', 0, 0, 1, 0).texIdx),
+        bottom: tile(resolveTexture(BlockType.DIRT, 'top', 0, 1, 0, 0).texIdx),
+    };
+}
+
+// Before the atlas is ready (the first boot), a stand-in drawn the old way.
+function buildGrassTextures(): GrassFaces {
     const S = 16;
     const mk = (): HTMLCanvasElement => {
         const c = document.createElement('canvas');
@@ -137,7 +197,7 @@ interface LoadingScreenProps {
 export const LoadingScreen: React.FC<LoadingScreenProps> = ({
     phase,
     percent,
-    details: _details,
+    details,
     backgroundMode = 'dirt',
     panoramaBackgroundDataUrl = null,
     panoramaFaceDataUrls = null,
@@ -147,12 +207,12 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
 }) => {
     const [bgPattern, setBgPattern] = useState('');
     const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * LOADING_TIPS.length));
-    const [grassTex, setGrassTex] = useState<{ top: string; side: string; bottom: string } | null>(null);
+    const [grassTex, setGrassTex] = useState<GrassFaces | null>(null);
     const clampedPercent = Math.max(0, Math.min(100, Math.floor(percent)));
 
     useEffect(() => {
         setBgPattern(getDirtBackground());
-        setGrassTex(buildGrassTextures());
+        setGrassTex(atlasGrassTextures() ?? buildGrassTextures());
     }, []);
 
     useEffect(() => {
@@ -178,28 +238,6 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 imageRendering: 'pixelated',
             }}
         >
-            <style>{`
-                .text-shadow-lg { text-shadow: 2px 2px 0px #3f3f3f; }
-                .text-shadow-md { text-shadow: 1px 1px 0px #3f3f3f; }
-                @keyframes ls-cube-spin {
-                    from { transform: rotateX(25deg) rotateY(0deg); }
-                    to   { transform: rotateX(25deg) rotateY(360deg); }
-                }
-                .ls-scene { perspective: 320px; width: 80px; height: 80px; }
-                .ls-cube {
-                    width: 80px; height: 80px;
-                    position: relative;
-                    transform-style: preserve-3d;
-                    animation: ls-cube-spin 9s linear infinite;
-                }
-                .ls-face { position: absolute; width: 80px; height: 80px; image-rendering: pixelated; }
-                .ls-top    { transform: rotateX(90deg)  translateZ(40px); }
-                .ls-bottom { transform: rotateX(-90deg) translateZ(40px); }
-                .ls-front  { transform:                 translateZ(40px); }
-                .ls-back   { transform: rotateY(180deg) translateZ(40px); }
-                .ls-left   { transform: rotateY(-90deg) translateZ(40px); }
-                .ls-right  { transform: rotateY(90deg)  translateZ(40px); }
-            `}</style>
 
             {backgroundMode === 'panorama' && (
                 <MenuPanoramaBackground
@@ -212,10 +250,9 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                 />
             )}
 
-            {/* Panel styling matches the pause-menu overlay treatment. */}
-            <div className="relative flex flex-col items-center">
-                <div className="absolute inset-0 bg-[#151515] opacity-90 border-2 border-white/10" />
-                <div className="relative z-10 flex flex-col items-center gap-5 py-8 px-10 w-[440px]">
+            {/* The same framed panel as the menus. */}
+            <div className="atlas-panel flex w-[540px] max-w-[calc(100vw-2rem)] flex-col items-center atlas-fade-in">
+                <div className="relative z-10 flex w-full flex-col items-center gap-5 px-9 pb-8 pt-7">
 
                     {/* Spinning grass block */}
                     <div className="ls-scene">
@@ -230,27 +267,28 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({
                     </div>
 
                     {/* Phase title */}
-                    <h1 className="text-white font-pixel text-xl text-shadow-md">
+                    <h1 className="atlas-title text-center">
                         {phase || 'Loading World...'}
                     </h1>
 
-                    {/* Progress bar */}
-                    <div className="w-full bg-[#111] border-2 border-white/30 h-8 relative">
-                        <div
-                            className="h-full bg-[#2e7d32] transition-all duration-100 ease-linear"
-                            style={{ width: `${clampedPercent}%` }}
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center text-white font-pixel text-xs text-shadow-md pointer-events-none">
-                            {clampedPercent}%
+                    {/* Progress: a brass bar filling a recessed track, then what is being done. */}
+                    <div className="w-full">
+                        <div className="atlas-well relative h-9 w-full" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={clampedPercent}>
+                            <div
+                                className="absolute bottom-[2px] left-[2px] top-[2px] bg-brass-400 shadow-[inset_0_2px_0_#f3d488,inset_0_-2px_0_#7a5424] transition-[width] duration-100 ease-linear motion-reduce:transition-none"
+                                style={{ width: `calc((100% - 4px) * ${clampedPercent / 100})` }}
+                            />
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-px-2 text-parchment-50 text-shadow-md">
+                                {clampedPercent}%
+                            </div>
                         </div>
+                        {details && <p className="mt-2 h-6 text-center text-read text-parchment-400">{details}</p>}
                     </div>
 
                     {/* Tips section */}
-                    <div className="w-full bg-black/40 border-2 border-white/20 px-4 py-3 min-h-[76px] flex flex-col gap-1">
-                        <span className="text-yellow-300 font-pixel text-xs text-shadow-md tracking-wide">
-                            DID YOU KNOW...
-                        </span>
-                        <p className="text-gray-200 font-pixel text-sm leading-relaxed text-shadow-md">
+                    <div className="atlas-well flex min-h-[112px] w-full flex-col gap-1 px-4 py-3">
+                        <span className="atlas-heading">Tip</span>
+                        <p className="text-read text-parchment-100">
                             {LOADING_TIPS[tipIndex]}
                         </p>
                     </div>

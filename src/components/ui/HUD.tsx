@@ -1,13 +1,16 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ItemStack, BlockType, EquipmentSlot } from '../../types';
 import { Slot } from './Slot';
 import { BLOCKS } from '../../data/blocks';
 import { MAX_BREATH } from '../../systems/player/playerConstants';
 import { totalDefense, type Equipment } from '../../systems/registry/equipment';
 import { getItemStats, getMaxDurability } from '../../systems/registry/itemStats';
-import { summarizeItemStats } from '../../systems/registry/itemTooltips';
+import { CombatFeedback, CombatOverlay } from './CombatFeedback';
 import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
+import { PixelArt } from './kit/PixelArt';
+import { ARMOR_PLATE, BREATH_BUBBLE, LIFE_CRYSTAL, PROVISIONS, type VitalIcon } from './kit/vitalIcons';
+import { HUD_SCALE } from './hudScale';
 
 interface HUDProps {
     health: number;
@@ -20,77 +23,45 @@ interface HUDProps {
     headBlockType?: BlockType;
     lastDamageTime?: number;
     equipment?: Equipment;
+    magnetic?: boolean;
 }
 
-// A single armor pip (chestplate silhouette). fill: 0 | 0.5 | 1.
-const ArmorPip: React.FC<{ fill: number }> = ({ fill }) => (
-    <div className="w-7 h-7 relative" aria-hidden>
-        <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
-            {/* empty outline */}
-            <path d="M3 2 L6 2 L6 4 L10 4 L10 2 L13 2 L14 5 L12 7 L12 14 L4 14 L4 7 L2 5 Z" fill="#3a3a3a" stroke="#141414" strokeWidth="1" />
-        </svg>
-        {fill > 0 && (
-            <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full"
-                style={fill === 0.5 ? { clipPath: 'inset(0 50% 0 0)' } : undefined}>
-                <path d="M3 2 L6 2 L6 4 L10 4 L10 2 L13 2 L14 5 L12 7 L12 14 L4 14 L4 7 L2 5 Z" fill="#c9d2da" stroke="#5b6770" strokeWidth="1" />
-                <path d="M4 3 L5 3 L5 5 L4 5 Z" fill="#eef3f7" />
-            </svg>
-        )}
-    </div>
-);
+// The bottom-centre HUD (vitals, hotbar, item name and the readouts above it)
+// is laid out in art pixels, drawn `scale` screen pixels each (hudScale.ts), so
+// every part keeps its proportions.
+const HudScaleContext = React.createContext(2);
 
-// Hearts and hunger shanks in the same angled, stylized, drop-shadowed style as
-// the armor pips: a stroked vector silhouette drawn dark for the empty
-// "container", then the filled colour + a highlight glint on top, clipped for
-// half values. `shapes` can be several sub-paths (the drumstick is bone + meat).
-type PipPath = { d: string; fill: string; stroke?: string };
+// One vital pip: the icon's empty form, with the full form over it, clipped to
+// a half for odd values. Pips sit 10 art pixels apart and overlap by their
+// one-pixel margins, so ten of them span half the hotbar. `half` picks which
+// side a half pip keeps (health drains from the right, provisions from the
+// left); `clipTop` empties a bubble from the top, in art pixels.
+const VitalPip: React.FC<{ icon: VitalIcon; fill: number; half?: 'left' | 'right'; clipTop?: number }> = ({
+    icon, fill, half = 'left', clipTop,
+}) => {
+    const scale = React.useContext(HudScaleContext);
+    let clip: string | undefined;
+    if (clipTop !== undefined) clip = `inset(${clipTop * scale}px 0 0 0)`;
+    else if (fill === 0.5) clip = half === 'left' ? `inset(0 ${5 * scale}px 0 0)` : `inset(0 0 0 ${5 * scale}px)`;
+    return (
+        <div className="relative overflow-visible" style={{ width: 10 * scale, height: 11 * scale }} aria-hidden>
+            <PixelArt rows={icon.rows} palette={icon.empty} scale={scale} className="absolute left-0 top-0" />
+            {fill > 0 && (
+                <div className="absolute left-0 top-0" style={{ width: 11 * scale, height: 11 * scale, clipPath: clip }}>
+                    <PixelArt rows={icon.rows} palette={icon.full} scale={scale} />
+                </div>
+            )}
+        </div>
+    );
+};
 
-// Heart: two angled lobes tapering to a point.
-const HEART_D = 'M8 5 L5.5 3 L3 3 L2 5.5 L2 7 L8 13.5 L14 7 L14 5.5 L13 3 L10.5 3 Z';
-const HEART_GLINT_D = 'M4 5 L5.5 4.6 L5 6.6 L4 6.6 Z';
-// Drumstick: rounded meat (upper-right) with a knobbed bone to the lower-left.
-const DRUM_BONE_D = 'M7 8 L9 10 L6 13 L6 14 L4 14 L4 12 L3 12 L3 10 L5 10 L5 8 Z';
-const DRUM_MEAT_D = 'M9 2 L12 2 L14 4 L14 8 L12 10 L9 10 L7 8 L7 4 Z';
-const DRUM_GLINT_D = 'M9.5 3.5 L11.5 3.5 L10.7 5.5 L9.3 5.5 Z';
-
-const PipSvg: React.FC<{ paths: PipPath[]; style?: React.CSSProperties }> = ({ paths, style }) => (
-    <svg viewBox="0 0 16 16" shapeRendering="crispEdges" className="absolute inset-0 w-full h-full" style={style}>
-        {paths.map((p, i) => (
-            <path key={i} d={p.d} fill={p.fill} stroke={p.stroke} strokeWidth={p.stroke ? 1 : undefined} strokeLinejoin="round" />
-        ))}
-    </svg>
-);
-
-// One stat pip (heart or shank). fill: 0 | 0.5 | 1. `half` picks which side the
-// half-value keeps so the icon's main mass stays visible.
-const StatPip: React.FC<{
-    empty: PipPath[]; filled: PipPath[]; fill: number; half: 'left' | 'right';
-}> = ({ empty, filled, fill, half }) => (
-    <div className="w-7 h-7 relative drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-hidden>
-        <PipSvg paths={empty} />
-        {fill > 0 && (
-            <div className="absolute inset-0"
-                style={fill === 0.5 ? { clipPath: half === 'left' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)' } : undefined}>
-                <PipSvg paths={filled} />
-            </div>
-        )}
-    </div>
-);
-
-const HEART_EMPTY: PipPath[] = [{ d: HEART_D, fill: '#491316', stroke: '#6a1a1a' }];
-const HEART_FILLED: PipPath[] = [
-    { d: HEART_D, fill: '#d81f1f', stroke: '#7a0d0d' },
-    { d: HEART_GLINT_D, fill: '#ff9a9a' },
-];
-const HUNGER_EMPTY: PipPath[] = [
-    { d: DRUM_BONE_D, fill: '#413528', stroke: '#2c2318' },
-    { d: DRUM_MEAT_D, fill: '#4a3320', stroke: '#2c2318' },
-];
-const HUNGER_FILLED: PipPath[] = [
-    { d: DRUM_BONE_D, fill: '#f3ead0', stroke: '#b0a078' },
-    { d: DRUM_MEAT_D, fill: '#c96b2a', stroke: '#6e3410' },
-    { d: DRUM_GLINT_D, fill: '#f0a35a' },
-];
+// Which way each heart jolts on a hit, so they scatter instead of moving as one.
+const HEART_JOLT = [1, -0.5, 0.5, -1, 1, -1, 0.5, -0.5, 1, -1];
+// Uneasy pips twitch on their own clocks.
+const jitterStyle = (i: number): React.CSSProperties => ({
+    animationDelay: `${-((i * 0.37) % 0.9).toFixed(2)}s`,
+    animationDuration: `${(0.8 + ((i * 0.13) % 0.3)).toFixed(2)}s`,
+});
 
 const statFill = (value: number, index: number) => {
     const full = index < Math.floor(value / 2);
@@ -99,8 +70,8 @@ const statFill = (value: number, index: number) => {
 };
 
 // Equipped-armor readout: one mini slot per worn piece with its durability bar
-// (via Slot) plus a red pulse when a piece is nearly broken. Tooltips carry the
-// exact numbers.
+// (via Slot) plus an ember ring that pulses when a piece is nearly broken.
+// Tooltips carry the exact numbers.
 const ARMOR_HUD_SLOTS: EquipmentSlot[] = ['helmet', 'chestplate', 'leggings', 'boots'];
 const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
     const pieces = ARMOR_HUD_SLOTS.map((slot) => ({ slot, item: equipment[slot] }));
@@ -117,8 +88,8 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
                 const title = `${BLOCKS[item.type].name}: ${stats?.defense ?? 0} defense`
                     + (max !== undefined ? `, ${cur}/${max} durability` : ', unbreakable');
                 return (
-                    <div key={slot} title={title}
-                        className={`relative ${low ? 'animate-pulse ring-2 ring-red-500 rounded-sm' : ''}`}>
+                    <div key={slot} data-tip={title}
+                        className={`relative ${low ? 'animate-pulse outline outline-2 outline-ember-300' : ''}`}>
                         <Slot item={item} size="small" />
                     </div>
                 );
@@ -127,111 +98,112 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
     );
 };
 
-export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment }) => {
-    const [shakeOffset, setShakeOffset] = useState<number[]>(Array(10).fill(0));
-    const [isFlashing, setIsFlashing] = useState(false);
-    const [hungerShake, setHungerShake] = useState<number[]>(Array(10).fill(0));
-
+export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment, magnetic = false }) => {
+    // Screen pixels per art pixel for the bottom-centre HUD; u(n) is n art pixels.
+    const scale = HUD_SCALE;
+    const u = (artPixels: number) => artPixels * scale;
+    const [showItemName, setShowItemName] = useState(true);
+    const hotbarRef = useRef<HTMLDivElement>(null);
+    const [selectionFrame, setSelectionFrame] = useState<{ x: number; y: number; size: number } | null>(null);
+    const selectedType = inventory[selectedSlot]?.type;
     useEffect(() => {
-        if (lastDamageTime > 0) {
-            setIsFlashing(true);
-            
-            // Generate random shakes for hearts
-            const interval = setInterval(() => {
-                if (Date.now() - lastDamageTime > 250) {
-                    setShakeOffset(Array(10).fill(0));
-                    setIsFlashing(false);
-                    clearInterval(interval);
-                } else {
-                    setShakeOffset(prev => prev.map(() => Math.floor(Math.random() * 3) - 1)); // Random -1, 0, 1
-                }
-            }, 50);
+        setShowItemName(true);
+        const timer = window.setTimeout(() => setShowItemName(false), 2500);
+        return () => window.clearTimeout(timer);
+    }, [selectedSlot, selectedType]);
 
-            return () => clearInterval(interval);
-        }
-    }, [lastDamageTime]);
+    // The hotbar's selection frame glides between slots, two art pixels out
+    // from the one selected. Measured from the slots themselves so it always
+    // lines up with them.
+    useLayoutEffect(() => {
+        const slot = hotbarRef.current?.children[selectedSlot] as HTMLElement | undefined;
+        if (!slot) return;
+        const next = { x: slot.offsetLeft - 2 * scale, y: slot.offsetTop - 2 * scale, size: slot.offsetWidth + 4 * scale };
+        setSelectionFrame(prev => (prev && prev.x === next.x && prev.y === next.y && prev.size === next.size ? prev : next));
+    }, [selectedSlot, gameMode, scale]);
 
-    // Saturation Shake (Jitter Hunger Bar when Saturation is 0)
-    useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
-        if (saturation <= 0 && gameMode === 'survival' && hunger < 20) {
-             interval = setInterval(() => {
-                 setHungerShake(prev => prev.map(() => (Math.random() < 0.2 ? (Math.random() > 0.5 ? 1 : -1) : 0)));
-             }, 50);
-        } else {
-             setHungerShake(Array(10).fill(0));
-        }
-        return () => clearInterval(interval);
-    }, [saturation, gameMode, hunger]);
+    // Hearts flash and jolt for a quarter second after a hit (a CSS animation,
+    // replayed by keying the hearts to the hit), and twitch while health is low.
+    // The hunger shanks twitch while saturation is spent. No timers, no re-renders.
+    const heartsHit = lastDamageTime > 0 && Date.now() - lastDamageTime < 250;
+    const heartsUneasy = health <= 4;
+    const hungerUneasy = saturation <= 0 && gameMode === 'survival' && hunger < 20;
 
     return (
-        <>
+        <HudScaleContext.Provider value={scale}>
             <ResonantObjectiveHUD inventory={inventory} />
             {gameMode === 'spectator' ? (
-                 <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/40 px-3 py-1 rounded text-white font-bold text-shadow-sm z-40">
+                 // Bottom centre, where the hotbar would be: clear of the boss bar at the top.
+                 <div className="atlas-plate absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
                     Spectator Mode
                 </div>
             ) : (
-                 <div id="crosshair" className="border-2 border-white opacity-60 rounded-full mix-blend-difference z-50"></div>
+                 // A pixel cross that inverts whatever it sits on, so it reads on sky and stone alike.
+                 <div id="crosshair" className="mix-blend-difference z-40 bg-[linear-gradient(#e8e8e8,#e8e8e8),linear-gradient(#e8e8e8,#e8e8e8)] bg-[length:2px_18px,18px_2px] bg-center bg-no-repeat"></div>
             )}
             
-            {/* Health/Hunger - Only in Survival */}
+            {/* Vitals - only in Survival. Health (with armor above it) on the
+                left, provisions (with breath above them) on the right, the two
+                together exactly as wide as the hotbar below. */}
             {gameMode === 'survival' && (
-                <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex items-end gap-16 z-40 p-2 pointer-events-none">
-                    <div className="flex flex-col gap-1 items-start">
-                        {/* Armor (defense) pips, shown above the hearts while any
-                            armor is worn; 1 pip = 2 defense points, matching the
-                            applyArmor() reduction the pips represent. */}
+                <div
+                    className="absolute left-1/2 -translate-x-1/2 flex items-end justify-between z-40 pointer-events-none"
+                    // --hud-px: one pixel of the original HUD, for the pips' jolts and twitches.
+                    style={{ bottom: u(40), width: u(240), paddingBottom: u(4), '--hud-px': `${scale / 2}px` } as React.CSSProperties}
+                >
+                    <div className="flex flex-col items-start" style={{ gap: u(1) }}>
+                        {/* Armor (defense) plates, shown above the life crystals
+                            while any armor is worn; 1 plate = 2 defense points,
+                            matching the applyArmor() reduction they represent. */}
                         {equipment && totalDefense(equipment) > 0 && (
-                            <div className="flex gap-1 h-7" title={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
+                            <div className="flex" style={{ height: u(11) }} data-tip={`${totalDefense(equipment)} armor; reduces combat damage (not falls, fire, or drowning)`}>
                                 {Array.from({ length: 10 }).map((_, i) => {
                                     const def = Math.min(20, totalDefense(equipment));
                                     const fill = def >= (i + 1) * 2 ? 1 : (def === i * 2 + 1 ? 0.5 : 0);
-                                    return <ArmorPip key={i} fill={fill} />;
+                                    return <VitalPip key={i} icon={ARMOR_PLATE} fill={fill} />;
                                 })}
                             </div>
                         )}
-                         {/* Health Bar */}
-                        <div className="flex gap-1 h-7">
-                            {Array.from({length: 10}).map((_, i) => {
-                                const offsetY = shakeOffset[i] || 0;
-                                const flashClass = isFlashing ? 'brightness-150 contrast-125' : '';
-                                return (
-                                    <div
-                                        key={i}
-                                        className={`transition-transform duration-75 ${flashClass}`}
-                                        style={{ transform: `translateY(${offsetY}px)` }}
-                                    >
-                                        <StatPip empty={HEART_EMPTY} filled={HEART_FILLED} fill={statFill(health, i)} half="left" />
-                                    </div>
-                                );
-                            })}
+                        {/* Life crystals */}
+                        <div className="flex" style={{ height: u(11) }}>
+                            {Array.from({length: 10}).map((_, i) => (
+                                <div
+                                    key={heartsHit ? `${i}:${lastDamageTime}` : i}
+                                    className={heartsHit ? 'atlas-heart-hit' : heartsUneasy ? 'atlas-jitter' : undefined}
+                                    style={heartsHit
+                                        ? ({ '--atlas-jolt': HEART_JOLT[i] } as React.CSSProperties)
+                                        : heartsUneasy ? jitterStyle(i) : undefined}
+                                >
+                                    <VitalPip icon={LIFE_CRYSTAL} fill={statFill(health, i)} half="left" />
+                                </div>
+                            ))}
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1 items-end relative">
-                        {/* Breath Bar (Bubbles) - Positioned ABOVE hunger */}
-                        {breath < MAX_BREATH && ( 
-                            <div className="flex gap-1 justify-end absolute bottom-9 right-0">
-                                {Array.from({length: 10}).map((_, i) => (
-                                    <div key={i} className="w-7 h-7 bg-black/30 border border-black/50 relative overflow-hidden rounded-full">
-                                        <div className="absolute inset-0 bg-blue-400/20" />
-                                        <div className="absolute bottom-0 left-0 bg-blue-400 shadow-[0_0_5px_rgba(0,191,255,0.5)] transition-all duration-200" style={{ height: i < Math.floor(breath / 30) ? '100%' : (i === Math.floor(breath/30) ? `${(breath%30/30)*100}%` : '0%'), width: '100%' }}></div>
-                                    </div>
-                                ))}
+                    <div className="flex flex-col items-end" style={{ gap: u(1) }}>
+                        {/* Breath, above the provisions while underwater. The
+                            bubbles go from the right, each emptying from the top
+                            a whole art pixel at a time. */}
+                        {breath < MAX_BREATH && (
+                            <div className="flex" style={{ height: u(11) }}>
+                                {Array.from({length: 10}).map((_, i) => {
+                                    const left = breath / 30 - i;
+                                    const clipTop = left >= 1 ? 0 : left <= 0 ? 11 : Math.round((1 - left) * 11);
+                                    return <VitalPip key={i} icon={BREATH_BUBBLE} fill={left > 0 ? 1 : 0} clipTop={clipTop} />;
+                                })}
                             </div>
                         )}
 
-                        {/* Hunger Bar (Shanks), flex-row-reverse, so index 0 is
-                            the RIGHTMOST shank and depletes from the left. */}
-                        <div className="flex gap-1 flex-row-reverse h-7">
+                        {/* Provisions, flex-row-reverse, so index 0 is the
+                            RIGHTMOST loaf and they deplete from the left. */}
+                        <div className="flex flex-row-reverse" style={{ height: u(11) }}>
                             {Array.from({length: 10}).map((_, i) => (
                                 <div
                                     key={i}
-                                    className="transition-transform duration-75"
-                                    style={{ transform: `translateY(${hungerShake[i] || 0}px)` }}
+                                    className={hungerUneasy ? 'atlas-jitter' : undefined}
+                                    style={hungerUneasy ? jitterStyle(i + 3) : undefined}
                                 >
-                                    <StatPip empty={HUNGER_EMPTY} filled={HUNGER_FILLED} fill={statFill(hunger, i)} half="right" />
+                                    <VitalPip icon={PROVISIONS} fill={statFill(hunger, i)} half="right" />
                                 </div>
                             ))}
                         </div>
@@ -242,34 +214,74 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {/* Equipped armor readout (icons + durability bars, bottom-left) */}
             {gameMode === 'survival' && equipment && <ArmorReadout equipment={equipment} />}
 
-            {/* Hotbar */}
+            {/* Selected item name. Lifted clear of whatever else is stacked in the
+                bottom centre: the hotbar always, plus the hearts and (when worn)
+                the armor pips in survival, so the label never lands on them. */}
+            {gameMode !== 'spectator' && <div
+                className="absolute left-1/2 z-40 flex max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col items-center pointer-events-none"
+                style={{
+                    bottom: u(gameMode === 'survival' ? ((equipment && totalDefense(equipment) > 0) || breath < MAX_BREATH ? 73 : 61) : 46),
+                    width: u(160),
+                    gap: u(4),
+                }}
+            >
+                {/* The gauges above the name are drawn at the original scale:
+                    zoomed whole, their 2px art lands on the same grid. */}
+                <div className="flex w-full justify-center" style={{ zoom: scale / 2 }}>
+                    <CombatFeedback magnetic={magnetic} />
+                </div>
+                <div className="max-w-full" style={{ height: u(13) }}>
+                    {inventory[selectedSlot] && <div
+                        className={`atlas-plate truncate text-center transition-opacity duration-200 motion-reduce:transition-none ${showItemName ? 'opacity-100' : 'opacity-0'}`}
+                        style={{ fontSize: u(11), lineHeight: `${u(13)}px`, padding: `0 ${u(4)}px`, textShadow: `${scale}px ${scale}px 0 #070917` }}
+                    >
+                        {BLOCKS[inventory[selectedSlot]!.type].name}
+                    </div>}
+                </div>
+            </div>}
+
+            {/* The kit's screen-centre readouts (dodge dial, tower prompt, flashes).
+                A sibling of the hotbar rather than a portal, so the pause menu and
+                the inventory cover and blur it exactly as they do the rest. */}
+            {gameMode !== 'spectator' && <CombatOverlay />}
+
+            {/* Hotbar: nine 24-pixel slots, 2 apart, in a 3-pixel padding and a
+                1-pixel border (240 art pixels, 480px across), floating above
+                the bottom edge. */}
             {gameMode !== 'spectator' && (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center gap-2 z-40">
-                    {inventory[selectedSlot] && (
-                        <div className="flex flex-col items-center bg-black/40 px-3 py-1 rounded mb-1 pointer-events-none transition-opacity duration-200">
-                            <div className="text-white font-bold text-shadow-md text-base">
-                                {BLOCKS[inventory[selectedSlot]!.type].name}
-                            </div>
-                            {(() => {
-                                const summary = summarizeItemStats(inventory[selectedSlot]!);
-                                return summary
-                                    ? <div className="text-[11px] text-gray-300 text-shadow-sm font-pixel">{summary}</div>
-                                    : null;
-                            })()}
-                        </div>
-                    )}
-                    <div className="flex gap-1 bg-black/50 p-1.5 rounded-sm border-2 border-white/20">
+                <div className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center z-40" style={{ bottom: u(8) }}>
+                    <div
+                        ref={hotbarRef}
+                        className="relative flex border-ink-950 bg-ink-900/80"
+                        style={{ gap: u(2), padding: u(3), borderWidth: u(1), boxShadow: `inset 0 ${u(1)}px 0 rgba(70,87,138,0.45)` }}
+                    >
                         {inventory.slice(0, 9).map((it, i) => (
                             <Slot
                                 key={i}
                                 item={it}
+                                size="hotbar"
+                                scale={scale}
                                 selected={selectedSlot === i}
                                 animateChanges
+                                selectionFrame={false}
                             />
                         ))}
+                        {selectionFrame && (
+                            <span
+                                aria-hidden
+                                className="atlas-hotbar-frame atlas-select-frame absolute left-0 top-0 z-30 pointer-events-none"
+                                style={{
+                                    width: selectionFrame.size,
+                                    height: selectionFrame.size,
+                                    transform: `translate(${selectionFrame.x}px, ${selectionFrame.y}px)`,
+                                    borderWidth: u(2),
+                                    boxShadow: `0 0 0 ${u(1)}px #070917, inset 0 0 0 ${u(1)}px #070917`,
+                                }}
+                            />
+                        )}
                     </div>
                 </div>
             )}
-        </>
+        </HudScaleContext.Provider>
     );
 };

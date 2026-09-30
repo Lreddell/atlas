@@ -53,6 +53,14 @@
         "volume": 1.0,
         "pitch": 0.6
     },
+    "entity.player.heartbeat": {
+        "category": "player",
+        "sounds": [
+            "player/heartbeat"
+        ],
+        "volume": 0.85,
+        "fallback": false
+    },
     "entity.item.pickup": {
         "category": "player",
         "sounds": [

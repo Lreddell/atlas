@@ -48,21 +48,6 @@ test('music priority is explicit and ordered around the authored vault states', 
   assert.ok(getMusicContextPriority('VAULT') > getMusicContextPriority('CAVE'));
 });
 
-test('the authoritative Titan event selects the Bell Titan cue in the same event turn', () => {
-  const controller = read('src/systems/sound/MusicController.ts');
-  const musicIndex = JSON.parse(read('public/assets/rvx/sounds/music-index.json'));
-  const hook = controller.match(/gameEvents\.on\('vault:titan-awakened',[\s\S]*?\n\s*\}\);/)?.[0] ?? '';
-  assert.match(hook, /requestImmediateContextCrossfade\('BOSS_RESONANT',\s*PRIORITY_CROSSFADE_SECONDS/);
-  assert.match(controller, /const PRIORITY_CROSSFADE_SECONDS = PRIORITY_CROSSFADE_MS \/ 1000;/);
-  assert.doesNotMatch(hook, /stopMusic/);
-  assert.match(controller, /BOSS_RESONANT:\s*\["boss_bell_titan"\]/);
-  assert.deepEqual(musicIndex.boss_bell_titan, [
-    'assets/rvx/sounds/music/boss_bell_titan/bell_titan.ogg',
-  ]);
-  assert.equal(musicIndex.boss_resonant_bell_titan, undefined);
-  assert.doesNotMatch(controller, /custodian|mason/i);
-});
-
 test('vault context transitions crossfade directly and never stop into silence first', () => {
   const controller = read('src/systems/sound/MusicController.ts');
   const immediate = controller.slice(

@@ -39,8 +39,8 @@ test('mining power is a quantified stat from toolSpeed, no multiplier wording, n
 });
 
 test('hoes are explicitly excluded from mining stats, with the reason documented', () => {
-    // No tilling/farmland system → hoes have no toolType/toolSpeed in BLOCKS and
-    // no mining line; they still show Attack + Durability via ITEM_STATS.
+    // Hoes till rather than mine → no toolType/toolSpeed in BLOCKS and no
+    // mining line; they still show Attack + Durability via ITEM_STATS.
     assert.match(tooltips, /Hoes are deliberately absent/);
     const blocks = read('src/data/blocks.ts');
     assert.doesNotMatch(blocks, /BlockType\.WOOD_HOE\]:[^\n]*toolType/);
@@ -56,11 +56,11 @@ test('tooltips omit tier labels and purple informational descriptions', () => {
     assert.doesNotMatch(inventoryUI, /text-purple-200|bg-\[#100010\]|border-\[#2a0b4d\]/);
 });
 
-test('the inventory tooltip and hotbar name plate render the stat lines', () => {
+test('the inventory keeps stat lines while the hotbar name fades away', () => {
     // Inventory hover builds from getItemTooltip for both slots and equipment.
     assert.match(inventoryUI, /getItemTooltip\(item\)/);
     assert.match(inventoryUI, /handleSlotEnter\('equipment', index, item, e\)/);
     assert.match(inventoryUI, /hoverInfo\.lines\.map/);
-    // Hotbar shows the compact one-line summary under the item name.
-    assert.match(hud, /summarizeItemStats\(inventory\[selectedSlot\]!\)/);
+    assert.match(hud, /setShowItemName\(false\)/);
+    assert.doesNotMatch(hud, /summarizeItemStats/);
 });

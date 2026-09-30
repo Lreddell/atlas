@@ -8,6 +8,7 @@
 import type { ItemStack } from '../../types';
 import { BLOCKS } from '../../data/blocks';
 import { getItemStats, getMaxDurability } from './itemStats';
+import { getPlayerWeaponProfile } from '../combat/vaultWeapons';
 import { getResonantHotbarSummary, getResonantPurpose } from '../../data/resonantGuide';
 
 export interface TooltipLine {
@@ -20,10 +21,10 @@ export interface ItemTooltip {
     lines: TooltipLine[];
 }
 
-// Mining-tool display names. Hoes are deliberately absent: Atlas has no
-// tilling/farmland system, so hoes carry no toolType/toolSpeed in BLOCKS and
-// have no mining stat to show, they still display Attack and Durability via
-// ITEM_STATS like any other weapon-ish tool.
+// Mining-tool display names. Hoes are deliberately absent: they don't mine,
+// they till (farming.ts), so they carry no toolType/toolSpeed in BLOCKS and have
+// no mining stat to show; they still display Attack and Durability via
+// ITEM_STATS like any other weapon-ish tool, and a line saying what they till.
 const TOOL_NAMES: Record<string, string> = {
     pickaxe: 'Pickaxe',
     axe: 'Axe',
@@ -45,6 +46,11 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
     // Combat: melee attack damage (half-hearts, same value damageEntity uses).
     if (stats?.attack !== undefined) {
         lines.push({ text: `Attack: ${stats.attack}`, tone: 'stat' });
+    }
+    const weapon = getPlayerWeaponProfile(stack.type);
+    if (weapon) {
+        lines.push({ text: `Attack speed: ${(1 / weapon.cooldownSeconds).toFixed(2)} /s`, tone: 'stat' });
+        lines.push({ text: `${weapon.kind === 'crossbow' ? 'Projectile range' : 'Reach'}: ${weapon.reach.toFixed(1)} blocks`, tone: 'stat' });
     }
 
     // Mining: tool class and mining power (the raw registry
@@ -79,6 +85,8 @@ export function getItemTooltip(stack: ItemStack): ItemTooltip {
         lines.push({ text: `Food: +${def.nutrition} hunger, +${Math.round(saturation * 10) / 10} saturation`, tone: 'stat' });
     }
 
+    // A line on what an item is for, only where its name doesn't tell you
+    // (resonantGuide.ts): hoes, seeds and wheat work as they do in Minecraft.
     for (const purpose of getResonantPurpose(stack.type)) {
         lines.push({ text: purpose, tone: 'purpose' });
     }

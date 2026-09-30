@@ -7,6 +7,7 @@
 
 import type { ItemStack } from '../../../types';
 import type { ProgressionData } from '../../progression/ProgressionStore';
+import type { SavedDrop } from '../dropPersistence';
 
 export interface PlayerData {
     position: { x: number, y: number, z: number };
@@ -36,6 +37,14 @@ export interface WorldMetadata {
     created: number;
     lastPlayed: number;
     gameMode: 'survival' | 'creative' | 'spectator';
+    /** Cheat commands (/gamemode, /giveitem, /tp, ...) work in this world. Absent -> allowed. */
+    allowCommands?: boolean;
+    /** Items and armor stay with the player through death. Absent -> off. */
+    keepInventory?: boolean;
+    /** The HUD shows the player's position. Absent -> off. */
+    showCoordinates?: boolean;
+    /** Every item the player has held: the recipe book shows the recipes these go into. */
+    knownItems?: number[];
     player?: PlayerData; // Last known player state
     spawnPoint?: { x: number, y: number, z: number } | null;
     worldSpawn?: { x: number, y: number, z: number } | null;
@@ -51,6 +60,8 @@ export interface WorldMetadata {
     // no boats. Same optional-extension pattern as `progression`, so old worlds
     // and v1/v2 exports load unchanged.
     boats?: { x: number; y: number; z: number; yaw: number }[];
+    // Item drops lying in the world. Absent on older saves -> no drops.
+    drops?: SavedDrop[];
     /**
      * Vault footprints accepted before any of their chunks generated. Optional
      * so older worlds remain byte-for-byte compatible until an acceptance is written.

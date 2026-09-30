@@ -20,74 +20,67 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({ initialVersion, on
 
     if (!entry) return null;
 
+    const sections = entry.highlights.length > 0
+        ? [{ title: 'Highlights', items: entry.highlights }, ...entry.sections]
+        : entry.sections;
+
     return (
-        <div className="absolute inset-0 z-[260] flex items-center justify-center bg-black/70" onClick={onClose}>
+        <div className="absolute inset-0 z-[260] flex items-center justify-center bg-ink-950/70 atlas-fade-in" onClick={onClose}>
             <div
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
                 tabIndex={-1}
-                className="flex max-h-[80vh] w-[640px] flex-col border-2 border-white border-b-[#373737] border-r-[#373737] bg-[#151515] outline-none"
+                className="atlas-panel flex max-h-[88vh] w-[800px] max-w-[calc(100vw-2rem)] flex-col outline-none atlas-panel-in"
                 onClick={(event) => event.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-baseline justify-between border-b border-[#373737] px-6 py-4">
-                    <h2 id={titleId} className="text-2xl font-bold text-white [text-shadow:1px_1px_0px_#3f3f3f]">What&apos;s New</h2>
-                    <span className="font-pixel text-sm text-yellow-300">
-                        {entry.displayVersion}
-                        {entry.date ? ` • ${entry.date}` : ' • Unreleased'}
-                    </span>
+                <div className="shrink-0 px-7 pt-5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <h2 id={titleId} className="atlas-title">What&apos;s New</h2>
+                        <span className="text-px-2 text-parchment-400">
+                            {entry.displayVersion}
+                            {entry.date ? ` • ${entry.date}` : ' • Unreleased'}
+                        </span>
+                    </div>
+                    {entry.title && <p className="mt-1 text-px-2 text-parchment-50 text-shadow-md">{entry.title}</p>}
                 </div>
 
                 {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 font-pixel text-sm leading-relaxed text-gray-200">
-                    {entry.tagline && <p className="mb-4 text-gray-300">{entry.tagline}</p>}
+                <div key={entry.version} role="region" aria-label="Release notes" tabIndex={0} className="atlas-well mx-7 my-4 min-h-0 flex-1 overflow-y-auto px-5 py-4 text-read text-parchment-100 scrollbar-thin atlas-fade-in focus-visible:outline focus-visible:outline-2 focus-visible:outline-star">
+                    {entry.tagline && <p className="mb-6 text-parchment-300">{entry.tagline}</p>}
 
-                    {entry.highlights.length > 0 && (
-                        <div className="mb-5 border-l-4 border-yellow-400/70 bg-white/5 px-4 py-3">
-                            <h3 className="mb-2 text-xs uppercase tracking-wide text-yellow-300">Highlights</h3>
-                            <ul className="list-disc space-y-1 pl-5 text-gray-100">
-                                {entry.highlights.map((item, index) => (
-                                    <li key={index}>{item}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-
-                    {entry.sections.map((section) => (
-                        <div key={section.title} className="mb-4">
-                            <h3 className="mb-1 font-bold text-white">{section.title}</h3>
-                            <ul className="list-disc space-y-1 pl-5 text-gray-300">
+                    {sections.map((section) => (
+                        <section key={section.title} className="mb-6 last:mb-0">
+                            <h3 className="atlas-heading mb-3 border-b-2 border-ink-600 pb-2">{section.title}</h3>
+                            <ul className="list-disc space-y-2 pl-5 marker:text-brass-400">
                                 {section.items.map((item, index) => (
                                     <li key={index}>{item}</li>
                                 ))}
                             </ul>
-                        </div>
+                        </section>
                     ))}
                 </div>
 
                 {/* Footer: version switcher + close */}
-                <div className="flex items-center justify-between gap-4 border-t border-[#373737] px-6 py-4">
-                    <div className="flex flex-wrap gap-2">
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-7 pb-6">
+                    <div className="flex flex-wrap gap-2" role="group" aria-label="Release history">
                         {CHANGELOG.map((option) => {
                             const active = option.version === entry.version;
                             return (
-                                <button
+                                <MenuButton
                                     key={option.version}
+                                    label={option.displayVersion}
                                     onClick={() => setActiveVersion(option.version)}
-                                    className={`border px-2 py-1 font-pixel text-xs ${
-                                        active
-                                            ? 'border-white bg-[#8b8b8b] text-white'
-                                            : 'border-[#373737] text-gray-400 hover:text-white'
-                                    }`}
-                                >
-                                    {option.displayVersion}
-                                </button>
+                                    pressed={active}
+                                    width="w-[140px]"
+                                    small
+                                />
                             );
                         })}
                     </div>
-                    <MenuButton label="Got it!" onClick={onClose} width="w-[140px]" variant="primary" small />
+                    <MenuButton label="Done" onClick={onClose} width="w-[140px]" small />
                 </div>
             </div>
         </div>

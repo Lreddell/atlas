@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '@fontsource/pixelify-sans/400.css';
+import '@fontsource/pixelify-sans/700.css';
 import './styles.css';
 import './data/resonantInit';
 import './systems/sound/ResonantVaultAudio';

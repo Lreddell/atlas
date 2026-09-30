@@ -1,13 +1,18 @@
 import { generateChunk } from '../chunkGeneration';
 import { generateGeometryData } from '../geometry';
+import { createBorderScratch, unpackMeshBorders } from '../meshBorders';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
+import { buildHorizonTile } from '../horizon/buildHorizonTile';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
 
+// Side chunks rebuilt from a mesh job's border planes, reused job after job.
+const borderScratch = createBorderScratch();
+
 ctx.onmessage = (e) => {
-    const { type, id, cx, cz, seed, config, chunk, metaData, neighbors, lights, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
+    const { type, id, cx, cz, seed, config, chunk, metaData, light, borders, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
 
     if (type === 'SET_SEED') {
         reseedGlobalNoise(seed);
@@ -43,20 +48,34 @@ ctx.onmessage = (e) => {
         }
 
         // Generate geometry using data provided in the message.
-        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces);
+        const { neighbors, lights, neighborMeta } = unpackMeshBorders(borders, light, borderScratch);
+        const result = generateGeometryData(cx, cz, chunk, metaData, neighbors, lights, !!cullDarkFaces, neighborMeta);
 
         const buffers: Transferable[] = [];
-        [result.opaque, result.cutout, result.transparent].forEach(geo => {
+        [result.opaque, result.cutout, result.transparent, result.water].forEach(geo => {
             if (geo.positions.buffer) buffers.push(geo.positions.buffer);
             if (geo.normals.buffer) buffers.push(geo.normals.buffer);
             if (geo.uvs.buffer) buffers.push(geo.uvs.buffer);
             if (geo.colors.buffer) buffers.push(geo.colors.buffer);
+            if (geo.tiles.buffer) buffers.push(geo.tiles.buffer);
             if (geo.indices.buffer) buffers.push(geo.indices.buffer);
         });
 
         const safeBuffers = buffers.filter(b => b !== undefined && b !== null);
 
         ctx.postMessage({ type: 'MESH_DONE', id, cx, cz, ticket, result }, safeBuffers);
+    }
+    else if (type === 'HORIZON_TILE') {
+        // A tile of the horizon, past the full chunks (horizon/buildHorizonTile.ts).
+        const { level, tx, tz } = e.data;
+        const result = buildHorizonTile(level, tx, tz);
+        const buffers: ArrayBuffer[] = [];
+        for (const mesh of [result.opaque, result.transparent]) {
+            if (!mesh) continue;
+            buffers.push(mesh.positions.buffer as ArrayBuffer, mesh.normals.buffer as ArrayBuffer, mesh.uvs.buffer as ArrayBuffer,
+                mesh.colors.buffer as ArrayBuffer, mesh.tiles.buffer as ArrayBuffer, mesh.indices.buffer as ArrayBuffer);
+        }
+        ctx.postMessage({ type: 'HORIZON_TILE_DONE', id, result }, buffers);
     }
     else if (type === 'EVICT') {
         // Stateless worker: nothing to evict locally.

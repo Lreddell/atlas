@@ -510,3 +510,20 @@ test('cache chests seed loot exactly once and spill it when broken unopened', ()
     const ic = read('src/components/controllers/InteractionController.tsx');
     assert.match(ic, /worldManager\.ensureChest\(bx, by, bz\)/);
 });
+
+test('neighbouring Magnetic Fields never touch, even where every centre activates', () => {
+    const everywhere = () => 1;
+    const reach = MF_RADIUS * (1 + MF_EDGE_AMP);
+    for (const seed of [1, 424242, 1677682266]) {
+        const centres = getActiveCenters(-20000, -20000, 20000, 20000, seed, everywhere, 0);
+        assert.ok(centres.length > 100, 'the stub activates every cell');
+        let closest = Infinity;
+        for (let a = 0; a < centres.length; a++) {
+            for (let b = a + 1; b < centres.length; b++) {
+                const d = Math.hypot(centres[a].centerX - centres[b].centerX, centres[a].centerZ - centres[b].centerZ);
+                if (d < closest) closest = d;
+            }
+        }
+        assert.ok(closest > 2 * reach, `closest centres ${Math.round(closest)} apart, regions reach ${Math.round(reach)}`);
+    }
+});

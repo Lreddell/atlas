@@ -2,113 +2,57 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame, useThree, createPortal } from '@react-three/fiber';
 import * as THREE from 'three';
-import { ItemStack, BlockType } from '../types';
-import { BLOCKS, ATLAS_COLS } from '../data/blocks';
+import { ItemStack } from '../types';
 import { isSpriteRenderedType } from '../data/spriteBlocks';
-import { getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../utils/textures';
-import { resolveTexture } from '../systems/world/textureResolver';
-import { buildShapedBlockGeometry } from '../systems/world/shapedGeometry';
-import { worldManager } from '../systems/WorldManager';
+import { createHeldItemGeometry } from '../systems/player/heldItemGeometry';
+import { getPlayerWeaponProfile } from '../systems/combat/vaultWeapons';
+import { playerAttack, playerMining, playerInteraction, attackBusy, attackPose } from '../systems/combat/playerAttack';
+import { viewRig, firstPersonHandOpacity } from '../systems/player/viewRig';
+import { placementPose } from '../systems/player/playerAnimation';
 import { inputState } from '../systems/player/playerInput';
-import { globalSunlightValue } from './chunkLightingState';
+import { usePlayerSkin } from '../systems/player/playerSkins';
+import { MinecraftSkinPart } from './MinecraftSkinPart';
+import { useSkinTexture } from '../hooks/useSkinTexture';
 import { textureAtlasManager } from '../systems/textures/TextureAtlasManager';
+import { graphicsSettings } from '../systems/graphics/graphicsStore';
+import { viewMotion } from '../systems/player/viewMotion';
+import { createViewmodelPose, createViewmodelState, stepViewmodel } from '../systems/player/viewmodelMotion';
+import { applyEntityLighting, createEntityLight } from '../systems/graphics/materials/entityLighting';
+import { applyViewmodelProjection, updateViewmodelProjection } from '../systems/graphics/viewmodel';
+import { easeLight, sampleSmoothLight, type SmoothLight } from '../systems/graphics/smoothLight';
+import { worldLightReader } from '../systems/graphics/worldLightReader';
+
+const _viewDir = new THREE.Vector3();
+const _lightSample: SmoothLight = { sky: 1, block: 0 };
 
 interface HeldItemProps {
     selectedSlot: number;
     inventory: (ItemStack | null)[];
     isLocked: boolean;
-    brightness: number;
+    /** Unused: the Brightness option reaches the hand through the shared world light. */
+    brightness?: number;
 }
 
-type HeldWeaponKind = 'spear' | 'crossbow' | 'maul' | 'hammer';
-
-interface HeldWeaponAnimation {
-    kind: HeldWeaponKind;
-    startedAt: number;
-    duration: number;
-}
-
-const setupEntityMaterial = (mat: THREE.MeshLambertMaterial) => {
-    mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uSunlight = { value: 1.0 };
-        shader.uniforms.uSkyLight = { value: 1.0 };
-        shader.uniforms.uBlockLight = { value: 0.0 };
-        shader.uniforms.uBrightness = { value: 0.5 };
-
-        shader.fragmentShader = `
-            uniform float uSunlight;
-            uniform float uSkyLight;
-            uniform float uBlockLight;
-            uniform float uBrightness;
-            vec3 myTorchBaseColor;
-            ${shader.fragmentShader}
-        `;
-
-        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '');
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <map_fragment>',
-            `#ifdef USE_MAP
-                vec4 sampledDiffuseColor = texture2D( map, vMapUv );
-                diffuseColor *= sampledDiffuseColor;
-            #endif
-
-            myTorchBaseColor = diffuseColor.rgb;
-
-            float minLight = 0.05 + (uBrightness * 0.25);
-            float skyFactor = max(uSkyLight * uSunlight, minLight);
-            diffuseColor.rgb *= skyFactor;
-            `
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <lights_fragment_end>',
-            `#include <lights_fragment_end>
-            
-            float torchIntensity = clamp(uBlockLight, 0.0, 1.0);
-            float torchGlow = pow(torchIntensity, 1.8);
-            reflectedLight.directDiffuse += myTorchBaseColor * (torchGlow * 0.85);
-            `
-        );
-        
-        mat.userData.shader = shader;
-    };
-};
-
-export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked, brightness }) => {
-    const { camera, scene } = useThree();
+export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isLocked }) => {
+    const skin = usePlayerSkin();
+    const skinTexture = useSkinTexture(skin);
+    const { camera } = useThree();
     const groupRef = useRef<THREE.Group>(null);
     const itemStack = inventory[selectedSlot];
     const itemType = itemStack ? itemStack.type : null;
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
 
-    const animState = useRef({ swingPhase: 0, swingStartTime: 0 });
-    const pendingPlacementSwing = useRef(false);
-    const keysPressed = useRef(new Set<string>());
-    const isLeftMouseDown = useRef(false);
-    const moveSway = useRef(0);
-    const isLockedRef = useRef(isLocked);
-    const weaponAnimation = useRef<HeldWeaponAnimation | null>(null);
+    const viewmodelState = useRef(createViewmodelState());
+    const viewmodelPose = useRef(createViewmodelPose());
+    const alphaTests = useRef(new WeakMap<THREE.Material, number>());
+    // The world light at the eye, shared by every part of the viewmodel: the
+    // hand is lit like the blocks it is held among.
+    const eyeLight = useMemo(() => createEntityLight(), []);
+    const eyeLightLevel = useRef<SmoothLight>({ sky: 1, block: 0 });
 
     useEffect(() => {
         setTexture(textureAtlasManager.getTexture());
     }, []);
-
-    useEffect(() => {
-        isLockedRef.current = isLocked;
-        if (!isLocked) {
-            isLeftMouseDown.current = false;
-            weaponAnimation.current = null;
-        }
-    }, [isLocked]);
-
-    // Ensure camera is part of the scene graph so its children (the hand) are rendered
-    useEffect(() => {
-        scene.add(camera);
-        return () => {
-            scene.remove(camera);
-        };
-    }, [scene, camera]);
 
     const itemMaterial = useMemo(() => {
         if (!texture) return null;
@@ -118,209 +62,80 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
             alphaTest: 0.5,
             side: THREE.DoubleSide,
             // Depth-test/write enabled so multi-box shapes (slabs/stairs) self-occlude
-            // instead of drawing back/interior faces over front ones. The held model
-            // sits ~0.8u from the camera (closer than world geometry) so it still
-            // renders on top (only clips when the player is face-planted into a block).
+            // instead of drawing back/interior faces over front ones. The viewmodel's
+            // depth sits in front of the whole world (viewmodel.ts), so it never
+            // clips into a block, even with the player pressed against one.
             depthTest: true,
             depthWrite: true
         });
-        setupEntityMaterial(mat);
         return mat;
     }, [texture]);
 
     const handMaterial = useMemo(() => {
-        const mat = new THREE.MeshLambertMaterial({ 
-            color: "#eebb99",
+        const mat = new THREE.MeshLambertMaterial({
+            color: skin.palette.skin,
             depthTest: false,
             depthWrite: false,
-            transparent: true 
+            transparent: true
         });
-        setupEntityMaterial(mat);
         return mat;
-    }, []);
+    }, [skin.palette.skin]);
 
-    useEffect(() => {
-        const onKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.code);
-        const onKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.code);
-        const onPlacement = () => {
-            pendingPlacementSwing.current = true;
-        };
-        const onWeaponUsed = (event: Event) => {
-            if (!isLockedRef.current) return;
-            const kind = (event as CustomEvent<{ kind?: HeldWeaponKind }>).detail?.kind;
-            if (kind !== 'spear' && kind !== 'crossbow' && kind !== 'maul' && kind !== 'hammer') return;
-            weaponAnimation.current = {
-                kind,
-                startedAt: -1,
-                duration: kind === 'spear' ? 0.34 : kind === 'crossbow' ? 0.5 : 0.7,
-            };
-            // The successful-use animation owns the hand until its authored motion
-            // finishes. This prevents the generic mining arc from obscuring it.
-            animState.current.swingPhase = 0;
-            isLeftMouseDown.current = false;
-        };
-        
-        const onMouseDown = (e: MouseEvent) => {
-            if (!isLockedRef.current) {
-                isLeftMouseDown.current = false;
-                return;
-            }
-            // Left-click drives the continuous mine/attack swing. Right-click no
-            // longer animates here, placement swings come from the
-            // 'atlas:block-placed' event and eating from inputState.eating.
-            if (e.button === 0) isLeftMouseDown.current = true;
-        };
-        const onMouseUp = (e: MouseEvent) => {
-            if (e.button === 0) isLeftMouseDown.current = false;
-        };
-
-        window.addEventListener('keydown', onKeyDown);
-        window.addEventListener('keyup', onKeyUp);
-        window.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('mouseup', onMouseUp);
-        window.addEventListener('atlas:block-placed', onPlacement as EventListener);
-        window.addEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
-        
-        return () => {
-            window.removeEventListener('keydown', onKeyDown);
-            window.removeEventListener('keyup', onKeyUp);
-            window.removeEventListener('mousedown', onMouseDown);
-            window.removeEventListener('mouseup', onMouseUp);
-            window.removeEventListener('atlas:block-placed', onPlacement as EventListener);
-            window.removeEventListener('atlas:weapon-used', onWeaponUsed as EventListener);
-        };
-    }, []);
-
-    const geometry = useMemo(() => {
-        if (!itemType) return null;
-        const def = BLOCKS[itemType];
-
-        // Slabs / stairs: build the real partial-box shape in hand instead of a cube.
-        if (def.shape) {
-            const parentType = (def.textureParent ?? itemType) as BlockType;
-            return buildShapedBlockGeometry(itemType, parentType, 0.4);
-        }
-
-        const is2D = isSpriteRenderedType(itemType);
-
-        if (!is2D) {
-            const geo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-            const uvAttribute = geo.attributes.uv;
-            const directions = ['right', 'left', 'top', 'bottom', 'front', 'back'] as const;
-            const vectors = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
-
-            directions.forEach((dir, i) => {
-                const vec = vectors[i];
-                const { uvs } = resolveTexture(itemType, dir, vec[0], vec[1], vec[2], 0);
-                const base = i * 4;
-                uvAttribute.setXY(base + 0, uvs[6], uvs[7]); 
-                uvAttribute.setXY(base + 1, uvs[4], uvs[5]); 
-                uvAttribute.setXY(base + 2, uvs[0], uvs[1]); 
-                uvAttribute.setXY(base + 3, uvs[2], uvs[3]); 
-            });
-            uvAttribute.needsUpdate = true;
-            return geo;
-        } else {
-             const geo = new THREE.PlaneGeometry(0.5, 0.5);
-             const uvAttribute = geo.attributes.uv;
-             const texIdx = def.textureSlot || 0;
-             const { width, height } = getAtlasDimensions();
-             
-             const col = texIdx % ATLAS_COLS; 
-             const row = Math.floor(texIdx / ATLAS_COLS);
-             const pxX = col * ATLAS_STRIDE + ATLAS_PADDING;
-             const pxY = row * ATLAS_STRIDE + ATLAS_PADDING;
-
-             const u0 = pxX / width;
-             const u1 = (pxX + ATLAS_RAW_TILE_SIZE) / width;
-             const v1 = 1.0 - (pxY / height);
-             const v0 = 1.0 - ((pxY + ATLAS_RAW_TILE_SIZE) / height);
-
-             uvAttribute.setXY(0, u0, v1); 
-             uvAttribute.setXY(1, u1, v1); 
-             uvAttribute.setXY(2, u0, v0); 
-             uvAttribute.setXY(3, u1, v0); 
-             uvAttribute.needsUpdate = true;
-             return geo;
-        }
-    }, [itemType]);
+    const geometry = useMemo(() => createHeldItemGeometry(itemType), [itemType]);
+    useEffect(() => () => { geometry?.dispose(); }, [geometry]);
+    useEffect(() => () => { itemMaterial?.dispose(); }, [itemMaterial]);
+    useEffect(() => () => { handMaterial.dispose(); }, [handMaterial]);
 
     useFrame((state, delta) => {
         if (groupRef.current) {
-            const light = worldManager.getLight(Math.floor(camera.position.x), Math.floor(camera.position.y), Math.floor(camera.position.z));
-            const uSky = light.sky / 15.0;
-            const uBlock = light.block / 15.0;
-            
-            if (itemMaterial && itemMaterial.userData.shader) {
-                const s = itemMaterial.userData.shader;
-                if(s.uniforms.uSunlight) s.uniforms.uSunlight.value = globalSunlightValue;
-                if(s.uniforms.uSkyLight) s.uniforms.uSkyLight.value = uSky;
-                if(s.uniforms.uBlockLight) s.uniforms.uBlockLight.value = uBlock;
-                if(s.uniforms.uBrightness) s.uniforms.uBrightness.value = brightness;
-            }
-            if (handMaterial && handMaterial.userData.shader) {
-                const s = handMaterial.userData.shader;
-                if(s.uniforms.uSunlight) s.uniforms.uSunlight.value = globalSunlightValue;
-                if(s.uniforms.uSkyLight) s.uniforms.uSkyLight.value = uSky;
-                if(s.uniforms.uBlockLight) s.uniforms.uBlockLight.value = uBlock;
-                if(s.uniforms.uBrightness) s.uniforms.uBrightness.value = brightness;
-            }
+            const opacity = viewRig.detached ? 0 : firstPersonHandOpacity(viewRig.camera, viewRig.eye);
+            groupRef.current.visible = opacity > 0.001;
+            groupRef.current.traverse(object => {
+                if (!(object instanceof THREE.Mesh)) return;
+                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                for (const material of materials) {
+                    if (!alphaTests.current.has(material)) {
+                        alphaTests.current.set(material, material.alphaTest);
+                        // Every part of the viewmodel: world light, and its own lens and depth.
+                        applyEntityLighting(material, { kind: 'uniform', light: eyeLight });
+                        applyViewmodelProjection(material);
+                    }
+                    material.opacity = opacity;
+                    material.alphaTest = alphaTests.current.get(material)! * opacity;
+                }
+            });
+            const perspective = camera as THREE.PerspectiveCamera;
+            updateViewmodelProjection(perspective.aspect);
+            sampleSmoothLight(worldLightReader, camera.position.x, camera.position.y, camera.position.z, _lightSample);
+            const level = easeLight(eyeLightLevel.current, _lightSample, delta, 12);
+            eyeLight.value.x = level.sky;
+            eyeLight.value.y = level.block;
 
             // Since we are a child of the camera, we do not copy position/quaternion.
             // We render in local space relative to the camera.
 
-            const isMoving = isLocked && (
-                keysPressed.current.has('KeyW') || keysPressed.current.has('KeyS') || 
-                keysPressed.current.has('KeyA') || keysPressed.current.has('KeyD')
-            );
-            
-            const targetSway = isMoving ? 1 : 0;
-            moveSway.current = THREE.MathUtils.lerp(moveSway.current, targetSway, 1 - Math.exp(-10 * delta));
-
+            // Viewmodel motion uses render time, never the 20 Hz physics clock.
             const time = state.clock.elapsedTime;
-            const bobX = Math.sin(time * 10) * 0.02 * moveSway.current;
-            const bobY = Math.sin(time * 20) * 0.02 * moveSway.current;
+            camera.getWorldDirection(_viewDir);
+            const lookYaw = Math.atan2(-_viewDir.x, -_viewDir.z);
+            const lookPitch = Math.asin(Math.max(-1, Math.min(1, _viewDir.y)));
 
-            // Continuous swing comes from left-click (mining/attacking) or an active
-            // bite (eating). Right-click placement/use does NOT auto-swing, a swing
-            // only fires when something actually happens (the 'atlas:block-placed'
-            // event below), so a failed/no-op right-click no longer animates.
-            const isAction = (isLeftMouseDown.current || inputState.eating) && isLocked;
-            const SWING_DURATION = 0.25;
+            // Mining and eating repeat while held; a use/place pushes once on success.
+            const genericAction = isLocked && (playerMining.active || inputState.eating || (playerInteraction.leftHeld && !getPlayerWeaponProfile(itemType)));
+            const eating = genericAction && inputState.eating;
+            const actionTime = playerMining.active ? playerMining.elapsed : time;
+            const swing = genericAction && !eating ? (actionTime % 0.25) / 0.25 : null;
+            const motion = stepViewmodel(viewmodelState.current, viewMotion, {
+                dt: delta, time, yaw: lookYaw, pitch: lookPitch,
+                itemKey: itemType ?? 'hand', eating, swing,
+                cameraBobbing: graphicsSettings.getConfig().viewBobbing,
+            }, viewmodelPose.current);
+            const place = placementPose(playerInteraction.placementElapsed).weight;
 
-            if (pendingPlacementSwing.current && animState.current.swingPhase === 0) {
-                animState.current.swingStartTime = time;
-                animState.current.swingPhase = Number.EPSILON;
-                pendingPlacementSwing.current = false;
-            }
+            // Set local position and rotation relative to camera: rest pose plus motion.
+            groupRef.current.position.set(0.5 + motion.x, -0.5 + motion.y - place * 0.2, -0.8 + motion.z - place * 0.06);
+            groupRef.current.rotation.set(0.2 + motion.rx - place * 0.8, -0.2 + motion.ry - place * 0.24, motion.rz);
 
-            if (isAction && animState.current.swingPhase === 0) {
-                animState.current.swingStartTime = time;
-                animState.current.swingPhase = Number.EPSILON;
-            }
-
-            if (animState.current.swingPhase !== 0) {
-                const elapsed = time - animState.current.swingStartTime;
-                if (elapsed > 0) {
-                    const progress = elapsed / SWING_DURATION;
-                    if (progress >= 1.0) {
-                        animState.current.swingPhase = 0;
-                    } else {
-                        animState.current.swingPhase = progress * Math.PI;
-                    }
-                }
-            }
-
-            const swingVal = Math.sin(animState.current.swingPhase);
-            const swingRot = swingVal * -0.8;
-            const swingPos = swingVal * -0.2;
-            
-            // Set local position relative to camera
-            groupRef.current.position.set(0.5 + bobX, -0.5 + bobY + swingPos, -0.8);
-
-            // Set local rotation relative to camera
-            groupRef.current.rotation.set(0.2 + swingRot, -0.2 + (swingRot * 0.3), 0);
-            
             const is2D = itemType && isSpriteRenderedType(itemType);
 
             if (itemType && !is2D) {
@@ -328,42 +143,26 @@ export const HeldItem: React.FC<HeldItemProps> = ({ selectedSlot, inventory, isL
                  groupRef.current.rotateZ(0.2);
             }
 
-            const activeWeapon = weaponAnimation.current;
-            if (activeWeapon) {
-                if (activeWeapon.startedAt < 0) activeWeapon.startedAt = time;
-                const progress = Math.min(1, Math.max(0, (time - activeWeapon.startedAt) / activeWeapon.duration));
-                if (progress >= 1) {
-                    weaponAnimation.current = null;
-                } else {
-                    const arc = Math.sin(progress * Math.PI);
-                    const settle = Math.sin(Math.min(1, progress * 1.6) * Math.PI);
-                    const { kind } = activeWeapon;
-                    if (kind === 'spear') {
-                        // A short brace followed by a long, level thrust makes the
-                        // spear read as reach rather than another mining swing.
-                        const thrust = Math.sin(Math.min(1, progress * 1.35) * Math.PI);
-                        groupRef.current.position.set(0.46 + bobX, -0.46 + bobY, -0.74 - thrust * 0.42);
-                        groupRef.current.rotation.set(0.08 - thrust * 0.13, -0.18, 0.04);
-                    } else if (kind === 'crossbow') {
-                        // Hold the sightline steady, then let the stock recoil into
-                        // the hand. The longer settle reinforces the reload cadence.
-                        groupRef.current.position.set(0.42 + bobX, -0.45 + bobY - arc * 0.06, -0.82 + arc * 0.17);
-                        groupRef.current.rotation.set(0.12 + arc * 0.19, -0.13, -0.02);
-                    } else if (kind === 'maul' || kind === 'hammer') {
-                        // Heavy weapons rise high and commit through a broad downward
-                        // arc, distinct from both the spear jab and ordinary tools.
-                        const windup = Math.sin(Math.min(1, progress * 1.9) * Math.PI / 2);
-                        groupRef.current.position.set(0.52 + bobX - arc * 0.13, -0.48 + bobY + windup * 0.13 - arc * 0.23, -0.78);
-                        groupRef.current.rotation.set(0.22 - settle * 1.2, -0.24 - arc * 0.2, arc * 0.5);
-                    }
-                }
+            if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind !== 'crossbow') {
+                const pose = attackPose(playerAttack);
+                groupRef.current.position.set(0.45 + motion.x + pose.sweep * 0.20, -0.48 + motion.y + pose.shoulder * 0.10, -0.8 + motion.z - pose.thrust * 0.3);
+                groupRef.current.rotation.set(0.2 + motion.rx - pose.shoulder * 0.55, -0.2 + motion.ry + pose.twist, motion.rz + pose.sweep);
+                return;
+            }
+            if (getPlayerWeaponProfile(itemType) && attackBusy(playerAttack) && playerAttack.kind === 'crossbow' && !playerAttack.cancelled) {
+                const recoil = Math.sin(Math.max(0, (playerAttack.elapsed / playerAttack.duration - 0.5) * 2) * Math.PI);
+                groupRef.current.position.set(0.42 + motion.x, -0.45 + motion.y - recoil * 0.06, -0.82 + motion.z + recoil * 0.17);
+                groupRef.current.rotation.set(0.12 + motion.rx + recoil * 0.19, -0.13 + motion.ry, motion.rz - 0.02);
             }
         }
     });
 
     return createPortal(
-        <group ref={groupRef}>
-             {!itemType && (
+        <group ref={groupRef} visible={false}>
+             {!itemType && skin.model !== 'atlas' && <group position={[0, -0.2, 0.2]} rotation={[Math.PI / 2 + 0.5, 0, -0.2]}>
+                 <MinecraftSkinPart skin={skin} texture={skinTexture} part="rightArm" firstPerson />
+             </group>}
+             {!itemType && skin.model === 'atlas' && (
                  <mesh position={[0, -0.2, 0.2]} rotation={[0.5, 0, -0.2]} renderOrder={999}>
                      <boxGeometry args={[0.2, 0.2, 0.8]} />
                      {handMaterial && <primitive object={handMaterial} attach="material" />}

@@ -8,11 +8,18 @@ import * as WorldGen from './world/chunkGeneration';
 import * as Lighting from './world/lighting';
 import * as TileEntities from './world/tileEntities';
 import * as Geometry from './world/geometry';
+import { packMeshBorders } from './world/meshBorders';
+import type { HorizonTileMeshes } from './world/horizon/buildHorizonTile';
 import * as Fluids from './world/fluids';
 import { getBiome } from './world/biomes';
 import { caveBiomeAt, type CaveBiome } from './world/caves';
 import { GlobalNoise } from '../utils/noise';
-import { needsSupport, hasSupportBelow } from './world/blockProps';
+import { needsSupport, hasSupportBelow, getOpacity } from './world/blockProps';
+import { clearFarmIndex, cropDrops, cropStage, isCrop, isFarmland, noteFarmland, tickFarms, untillFarmland, type FarmWorld } from './world/farming';
+import { CROSS_RENDERED_BLOCKS } from '../data/spriteBlocks';
+import { clearLeafDecay, noteLogRemoved, tickLeafDecay, type LeafWorld } from './world/leafDecay';
+import { isLogBlock } from './registry/blockFamilies';
+import { isLeafType } from './world/trees';
 import { isStairs, resolveStairShape, stairBackDir, type StairNeighbor } from './world/blockShapes';
 import { CHUNK_SIZE, MIN_Y, MAX_Y, WORKERS_ENABLED } from '../constants';
 import { reseedGlobalNoise, getSpawnSearchCenter } from '../utils/noise';
@@ -34,6 +41,7 @@ import {
     type VaultCandidate,
 } from './world/resonantVaults';
 import { preflightVaultCandidate } from './world/resonantVaultPreflight';
+import { rollDrops } from './world/blockDrops';
 import {
     VAULT_CACHE_FLAG,
     decodeVaultCacheMetadata,
@@ -60,67 +68,93 @@ interface Job {
     priority: number;
 }
 
-// Optimized Queue class to avoid O(n) shift operations
+/**
+ * Chunk jobs by priority (lowest first): a binary heap with each chunk's place
+ * in it, so a job goes in, comes out or moves up in O(log n) and is found in
+ * O(1). While the world streams in thousands wait here, and every chunk that
+ * arrives queues or promotes its neighbours' jobs: sorting the whole queue
+ * and scanning it for each of those used to cost milliseconds a frame.
+ */
 class JobQueue {
-    private _data: Job[] = [];
-    private _head: number = 0;
-
-    push(job: Job) {
-        this._data.push(job);
-    }
-
-    shift(): Job | undefined {
-        if (this._head >= this._data.length) return undefined;
-        const item = this._data[this._head];
-        this._data[this._head] = undefined as any; // Clear reference
-        this._head++;
-        
-        // Compact only when significant space is wasted (>1000 items and >50% of array)
-        if (this._head > 1000 && this._head * 2 > this._data.length) {
-            this._data = this._data.slice(this._head);
-            this._head = 0;
-        }
-        return item;
-    }
-
-    unshift(job: Job) {
-        if (this._head > 0) {
-            this._head--;
-            this._data[this._head] = job;
-        } else {
-            this._data.unshift(job);
-        }
-    }
+    private heap: Job[] = [];
+    private at = new Map<string, number>();
 
     get length(): number {
-        return this._data.length - this._head;
+        return this.heap.length;
     }
 
-    forEach(callback: (job: Job) => void) {
-        for (let i = this._head; i < this._data.length; i++) {
-            callback(this._data[i]);
-        }
+    get(cx: number, cz: number): Job | undefined {
+        const i = this.at.get(WorldCoords.getChunkKey(cx, cz));
+        return i === undefined ? undefined : this.heap[i];
     }
 
-    find(predicate: (job: Job) => boolean): Job | undefined {
-        for (let i = this._head; i < this._data.length; i++) {
-            if (predicate(this._data[i])) return this._data[i];
+    /** Queues a job, or moves one already queued for that chunk up to this priority if it is sooner. */
+    offer(cx: number, cz: number, priority: number): void {
+        const key = WorldCoords.getChunkKey(cx, cz);
+        const i = this.at.get(key);
+        if (i !== undefined) {
+            if (priority < this.heap[i].priority) {
+                this.heap[i].priority = priority;
+                this.up(i);
+            }
+            return;
         }
-        return undefined;
+        this.heap.push({ cx, cz, priority });
+        this.at.set(key, this.heap.length - 1);
+        this.up(this.heap.length - 1);
     }
 
-    sort(compareFn: (a: Job, b: Job) => number) {
-        // Compact before sort to simplify logic
-        if (this._head > 0) {
-            this._data = this._data.slice(this._head);
-            this._head = 0;
+    /** The soonest job, out of the queue. */
+    shift(): Job | undefined {
+        const heap = this.heap;
+        if (heap.length === 0) return undefined;
+        const top = heap[0];
+        const last = heap.pop()!;
+        this.at.delete(WorldCoords.getChunkKey(top.cx, top.cz));
+        if (heap.length > 0) {
+            heap[0] = last;
+            this.at.set(WorldCoords.getChunkKey(last.cx, last.cz), 0);
+            this.down(0);
         }
-        this._data.sort(compareFn);
+        return top;
     }
 
     clear() {
-        this._data = [];
-        this._head = 0;
+        this.heap = [];
+        this.at.clear();
+    }
+
+    private swap(i: number, j: number) {
+        const heap = this.heap;
+        const a = heap[i];
+        heap[i] = heap[j];
+        heap[j] = a;
+        this.at.set(WorldCoords.getChunkKey(heap[i].cx, heap[i].cz), i);
+        this.at.set(WorldCoords.getChunkKey(heap[j].cx, heap[j].cz), j);
+    }
+
+    private up(i: number) {
+        const heap = this.heap;
+        while (i > 0) {
+            const parent = (i - 1) >> 1;
+            if (heap[parent].priority <= heap[i].priority) break;
+            this.swap(i, parent);
+            i = parent;
+        }
+    }
+
+    private down(i: number) {
+        const heap = this.heap;
+        for (;;) {
+            const left = i * 2 + 1;
+            const right = left + 1;
+            let least = i;
+            if (left < heap.length && heap[left].priority < heap[least].priority) least = left;
+            if (right < heap.length && heap[right].priority < heap[least].priority) least = right;
+            if (least === i) return;
+            this.swap(i, least);
+            i = least;
+        }
     }
 }
 
@@ -129,6 +163,20 @@ export type LoadingProgressCallback = (phase: string, done: number, total: numbe
 type MessageCallback = (msg: string, type: 'info' | 'error' | 'success', clickAction?: string) => void;
 type DropCallback = (stack: ItemStack, x: number, y: number, z: number) => void;
 type ParticleCallback = (type: BlockType, x: number, y: number, z: number) => void;
+
+const FLUID_NEIGHBOURS: readonly (readonly [number, number, number])[] = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+/** Blocks the fluid tick has changed, waiting to be relit together. */
+interface RelightBox { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number; margin: number }
+/** Relit around a change that only dims or brightens light a little (water opacity 2, no light of its own). */
+const FAINT_RELIGHT_MARGIN = 5;
+/** Relit around anything else (lava's glow, stone, obsidian): the full reach of light. */
+const FULL_RELIGHT_MARGIN = 15;
+/** Widest a box of changes grows before it starts another. */
+const RELIGHT_BOX_SPAN = 8;
+/** Milliseconds of relighting a tick at most (at least one box always runs). */
+const RELIGHT_BUDGET_MS = 3;
+const lightFaint = (type: BlockType) => getOpacity(type) <= 2 && !(BLOCKS[type]?.lightLevel);
 
 export class WorldManager {
   private state: WorldTypes.WorldState;
@@ -158,7 +206,27 @@ export class WorldManager {
     private desiredChunkKeys = new Set<string>();
 
   private workers: Worker[] = [];
+  /** Jobs sent to each worker and not yet answered. */
+  private workerJobs: number[] = [];
   private nextWorkerIndex = 0;
+  /**
+   * Finished chunks waiting to be applied, oldest first (applyWorkerResults).
+   * A dozen or more can finish between two frames; applied as each arrived,
+   * all their border lighting, React updates and GPU uploads landed in the
+   * next frame, which then ran long.
+   */
+  private workerInbox: any[] = [];
+  private inboxTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastInboxFrameAt = 0;
+  /** Mesh jobs for the player's own block edits: shown as soon as they are back, not queued. */
+  private urgentMeshTickets = new Set<number>();
+  /** Told when a chunk gains its first mesh or loses it (null: every chunk's changed). */
+  private meshPresenceListeners = new Set<(key: string | null, present: boolean) => void>();
+  /** Horizon tiles being built (horizon/buildHorizonTile.ts): job id -> who wants it. */
+  private farJobs = new Map<string, (meshes: HorizonTileMeshes) => void>();
+  /** Bumped whenever the world (or its seed) changes: far tiles from before are stale. */
+  private farEpoch = 0;
+  private farJobCounter = 0;
   private workersEnabled = WORKERS_ENABLED;
   private workerStatusMessage = "Initializing...";
     private streamingPumpScheduled = false;
@@ -180,7 +248,6 @@ export class WorldManager {
   private activeWorldId: string | null = null; // ID of the currently loaded world
   private gcCounter: number = 0; // Counter for periodic garbage collection
 
-  private queuesDirty = false;
   private knownMissingStorageChunks = new Set<string>();
   private vaultPreflightPromises = new Map<string, Promise<boolean>>();
   private acceptedVaultCandidates = new Set<string>();
@@ -209,11 +276,11 @@ export class WorldManager {
   constructor() {
     this.state = WorldTypes.createWorldState();
 
-        const cpuCores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-            ? navigator.hardwareConcurrency
-            : 4;
-        this.MAX_GEN_IN_FLIGHT = Math.min(8, Math.max(3, Math.floor(cpuCores * 0.75)));
-        this.MAX_MESH_IN_FLIGHT = Math.min(4, Math.max(2, Math.floor(cpuCores / 2)));
+        // Two jobs of each kind per worker keeps every worker busy between the
+        // main thread's dispatches.
+        const poolSize = WorldManager.workerPoolSize();
+        this.MAX_GEN_IN_FLIGHT = poolSize * 2;
+        this.MAX_MESH_IN_FLIGHT = poolSize * 2;
     
     if (this.workersEnabled) {
         this.initWorkers();
@@ -241,7 +308,9 @@ export class WorldManager {
       reseedGlobalNoise(this.activeSeed);
 
       this.syncWorkerWorldGenState();
-      
+      this.farJobs.clear();
+      this.farEpoch++;
+
       console.log(`[WorldManager] Context set: ID=${worldId}, Seed=${this.activeSeed}`);
   }
 
@@ -250,7 +319,6 @@ export class WorldManager {
   }
 
   public reset() {
-    this.queuesDirty = false;
     this.knownMissingStorageChunks.clear();
       this.vaultPreflightPromises.clear();
       this.acceptedVaultCandidates.clear();
@@ -259,6 +327,7 @@ export class WorldManager {
       this.state = WorldTypes.createWorldState();
       this.chunkStages.clear();
       this.meshCache.clear();
+      this.notifyMeshPresence(null, false);
       this.meshSubscribers.clear();
       this.pendingRemesh.clear();
       this.genQueue.clear();
@@ -282,8 +351,18 @@ export class WorldManager {
     this.activeMeshTickets.clear();
     this.genStartedAt.clear();
     this.meshStartedAt.clear();
+    this.workerInbox = [];
+    this.urgentMeshTickets.clear();
+    this.farJobs.clear();
+    this.farEpoch++;
     this.darkCulledMeshes.clear();
     this.pendingMeshDark.clear();
+    // Water still flowing in the last world must not flow on in the next.
+    Fluids.clearFluidUpdates();
+    clearFarmIndex();
+    clearLeafDecay();
+    this.pendingRelight = [];
+    this.fluidJobsWaiting = false;
 
       if (this.workers.length > 0) {
           this.terminateWorkers();
@@ -293,12 +372,21 @@ export class WorldManager {
       this.log("World State Reset", 'success');
   }
 
+  /**
+   * One chunk worker per spare core: all but two, which the main thread and
+   * the browser's GPU process need. Generation and meshing run here, so on a
+   * 16-thread CPU eight workers load chunks about twice as fast as four.
+   */
+  private static workerPoolSize(): number {
+      const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+          ? navigator.hardwareConcurrency
+          : 4;
+      return Math.min(8, Math.max(2, cores - 2));
+  }
+
   private initWorkers() {
       try {
-            const cores = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-                ? navigator.hardwareConcurrency
-                : 4;
-            const poolSize = Math.min(4, Math.max(2, Math.floor(cores / 2)));
+            const poolSize = WorldManager.workerPoolSize();
 
             for (let i = 0; i < poolSize; i++) {
                 const worker = new Worker(
@@ -316,8 +404,14 @@ export class WorldManager {
                     this.resetPipeline();
                 };
 
-                worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+                const workerIndex = this.workers.length;
+                worker.onmessage = (e) => {
+                    // Every job gets exactly one reply.
+                    this.workerJobs[workerIndex] = Math.max(0, (this.workerJobs[workerIndex] ?? 0) - 1);
+                    this.receiveResult(e.data);
+                };
                 this.workers.push(worker);
+                this.workerJobs.push(0);
             }
 
             this.syncWorkerWorldGenState();
@@ -336,15 +430,120 @@ export class WorldManager {
         worker.terminate();
     }
     this.workers = [];
+    this.workerJobs = [];
     this.nextWorkerIndex = 0;
+    this.workerInbox = [];
+    this.urgentMeshTickets.clear();
   }
 
-  /** Round-robin dispatch for chunk jobs. Control messages should use broadcast instead. */
+  /**
+   * Asks a worker for a tile of the horizon (horizon/buildHorizonTile.ts);
+   * `done` gets its meshes unless the world changes first. False when there
+   * are no workers.
+   */
+  public requestHorizonTile(level: number, tx: number, tz: number, done: (meshes: HorizonTileMeshes) => void): boolean {
+      if (!this.workersEnabled || this.workers.length === 0) return false;
+      const id = `horizon-${this.farEpoch}-${this.farJobCounter++}`;
+      this.farJobs.set(id, done);
+      this.postToPool({ type: 'HORIZON_TILE', id, level, tx, tz });
+      return true;
+  }
+
+  /** Workers in the pool (how many horizon tiles can build at once). */
+  public workerCount(): number {
+      return this.workersEnabled ? this.workers.length : 0;
+  }
+
+  /** Changes whenever far tiles already built stop matching the world. */
+  public getFarEpoch(): number {
+      return this.farEpoch;
+  }
+
+  /** Chunk jobs still to run: far tiles wait while the full-detail chunks stream in. */
+  public pendingChunkJobs(): number {
+      return this.genQueue.length + this.meshQueue.length + this.inFlightGen + this.inFlightMesh;
+  }
+
+  /** Queues a finished chunk (generated, loaded or meshed) for applyWorkerResults. */
+  private receiveResult(msg: any) {
+      if (msg?.type === 'HORIZON_TILE_DONE') {
+          const done = this.farJobs.get(msg.id);
+          this.farJobs.delete(msg.id);
+          done?.(msg.result);
+          return;
+      }
+      // A block the player just broke or placed shows at once, a frame sooner.
+      if (msg?.type === 'MESH_DONE' && this.urgentMeshTickets.delete(msg.ticket)) {
+          this.handleWorkerMessage(msg);
+          return;
+      }
+      this.workerInbox.push(msg);
+      this.armInboxTimer();
+  }
+
+  /**
+   * Frames stop while the page is hidden or no world is on screen, and with
+   * them applyWorkerResults: then this timer applies the results instead, so
+   * streaming never stalls.
+   */
+  private armInboxTimer() {
+      if (this.inboxTimer !== null) return;
+      this.inboxTimer = setTimeout(() => {
+          this.inboxTimer = null;
+          if (this.workerInbox.length === 0) return;
+          if (performance.now() - this.lastInboxFrameAt > 100) this.drainInbox(8, 16);
+          if (this.workerInbox.length > 0) this.armInboxTimer();
+      }, 100);
+  }
+
+  /**
+   * Applies finished chunks, oldest first, until `budgetMs` has gone or
+   * `maxMeshes` meshes are in (each mesh also costs a React update and a GPU
+   * upload after this). Called once a frame by the streamer, so a burst of
+   * results spreads over a few frames instead of stalling one. Results waiting
+   * here still count as in flight, which holds back new jobs meanwhile.
+   */
+  public applyWorkerResults(budgetMs: number, maxMeshes: number) {
+      this.lastInboxFrameAt = performance.now();
+      this.drainInbox(budgetMs, maxMeshes);
+  }
+
+  private drainInbox(budgetMs: number, maxMeshes: number) {
+      const inbox = this.workerInbox;
+      if (inbox.length === 0) return;
+      const start = performance.now();
+      let meshes = 0;
+      let applied = 0;
+      while (applied < inbox.length) {
+          const msg = inbox[applied];
+          if (applied > 0 && performance.now() - start > budgetMs) break;
+          if (msg?.type === 'MESH_DONE') {
+              if (meshes >= maxMeshes) break;
+              meshes++;
+          }
+          applied++;
+          this.handleWorkerMessage(msg);
+          // A world reset from inside a handler replaces the inbox.
+          if (this.workerInbox !== inbox) return;
+      }
+      inbox.splice(0, applied);
+  }
+
+  /**
+   * Sends a chunk job to the worker with the fewest jobs waiting (ties go
+   * round the pool), so a slow generation job never holds up a queue of
+   * meshes behind it. Control messages use broadcast instead.
+   */
   private postToPool(msg: unknown) {
       if (this.workers.length === 0) return;
-      const worker = this.workers[this.nextWorkerIndex];
-      this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
-      worker.postMessage(msg);
+      let best = this.nextWorkerIndex % this.workers.length;
+      for (let step = 1; step < this.workers.length; step++) {
+          const i = (this.nextWorkerIndex + step) % this.workers.length;
+          if (this.workerJobs[i] < this.workerJobs[best]) best = i;
+      }
+      this.nextWorkerIndex = (best + 1) % this.workers.length;
+      this.workerJobs[best]++;
+      this.workers[best].postMessage(msg);
   }
 
     private syncWorkerWorldGenState() {
@@ -367,7 +566,6 @@ export class WorldManager {
     }
 
   private resetPipeline() {
-    this.queuesDirty = true;
       this.inFlightGen = 0;
       this.inFlightMesh = 0;
       this.genStartedAt.clear();
@@ -414,16 +612,21 @@ export class WorldManager {
           
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
+          this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
           
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
-              if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) {
+              // Side chunks with a mesh (or one on the way) remesh against this one;
+              // those still waiting for their first mesh are re-checked below.
+              if (this.getStage(ncx, ncz) > ChunkStage.GENERATED) {
                   this.queueMesh(ncx, ncz, 10);
               }
           });
 
           this.setStage(cx, cz, ChunkStage.GENERATED);
-          this.queueMesh(cx, cz, 0); 
+          this.queueFirstMesh(cx, cz, 0);
+          // This chunk may be the last side chunk a neighbour was waiting for.
+          for (const [dx, dz] of WorldManager.SIDE_NEIGHBOURS) this.queueFirstMesh(cx + dx, cz + dz, 5);
           this.scheduleStreamingPump();
       }
       else if (type === 'MESH_DONE') {
@@ -445,17 +648,18 @@ export class WorldManager {
           if (wasDarkCulled) this.darkCulledMeshes.add(key);
           else this.darkCulledMeshes.delete(key);
 
+          const hadMesh = this.meshCache.has(key);
           this.meshCache.set(key, result);
           this.setStage(cx, cz, ChunkStage.READY);
-          
+
           const subs = this.meshSubscribers.get(key);
           if (subs) subs.forEach(cb => cb(result));
+          if (!hadMesh) this.notifyMeshPresence(key, true);
 
           const pendingPriority = this.pendingRemesh.get(key);
           if (pendingPriority !== undefined) {
               this.pendingRemesh.delete(key);
               this.queueMesh(cx, cz, pendingPriority);
-              this.meshQueue.sort((a, b) => a.priority - b.priority);
           }
           this.scheduleStreamingPump();
       }
@@ -463,38 +667,49 @@ export class WorldManager {
 
   private enqueueGen(cx: number, cz: number, priority: number) {
     const key = WorldCoords.getChunkKey(cx, cz);
-    if (this.queuedGenKeys.has(key)) {
-        const existing = this.genQueue.find(j => j.cx === cx && j.cz === cz);
-        if (existing && priority < existing.priority) {
-            existing.priority = priority;
-            this.markQueuesDirty();
-        }
-        return;
-    }
     this.queuedGenKeys.add(key);
-    this.genQueue.push({ cx, cz, priority });
-    this.markQueuesDirty();
+    this.genQueue.offer(cx, cz, priority);
   }
 
   private enqueueMesh(cx: number, cz: number, priority: number) {
     const key = WorldCoords.getChunkKey(cx, cz);
-    if (this.queuedMeshKeys.has(key)) {
-        const existing = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-        if (existing && priority < existing.priority) {
-            existing.priority = priority;
-            this.markQueuesDirty();
-        }
-        return;
-    }
     this.queuedMeshKeys.add(key);
-    this.meshQueue.push({ cx, cz, priority });
-    this.markQueuesDirty();
+    this.meshQueue.offer(cx, cz, priority);
   }
 
   private queueGen(cx: number, cz: number, priority: number) {
       if (this.getStage(cx, cz) >= ChunkStage.REQUESTED) return;
       this.setStage(cx, cz, ChunkStage.REQUESTED);
       this.enqueueGen(cx, cz, priority);
+  }
+
+  private static readonly SIDE_NEIGHBOURS: readonly (readonly [number, number])[] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  /**
+   * A mesh reads the four side chunks (their blocks for the faces between them,
+   * their light for the light across the border). A chunk meshed before they
+   * arrive only has to be meshed again as each one does: over twice the meshing
+   * work of the whole load, and four geometry swaps per chunk on the main
+   * thread. So a chunk's first mesh waits until every side chunk is generated
+   * or isn't wanted at all (the edge of the view distance, which never fills in).
+   */
+  private sideChunksReady(cx: number, cz: number): boolean {
+      for (const [dx, dz] of WorldManager.SIDE_NEIGHBOURS) {
+          const ncx = cx + dx;
+          const ncz = cz + dz;
+          if (this.getStage(ncx, ncz) >= ChunkStage.GENERATED) continue;
+          if (!this.desiredChunkKeys.has(WorldCoords.getChunkKey(ncx, ncz))) continue;
+          return false;
+      }
+      return true;
+  }
+
+  /** Queues a chunk's mesh, holding a first mesh until its side chunks are there. */
+  private queueFirstMesh(cx: number, cz: number, priority: number) {
+      if (this.getStage(cx, cz) === ChunkStage.GENERATED
+          && !this.meshCache.has(WorldCoords.getChunkKey(cx, cz))
+          && !this.sideChunksReady(cx, cz)) return;
+      this.queueMesh(cx, cz, priority);
   }
 
   private queueMesh(cx: number, cz: number, priority: number) {
@@ -512,12 +727,7 @@ export class WorldManager {
       }
 
       if (stage === ChunkStage.MESH_QUEUED) {
-          // Using .find() instead of array.find()
-          const job = this.meshQueue.find(j => j.cx === cx && j.cz === cz);
-          if (job && priority < job.priority) {
-            job.priority = priority;
-            this.markQueuesDirty();
-          }
+          this.meshQueue.offer(cx, cz, priority);
           return;
       }
       
@@ -559,7 +769,7 @@ export class WorldManager {
           } else if (stage === ChunkStage.REQUESTED) {
               this.enqueueGen(cx, cz, priority);
           } else if (stage >= ChunkStage.GENERATED && stage < ChunkStage.READY) {
-              this.queueMesh(cx, cz, priority);
+              this.queueFirstMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
               this.queueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && this.darkCulledMeshes.has(key)) {
@@ -616,7 +826,6 @@ export class WorldManager {
   }
 
   public processStreamingJobs() {
-    this.sortQueuesIfDirty();
       this.repairDesiredChunks(64);
 
       while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
@@ -652,7 +861,7 @@ export class WorldManager {
 
                     if (data) {
                         this.knownMissingStorageChunks.delete(key);
-                        this.handleWorkerMessage({
+                        this.receiveResult({
                             type: 'GEN_DONE',
                             cx: job.cx,
                             cz: job.cz,
@@ -696,11 +905,8 @@ export class WorldManager {
               continue;
           }
 
-          let m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
-          if (!m) {
-              m = new Uint8Array(c.length);
-              WorldStore.setMetadataData(this.state, job.cx, job.cz, m);
-          }
+          // Absent metadata means none (setMetadataIfAny); the mesher reads it as zeros.
+          const m = WorldStore.getMetadataData(this.state, job.cx, job.cz);
 
           let l = WorldStore.getLightData(this.state, job.cx, job.cz);
           if (!l) {
@@ -714,6 +920,8 @@ export class WorldManager {
           this.meshStartedAt.set(key, Date.now());
           const ticket = ++this.meshTicketCounter;
           this.activeMeshTickets.set(key, ticket);
+          // Block edits queue at -1000 to -800 (setBlock, refreshStairShapes).
+          if (job.priority <= -800) this.urgentMeshTickets.add(ticket);
 
           const cullDark = Math.max(
               Math.abs(job.cx - this.desiredCenter.cx),
@@ -734,6 +942,13 @@ export class WorldManager {
                   front: WorldStore.getLightData(this.state, job.cx, job.cz+1),
                   back: WorldStore.getLightData(this.state, job.cx, job.cz-1)
               };
+              // Their fluid levels, so a flowing surface slopes evenly across the border.
+              const neighborMeta = {
+                  left: WorldStore.getMetadataData(this.state, job.cx-1, job.cz),
+                  right: WorldStore.getMetadataData(this.state, job.cx+1, job.cz),
+                  front: WorldStore.getMetadataData(this.state, job.cx, job.cz+1),
+                  back: WorldStore.getMetadataData(this.state, job.cx, job.cz-1)
+              };
 
               if (this.workersEnabled && this.workers.length > 0) {
                   this.postToPool({
@@ -744,14 +959,15 @@ export class WorldManager {
                       ticket,
                       chunk: c,
                       metaData: m,
-                      neighbors,
-                      lights: neighborLights,
+                      light: l,
+                      // Only the planes facing this chunk (meshBorders.ts).
+                      borders: packMeshBorders(neighbors, neighborLights, neighborMeta),
                       cullDarkFaces: cullDark
                   });
               } else {
                   setTimeout(() => {
                       if (this.activeMeshTickets.get(key) !== ticket) return;
-                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark);
+                      const res = Geometry.generateGeometryData(job.cx, job.cz, c, m, neighbors, neighborLights, cullDark, neighborMeta);
                       this.handleWorkerMessage({ type: 'MESH_DONE', cx: job.cx, cz: job.cz, ticket, result: res });
                   }, 0);
               }
@@ -791,7 +1007,7 @@ export class WorldManager {
           if (!chunk) {
               if (stage >= ChunkStage.GENERATED) {
                   this.setStage(cx, cz, ChunkStage.EMPTY);
-                  this.meshCache.delete(key);
+                  if (this.meshCache.delete(key)) this.notifyMeshPresence(key, false);
                   this.pendingRemesh.delete(key);
                   this.genStartedAt.delete(key);
                   this.meshStartedAt.delete(key);
@@ -806,7 +1022,7 @@ export class WorldManager {
           }
 
           if (stage === ChunkStage.GENERATED) {
-              this.queueMesh(cx, cz, priority);
+              this.queueFirstMesh(cx, cz, priority);
           } else if (stage === ChunkStage.MESH_QUEUED) {
               this.enqueueMesh(cx, cz, priority);
           } else if (stage === ChunkStage.READY && !this.meshCache.has(key)) {
@@ -1000,6 +1216,23 @@ export class WorldManager {
       return this.dirtyChunks.size > 0;
   }
 
+  /**
+   * Read-only streaming snapshot for diagnostics and the dev visual tour: how many
+   * of the desired chunks already have a mesh, and how much work is still queued.
+   */
+  public getStreamingStatus(): { desired: number; meshed: number; queued: number; inFlight: number } {
+      let meshed = 0;
+      for (const key of this.desiredChunkKeys) {
+          if (this.chunkStages.get(key) === ChunkStage.READY && this.meshCache.has(key)) meshed++;
+      }
+      return {
+          desired: this.desiredChunkKeys.size,
+          meshed,
+          queued: this.genQueue.length + this.meshQueue.length,
+          inFlight: this.inFlightGen + this.inFlightMesh,
+      };
+  }
+
   private markDirty(key: string): void {
       this.dirtyChunks.add(key);
       this.dirtyEditVersion.set(key, (this.dirtyEditVersion.get(key) ?? 0) + 1);
@@ -1024,8 +1257,9 @@ export class WorldManager {
               const [cx, cz] = key.split(',').map(Number);
               const blocks = WorldStore.getChunkData(this.state, cx, cz);
               const light = WorldStore.getLightData(this.state, cx, cz);
-              const meta = WorldStore.getMetadataData(this.state, cx, cz);
-              if (blocks && light && meta) {
+              if (blocks && light) {
+                  // Saves keep their full layout: a chunk without metadata writes zeros.
+                  const meta = WorldStore.getMetadataData(this.state, cx, cz) ?? new Uint8Array(blocks.length);
                   batch.push({ cx, cz, blocks, light, meta });
                   savedKeys.push({ key, version: this.dirtyEditVersion.get(key) ?? 0 });
               }
@@ -1068,7 +1302,7 @@ export class WorldManager {
 
       WorldStore.evictChunk(this.state, cx, cz);
       this.chunkStages.delete(key);
-      this.meshCache.delete(key);
+      if (this.meshCache.delete(key)) this.notifyMeshPresence(key, false);
       this.pendingRemesh.delete(key);
       this.meshSubscribers.delete(key);
       this.queuedGenKeys.delete(key);
@@ -1194,7 +1428,7 @@ export class WorldManager {
       return noiseH + 2;
   }
 
-  public findSafeSpawnPosition(targetX: number, targetZ: number): { x: number, y: number, z: number } {
+  public findSafeSpawnPosition(targetX: number, targetZ: number, firstSpawn = false): { x: number, y: number, z: number } {
       const seaLevel = GenConfig.height.seaLevel;
       const { safeSearchRadius, safeSearchStep } = GenConfig.spawn;
       
@@ -1244,10 +1478,10 @@ export class WorldManager {
                   const z = Math.floor(targetZ + dz);
                   const h = WorldGen.getTerrainHeight(x, z);
 
-                  const score = this.scoreSpawnCandidate(x, z);
+                  const score = this.scoreSpawnCandidate(x, z, firstSpawn);
                   if (score > 0 && (!scored || score > scored.score)) {
                       scored = { x, z, y: h, score };
-                  } else if (h > seaLevel) {
+                  } else if (h > seaLevel && !this.isSealedSpawnColumn(x, z)) {
                       const ls = scoreFallbackLand(x, z, h);
                       if (!land || ls > land.landScore) {
                           land = { x, z, y: h, landScore: ls };
@@ -1263,8 +1497,9 @@ export class WorldManager {
       }
 
       // Priority: scored land > any land > nearest water > emergency fallback
-      const pick = scored ?? land;
-      if (pick) {
+      const found = scored ?? land;
+      if (found) {
+          const pick = this.groundColumnNear(found.x, found.z);
           this.ensureChunk(Math.floor(pick.x / CHUNK_SIZE), Math.floor(pick.z / CHUNK_SIZE));
           // Snap to a real air gap on top of the actual surface blocks (avoids
           // spawning inside trees / structures / overhangs the noise height misses).
@@ -1284,20 +1519,56 @@ export class WorldManager {
       return { x: targetX, y: seaLevel + 1.5, z: targetZ };
   }
 
+  /**
+   * The nearest column within a few blocks of (x, z) that stands on the
+   * ground, dry. Candidates are scored on the noise height, which knows
+   * nothing of trees, and a column under one resolves onto its canopy
+   * (resolveClearStandY): a new player began up a tree, five or more blocks
+   * above the ground. (x, z) itself when nothing near qualifies.
+   */
+  private groundColumnNear(x: number, z: number): { x: number; z: number } {
+      const seaLevel = GenConfig.height.seaLevel;
+      for (let r = 0; r <= 6; r++) {
+          for (let dx = -r; dx <= r; dx++) {
+              for (let dz = -r; dz <= r; dz++) {
+                  if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+                  const cx = x + dx;
+                  const cz = z + dz;
+                  const ground = WorldGen.getTerrainHeight(cx, cz);
+                  if (ground <= seaLevel) continue;
+                  const y = this.resolveClearStandY(cx, cz);
+                  if (y !== ground + 1 || this.getBlock(cx, y, cz, false) === BlockType.WATER) continue;
+                  return { x: cx, z: cz };
+              }
+          }
+      }
+      return { x, z };
+  }
+
   public getSeaLevel(): number {
       return GenConfig.height.seaLevel;
   }
 
-  public scoreSpawnCandidate(x: number, z: number): number {
+  /**
+   * A still-sealed region (the Magnetic Fields before its Warden falls): no
+   * mining or building, so never a place to start or respawn.
+   */
+  private isSealedSpawnColumn(x: number, z: number): boolean {
+      const region = getRegionAt(x, 0, z);
+      return !!region && region.sealedByDefault && !progression.isRegionCleansed(region.id);
+  }
+
+  public scoreSpawnCandidate(x: number, z: number, firstSpawn = false): number {
       const seaLevel = GenConfig.height.seaLevel;
       const biome = getBiome(x, z);
       const height = WorldGen.getTerrainHeight(x, z);
 
-      // Reject ocean, river, and volcanic
+      // Reject ocean, river, volcanic, and sealed regions
       if (biome.id === 'ocean' || biome.id === 'frozen_ocean') return -1;
       if (biome.id === 'river' || biome.id === 'frozen_river') return -1;
       if (biome.id === 'volcanic') return -1;
       if (height <= seaLevel) return -1;
+      if (this.isSealedSpawnColumn(x, z)) return -1;
 
       let score = 100;
 
@@ -1329,6 +1600,14 @@ export class WorldManager {
       else if (biome.id === 'desert') score -= 5;
       else if (biome.id === 'red_mesa' || biome.id === 'mesa_bryce') score -= 5;
 
+      // A new world's first spawn also steers clear of closed canopy and
+      // wetland, where a new player starts in the dark or in water. Respawns
+      // keep the scoring above, so existing worlds respawn where they did.
+      if (firstSpawn) {
+          if (biome.id === 'dark_forest') score -= 25;
+          else if (biome.id === 'swamp' || biome.id === 'jungle') score -= 15;
+      }
+
       return score;
   }
 
@@ -1348,7 +1627,7 @@ export class WorldManager {
               const x = Math.floor(center.x + Math.cos(angle) * r);
               const z = Math.floor(center.z + Math.sin(angle) * r);
 
-              const score = this.scoreSpawnCandidate(x, z);
+              const score = this.scoreSpawnCandidate(x, z, true);
               if (score > bestScore) {
                   bestScore = score;
                   bestX = x;
@@ -1357,26 +1636,15 @@ export class WorldManager {
 
               // Good enough, stop early
               if (bestScore >= GenConfig.spawn.earlyAcceptScore) {
-                  return this.findSafeSpawnPosition(bestX, bestZ);
+                  return this.findSafeSpawnPosition(bestX, bestZ, true);
               }
           }
       }
 
-      return this.findSafeSpawnPosition(bestX, bestZ);
+      return this.findSafeSpawnPosition(bestX, bestZ, true);
   }
 
   // Helper to synchronously force generation if missing (prevents falling through world on start)
-  private markQueuesDirty() {
-      this.queuesDirty = true;
-  }
-
-  private sortQueuesIfDirty() {
-      if (!this.queuesDirty) return;
-      this.genQueue.sort((a, b) => a.priority - b.priority);
-      this.meshQueue.sort((a, b) => a.priority - b.priority);
-      this.queuesDirty = false;
-  }
-
   public ensureChunk(cx: number, cz: number) {
       if (!WorldStore.getChunkData(this.state, cx, cz)) {
           console.warn(`[WorldManager] Force-generating missing spawn chunk ${cx},${cz} synchronously.`);
@@ -1402,10 +1670,46 @@ export class WorldManager {
           const result = WorldGen.generateChunk(cx, cz, { rejectedVaultIds: [...this.rejectedVaultCandidates] });
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
-          WorldStore.setMetadataData(this.state, cx, cz, result.meta);
+          WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
+          this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
           this.setStage(cx, cz, ChunkStage.GENERATED);
           // We don't mesh here, just ensure data exists for collision/spawn checks
       }
+  }
+
+  /**
+   * Flowing water or lava saved mid-flow moves on once its chunk is loaded
+   * again, as Minecraft saves a chunk's scheduled fluid ticks with it (the
+   * tick queue here is not saved). Generation only places sources.
+   */
+  private wakeFlowingFluids(cx: number, cz: number, blocks: Uint8Array, meta: Uint8Array | undefined) {
+      if (!meta) return;
+      const layer = CHUNK_SIZE * CHUNK_SIZE;
+      for (let i = 0; i < blocks.length; i++) {
+          const type = blocks[i];
+          if (meta[i] === 0 || (type !== BlockType.WATER && type !== BlockType.LAVA)) continue;
+          const column = i % layer;
+          Fluids.scheduleFluidUpdate(cx * CHUNK_SIZE + (column % CHUNK_SIZE), Math.floor(i / layer) + MIN_Y, cz * CHUNK_SIZE + Math.floor(column / CHUNK_SIZE), type, Fluids.fluidDelay(type));
+      }
+  }
+
+  /**
+   * Whether a chunk has a mesh to draw, and a cue whenever that changes: the
+   * scene mounts a chunk only once it does (ChunkField in ChunkMesh.tsx).
+   */
+  public hasMesh(key: string): boolean {
+      return this.meshCache.has(key);
+  }
+
+  public subscribeMeshPresence(listener: (key: string | null, present: boolean) => void): () => void {
+      this.meshPresenceListeners.add(listener);
+      return () => {
+          this.meshPresenceListeners.delete(listener);
+      };
+  }
+
+  private notifyMeshPresence(key: string | null, present: boolean) {
+      for (const listener of this.meshPresenceListeners) listener(key, present);
   }
 
   public subscribeMesh(cx: number, cz: number, cb: (geo: Geometry.GeometryResult | null) => void) {
@@ -1506,7 +1810,16 @@ export class WorldManager {
   tick(delta: number) {
       this.state.time++;
       TileEntities.tickTileEntities(this.state, delta, (x,y,z) => this.getBlock(x,y,z,false), (x,y,z,t,r) => { this.setBlock(x,y,z,t,r); }, (x,y,z) => this.getMetadata(x,y,z));
-      Fluids.processFluids(this.state);
+      // Water and falling leaves change many blocks a tick: their relights are
+      // batched together (see beginFluidTick).
+      this.leafClock += 1 / 20;
+      this.beginFluidTick();
+      try {
+          Fluids.processFluids(this.state);
+          tickLeafDecay(this.leafWorld, this.leafClock);
+      } finally {
+          this.endFluidTick();
+      }
       tickPlantGrowth({
           getBlock: (x, y, z) => this.getBlock(x, y, z, false),
           tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
@@ -1517,7 +1830,44 @@ export class WorldManager {
           getTickCenter: () => this.desiredCenter,
           getSeed: () => this.activeSeed
       });
+      tickFarms(this.farmWorld);
   }
+
+  /** Seconds of world ticks, for leaf decay's timing (the world clock can jump with /time). */
+  private leafClock = 0;
+
+  /** What leaf decay sees of the world (built once; leafDecay.ts owns the rules). */
+  private readonly leafWorld: LeafWorld = {
+      tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
+      getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+      setBlock: (x, y, z, type) => { this.setBlock(x, y, z, type); },
+      spawnDrop: (type, x, y, z) => this.spawnDrop(type, x, y, z),
+      isLeaf: (type) => isLeafType(type),
+      isLog: (type) => isLogBlock(type),
+      leafDrops: (type) => rollDrops(BLOCKS[type]?.drops),
+      getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+      getTickCenter: () => this.desiredCenter,
+  };
+
+  /** A hard landing on farmland packs it back to dirt and knocks its crop off. */
+  trampleFarmland(x: number, y: number, z: number): void {
+      if (!isFarmland(this.getBlock(x, y, z, false), this.getMetadata(x, y, z))) return;
+      untillFarmland(this.farmWorld, x, y, z);
+  }
+
+  /** What the farm tick sees of the world (built once; farming.ts owns the rules). */
+  private readonly farmWorld: FarmWorld = {
+      tryGetBlock: (x, y, z) => this.tryGetBlock(x, y, z),
+      getMetadata: (x, y, z) => this.getMetadata(x, y, z),
+      setBlockData: (x, y, z, meta) => this.setBlockData(x, y, z, meta),
+      setBlock: (x, y, z, type, meta) => { this.setBlock(x, y, z, type, meta ?? 0); },
+      spawnDrop: (type, x, y, z) => this.spawnDrop(type, x, y, z),
+      getLight: (x, y, z) => this.getLight(x, y, z),
+      getChunkData: (cx, cz) => WorldStore.getChunkData(this.state, cx, cz) ?? null,
+      getChunkMetadata: (cx, cz) => WorldStore.getMetadataData(this.state, cx, cz) ?? null,
+      getTickCenter: () => this.desiredCenter,
+      isOpenPlant: (type) => CROSS_RENDERED_BLOCKS.has(type) && !!BLOCKS[type]?.noCollision && !isCrop(type),
+  };
 
   getTime(): number { return this.state.time; }
   setTime(t: number) { this.state.time = t; }
@@ -1605,11 +1955,11 @@ export class WorldManager {
   }
   getLight(x: number, y: number, z: number): { sky: number, block: number } { return Lighting.getLight(this.state, x, y, z); }
   setLight(x: number, y: number, z: number, sky: number, block: number) { Lighting.setLight(this.state, x, y, z, sky, block); }
-  updateLightingAround(x: number, y: number, z: number) {
+  updateLightingAround(x: number, y: number, z: number, radius: number = 15) {
       Lighting.updateLightingAround(this.state, x, y, z, (cx, cz) => {
           WorldStore.notifyChunk(this.state, cx, cz);
           if (this.getStage(cx, cz) >= ChunkStage.GENERATED) this.queueMesh(cx, cz, 10);
-      });
+      }, radius);
   }
   setBlock(x: number, y: number, z: number, type: BlockType, rotation: number = 0): ItemStack[] {
     if (y < MIN_Y || y > MAX_Y) return [];
@@ -1634,13 +1984,16 @@ export class WorldManager {
     chunk[index] = type;
     const meta = WorldStore.ensureMetadata(this.state, cx, cz);
     meta[index] = rotation;
+    if (isFarmland(type, rotation)) noteFarmland(x, y, z);
+    // A log gone: the leaves it held up may fall.
+    if (oldType !== type && isLogBlock(oldType as BlockType) && !isLogBlock(type)) noteLogRemoved(x, y, z);
     const droppedItems = TileEntities.handleBlockReplaced(this.state, x, y, z, oldType, type);
     droppedItems.forEach(item => this.spawnDrop(item, x, y, z));
-    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, type === BlockType.LAVA ? 30 : 5); }
+    if (type === BlockType.WATER || type === BlockType.LAVA) { Fluids.scheduleFluidUpdate(x, y, z, type, Fluids.fluidDelay(type)); }
     [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [0,0,1], [0,0,-1] ].forEach(([dx, dy, dz]) => {
          const nx = x+dx; const ny = y+dy; const nz = z+dz;
          const nBlock = this.getBlock(nx, ny, nz, false);
-         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, nBlock === BlockType.LAVA ? 10 : 5); }
+         if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) { Fluids.scheduleFluidUpdate(nx, ny, nz, nBlock, Fluids.fluidDelay(nBlock)); }
     });
     if (oldType !== type || oldRotation !== rotation) {
         // Re-resolve stair corner shapes for this cell and its horizontal neighbors
@@ -1648,7 +2001,8 @@ export class WorldManager {
         // occlusion. A placed/removed stair can turn neighbors into inner/outer corners.
         this.refreshStairShapes(x, y, z);
 
-        this.updateLightingAround(x, y, z);
+        if (this.fluidRelight) this.deferRelight(x, y, z, lightFaint(oldType as BlockType) && lightFaint(type) ? FAINT_RELIGHT_MARGIN : FULL_RELIGHT_MARGIN);
+        else this.updateLightingAround(x, y, z);
         this.queueMesh(cx, cz, -1000);
 
         // If editing at chunk borders, prioritize neighbor remesh immediately too.
@@ -1657,13 +2011,11 @@ export class WorldManager {
         if (lz === 0) this.queueMesh(cx, cz - 1, -900);
         else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -900);
 
-        this.markQueuesDirty();
-        this.processStreamingJobs();
+        this.runStreamingJobs();
     } else {
         WorldStore.notifyChunk(this.state, cx, cz);
         this.queueMesh(cx, cz, -500);
-        this.markQueuesDirty();
-        this.processStreamingJobs();
+        this.runStreamingJobs();
     }
 
     // A type change here may have pulled the support out from a decoration above it.
@@ -1673,6 +2025,114 @@ export class WorldManager {
     this.markDirty(WorldCoords.getChunkKey(cx, cz));
 
     return droppedItems;
+  }
+
+  /**
+   * While the fluid tick runs, the blocks it adds or removes wait to be relit
+   * together, as Minecraft's light engine batches its updates: changes close
+   * together share one box, relit once, and water (which only dims light a
+   * little) is relit only a few blocks around the box rather than light's full
+   * reach. Boxes are relit under a time budget a tick, oldest first, and the
+   * chunk jobs the changes queue are started once a tick, not once a block.
+   */
+  private fluidRelight: RelightBox[] | null = null;
+  private pendingRelight: RelightBox[] = [];
+  private fluidJobsWaiting = false;
+
+  private deferRelight(x: number, y: number, z: number, margin: number) {
+    for (const box of this.pendingRelight) {
+        if (box.margin !== margin) continue;
+        const minX = Math.min(box.minX, x), maxX = Math.max(box.maxX, x);
+        const minY = Math.min(box.minY, y), maxY = Math.max(box.maxY, y);
+        const minZ = Math.min(box.minZ, z), maxZ = Math.max(box.maxZ, z);
+        if (maxX - minX > RELIGHT_BOX_SPAN || maxY - minY > RELIGHT_BOX_SPAN || maxZ - minZ > RELIGHT_BOX_SPAN) continue;
+        box.minX = minX; box.maxX = maxX; box.minY = minY; box.maxY = maxY; box.minZ = minZ; box.maxZ = maxZ;
+        return;
+    }
+    this.pendingRelight.push({ minX: x, maxX: x, minY: y, maxY: y, minZ: z, maxZ: z, margin });
+  }
+
+  private runStreamingJobs() {
+    if (this.fluidRelight) this.fluidJobsWaiting = true;
+    else this.processStreamingJobs();
+  }
+
+  beginFluidTick() {
+    this.fluidRelight = this.pendingRelight;
+  }
+
+  endFluidTick() {
+    this.fluidRelight = null;
+    const start = performance.now();
+    let done = 0;
+    for (; done < this.pendingRelight.length; done++) {
+        if (done > 0 && performance.now() - start > RELIGHT_BUDGET_MS) break;
+        const box = this.pendingRelight[done];
+        const half = Math.ceil(Math.max(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ) / 2);
+        this.updateLightingAround(
+            Math.round((box.minX + box.maxX) / 2), Math.round((box.minY + box.maxY) / 2), Math.round((box.minZ + box.maxZ) / 2),
+            half + box.margin,
+        );
+    }
+    this.pendingRelight.splice(0, done);
+    if (this.fluidJobsWaiting) {
+        this.fluidJobsWaiting = false;
+        this.processStreamingJobs();
+    }
+  }
+
+  /**
+   * A block's data changing in place, its type the same: a crop growing a
+   * stage, farmland drying or soaking, farmland packed back to plain dirt.
+   * Nothing about the cell's light changes, so it skips setBlock's relight,
+   * stair and support checks: new data, a remesh, and a save.
+   */
+  setBlockData(x: number, y: number, z: number, value: number): void {
+    if (y < MIN_Y || y > MAX_Y) return;
+    const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+    const chunk = this.getChunkData(cx, cz, true);
+    if (!chunk) return;
+    const index = WorldCoords.index3D(lx, y, lz);
+    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
+    if (meta[index] === value) return;
+    meta[index] = value;
+    if (isFarmland(chunk[index] as BlockType, value)) noteFarmland(x, y, z);
+    WorldStore.notifyChunk(this.state, cx, cz);
+    this.queueMesh(cx, cz, -500);
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
+  }
+
+  /**
+   * A fluid's level changing in place (water or lava already there, only its
+   * flow level differs): no relight, no stair or support checks, just the
+   * level, a remesh, and a nudge to the fluid next to it. Anything else takes
+   * the full setBlock path.
+   */
+  setFluidLevel(x: number, y: number, z: number, type: BlockType, level: number): void {
+    if (y < MIN_Y || y > MAX_Y) return;
+    const { cx, cz, lx, lz } = WorldCoords.worldToChunk(x, z);
+    const chunk = this.getChunkData(cx, cz, true);
+    if (!chunk) return;
+    const index = WorldCoords.index3D(lx, y, lz);
+    if (chunk[index] !== type) { this.setBlock(x, y, z, type, level); return; }
+    const meta = WorldStore.ensureMetadata(this.state, cx, cz);
+    if (meta[index] === level) return;
+    meta[index] = level;
+    Fluids.scheduleFluidUpdate(x, y, z, type, Fluids.fluidDelay(type));
+    for (const [dx, dy, dz] of FLUID_NEIGHBOURS) {
+        const nBlock = this.getBlock(x + dx, y + dy, z + dz, false);
+        if (nBlock === BlockType.WATER || nBlock === BlockType.LAVA) {
+            Fluids.scheduleFluidUpdate(x + dx, y + dy, z + dz, nBlock, Fluids.fluidDelay(nBlock));
+        }
+    }
+    // The surface slopes toward its neighbours' levels, across chunk borders too.
+    WorldStore.notifyChunk(this.state, cx, cz);
+    this.queueMesh(cx, cz, -500);
+    if (lx === 0) this.queueMesh(cx - 1, cz, -400);
+    else if (lx === CHUNK_SIZE - 1) this.queueMesh(cx + 1, cz, -400);
+    if (lz === 0) this.queueMesh(cx, cz - 1, -400);
+    else if (lz === CHUNK_SIZE - 1) this.queueMesh(cx, cz + 1, -400);
+    this.markDirty(WorldCoords.getChunkKey(cx, cz));
   }
 
   /**
@@ -1716,7 +2176,6 @@ export class WorldManager {
       const [cx, cz] = key.split(',').map(Number);
       this.queueMesh(cx, cz, -1000);
     }
-    this.markQueuesDirty();
     this.processStreamingJobs();
   }
 
@@ -1756,8 +2215,14 @@ export class WorldManager {
     const t = this.getBlock(x, y, z, false);
     if (t === BlockType.AIR || !needsSupport(t)) return;
     const below = this.getBlock(x, y - 1, z, false);
-    if (hasSupportBelow(t, below)) return;
-    this.spawnDrop(t, x, y, z);
+    if (hasSupportBelow(t, below) && (!isCrop(t) || isFarmland(below, this.getMetadata(x, y - 1, z)))) return;
+    if (isCrop(t)) {
+        for (const drop of cropDrops(t, cropStage(this.getMetadata(x, y, z)))) {
+            for (let i = 0; i < drop.count; i++) this.spawnDrop(drop.type, x, y, z);
+        }
+    } else {
+        this.spawnDrop(t, x, y, z);
+    }
     this.setBlock(x, y, z, BlockType.AIR);
   }
   setWorkersEnabled(val: boolean) {
@@ -1783,8 +2248,9 @@ export class WorldManager {
       const caveNoise2D = (a: number, b: number) => GlobalNoise.cave.noise2D(a, b);
       const caveOx = GlobalNoise.offsets.cave.x, caveOz = GlobalNoise.offsets.cave.z;
 
-      // Rare sealed boss biomes (e.g. Magnetic Fields) sit ~10k blocks apart, so
-      // they need a wider search than ordinary biomes to stay reliably findable.
+      // Rare sealed boss biomes (e.g. Magnetic Fields) sit a few thousand blocks
+      // apart (more with rarer World Editor settings), so they need a wider
+      // search than ordinary biomes to stay reliably findable.
       const isRareBossBiome = biomeId === 'magnetic_fields';
       const SEARCH_RADIUS = isRareBossBiome ? 36000 : 5000;
       const STEP = isRareBossBiome ? 128 : 64;

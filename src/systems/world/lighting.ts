@@ -7,6 +7,8 @@ import { worldToChunk, index3D, getChunkKey } from './worldCoords';
 import { NEIGHBORS, QUEUE_SIZE, SHARED_SKY_Q, SHARED_BLOCK_Q } from './worldConstants';
 import { getDirectionalOpacity, getPairedFaceOcclusion } from './blockProps';
 
+const LAYER_CELLS = CHUNK_SIZE * CHUNK_SIZE;
+
 export function getLight(state: WorldState, x: number, y: number, z: number): { sky: number, block: number } {
     if (y < MIN_Y || y > MAX_Y) return { sky: 15, block: 0 };
     const { cx, cz, lx, lz } = worldToChunk(x, z);
@@ -28,18 +30,58 @@ export function setLight(state: WorldState, x: number, y: number, z: number, sky
     lightData[index3D(lx, y, lz)] = (sky << 4) | (block & 0xF);
 }
 
-export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void) {
-    floodLightLocal(state, x, y, z, 15);
+/**
+ * Relights the cells within `radius` of an edit and tells notifyFn about each
+ * chunk whose mesh the change reaches: the chunks whose light changed, and a
+ * side neighbour wherever a changed cell sits on the border it meshes against
+ * (meshBorders.ts). A chunk whose light came out the same isn't remeshed, so
+ * an edit usually remeshes one chunk or two rather than all nine around it.
+ */
+export function updateLightingAround(state: WorldState, x: number, y: number, z: number, notifyFn: (cx: number, cz: number) => void, radius: number = 15) {
     const cx = Math.floor(x / CHUNK_SIZE);
     const cz = Math.floor(z / CHUNK_SIZE);
-    for(let dx=-1; dx<=1; dx++) {
-        for(let dz=-1; dz<=1; dz++) {
-            notifyFn(cx+dx, cz+dz);
+    const reached = floodLightLocal(state, x, y, z, Math.min(15, radius));
+    for (let dx = -REACH_SPAN; dx <= REACH_SPAN; dx++) {
+        for (let dz = -REACH_SPAN; dz <= REACH_SPAN; dz++) {
+            if (reached & reachBit(dx, dz)) notifyFn(cx + dx, cz + dz);
         }
     }
 }
 
-export function floodLightLocal(state: WorldState, bx: number, by: number, bz: number, radius: number = 15) {
+// Which chunks a relight reached: a bit per chunk within REACH_SPAN of the
+// edited one. A radius of at most 15 (and its one-cell rim) stays inside the
+// chunks next to it, and their border cells reach one chunk further.
+const REACH_SPAN = 2;
+const reachBit = (dx: number, dz: number) => 1 << ((dx + REACH_SPAN) * (REACH_SPAN * 2 + 1) + (dz + REACH_SPAN));
+
+// A relight's working copies, for the largest box (radius 15) and its rim:
+// the light before, and each column's highest block.
+const RELIGHT_SPAN = 33;
+const relightBefore = new Uint8Array(RELIGHT_SPAN * RELIGHT_SPAN * RELIGHT_SPAN);
+const relightTops = new Int16Array(RELIGHT_SPAN * RELIGHT_SPAN);
+const relightNeighbourTops = new Int16Array(RELIGHT_SPAN * RELIGHT_SPAN);
+
+/** The height of a column's highest non-air block, or MIN_Y - 1 for an empty one. */
+function columnTop(chunk: Uint8Array, colBase: number, LAYER: number): number {
+    for (let y = MAX_Y; y >= MIN_Y; y--) {
+        if (chunk[(y - MIN_Y) * LAYER + colBase] !== 0) return y;
+    }
+    return MIN_Y - 1;
+}
+
+/**
+ * Recomputes light in the box within `radius` of (bx, by, bz): straight-down
+ * skylight and emission column by column, then a flood from every cell that
+ * can light a neighbour. Returns the chunks it reached (reachBit, relative to
+ * the edited one's).
+ *
+ * The flood leaves out cells that can't brighten anything: open sky above a
+ * column's top already holds 15, and so does the air beside it at that height
+ * unless the neighbouring column rises that high. So a sunlit cell above its
+ * column seeds the flood only up to its neighbours' tops. Cells at or under a
+ * top (water, leaves, caves) and anything with block light still all seed it.
+ */
+export function floodLightLocal(state: WorldState, bx: number, by: number, bz: number, radius: number = 15): number {
     // Hot path: runs on the main thread for EVERY block edit (and fluid level change).
     // Uses direct chunk/light array access, the previous getBlock/getLight/setLight
     // version allocated ~800k temporary objects+strings per flood.
@@ -48,6 +90,14 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
     const minZ = bz - R, maxZ = bz + R;
     const minY = Math.max(MIN_Y, by - R), maxY = Math.min(MAX_Y, by + R);
     const LAYER = CHUNK_SIZE * CHUNK_SIZE;
+    // The box and a one-cell rim: the cells the flood reads, seeds from and may change.
+    const rimMinX = minX - 1, rimMinZ = minZ - 1;
+    const spanX = maxX - minX + 3, spanZ = maxZ - minZ + 3;
+    const seedMinY = Math.max(MIN_Y, minY - 1);
+    const seedMaxY = Math.min(MAX_Y, maxY + 1);
+    const spanY = seedMaxY - seedMinY + 1;
+    const ccx = Math.floor(bx / CHUNK_SIZE);
+    const ccz = Math.floor(bz / CHUNK_SIZE);
 
     let qSkyTail = 0;
     let qBlockTail = 0;
@@ -68,6 +118,36 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
         }
     };
 
+    // Before anything changes: the light of the box and its rim, and every column's top.
+    for (let i = 0; i < spanX; i++) {
+        const x = rimMinX + i;
+        const cx = Math.floor(x / CHUNK_SIZE);
+        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        for (let k = 0; k < spanZ; k++) {
+            const z = rimMinZ + k;
+            const cz = Math.floor(z / CHUNK_SIZE);
+            refreshCache(cx, cz);
+            const column = i * spanZ + k;
+            if (!chunkCache || !lightCache) { relightTops[column] = MIN_Y - 1; continue; }
+            const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const colBase = lz * CHUNK_SIZE + lx;
+            const base = column * spanY;
+            for (let y = seedMinY; y <= seedMaxY; y++) relightBefore[base + y - seedMinY] = lightCache[(y - MIN_Y) * LAYER + colBase];
+            relightTops[column] = columnTop(chunkCache, colBase, LAYER);
+        }
+    }
+    // The highest of each column's side neighbours (within the rim).
+    for (let i = 0; i < spanX; i++) {
+        for (let k = 0; k < spanZ; k++) {
+            let top = MIN_Y - 1;
+            if (i > 0) top = Math.max(top, relightTops[(i - 1) * spanZ + k]);
+            if (i < spanX - 1) top = Math.max(top, relightTops[(i + 1) * spanZ + k]);
+            if (k > 0) top = Math.max(top, relightTops[i * spanZ + k - 1]);
+            if (k < spanZ - 1) top = Math.max(top, relightTops[i * spanZ + k + 1]);
+            relightNeighbourTops[i * spanZ + k] = top;
+        }
+    }
+
     // Pass 1: recompute vertical skylight + emission for each column in the area.
     for (let x = minX; x <= maxX; x++) {
         const cx = Math.floor(x / CHUNK_SIZE);
@@ -83,10 +163,7 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
             const colBase = lz * CHUNK_SIZE + lx;
 
             // Highest non-air block in the column
-            let maxHeight = MIN_Y - 1;
-            for (let y = MAX_Y; y >= MIN_Y; y--) {
-                if (chunk[(y - MIN_Y) * LAYER + colBase] !== 0) { maxHeight = y; break; }
-            }
+            const maxHeight = relightTops[(x - rimMinX) * spanZ + (z - rimMinZ)];
 
             // Everything above is sunlit (only write inside the edit bounds)
             for (let y = maxY; y > Math.max(maxHeight, minY - 1); y--) {
@@ -114,25 +191,27 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
         }
     }
 
-    // Pass 2: seed BFS from every lit cell in (and one beyond) the recomputed region.
+    // Pass 2: seed the flood from every cell in (and one beyond) the recomputed
+    // region that can light a neighbour.
     cxCache = -999999999; czCache = -999999999;
     chunkCache = undefined; lightCache = undefined;
-    const seedMinY = Math.max(MIN_Y, minY - 1);
-    const seedMaxY = Math.min(MAX_Y, maxY + 1);
-    for (let x = minX - 1; x <= maxX + 1; x++) {
+    for (let x = rimMinX; x <= maxX + 1; x++) {
         const cx = Math.floor(x / CHUNK_SIZE);
         const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-        for (let z = minZ - 1; z <= maxZ + 1; z++) {
+        for (let z = rimMinZ; z <= maxZ + 1; z++) {
             const cz = Math.floor(z / CHUNK_SIZE);
             refreshCache(cx, cz);
             if (!lightCache) continue; // unloaded chunk: propagation would skip it anyway
             const light = lightCache;
             const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
             const colBase = lz * CHUNK_SIZE + lx;
+            const column = (x - rimMinX) * spanZ + (z - rimMinZ);
+            // Sunlit cells above this height light nothing new.
+            const skySeedTop = Math.max(relightTops[column], relightNeighbourTops[column]);
             for (let y = seedMinY; y <= seedMaxY; y++) {
                 const val = light[(y - MIN_Y) * LAYER + colBase];
                 if (val === 0) continue;
-                if ((val >> 4) > 0 && qSkyTail < QUEUE_SIZE * 3) {
+                if ((val >> 4) > 0 && y <= skySeedTop && qSkyTail < QUEUE_SIZE * 3) {
                     qSky[qSkyTail++] = x; qSky[qSkyTail++] = y; qSky[qSkyTail++] = z;
                 }
                 if ((val & 0xF) > 0 && qBlockTail < QUEUE_SIZE * 3) {
@@ -142,10 +221,63 @@ export function floodLightLocal(state: WorldState, bx: number, by: number, bz: n
         }
     }
 
+    lightWrites.minX = lightWrites.minZ = Infinity;
+    lightWrites.maxX = lightWrites.maxZ = -Infinity;
     propagateLightTyped(state, qSky, qSkyTail, qBlock, qBlockTail);
+
+    // Which chunks' meshes the new light reaches.
+    let reached = 0;
+    // Light that spread past the rim (a relight box round a spread of fluid
+    // changes can send it further): every chunk it may have touched.
+    if (lightWrites.minX < rimMinX || lightWrites.maxX > maxX + 1 || lightWrites.minZ < rimMinZ || lightWrites.maxZ > maxZ + 1) {
+        const x0 = Math.max(ccx - REACH_SPAN, Math.floor((lightWrites.minX - 1) / CHUNK_SIZE));
+        const x1 = Math.min(ccx + REACH_SPAN, Math.floor((lightWrites.maxX + 1) / CHUNK_SIZE));
+        const z0 = Math.max(ccz - REACH_SPAN, Math.floor((lightWrites.minZ - 1) / CHUNK_SIZE));
+        const z1 = Math.min(ccz + REACH_SPAN, Math.floor((lightWrites.maxZ + 1) / CHUNK_SIZE));
+        for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) reached |= reachBit(cx - ccx, cz - ccz);
+    }
+    cxCache = -999999999; czCache = -999999999;
+    chunkCache = undefined; lightCache = undefined;
+    for (let i = 0; i < spanX; i++) {
+        const x = rimMinX + i;
+        const cx = Math.floor(x / CHUNK_SIZE);
+        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+        for (let k = 0; k < spanZ; k++) {
+            const z = rimMinZ + k;
+            const cz = Math.floor(z / CHUNK_SIZE);
+            refreshCache(cx, cz);
+            if (!lightCache) continue;
+            const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const colBase = lz * CHUNK_SIZE + lx;
+            const base = (i * spanZ + k) * spanY;
+            let changed = false;
+            for (let y = seedMinY; y <= seedMaxY; y++) {
+                if (lightCache[(y - MIN_Y) * LAYER + colBase] !== relightBefore[base + y - seedMinY]) { changed = true; break; }
+            }
+            if (!changed) continue;
+            const dx = cx - ccx, dz = cz - ccz;
+            reached |= reachBit(dx, dz);
+            if (lx === 0) reached |= reachBit(dx - 1, dz);
+            else if (lx === CHUNK_SIZE - 1) reached |= reachBit(dx + 1, dz);
+            if (lz === 0) reached |= reachBit(dx, dz - 1);
+            else if (lz === CHUNK_SIZE - 1) reached |= reachBit(dx, dz + 1);
+        }
+    }
+    return reached;
 }
 
+/** Where the last flood wrote light, in world x and z (floodLightLocal reads it). */
+const lightWrites = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+const noteLightWrite = (x: number, z: number) => {
+    if (x < lightWrites.minX) lightWrites.minX = x;
+    if (x > lightWrites.maxX) lightWrites.maxX = x;
+    if (z < lightWrites.minZ) lightWrites.minZ = z;
+    if (z > lightWrites.maxZ) lightWrites.maxZ = z;
+};
+
 export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCount: number, qBlock: Int32Array, blockCount: number) {
+    // Chunks are 16 wide (CHUNK_SIZE): a world coordinate's chunk is x >> 4 and
+    // its place in the chunk x & 15, negatives included, with no division.
     let cxCache = -999999999;
     let czCache = -999999999;
     let chunkCache: Uint8Array | undefined;
@@ -165,17 +297,13 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
     let head = 0;
     while (head < blockCount) {
         const x = qBlock[head++]; const y = qBlock[head++]; const z = qBlock[head++];
-        
-        const cx = Math.floor(x / CHUNK_SIZE);
-        const cz = Math.floor(z / CHUNK_SIZE);
-        refreshCache(cx, cz);
-        
+
+        refreshCache(x >> 4, z >> 4);
+
         if (!lightCache) continue;
         const curLight = lightCache as Uint8Array;
 
-        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-        const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-        const index = index3D(lx, y, lz);
+        const index = (y - MIN_Y) * LAYER_CELLS + ((z & 15) << 4) + (x & 15);
         const lvl = curLight[index] & 0xF;
 
         if (lvl <= 0) continue;
@@ -186,28 +314,26 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
         const srcMeta = metaCache ? metaCache[index] : 0;
 
         for(let i=0; i<6; i++) {
-            const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
+            const dir = NEIGHBORS[i];
+            const nx = x + dir[0]; const ny = y + dir[1]; const nz = z + dir[2];
             if (ny < MIN_Y || ny > MAX_Y) continue;
 
-            const ncx = Math.floor(nx / CHUNK_SIZE);
-            const ncz = Math.floor(nz / CHUNK_SIZE);
-            refreshCache(ncx, ncz);
+            refreshCache(nx >> 4, nz >> 4);
 
             if (!chunkCache || !lightCache) continue;
             const neighborLight = lightCache as Uint8Array;
 
-            const nlx = ((nx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-            const nlz = ((nz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-            const nIndex = index3D(nlx, ny, nlz);
+            const nIndex = (ny - MIN_Y) * LAYER_CELLS + ((nz & 15) << 4) + (nx & 15);
 
             const nType = chunkCache[nIndex];
             const nMeta = metaCache ? metaCache[nIndex] : 0;
-            const atten = Math.max(1, getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]));
+            const atten = Math.max(1, getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, dir[0], dir[1], dir[2]));
             const nextLvl = lvl - atten;
-            
+
             const currentNLvl = neighborLight[nIndex] & 0xF;
             if (nextLvl > currentNLvl) {
                 neighborLight[nIndex] = (neighborLight[nIndex] & 0xF0) | (nextLvl & 0xF);
+                noteLightWrite(nx, nz);
                 if (blockCount < QUEUE_SIZE * 3) {
                     qBlock[blockCount++] = nx; qBlock[blockCount++] = ny; qBlock[blockCount++] = nz;
                 }
@@ -217,22 +343,18 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
 
     // BFS Sky Light
     head = 0;
-    cxCache = -999999999; czCache = -999999999; 
+    cxCache = -999999999; czCache = -999999999;
     chunkCache = undefined; lightCache = undefined;
 
     while (head < skyCount) {
         const x = qSky[head++]; const y = qSky[head++]; const z = qSky[head++];
 
-        const cx = Math.floor(x / CHUNK_SIZE);
-        const cz = Math.floor(z / CHUNK_SIZE);
-        refreshCache(cx, cz);
+        refreshCache(x >> 4, z >> 4);
 
         if (!lightCache) continue;
         const curLight = lightCache as Uint8Array;
 
-        const lx = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-        const lz = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-        const index = index3D(lx, y, lz);
+        const index = (y - MIN_Y) * LAYER_CELLS + ((z & 15) << 4) + (x & 15);
         const lvl = (curLight[index] >> 4) & 0xF;
 
         if (lvl <= 0) continue;
@@ -241,30 +363,28 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
         const srcMeta = metaCache ? metaCache[index] : 0;
 
         for(let i=0; i<6; i++) {
-            const nx=x+NEIGHBORS[i][0]; const ny=y+NEIGHBORS[i][1]; const nz=z+NEIGHBORS[i][2];
+            const dir = NEIGHBORS[i];
+            const nx = x + dir[0]; const ny = y + dir[1]; const nz = z + dir[2];
             if (ny < MIN_Y || ny > MAX_Y) continue;
 
-            const ncx = Math.floor(nx / CHUNK_SIZE);
-            const ncz = Math.floor(nz / CHUNK_SIZE);
-            refreshCache(ncx, ncz);
+            refreshCache(nx >> 4, nz >> 4);
 
             if (!chunkCache || !lightCache) continue;
             const neighborLight = lightCache as Uint8Array;
 
-            const nlx = ((nx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-            const nlz = ((nz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
-            const nIndex = index3D(nlx, ny, nlz);
+            const nIndex = (ny - MIN_Y) * LAYER_CELLS + ((nz & 15) << 4) + (nx & 15);
 
             const nType = chunkCache[nIndex];
             const nMeta = metaCache ? metaCache[nIndex] : 0;
-            const opacity = getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, NEIGHBORS[i][0], NEIGHBORS[i][1], NEIGHBORS[i][2]);
+            const opacity = getPairedFaceOcclusion(srcType, srcMeta, nType, nMeta, dir[0], dir[1], dir[2]);
             let nextLvl = lvl - Math.max(1, opacity);
 
-            if (NEIGHBORS[i][1] === -1 && lvl === 15 && opacity === 0) nextLvl = 15;
+            if (dir[1] === -1 && lvl === 15 && opacity === 0) nextLvl = 15;
 
             const currentNSky = (neighborLight[nIndex] >> 4) & 0xF;
             if (nextLvl > currentNSky) {
                 neighborLight[nIndex] = (nextLvl << 4) | (neighborLight[nIndex] & 0xF);
+                noteLightWrite(nx, nz);
                 if (skyCount < QUEUE_SIZE * 3) {
                     qSky[skyCount++] = nx; qSky[skyCount++] = ny; qSky[skyCount++] = nz;
                 }

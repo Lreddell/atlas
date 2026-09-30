@@ -251,7 +251,7 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
     };
 
     return (
-        <div className="absolute inset-0 z-[200] flex bg-[#0c0c0c] font-sans text-white select-none overflow-hidden">
+        <div className="absolute inset-0 z-[200] flex bg-[#0c0c0c] font-tool text-white select-none overflow-hidden">
             <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImport} />
             <UiNotice notice={notice} onDismiss={() => setNotice(null)} />
             <style>{`
@@ -359,7 +359,7 @@ export const FeatureEditor: React.FC<FeatureEditorProps> = ({ onBack }) => {
             </aside>
 
             {/* Content Area */}
-            <main className="flex-1 flex flex-col bg-[#080808] relative">
+            <main key={activeTab} className="flex-1 flex flex-col bg-[#080808] relative atlas-fade-in">
                 {renderTabContent()}
             </main>
         </div>

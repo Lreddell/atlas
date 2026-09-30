@@ -4,7 +4,7 @@ export const WORLD_HEIGHT = 384; // 384 Total Height (-64 to 319)
 export const MIN_Y = -64;
 export const MAX_Y = 319; 
 
-export const RENDER_DISTANCE = 8; 
+export const RENDER_DISTANCE = 16;
 export const TICK_RATE = 20;
 export const GRAVITY = 30.0;
 export const JUMP_FORCE = 10.0;

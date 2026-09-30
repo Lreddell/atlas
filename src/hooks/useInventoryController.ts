@@ -13,7 +13,8 @@ import {
 } from '../types';
 import { BLOCKS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
-import { checkRecipe } from '../recipes';
+import { checkRecipe, type Recipe } from '../recipes';
+import { assignCells, countItems, craftsAvailable, ingredientCounts, layOut } from '../systems/inventory/recipeBook';
 import * as THREE from 'three';
 import React from 'react';
 import type { ChestState, FurnaceState } from '../systems/world/worldTypes';
@@ -761,6 +762,52 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
 
     }, [canPlaceInSlot, consumeCrafts, gameMode, getActiveCraftingGrid, getContainerData, getCraftLimit, getSlot, isCollectionAvailable, isSlotIndexValid, openContainer, setCraftingGrid2x2, setCraftingGrid3x3, setCursorStack, setInventory, setOpenContainer, spawnItemDrop, spawnItemDrops, syncCraftingOutput, updateSlot]);
 
+    // --- RECIPE BOOK ---
+    // Lays a recipe's ingredients into the open crafting grid: once, or (all)
+    // as many times as the items on hand and stack sizes allow. Whatever was in
+    // the grid goes back to the inventory first, and if it can't, nothing moves.
+    const fillRecipe = useCallback((recipe: Recipe, all: boolean): boolean => {
+        const type = openContainer?.type;
+        if (type !== 'inventory' && type !== 'crafting') return false;
+        const width = type === 'crafting' ? 3 : 2;
+        const layout = layOut(recipe, width);
+        if (!layout) return false;
+
+        const next = [...inventoryRef.current];
+        for (const item of getActiveCraftingGrid()) {
+            if (item && addToInventoryList(next, cloneItemStack(item))) return false;
+        }
+        const perCell = Math.min(...[...ingredientCounts(recipe).keys()].map((ingredient) => getItemStackLimit(ingredient)));
+        const held = countItems(next);
+        // Which item each cell takes (mixed planks or stone where the recipe
+        // allows), at the most crafts the items can fill cell by cell.
+        let crafts = Math.min(craftsAvailable(recipe, held), all ? perCell : 1);
+        let cells: (BlockType | null)[] | null = null;
+        while (crafts > 0 && !(cells = assignCells(recipe, layout, held, crafts))) crafts--;
+        if (!cells || crafts <= 0) return false;
+
+        // Take from the backpack before the hotbar.
+        const order = [...Array(INVENTORY_SIZE).keys()].slice(9).concat([...Array(9).keys()]);
+        const grid = cells.map((ingredient): ItemStack | null => {
+            if (ingredient === null) return null;
+            let need = crafts;
+            for (const i of order) {
+                const stack = next[i];
+                if (need === 0) break;
+                if (!stack || stack.type !== ingredient) continue;
+                const take = Math.min(need, stack.count);
+                next[i] = stack.count > take ? cloneItemStack(stack, stack.count - take) : null;
+                need -= take;
+            }
+            return { type: ingredient, count: crafts };
+        });
+        inventoryRef.current = next;
+        setInventory(next);
+        (type === 'crafting' ? setCraftingGrid3x3 : setCraftingGrid2x2)(grid);
+        syncCraftingOutput(grid);
+        return true;
+    }, [getActiveCraftingGrid, openContainer, setCraftingGrid2x2, setCraftingGrid3x3, setInventory, syncCraftingOutput]);
+
     // Recipe Check
     React.useEffect(() => {
         syncCraftingOutput(openContainer?.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2);
@@ -774,6 +821,7 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
         craftingGrid3x3, setCraftingGrid3x3,
         craftingOutput,
         handleInventoryAction,
-        addToInventory
+        addToInventory,
+        fillRecipe,
     };
 };

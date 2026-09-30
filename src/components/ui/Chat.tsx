@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { HUD_SCALE } from './hudScale';
 
 export interface ChatMessage {
     id: number;
@@ -20,6 +21,29 @@ interface ChatProps {
     showSuggestions?: boolean;
     interactionsDisabled?: boolean;
 }
+
+// One line of chat: slides in, stays ten seconds, then fades (a CSS timeline, so
+// it fades on time whether or not anything else re-renders). With the chat open
+// every line shows; closing it picks each line's timeline up at its real age.
+const ChatLine: React.FC<{
+    msg: ChatMessage;
+    open: boolean;
+    className: string;
+    onClick: (e: React.MouseEvent) => void;
+    children: React.ReactNode;
+}> = ({ msg, open, className, onClick, children }) => {
+    // Read once as the line appears or the chat closes, never mid-fade.
+    const age = useMemo(() => (open ? 0 : Math.max(0, Date.now() - msg.timestamp)), [open, msg.timestamp]);
+    return (
+        <div
+            className={`${className} ${open ? '' : 'atlas-chat-line'}`}
+            style={open ? undefined : { animationDelay: `${-age}ms` }}
+            onClick={onClick}
+        >
+            {children}
+        </div>
+    );
+};
 
 export const Chat: React.FC<ChatProps> = ({
     messages, showInput, inputValue, setInputValue, onSubmitInput,
@@ -49,26 +73,28 @@ export const Chat: React.FC<ChatProps> = ({
         onSubmitInput?.();
     };
 
+    // Never wider than the space left of the hotbar (half its 240 art pixels, plus a margin).
     return (
         <div
-            className={`absolute bottom-2 left-2 flex flex-col gap-1 w-[500px] pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            className={`absolute bottom-2 left-2 flex flex-col gap-1 pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
+            style={{ width: `clamp(280px, calc(50vw - ${120 * HUD_SCALE + 16}px), 560px)` }}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}
         >
-            <div className="flex flex-col gap-0.5 justify-end max-h-[300px] overflow-hidden mask-fade-top pb-1">
+            {/* A fixed box, lines stacking up from its bottom: only once they reach
+                its top edge do the oldest start to fade, never the first few. */}
+            <div className="flex flex-col gap-0.5 justify-end h-[300px] overflow-hidden mask-fade-top pb-1">
                 {messages.map((msg) => (
-                    <div
+                    <ChatLine
                         key={msg.id}
+                        msg={msg}
+                        open={showInput}
                         className={`
-                            px-2 py-0.5 rounded text-shadow-sm font-medium bg-black/40 backdrop-blur-[1px]
-                            ${msg.type === 'error' ? 'text-red-400' : msg.type === 'success' ? 'text-green-400' : 'text-white'}
-                            ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-black/60 pointer-events-auto' : ''}
+                            bg-ink-950/55 px-2 py-[2px] font-mono text-mono-2 text-shadow-sm
+                            ${msg.type === 'error' ? 'text-ember-300' : msg.type === 'success' ? 'text-[#9bd88a]' : 'text-parchment-50'}
+                            ${msg.clickAction && !interactionsDisabled ? 'cursor-pointer hover:bg-ink-700/80 pointer-events-auto' : ''}
                         `}
-                        style={{
-                            opacity: (Date.now() - msg.timestamp) > 10000 && !showInput ? 0 : 1,
-                            transition: 'opacity 1s ease-out',
-                        }}
                         onClick={(e) => {
                             if (!interactionsDisabled && msg.clickAction && onMessageClick) {
                                 e.stopPropagation();
@@ -78,27 +104,27 @@ export const Chat: React.FC<ChatProps> = ({
                     >
                         {msg.text}
                         {msg.clickAction && (
-                            <span className="ml-2 text-yellow-400 text-xs uppercase font-bold">[Click to TP]</span>
+                            <span className="ml-2 text-brass-200">[Click to TP]</span>
                         )}
-                    </div>
+                    </ChatLine>
                 ))}
                 <div ref={bottomRef} />
             </div>
 
             {showInput && (
                  <div
-                    className="relative bg-black/70 p-2 rounded pointer-events-auto"
+                    className="relative border-2 border-ink-950 bg-ink-900/90 px-2 py-1 shadow-[inset_0_0_0_2px_#2f3c66] pointer-events-auto"
                     onClick={stopPropagation}
                     onMouseDown={stopPropagation}
                     onMouseUp={stopPropagation}
                     onContextMenu={stopPropagation}
                  >
                      {showSuggestions && acCandidates.length > 0 && (
-                         <div className="absolute bottom-[100%] left-0 w-full mb-1 flex flex-col-reverse bg-black/80 rounded overflow-hidden border border-white/20">
+                         <div className="absolute bottom-[100%] left-0 mb-1 flex w-full flex-col-reverse overflow-hidden border-2 border-ink-950 bg-ink-900/95">
                              {acCandidates.map((c, i) => (
                                  <div
                                     key={c}
-                                    className={`px-2 py-1 text-sm ${i === acIndex ? 'bg-white/20 text-yellow-300' : 'text-gray-400'}`}
+                                    className={`px-2 py-[2px] font-mono text-mono-2 ${i === acIndex ? 'bg-ink-600 text-brass-200' : 'text-parchment-400'}`}
                                  >
                                      {c}
                                  </div>
@@ -118,7 +144,7 @@ export const Chat: React.FC<ChatProps> = ({
                              e.stopPropagation();
                              submitInput();
                          }}
-                         className="w-full bg-transparent border-none outline-none text-white font-mono text-lg"
+                         className="w-full border-none bg-transparent font-mono text-mono-2 text-parchment-50 caret-brass-200 outline-none placeholder:text-parchment-500"
                          placeholder="Type a command..."
                      />
                  </div>

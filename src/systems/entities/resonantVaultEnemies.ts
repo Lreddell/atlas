@@ -77,7 +77,7 @@ const ACTIONS: Record<VaultEnemyKind, readonly VaultEnemyActionProfile[]> = {
             id: 'guard_sweep', attackClass: 'melee', anticipation: 0.56, active: 0.22, recovery: 0.68,
             damage: 8, minRange: 1.25, range: 3.55, arcRadians: Math.PI * 0.72, stagger: 0.38,
             cooldownSeconds: 1.45, locksMovement: true,
-            counterplay: 'Stay outside the levelled spear, then close during its follow-through.',
+            counterplay: 'Stay outside the leveled spear, then close during its follow-through.',
         },
         {
             id: 'shield_bash', attackClass: 'control', anticipation: 0.34, active: 0.16, recovery: 0.82,
@@ -127,7 +127,7 @@ const ACTIONS: Record<VaultEnemyKind, readonly VaultEnemyActionProfile[]> = {
             id: 'bell_toll', attackClass: 'control', anticipation: 1.2, active: 0.82, recovery: 1.28,
             damage: 9, minRange: 2.5, range: 9.5, arcRadians: Math.PI * 2, stagger: 0.5,
             cooldownSeconds: 6.2, locksMovement: true,
-            counterplay: 'Jump the travelling resonance ring or move into the quiet center.',
+            counterplay: 'Jump the traveling resonance ring or move into the quiet center.',
         },
         {
             id: 'breaker_charge', attackClass: 'control', anticipation: 0.86, active: 0.5, recovery: 1.5,

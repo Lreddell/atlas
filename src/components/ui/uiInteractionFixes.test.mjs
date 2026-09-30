@@ -49,6 +49,9 @@ test('spawns resolve a real clear standing Y from actual blocks (no spawning in 
     assert.match(worldManager, /public resolveClearStandY\(x: number, z: number\): number/);
     assert.match(worldManager, /const y = this\.resolveClearStandY\(pick\.x, pick\.z\)/);
     assert.match(worldManager, /return \{ x: pick\.x \+ 0\.5, y, z: pick\.z \+ 0\.5 \}/);
+    // ...on the ground: a column under a tree would resolve onto its canopy.
+    assert.match(worldManager, /const pick = this\.groundColumnNear\(found\.x, found\.z\)/);
+    assert.match(worldManager, /if \(y !== ground \+ 1 \|\| this\.getBlock\(cx, y, cz, false\) === BlockType\.WATER\) continue;/);
 });
 
 test('unpausing re-locks the pointer immediately, with no long look-input stall', () => {

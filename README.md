@@ -9,7 +9,7 @@ World Editor, or seek out sealed regions and their guardians.
 ## Highlights
 
 - Procedural surface and cave generation across more than twenty biomes
-- The sealed Magnetic Fields, polarity-based traversal, and the Magnetic Warden boss
+- The sealed Magnetic Fields, polarity-based traversal, and the three-form Magnetic Warden boss
 - Survival, creative, and spectator modes with crafting, combat, armor, tools, and boats
 - A live World Editor for terrain, caves, biomes, and Magnetic Fields generation
 - Streamed chunk generation and meshing through a unified worker pipeline
@@ -52,6 +52,8 @@ npm run electron:dev
 ## Controls And Input Notes
 
 - Use `W`, `A`, `S`, and `D` to move, `Space` to jump, and `Ctrl` to sprint.
+- Every key below is a default: rebind any of them, and set mouse sensitivity and
+  inverted look, in Options > Controls.
 - Use left click to break or attack and right click to place, use, eat, or board.
 - Use the mouse wheel or number keys `1` through `9` to change the selected
   hotbar slot.
@@ -60,6 +62,22 @@ npm run electron:dev
 - Press `/` or `T` in-game to open the command/chat input.
 - Press `R` to flip polarity while wearing Polarity Boots. Upgraded boots use `N`
   to toggle their magnetic power.
+- Press `C` to dodge roll. The roll is always available (no gear required), works
+  in the air as well as on the ground, and a landing rolled through takes no fall
+  damage. With Polarity Boots the same button, by the same rule, also becomes a
+  magnetic dash onto an opposite magnet face or into an opposed Warden (arming a
+  Magnet Slam), a repel leap away from a matched Warden, or a launch off a wall
+  you are clinging to. Its cooldown shows as a ring on the crosshair.
+- Press `F5` for free third person, any time you are in a world: the body keeps
+  its own heading and runs whichever way you point while the camera orbits
+  around you. `F6` is the over-the-shoulder view, where the body turns with the
+  camera. Every boss fight switches to the free view on its own and hands your
+  view back afterwards.
+- In the Magnetic Warden fight, same polarity repels and opposite attracts: match
+  its colour to bounce its bolts, oppose it to strike. Every form is shielded by
+  its tower crystals until you climb the towers and break them; the lit towers
+  carry the Warden's polarity and flip with it, so flip inside the flux window to
+  hold on.
 - Press `E` for inventory, `Q` to drop an item, and `F3` for the debug screen.
 - Focused text inputs keep normal typing behavior, including movement-key
   letters such as `W`, `A`, `S`, and `D`.

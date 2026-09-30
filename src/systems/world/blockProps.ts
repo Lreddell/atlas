@@ -247,6 +247,8 @@ const SUPPORT_DEPENDENT = new Set<BlockType>([
     BlockType.DEAD_BUSH, BlockType.DEBUG_CROSS,
     BlockType.SAPLING, BlockType.SPRUCE_SAPLING, BlockType.BIRCH_SAPLING, BlockType.CHERRY_SAPLING,
     BlockType.JUNGLE_SAPLING, BlockType.DARK_OAK_SAPLING, BlockType.ACACIA_SAPLING,
+    // Crops stand on farmland (tilled dirt).
+    BlockType.WHEAT_SEEDS,
 ]);
 
 export function needsSupport(type: BlockType): boolean {
@@ -260,6 +262,8 @@ export function hasSupportBelow(type: BlockType, belowType: BlockType): boolean 
         const def = BLOCKS[belowType];
         return !!def && !def.noCollision && belowType !== BlockType.WATER && belowType !== BlockType.LAVA;
     }
+    // Crops need farmland, which is tilled dirt (its data is checked where it is known).
+    if (type === BlockType.WHEAT_SEEDS) return belowType === BlockType.DIRT;
     // Plants and saplings need soil.
     return isValidSoil(belowType);
 }

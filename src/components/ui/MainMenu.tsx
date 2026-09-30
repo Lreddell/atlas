@@ -4,7 +4,6 @@ import { musicController } from '../../systems/sound/MusicController';
 import { MenuPanoramaBackground } from './MenuPanoramaBackground';
 import {
     CreateWorldPanel,
-    EditorsPanel,
     MainLandingPanel,
     PanoramaPanel,
     TutorialPromptModal,
@@ -31,7 +30,10 @@ const BUILD_CREDIT_URL = 'https://github.com/Lreddell/atlas';
 interface MainMenuProps {
     onStart: (worldId: string) => void;
     onChunkBase: () => void;
-    onFeatureEditor: () => void;
+    /** The view to open on (Options > Menu Background opens 'settings'). */
+    initialView?: 'main' | 'settings';
+    /** Where Back leads from the menu background settings when Options opened them. */
+    onPanoramaDone?: () => void;
     onOptions: (opts?: { openTutorial?: boolean }) => void;
     onQuit?: () => void;
     backgroundMode: 'dirt' | 'panorama';
@@ -60,7 +62,8 @@ interface MainMenuProps {
 export const MainMenu: React.FC<MainMenuProps> = ({
     onStart,
     onChunkBase,
-    onFeatureEditor,
+    initialView = 'main',
+    onPanoramaDone,
     onOptions,
     onQuit,
     backgroundMode,
@@ -85,7 +88,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     setPanoramaRotationSpeed,
     showBackground = true,
 }) => {
-    const [view, setView] = useState<MainMenuView>('main');
+    const [view, setView] = useState<MainMenuView>(initialView);
     const [panoramaSubmenu, setPanoramaSubmenu] = useState<PanoramaSubmenu>('manager');
     const [panoramaDebugFly, setPanoramaDebugFly] = useState(false);
     const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
@@ -101,6 +104,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         setSeed,
         gameMode,
         cycleGameMode,
+        allowCommands,
+        toggleAllowCommands,
         worldGenPresets,
         selectedWorldGenPresetId,
         setSelectedWorldGenPresetId,
@@ -130,7 +135,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     const hasFaceCubemap = !!panoramaFaceDataUrls && panoramaFaceDataUrls.length === 6;
     const isBrowserMode = !onQuit;
     const usingPanorama = backgroundMode === 'panorama' && (!!panoramaBackgroundDataUrl || hasFaceCubemap);
-    const submenuOverlayClass = usingPanorama ? 'bg-black/60' : 'bg-black/35';
+    const submenuOverlayClass = usingPanorama ? 'bg-ink-950/55' : 'bg-ink-950/35';
     const showSubmenuOverlay = view !== 'main';
 
     useEffect(() => {
@@ -239,8 +244,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
     const handleOpenCreateView = useCallback(() => setView('create'), []);
     const handleOpenSelectView = useCallback(() => setView('select'), []);
-    const handleOpenSettingsView = useCallback(() => setView('settings'), []);
-    const handleOpenEditorsView = useCallback(() => setView('editors'), []);
     const handleBackToMain = useCallback(() => setView('main'), []);
 
     if (panoramaDebugFly) {
@@ -255,7 +258,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     debugFlyMode
                 />
-                <div className="pointer-events-none absolute left-3 top-3 border border-white/30 bg-black/55 px-2 py-1 text-xs font-pixel text-white">
+                <div className="atlas-plate pointer-events-none absolute left-3 top-3 !text-read">
                     Panorama Debug Fly {'\u2022'} F5 toggle {'\u2022'} WASD/Space/Shift {'\u2022'} Mouse look {'\u2022'} Esc to exit
                 </div>
             </div>
@@ -277,6 +280,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             )}
             {showSubmenuOverlay && <div className={`pointer-events-none absolute inset-0 ${submenuOverlayClass}`} />}
 
+            <div key={view} className="flex h-full min-h-0 w-full flex-col items-center justify-center atlas-fade-in">
             {view === 'create' && (
                 <CreateWorldPanel
                     worldName={worldName}
@@ -285,6 +289,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onSeedChange={setSeed}
                     gameMode={gameMode}
                     onCycleGameMode={cycleGameMode}
+                    allowCommands={allowCommands}
+                    onToggleAllowCommands={toggleAllowCommands}
                     worldGenPresets={worldGenPresets}
                     selectedWorldGenPresetId={selectedWorldGenPresetId}
                     onSelectedWorldGenPresetIdChange={setSelectedWorldGenPresetId}
@@ -335,15 +341,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     setPanoramaGradient={setPanoramaGradient}
                     panoramaRotationSpeed={panoramaRotationSpeed}
                     setPanoramaRotationSpeed={setPanoramaRotationSpeed}
-                    onBack={handleBackToMain}
-                />
-            )}
-
-            {view === 'editors' && (
-                <EditorsPanel
-                    onChunkBase={onChunkBase}
-                    onFeatureEditor={onFeatureEditor}
-                    onBack={handleBackToMain}
+                    onBack={onPanoramaDone ?? handleBackToMain}
                 />
             )}
 
@@ -353,8 +351,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     splashFontSize={splashFontSize}
                     isBrowserMode={isBrowserMode}
                     onSingleplayer={handleOpenSelectView}
-                    onEditors={handleOpenEditorsView}
-                    onPanoramaSettings={handleOpenSettingsView}
+                    onWorldEditor={onChunkBase}
                     onOptions={() => onOptions()}
                     onTutorial={() => onOptions({ openTutorial: true })}
                     onQuit={onQuit}
@@ -362,6 +359,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onShowWhatsNew={handleOpenWhatsNew}
                 />
             )}
+            </div>
 
             {showTutorialPrompt && (
                 <TutorialPromptModal
@@ -379,7 +377,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     title="Delete World?"
                     danger
                     confirmLabel="Delete Forever"
-                    message={<>This will permanently delete <span className="text-white">{pendingDeleteName || 'this world'}</span>. It will be lost forever! (A long time!)</>}
+                    message={<>This will permanently delete <span className="text-parchment-50">{pendingDeleteName || 'this world'}</span>. It will be lost forever! (A long time!)</>}
                     onConfirm={() => void confirmDeleteWorld()}
                     onCancel={cancelDeleteWorld}
                 />

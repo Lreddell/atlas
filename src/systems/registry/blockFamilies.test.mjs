@@ -67,7 +67,8 @@ test('all seven wood families are registered once', () => {
 
 test('grass and stone families contain the intended blocks', () => {
     assert.equal(registry.grass.length, 8);
-    assert.equal(registry.stone.length, 4);
+    // Minecraft's stone tool materials: cobblestone (12) and cobbled deepslate (51).
+    assert.deepEqual(registry.stone, [12, 51]);
     assert.equal(registry.logs.length, 7);
     registry.logChecks.forEach((isLog) => assert.equal(isLog, true));
 });

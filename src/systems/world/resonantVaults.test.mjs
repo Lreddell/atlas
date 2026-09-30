@@ -208,3 +208,25 @@ test('structure box intersection is bounded and exact', () => {
   assert.equal(resonantVaultTouchesBox(candidate, candidate.centerX - 4, candidate.centerZ - 4, candidate.centerX + 4, candidate.centerZ + 4), true);
   assert.equal(resonantVaultTouchesBox(candidate, candidate.centerX + 500, candidate.centerZ + 500, candidate.centerX + 520, candidate.centerZ + 520), false);
 });
+
+test('no Vault reserves ground inside the Magnetic Fields', async () => {
+  const { SimpleNoise } = await import('../../utils/noise.ts');
+  const { getMagneticFieldInstanceAt } = await import('./magneticFields.ts');
+  const noise = new SimpleNoise(SEED + 800);
+  const sample = (x, z) => noise.noise2D(x, z);
+  const reserve = RESONANT_VAULT_HALF_EXTENT + 32;
+  let active = 0;
+  for (let gx = -8; gx <= 8; gx += 1) {
+    for (let gz = -8; gz <= 8; gz += 1) {
+      const candidate = getVaultCandidateForCell(gx, gz, SEED);
+      if (!candidate.active) continue;
+      active += 1;
+      for (let x = candidate.centerX - reserve; x <= candidate.centerX + reserve; x += 24) {
+        for (let z = candidate.centerZ - reserve; z <= candidate.centerZ + reserve; z += 24) {
+          assert.equal(getMagneticFieldInstanceAt(x, z, SEED | 0, sample), null, `vault ${gx},${gz} reaches a Field at ${x},${z}`);
+        }
+      }
+    }
+  }
+  assert.ok(active > 10, 'enough active Vaults to mean something');
+});

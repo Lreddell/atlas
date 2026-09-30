@@ -10,6 +10,10 @@ export default [
   },
   js.configs.recommended,
   {
+    files: ['scripts/check-seo.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     // Electron main-process / preload CommonJS modules (Node runtime).
     files: ['electron/**/*.cjs'],
     languageOptions: {

@@ -88,10 +88,14 @@ export const ADHESION_CLIMB_SPEED = 4.2;
 /** Constant pull into the wall (blocks/sec) that keeps the body in contact.
  *  Light, so you can still slide to a block's edge to crest or climb down. */
 export const ADHESION_STICK_SPEED = 1.1;
-/** Launch speed away from the wall when jumping off. */
+/** Launch speed away from the wall when hopping off (Space). */
 export const ADHESION_JUMP_OFF_SPEED = 7.5;
-/** Stronger launch when flipping polarity (the core traversal move). */
-export const ADHESION_POLARITY_LAUNCH_SPEED = 13;
+/** The magnetic launch: flipping polarity (R) or pressing F while latched throws
+ *  the body clear along the face normal (same repels), the core traversal move.
+ *  Sized so a climber high on an arena tower lands on its landing pool. */
+export const ADHESION_POLARITY_LAUNCH_SPEED = 20;
+/** Upward kick added to a magnetic launch off a wall face. */
+export const ADHESION_LAUNCH_UP = 6;
 /** Fraction of tangent velocity preserved through a detach. */
 export const ADHESION_TANGENT_PRESERVE = 0.55;
 /** Camera up-vector slerp rate (per second) for the roll on/off the wall. */
@@ -187,6 +191,8 @@ export function findAdhesionCandidate(
     center: Vec3,
     playerPolarity: number,
     snapDistance = ADHESION_SNAP_DISTANCE,
+    /** Attraction rule override (a surface in flux holds either polarity). */
+    attractive: (playerPolarity: number, blockPolarity: number, x: number, y: number, z: number) => boolean = isAttractive,
 ): AdhesionCandidate | null {
     const cx = Math.floor(center.x);
     const cy = Math.floor(center.y);
@@ -198,7 +204,7 @@ export function findAdhesionCandidate(
         for (let by = cy - ADHESION_SCAN_RADIUS; by <= cy + ADHESION_SCAN_RADIUS; by++) {
             for (let bz = cz - ADHESION_SCAN_RADIUS; bz <= cz + ADHESION_SCAN_RADIUS; bz++) {
                 const polarity = getPolarity(bx, by, bz);
-                if (!isAttractive(playerPolarity, polarity)) continue;
+                if (!attractive(playerPolarity, polarity, bx, by, bz)) continue;
 
                 const blockCenter: Vec3 = { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 };
 

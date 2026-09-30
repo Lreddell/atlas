@@ -20,9 +20,19 @@ Copyright in Monocraft remains with its original author and contributors. Atlas 
 
 If you redistribute Atlas with Monocraft included, you should retain Monocraft's original license and attribution materials with the distributed font files.
 
-The bundled font directory currently does not include the original OFL license
-text. Add the license text from the exact Monocraft source/version used before
-redistributing builds with these font files.
+The license text is `public/assets/fonts/Monocraft-ttf/OFL.txt`
+(Copyright (c) 2022, Idrees Hassan, https://github.com/IdreesInc/Monocraft).
+
+## Pixelify Sans Font
+
+Atlas's interface text uses Pixelify Sans, installed from the npm package
+`@fontsource/pixelify-sans` and bundled into builds by Vite.
+
+Pixelify Sans is Copyright 2021 The Pixelify Sans Project Authors
+(https://github.com/eifetx/Pixelify-Sans) and is licensed under the
+**SIL Open Font License 1.1**. Atlas does not claim ownership of it.
+
+The license text ships with builds as `public/assets/fonts/PixelifySans-OFL.txt`.
 
 ## Adding more notices
 

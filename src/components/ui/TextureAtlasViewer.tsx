@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { getAtlasURL, getAtlasDimensions, ATLAS_STRIDE, ATLAS_PADDING, ATLAS_RAW_TILE_SIZE } from '../../utils/textures';
 import { BLOCKS, ATLAS_COLS } from '../../data/blocks';
+import { CloseMark } from './kit/PixelArt';
 
 interface TextureAtlasViewerProps {
     onClose: () => void;
@@ -226,19 +227,17 @@ export const TextureAtlasViewer: React.FC<TextureAtlasViewerProps> = ({ onClose 
 
     return (
         <div 
-            className="absolute inset-0 z-[600] bg-black/90 flex items-center justify-center backdrop-blur-sm pointer-events-auto"
+            className="absolute inset-0 z-[600] bg-black/90 flex items-center justify-center backdrop-blur-sm pointer-events-auto font-tool atlas-fade-in"
             onClick={onClose}
         >
             <div 
-                className="bg-[#1a1a1a] border border-white/20 rounded-lg shadow-2xl flex flex-col overflow-hidden w-[95vw] h-[90vh]"
+                className="atlas-panel flex flex-col overflow-hidden p-2 w-[95vw] h-[90vh]"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex justify-between items-center px-4 py-3 bg-[#111] border-b border-white/10 shrink-0 z-10">
+                <div className="flex justify-between items-center px-4 py-3 bg-ink-850 border-b-2 border-ink-950 shrink-0 z-10">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-sm font-bold text-white uppercase tracking-widest flex items-center gap-2">
-                            <span className="text-xl">🎨</span> Texture Atlas
-                        </h2>
+                        <h2 className="atlas-heading font-pixel">Texture Atlas</h2>
                         {dims && (
                             <span className="text-xs font-mono text-gray-500 bg-black/50 px-2 py-1 rounded">
                                 {dims.width}x{dims.height}px
@@ -301,12 +300,14 @@ export const TextureAtlasViewer: React.FC<TextureAtlasViewerProps> = ({ onClose 
 
                         <div className="w-px h-6 bg-white/10 mx-2" />
 
-                        <button 
+                        <button
+                            type="button"
                             onClick={onClose}
-                            className="text-gray-400 hover:text-white font-bold text-xl px-2 transition-colors"
+                            className="atlas-btn h-8 w-8"
                             title="Close (F4)"
+                            aria-label="Close"
                         >
-                            ✕
+                            <CloseMark />
                         </button>
                     </div>
                 </div>

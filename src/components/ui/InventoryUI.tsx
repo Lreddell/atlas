@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import {
     type DragTargetSlot,
     type InventoryAction,
@@ -19,6 +19,12 @@ import { EQUIPMENT_SLOTS, slotForItem, type Equipment } from '../../systems/regi
 import { getItemTooltip, type TooltipLine } from '../../systems/registry/itemTooltips';
 import { canStacksMerge, cloneItemStack, getItemStackLimit } from '../../systems/inventory/itemStackPolicy';
 import type { EquipmentSlot } from '../../types';
+import { HOTBAR_KEY_ACTIONS } from '../../systems/player/keyBindings';
+import { isKeyFor } from '../../systems/player/keyBindingStore';
+import { RecipeBookButton, RecipeBookPanel } from './RecipeBookPanel';
+import type { Recipe } from '../../recipes';
+import { CloseMark, PixelArt } from './kit/PixelArt';
+import { FLAME_COLD, FLAME_LIT, FLAME_ROWS, equipmentSilhouette } from './kit/inventoryIcons';
 
 interface InventoryUIProps {
     inventory: (ItemStack | null)[];
@@ -31,7 +37,22 @@ interface InventoryUIProps {
     cursorStack: ItemStack | null;
     handleInventoryAction: InventoryActionHandler;
     equipment: Equipment;
+    /** The recipe book beside the crafting grid: what the player knows, and filling the grid. */
+    recipeBook?: {
+        known: ReadonlySet<BlockType> | 'all';
+        onFill: (recipe: Recipe, all: boolean) => void;
+    };
 }
+
+const RECIPE_BOOK_OPEN_KEY = 'atlas.ui.recipeBookOpen.v1';
+// The recipe book panel's width (RecipeBookPanel), its gap to the inventory,
+// and the least room kept between the book and the edge of the screen.
+const RECIPE_BOOK_WIDTH = 276;
+const RECIPE_BOOK_GAP = 12;
+const SCREEN_EDGE_MARGIN = 16;
+const readBookOpen = (): boolean => {
+    try { return window.localStorage.getItem(RECIPE_BOOK_OPEN_KEY) !== 'false'; } catch { return true; }
+};
 
 type SlotCollection = DragTargetSlot['collection'];
 
@@ -60,18 +81,35 @@ const CREATIVE_TABS: { id: CreativeTab, name: string, icon: BlockType }[] = [
 
 const ARMOR_EQUIPMENT_SLOTS = EQUIPMENT_SLOTS.filter((slot) => slot !== 'accessory');
 
-const CraftingArrow: React.FC = () => (
-    <svg
-        aria-hidden="true"
-        className="h-[26px] w-8 shrink-0"
-        viewBox="0 0 16 13"
-        shapeRendering="crispEdges"
-    >
-        <path
-            fill="#8b8b8b"
-            d="M9 0h1v1h1v1h1v1h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1v1h-1v1h-1v1H9V8H0V5h9V0Z"
-        />
-    </svg>
+const CONTAINER_TITLES: Record<string, string> = {
+    inventory: 'Inventory',
+    crafting: 'Crafting Table',
+    furnace: 'Furnace',
+    chest: 'Chest',
+};
+
+const ARROW_D = 'M9 0h1v1h1v1h1v1h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1v1h-1v1h-1v1H9V8H0V5h9V0Z';
+
+// The arrow between a grid and its result. `progress` (0..1) fills it in
+// parchment from the left, whole art pixels at a time (the furnace's cook bar).
+const CraftingArrow: React.FC<{ progress?: number }> = ({ progress = 0 }) => (
+    <div className="relative h-[26px] w-8 shrink-0">
+        <svg
+            aria-hidden="true"
+            className="h-[26px] w-8 shrink-0"
+            viewBox="0 0 16 13"
+            shapeRendering="crispEdges"
+        >
+            <path fill="#46578a" d={ARROW_D} />
+        </svg>
+        {progress > 0 && (
+            <div className="absolute left-0 top-0 h-[26px] overflow-hidden" style={{ width: Math.round(progress * 16) * 2 }}>
+                <svg aria-hidden="true" className="h-[26px] w-8" viewBox="0 0 16 13" shapeRendering="crispEdges">
+                    <path fill="#efe2bf" d={ARROW_D} />
+                </svg>
+            </div>
+        )}
+    </div>
 );
 
 const ITEM_SORT_ORDER: BlockType[] = [
@@ -130,7 +168,10 @@ const ITEM_SORT_ORDER: BlockType[] = [
     BlockType.RAW_COPPER, BlockType.COPPER_INGOT, 
     BlockType.RAW_GOLD, BlockType.GOLD_INGOT,
     BlockType.DIAMOND, BlockType.EMERALD, BlockType.LAPIS_LAZULI,
-    BlockType.STICK,
+    BlockType.STICK, BlockType.WHEAT,
+
+    // --- FOOD ---
+    BlockType.APPLE, BlockType.BANANA, BlockType.LUMEN_BERRY, BlockType.BREAD, BlockType.FORAGERS_BOWL,
 
     // --- FUNCTIONAL ---
     BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.CHEST, BlockType.TORCH, BlockType.BED_ITEM
@@ -140,8 +181,41 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     inventory, openContainer, setOpenContainer,
     craftingGrid2x2, craftingGrid3x3, craftingOutput,
     cursorStack, handleInventoryAction,
-    equipment
+    equipment, recipeBook,
 }) => {
+    const [bookOpen, setBookOpen] = useState(readBookOpen);
+    const toggleBook = () => setBookOpen((open) => {
+        try { window.localStorage.setItem(RECIPE_BOOK_OPEN_KEY, String(!open)); } catch { /* per-player convenience only */ }
+        return !open;
+    });
+    const showBook = !!recipeBook && bookOpen && (openContainer.type === 'inventory' || openContainer.type === 'crafting');
+
+    // The inventory stays in the middle of the screen with the recipe book
+    // open: the book hangs off its left edge. Only a window too narrow to fit
+    // the book there slides the two right, just far enough.
+    const backdropRef = useRef<HTMLDivElement>(null);
+    const inventoryPanelRef = useRef<HTMLDivElement>(null);
+    const [bookShift, setBookShift] = useState(0);
+    useLayoutEffect(() => {
+        if (!showBook) {
+            setBookShift(0);
+            return;
+        }
+        const measure = () => {
+            const backdrop = backdropRef.current;
+            const panel = inventoryPanelRef.current;
+            if (!backdrop || !panel) return;
+            const width = panel.offsetWidth;
+            const left = (backdrop.clientWidth - width) / 2;
+            const needed = RECIPE_BOOK_WIDTH + RECIPE_BOOK_GAP + SCREEN_EDGE_MARGIN - left;
+            const roomRight = left - SCREEN_EDGE_MARGIN;
+            setBookShift(Math.max(0, Math.min(needed, roomRight)));
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
+    }, [showBook, openContainer.type]);
+
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [hoverInfo, setHoverInfo] = useState<{name: string, lines: TooltipLine[], x: number, y: number} | null>(null);
     const [activeTab, setActiveTab] = useState<CreativeTab>('building');
@@ -161,6 +235,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
     const lastClickRef = useRef<{ time: number, key: string, button: number } | null>(null);
     const [, setTick] = useState(0);
     const rafRef = useRef<number>(0);
+    const creativeGridRef = useRef<HTMLDivElement>(null);
 
     const creativeItems = useMemo(() => {
         const manualOrderMap = new Map(ITEM_SORT_ORDER.map((type, i) => [type, i]));
@@ -191,6 +266,12 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             .map(b => ({ type: b.id, count: 1 }));
     }, [activeTab]);
 
+    // A new tab starts at the top of its items (the grid stays mounted, so it
+    // swaps its contents in place rather than fading in again).
+    useEffect(() => {
+        if (creativeGridRef.current) creativeGridRef.current.scrollTop = 0;
+    }, [activeTab]);
+
     useEffect(() => {
         if (openContainer && openContainer.type === 'furnace') {
             const loop = () => {
@@ -209,16 +290,15 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             if (isEditableElement(e.target)) return;
             if (!hoveredSlot) return;
 
-            if (e.code.startsWith('Digit') && e.code !== 'Digit0') {
-                const hotbarIdx = parseInt(e.code.replace('Digit', '')) - 1;
-                if (hotbarIdx >= 0 && hotbarIdx < 9) {
-                    const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
-                    handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index,
-                        creativeItem ? { hotbarIdx, creativeItem } : { hotbarIdx });
-                }
+            // The hotbar and drop keys, as the player bound them.
+            const hotbarIdx = HOTBAR_KEY_ACTIONS.findIndex((action) => isKeyFor(action, e));
+            if (hotbarIdx >= 0) {
+                const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
+                handleInventoryAction('swap_hotbar', hoveredSlot.collection, hoveredSlot.index,
+                    creativeItem ? { hotbarIdx, creativeItem } : { hotbarIdx });
             }
 
-            if (e.code === 'KeyQ') {
+            if (isKeyFor('drop', e)) {
                 const dropAll = e.ctrlKey || e.metaKey;
                 const creativeItem = hoveredSlot.collection === 'creative' ? creativeItems[hoveredSlot.index] : undefined;
                 handleInventoryAction('drop_key', hoveredSlot.collection, hoveredSlot.index,
@@ -388,10 +468,19 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         resetDrag();
     }, [dispatchSlotAction, handleInventoryAction, resetDrag]);
 
+    // The window listeners reach the latest finishDrag through a ref, so they
+    // are set up once. Re-subscribed whenever finishDrag changed, their cleanup
+    // cleared the drag mid-press: a shift-click moves its stack on the press,
+    // which changes finishDrag, so the release found no drag to end and the
+    // screen stayed "dragging", hiding every tooltip until the next drag.
+    const finishDragRef = useRef(finishDrag);
+    useLayoutEffect(() => {
+        finishDragRef.current = finishDrag;
+    }, [finishDrag]);
     useEffect(() => {
-        const onPointerUp = () => finishDrag();
-        const onPointerCancel = () => finishDrag(false);
-        const onBlur = () => finishDrag(false);
+        const onPointerUp = () => finishDragRef.current();
+        const onPointerCancel = () => finishDragRef.current(false);
+        const onBlur = () => finishDragRef.current(false);
         window.addEventListener('pointerup', onPointerUp, true);
         window.addEventListener('pointercancel', onPointerCancel, true);
         window.addEventListener('blur', onBlur);
@@ -404,7 +493,7 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             dragOriginRef.current = null;
             dragSlotsRef.current = new Set();
         };
-    }, [finishDrag]);
+    }, []);
 
     const handleSlotPointerDown = (collection: SlotCollection, index: number, e: React.PointerEvent) => {
         e.stopPropagation();
@@ -608,24 +697,25 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                 onPointerCancel={() => finishDrag(false)}
                 onContextMenu={(e) => e.preventDefault()}
                 onAuxClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                title={slot}
+                data-tip={item ? undefined : slot.charAt(0).toUpperCase() + slot.slice(1)}
             >
                 <Slot item={item} size="large" />
                 {!item && (
-                    <span className="absolute inset-0 flex items-center justify-center text-[8px] uppercase text-[#5a5a5a] pointer-events-none select-none">
-                        {slot}
+                    <span className="pointer-events-none absolute inset-0 flex select-none items-center justify-center">
+                        <PixelArt {...equipmentSilhouette(slot)} />
                     </span>
                 )}
             </div>
         );
     };
 
+    // The backpack, then the hotbar a little apart from it.
     const renderPlayerInventory = () => (
-        <div className="flex flex-col gap-2">
-            <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+        <div className="flex shrink-0 flex-col gap-3">
+            <div className="grid grid-cols-9 gap-0">
                 {inventory.slice(9).map((item, index) => renderSlot(item, 'inventory', index + 9))}
             </div>
-            <div className="grid grid-cols-9 gap-0 mt-2 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+            <div className="grid grid-cols-9 gap-0">
                 {inventory.slice(0, 9).map((item, index) => renderSlot(item, 'inventory', index))}
             </div>
         </div>
@@ -636,8 +726,9 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
         : cursorStack;
 
     return (
-        <div 
-            className="absolute inset-0 bg-black/70 z-50 flex items-center justify-center"
+        <div
+            ref={backdropRef}
+            className="absolute inset-0 bg-ink-950/60 z-50 flex items-center justify-center atlas-fade-in"
             onPointerMove={handlePointerMove}
             onClick={handleBackdropClick} 
             onMouseDown={(e) => { if(e.button !== 0 && !isDragging) e.stopPropagation(); }}
@@ -646,41 +737,55 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
             onWheel={stopPropagation}
             onContextMenu={handleBackdropContextMenu}
         >
-            <div className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[852px]' : openContainer.type === 'inventory' ? 'w-[1000px]' : 'scale-110'}`} onClick={stopPropagation}>
-                
+            <div style={bookShift > 0 ? { transform: `translateX(${bookShift}px)` } : undefined}>
+            <div className="relative atlas-panel-in" onClick={stopPropagation}>
+            {recipeBook && showBook && (
+                <div className="absolute right-full top-0" style={{ marginRight: RECIPE_BOOK_GAP }}>
+                    <RecipeBookPanel
+                        gridWidth={openContainer.type === 'crafting' ? 3 : 2}
+                        inventory={inventory}
+                        known={recipeBook.known}
+                        onFill={recipeBook.onFill}
+                        onHover={setHoverInfo}
+                    />
+                </div>
+            )}
+            <div ref={inventoryPanelRef} className={`flex flex-col gap-0 relative ${openContainer.type === 'creative' ? 'w-[860px]' : ''}`}>
+
                 {openContainer.type === 'creative' && (
-                    <div className="flex gap-1 ml-4 z-10 translate-y-[2px]">
+                    <div className="mb-1 ml-4 flex gap-1" role="tablist" aria-label="Item categories">
                         {CREATIVE_TABS.map(tab => (
-                            <div 
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected={activeTab === tab.id}
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`
-                                    w-10 h-10 aspect-square flex items-center justify-center cursor-pointer border-t-2 border-l-2 border-r-2
-                                    ${activeTab === tab.id 
-                                        ? 'bg-[#c6c6c6] border-white border-b-[#c6c6c6] h-11 -translate-y-1 z-20 pb-1' 
-                                        : 'bg-[#8b8b8b] border-[#373737] hover:bg-[#a0a0a0]'}
-                                `}
-                                title={tab.name}
+                                className="atlas-btn h-11 w-11"
+                                aria-label={tab.name}
+                                data-tip={tab.name}
                             >
                                 <Slot item={{ type: tab.icon, count: 1 }} size="small" bare />
-                            </div>
+                            </button>
                         ))}
                     </div>
                 )}
 
-                <div className={`flex flex-col gap-4 p-6 bg-[#c6c6c6] border-4 border-white border-b-[#444] border-r-[#444] shadow-2xl relative z-10`}>
-                    <div className="flex justify-between items-center px-1">
-                        <h2 className="text-[#333] font-bold text-lg uppercase tracking-wider">{openContainer.type === 'creative' ? CREATIVE_TABS.find(t=>t.id===activeTab)?.name : openContainer.type}</h2>
-                        <button 
-                            onMouseDown={(e) => e.stopPropagation()} 
+                <div className="atlas-panel relative z-10 flex flex-col gap-4 px-6 pb-6 pt-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="atlas-heading">{openContainer.type === 'creative' ? CREATIVE_TABS.find(t=>t.id===activeTab)?.name : CONTAINER_TITLES[openContainer.type] ?? openContainer.type}</h2>
+                        <button
+                            type="button"
+                            aria-label="Close"
+                            onMouseDown={(e) => e.stopPropagation()}
                             onMouseUp={(e) => e.stopPropagation()}
-                            onClick={() => setOpenContainer(null)} 
-                            className="text-[#333] font-bold hover:text-red-600"
-                        >✕</button>
+                            onClick={() => setOpenContainer(null)}
+                            className="atlas-btn h-8 w-8"
+                        ><CloseMark /></button>
                     </div>
-                    
+
                     {openContainer.type === 'creative' && (
-                        <div className="mb-2 h-[300px] overflow-x-hidden overflow-y-auto bg-[#8b8b8b] p-2 border-2 border-[#333] scrollbar-thin">
+                        <div ref={creativeGridRef} className="atlas-well mb-2 h-[300px] overflow-x-hidden overflow-y-auto p-2 scrollbar-thin">
                              <div className="flex flex-wrap gap-1 content-start">
                                  {creativeItems.map((it, i) => (
                                      <div
@@ -706,36 +811,37 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
 
                     {openContainer.type === 'chest' && (
-                        <div className="mb-2">
-                            <div className="grid grid-cols-9 gap-0 bg-[#8b8b8b] p-1 border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
+                        <div className="flex flex-col items-start">
+                            <div className="grid grid-cols-9 gap-0">
                                 {chestItems.map((it, i) => renderSlot(it, 'chest', i))}
                             </div>
+                            <h3 className="atlas-label mt-3">Inventory</h3>
                         </div>
                     )}
 
                     {(openContainer.type === 'inventory' || openContainer.type === 'creative') ? (
-                        <div className="relative flex justify-center">
-                            <div className="relative">
-                                <div className="absolute right-full top-2 mr-6 flex items-start gap-1">
-                                    {renderEquipmentSlot('accessory')}
-                                    <div className="relative flex flex-col gap-1">
-                                        <div className="absolute bottom-full left-0 right-0 mb-1 text-[#333] text-[10px] font-bold uppercase text-center">Armor</div>
-                                        {ARMOR_EQUIPMENT_SLOTS.map(renderEquipmentSlot)}
-                                    </div>
+                        // Equipment | backpack and hotbar | crafting, evenly spaced. In
+                        // Creative a spacer the equipment's width keeps the grid centred.
+                        <div className="flex items-start justify-center gap-6">
+                            <div className="flex w-[100px] shrink-0 items-start gap-1">
+                                {renderEquipmentSlot('accessory')}
+                                <div className="flex flex-col gap-1">
+                                    {ARMOR_EQUIPMENT_SLOTS.map(renderEquipmentSlot)}
                                 </div>
-
-                                {renderPlayerInventory()}
-
-                                {openContainer.type === 'inventory' && (
-                                    <div className="absolute left-full top-2 ml-6 flex w-[208px] items-center gap-1">
-                                        <div className="grid w-[116px] shrink-0 grid-cols-2 gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white">
-                                            {craftingGrid2x2.map((item, index) => renderSlot(item, 'crafting', index))}
-                                        </div>
-                                        <CraftingArrow />
-                                        <div className="shrink-0">{renderSlot(craftingOutput, 'output', 0)}</div>
-                                    </div>
-                                )}
                             </div>
+
+                            {renderPlayerInventory()}
+
+                            {openContainer.type === 'inventory' ? (
+                                <div className="flex w-[256px] shrink-0 items-center gap-1">
+                                    {recipeBook && <RecipeBookButton open={bookOpen} onToggle={toggleBook} />}
+                                    <div className="grid shrink-0 grid-cols-2 gap-0">
+                                        {craftingGrid2x2.map((item, index) => renderSlot(item, 'crafting', index))}
+                                    </div>
+                                    <CraftingArrow />
+                                    <div className="shrink-0">{renderSlot(craftingOutput, 'output', 0)}</div>
+                                </div>
+                            ) : <div aria-hidden className="w-[100px] shrink-0" />}
                         </div>
                     ) : (
                         <div className="flex gap-6 justify-center">
@@ -743,48 +849,37 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
 
                             {openContainer.type !== 'chest' && (
                             <>
-                                <div className="w-px bg-black/20 self-stretch" />
+                                <div className="w-[2px] self-stretch bg-ink-600" />
                                 <div className="flex flex-col items-center justify-center min-w-[120px]">
                                     {openContainer.type === 'furnace' ? (
                                         <div className="flex flex-col items-center gap-2">
                                             {renderSlot(furnaceData?.input || null, 'furnace_input', 0)}
                                             
-                                            <div className="w-8 h-8 relative flex items-center justify-center">
-                                                 <div className="text-2xl text-gray-400 opacity-20 absolute">🔥</div>
-                                                 {burnProgress > 0 && (
-                                                    <div 
-                                                        className="text-2xl absolute bottom-0 left-0 w-full overflow-hidden" 
-                                                        style={{ height: `${burnProgress * 100}%` }}
-                                                    >
-                                                        <div className="absolute bottom-0 left-0 w-full text-center">🔥</div>
+                                            {/* The fuel's flame burns down from the top as it is used. */}
+                                            <div className="relative h-7 w-7" aria-hidden>
+                                                <PixelArt rows={FLAME_ROWS} palette={FLAME_COLD} className="absolute left-0 top-0" />
+                                                {burnProgress > 0 && (
+                                                    <div className="absolute left-0 top-0" style={{ clipPath: `inset(${Math.round((1 - burnProgress) * 14) * 2}px 0 0 0)` }}>
+                                                        <PixelArt rows={FLAME_ROWS} palette={FLAME_LIT} />
                                                     </div>
-                                                 )}
+                                                )}
                                             </div>
 
                                             {renderSlot(furnaceData?.fuel || null, 'furnace_fuel', 0)}
                                             
-                                            <div className="relative w-12 h-8 flex items-center justify-center mt-1">
-                                                <svg width="40" height="24" viewBox="0 0 40 24" fill="#888" className="absolute">
-                                                    <path d="M0,8 L24,8 L24,0 L40,12 L24,24 L24,16 L0,16 Z" />
-                                                </svg>
-                                                
-                                                <div style={{ width: 40, height: 24, position: 'absolute', overflow: 'hidden' }}>
-                                                     <div style={{ width: 40, height: 24, overflow: 'hidden', clipPath: `inset(0 ${100 - (cookProgress * 100)}% 0 0)` }}>
-                                                        <svg width="40" height="24" viewBox="0 0 40 24" fill="#FFF">
-                                                            <path d="M0,8 L24,8 L24,0 L40,12 L24,24 L24,16 L0,16 Z" />
-                                                        </svg>
-                                                     </div>
-                                                </div>
+                                            <div className="mt-1 flex h-8 w-12 items-center justify-center">
+                                                <CraftingArrow progress={cookProgress} />
                                             </div>
 
                                             {renderSlot(furnaceData?.output || null, 'furnace_output', 0)}
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-6">
-                                            <div className={`grid ${openContainer.type === 'crafting' ? 'grid-cols-3' : 'grid-cols-2'} gap-0 p-1 bg-[#8b8b8b] border-2 border-t-[#333] border-l-[#333] border-b-white border-r-white`}>
+                                            {recipeBook && <RecipeBookButton open={bookOpen} onToggle={toggleBook} />}
+                                            <div className={`grid ${openContainer.type === 'crafting' ? 'grid-cols-3' : 'grid-cols-2'} gap-0`}>
                                                 {(openContainer.type === 'crafting' ? craftingGrid3x3 : craftingGrid2x2).map((it, i) => renderSlot(it, 'crafting', i))}
                                             </div>
-                                            <div className="text-4xl text-[#333] font-bold drop-shadow-sm">→</div>
+                                            <CraftingArrow />
                                             {renderSlot(craftingOutput, 'output', 0)}
                                         </div>
                                     )}
@@ -795,17 +890,19 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({
                     )}
                 </div>
             </div>
-            
+            </div>
+            </div>
+
             {hoverInfo && !isDragging && (
                 <div
-                    className="fixed pointer-events-none z-[70] max-w-[280px] bg-black/90 text-white px-2 py-1 text-sm shadow-lg"
-                    style={{ left: hoverInfo.x + 15, top: hoverInfo.y - 30 }}
+                    className="atlas-tooltip fixed pointer-events-none z-[70] max-w-[380px]"
+                    style={{ left: hoverInfo.x + 16, top: hoverInfo.y - 30 }}
                 >
-                    <div className="text-white font-bold drop-shadow-sm">{hoverInfo.name}</div>
+                    <div className="text-px-2 text-parchment-50 text-shadow-md">{hoverInfo.name}</div>
                     {hoverInfo.lines.map((line, i) => (
                         <div
                             key={i}
-                            className={`text-[12px] leading-snug ${line.tone === 'purpose' ? 'text-[#c8dedb] max-w-[250px]' : 'text-gray-300'}`}
+                            className={`text-read ${line.tone === 'purpose' ? 'text-[#c8dedb]' : 'text-parchment-300'}`}
                         >
                             {line.text}
                         </div>

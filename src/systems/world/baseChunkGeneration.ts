@@ -20,11 +20,10 @@ import { index3D } from './worldCoords';
 import {
     isBreachColumn,
     caveSurfaceTaper,
-    isCaveCarved,
+    CaveColumn,
     caveBiomeAt,
     isDeepslateAt,
     type Noise2D,
-    type Noise3D,
 } from './caves';
 
 // Grassy-surface test: true for all grass-topped biome surface blocks (so
@@ -232,7 +231,8 @@ export function getBiomeAt(x: number, y: number, z: number, noiseSet: NoiseSet =
     return BIOMES.CAVES;
 }
 
-function getStrataBlock(y: number): BlockType {
+/** A mesa's terracotta band at height y (the horizon's far terrain draws the same bands). */
+export function getStrataBlock(y: number): BlockType {
     const pattern = [
         BlockType.TERRACOTTA_ORANGE, BlockType.TERRACOTTA_ORANGE,
         BlockType.TERRACOTTA_YELLOW, BlockType.TERRACOTTA_BROWN, BlockType.TERRACOTTA_BROWN,
@@ -249,7 +249,7 @@ function getStrataBlock(y: number): BlockType {
  * Resolve the actual surface block at a world column, matching the terrain pass logic.
  * This accounts for beach/riverbank conversion to SAND, mesa RED_SAND, and GRASS→DIRT below sea level.
  */
-function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalNoise): BlockType {
+export function getResolvedSurface(wx: number, wz: number, noiseSet: NoiseSet = GlobalNoise): BlockType {
     const biome = getBiome(wx, wz, noiseSet);
     const { height, baseHeight } = getTerrainInfo(wx, wz, noiseSet);
 
@@ -345,10 +345,20 @@ function generateChunkInner(cx: number, cz: number) {
     const caveOz = noiseSet.offsets.cave.z;
 
     // Cave config + bound noise samplers, shared with the World Editor preview via
-    // systems/world/caves.ts (identical carving math in both places).
+    // systems/world/caves.ts (identical carving math in both places). Caves and
+    // ores are sampled down each column (NoiseColumn): the same values as
+    // noise3D at the same points, for a fraction of the work.
     const caveCfg = GenConfig.caves;
     const caveNoise2D: Noise2D = (px, pz) => noiseSet.cave.noise2D(px, pz);
-    const caveNoise3D: Noise3D = (px, py, pz) => noiseSet.cave.noise3D(px, py, pz);
+    const caves = new CaveColumn(caveCfg, () => noiseSet.cave.column());
+    const coalField = noiseSet.cave.column();
+    const copperGeoField = noiseSet.weirdness.column();
+    const copperField = noiseSet.cave.column();
+    const ironField = noiseSet.cave.column();
+    const goldField = noiseSet.cave.column();
+    const lapisField = noiseSet.cave.column();
+    const diamondField = noiseSet.cave.column();
+    const emeraldField = noiseSet.cave.column();
 
     const seededRand01 = (x: number, y: number, z: number, salt: number): number => {
         let h = Math.imul((x | 0) ^ worldSeed, 374761393);
@@ -427,6 +437,15 @@ function generateChunkInner(cx: number, cz: number) {
             const wdx = wx + noiseSet.offsets.weirdness.x;
             const wdz = wz + noiseSet.offsets.weirdness.z;
             const isBreachZone = isBreachColumn(cwx, cwz, caveNoise2D, caveCfg);
+            caves.begin(cwx, cwz);
+            // Under the sea (this column's floor or a neighbour's), caves keep a
+            // rock seal below the lowest nearby seabed: breaking through left the
+            // ocean hanging over dry caves, dark holes seen from above.
+            let seabedSeal = Infinity;
+            for (const [ox, oz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const h = ox === 0 && oz === 0 ? height : getTerrainHeight(wx + ox, wz + oz, noiseSet);
+                if (h < 63) seabedSeal = Math.min(seabedSeal, h - 4);
+            }
 
             // Loop from top (MAX_Y) down to bottom (MIN_Y)
             for (let y = MAX_Y; y >= MIN_Y; y--) {
@@ -512,7 +531,7 @@ function generateChunkInner(cx: number, cz: number) {
                             // Carve caves (config-driven; identical to the editor preview).
                             const depth = height - y;
                             const taper = caveSurfaceTaper(depth, isBreachZone, caveCfg);
-                            if (isCaveCarved(cwx, y, cwz, depth, taper, caveNoise3D, caveCfg)) {
+                            if (y < seabedSeal && caves.isCarved(y, depth, taper)) {
                                 type = (y <= MIN_Y + caveCfg.lavaLevel) ? BlockType.LAVA : BlockType.AIR;
                             }
                         }
@@ -534,6 +553,14 @@ function generateChunkInner(cx: number, cz: number) {
 
             // --- 1.18 ORE GENERATION ---
             const stoneTop = height - 1;
+            coalField.begin(cwx * 0.15, cwz * 0.15);
+            copperGeoField.begin(wdx*0.05, wdz*0.05);
+            copperField.begin(cwx * 0.12 + 999, cwz * 0.12 + 999);
+            ironField.begin(cwx * 0.2 + 123, cwz * 0.2 + 123);
+            goldField.begin(cwx * 0.25 + 777, cwz * 0.25 + 777);
+            lapisField.begin(cwx * 0.3 + 444, cwz * 0.3 + 444);
+            diamondField.begin(cwx * 0.35 + 333, cwz * 0.35 + 333);
+            emeraldField.begin(cwx * 0.35 + 111, cwz * 0.35 + 111);
             for (let y = MIN_Y + 1; y <= stoneTop; y++) {
                 const index = index3D(x, y, z);
                 // Ores host in both stone and deepslate (the deep band is deepslate).
@@ -543,7 +570,7 @@ function generateChunkInner(cx: number, cz: number) {
                 const oreType = (stoneOre: BlockType, deepslateOre: BlockType) => (inDeepslate ? deepslateOre : stoneOre);
                 let coalChance = getTriangularChance(y, 0, 192, 96);
                 if (coalChance > 0) {
-                    const noise = noiseSet.cave.noise3D(cwx * 0.15, y * 0.15, cwz * 0.15);
+                    const noise = coalField.sample(y * 0.15);
                     if (noise > 0.45) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 101) > 0.5) {
                             blocks[index] = oreType(BlockType.COAL_ORE, BlockType.DEEPSLATE_COAL_ORE);
@@ -553,9 +580,9 @@ function generateChunkInner(cx: number, cz: number) {
                 }
                 let copperChance = getTriangularChance(y, -16, 112, 48);
                 if (copperChance > 0) {
-                    const copperGeoNoise = noiseSet.weirdness.noise3D(wdx*0.05, y*0.05, wdz*0.05);
+                    const copperGeoNoise = copperGeoField.sample(y*0.05);
                     const favorCopper = copperGeoNoise > 0.3;
-                    const noise = noiseSet.cave.noise3D(cwx * 0.12 + 999, y * 0.12 + 999, cwz * 0.12 + 999);
+                    const noise = copperField.sample(y * 0.12 + 999);
                     const threshold = favorCopper ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 102) > 0.5) {
@@ -569,7 +596,7 @@ function generateChunkInner(cx: number, cz: number) {
                     getTriangularChance(y, 80, 320, 232)
                 );
                 if (ironChance > 0) {
-                    const noise = noiseSet.cave.noise3D(cwx * 0.2 + 123, y * 0.2 + 123, cwz * 0.2 + 123);
+                    const noise = ironField.sample(y * 0.2 + 123);
                     if (noise > 0.52) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 103) > 0.5) {
                             blocks[index] = oreType(BlockType.IRON_ORE, BlockType.DEEPSLATE_IRON_ORE);
@@ -586,7 +613,7 @@ function generateChunkInner(cx: number, cz: number) {
                     }
                 }
                 if (goldChance > 0) {
-                    const noise = noiseSet.cave.noise3D(cwx * 0.25 + 777, y * 0.25 + 777, cwz * 0.25 + 777);
+                    const noise = goldField.sample(y * 0.25 + 777);
                     const threshold = isMesaGold ? 0.45 : 0.6;
                     if (noise > threshold) {
                         if (isMesaGold || !isExposed(index, y, x, z) || seededRand01(wx, y, wz, 104) > 0.5) {
@@ -597,7 +624,7 @@ function generateChunkInner(cx: number, cz: number) {
                 }
                 let lapisChance = getTriangularChance(y, -64, 64, -1);
                 if (lapisChance > 0) {
-                    const noise = noiseSet.cave.noise3D(cwx * 0.3 + 444, y * 0.3 + 444, cwz * 0.3 + 444);
+                    const noise = lapisField.sample(y * 0.3 + 444);
                     if (noise > 0.65) {
                         if (!isExposed(index, y, x, z)) {
                             blocks[index] = oreType(BlockType.LAPIS_ORE, BlockType.DEEPSLATE_LAPIS_ORE);
@@ -607,7 +634,7 @@ function generateChunkInner(cx: number, cz: number) {
                 }
                 if (y <= 16) {
                     const ramp = (16 - y) / (16 - (-64));
-                    const noise = noiseSet.cave.noise3D(cwx * 0.35 + 333, y * 0.35 + 333, cwz * 0.35 + 333);
+                    const noise = diamondField.sample(y * 0.35 + 333);
                     const threshold = 0.8 - (ramp * 0.2);
                     if (noise > threshold) {
                         if (!isExposed(index, y, x, z) || seededRand01(wx, y, wz, 105) > 0.5) {
@@ -619,7 +646,7 @@ function generateChunkInner(cx: number, cz: number) {
                 if (biome.name.includes("Volcanic") || biome.name.includes("Mesa") || biome.name.includes("Tundra") || height > 90) {
                     let emeraldChance = getTriangularChance(y, -16, 320, 232);
                     if (emeraldChance > 0) {
-                        const noise = noiseSet.cave.noise3D(cwx * 0.35 + 111, y * 0.35 + 111, cwz * 0.35 + 111);
+                        const noise = emeraldField.sample(y * 0.35 + 111);
                         if (noise > 0.75) {
                             blocks[index] = oreType(BlockType.EMERALD_ORE, BlockType.DEEPSLATE_EMERALD_ORE);
                             continue;

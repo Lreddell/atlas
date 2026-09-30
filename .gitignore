@@ -51,4 +51,14 @@ docs/
 AGENTS.md
 CLAUDE.md
 copilot.patch
-.gitignore
+
+# Browser automation and QA output (the dev-only visual tour, src/systems/debug/devQa.ts)
+.playwright-cli/
+output/
+
+# Dev-only tools, kept out of the release. The build runs check-seo.mjs, and
+# the texture test runs generate_pr19_textures.mjs, so those two stay.
+scripts/*
+!scripts/check-seo.mjs
+!scripts/generate_pr19_textures.mjs
+metadata.json
