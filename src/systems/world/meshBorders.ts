@@ -30,19 +30,24 @@ export interface MeshBorders {
  */
 const facingCoord = (side: Side): number => (side === 'left' || side === 'back' ? CHUNK_SIZE - 1 : 0);
 
-/** A side chunk's facing plane, row by row from the bottom: 16 cells a row. */
+/**
+ * A side chunk's facing plane, row by row from the bottom: 16 cells a row.
+ * Plain loops: a subarray a row (384 of them a plane, twelve planes a mesh
+ * job) made packing a job's borders cost 0.4 ms of main thread.
+ */
 export function borderPlane(data: Uint8Array, side: Side): Uint8Array {
     const plane = new Uint8Array(PLANE);
     const at = facingCoord(side);
+    let o = 0;
     if (side === 'left' || side === 'right') {
-        for (let row = 0, o = 0; row < WORLD_HEIGHT; row++) {
-            const base = row * LAYER + at;
-            for (let z = 0; z < CHUNK_SIZE; z++) plane[o++] = data[base + z * CHUNK_SIZE];
+        // x fixed: every 16th cell of each layer.
+        for (let base = at; o < PLANE; base += LAYER) {
+            for (let i = base, end = base + LAYER; i < end; i += CHUNK_SIZE) plane[o++] = data[i];
         }
     } else {
-        for (let row = 0; row < WORLD_HEIGHT; row++) {
-            const start = row * LAYER + at * CHUNK_SIZE;
-            plane.set(data.subarray(start, start + CHUNK_SIZE), row * CHUNK_SIZE);
+        // z fixed: a run of 16 cells a layer.
+        for (let start = at * CHUNK_SIZE; o < PLANE; start += LAYER) {
+            for (let i = start, end = start + CHUNK_SIZE; i < end; i++) plane[o++] = data[i];
         }
     }
     return plane;

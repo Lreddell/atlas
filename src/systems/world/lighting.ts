@@ -393,87 +393,84 @@ export function propagateLightTyped(state: WorldState, qSky: Int32Array, skyCoun
     }
 }
 
+const BORDER_SIDES: readonly (readonly [number, number])[] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+/**
+ * Lets light across a newly arrived chunk's four borders, both ways, and
+ * tells notifyFn about each chunk whose mesh the new light reaches.
+ *
+ * Each side of a border is already lit consistently within itself (the
+ * worker lit the new chunk, and its neighbours were reconciled as they came),
+ * so light only moves where one side can raise the other: a border cell
+ * seeds the flood only if its light is at least 2 above the cell facing it
+ * (light loses at least 1 a cell). Seeding every lit cell, as before, gave
+ * the same light, but under water and trees, where neither side is fully
+ * sunlit, thousands of seeds a chunk flooded nothing: half a millisecond a
+ * chunk while the world streams in. Only the chunks the light was written in
+ * (and the side chunk of a border it was written on) are remeshed.
+ */
 export function reconcileChunkBorders(state: WorldState, cx: number, cz: number, notifyFn: (cx: number, cz: number) => void) {
-    const neighbors = [
-        { dx: -1, dz: 0 }, { dx: 1, dz: 0 },
-        { dx: 0, dz: -1 }, { dx: 0, dz: 1 }
-    ];
+    const currentLight = getLightData(state, cx, cz);
+    if (!currentLight) return;
 
     const qSky = SHARED_SKY_Q;
     const qBlock = SHARED_BLOCK_Q;
+    const cap = QUEUE_SIZE * 3;
     let sCount = 0;
     let bCount = 0;
-
-    const currentLight = getLightData(state, cx, cz);
-    if(!currentLight) return;
     const worldX = cx * CHUNK_SIZE;
     const worldZ = cz * CHUNK_SIZE;
 
-    neighbors.forEach(({dx, dz}) => {
-        const ncx = cx + dx;
-        const ncz = cz + dz;
-        const nLight = getLightData(state, ncx, ncz);
-        if (!nLight) return;
-
-        const nWorldX = ncx * CHUNK_SIZE;
-        const nWorldZ = ncz * CHUNK_SIZE;
-
-        let currXStart = dx === -1 ? 0 : CHUNK_SIZE - 1; 
-        let currXEnd = dx === -1 ? 0 : CHUNK_SIZE - 1;
-        let currZStart = dz === -1 ? 0 : CHUNK_SIZE - 1;
-        let currZEnd = dz === -1 ? 0 : CHUNK_SIZE - 1;
-        
-        if (dx !== 0) { 
-           currZStart = 0; currZEnd = CHUNK_SIZE - 1;
-        } else { 
-           currXStart = 0; currXEnd = CHUNK_SIZE - 1;
-        }
-
+    for (const [dx, dz] of BORDER_SIDES) {
+        const nLight = getLightData(state, cx + dx, cz + dz);
+        if (!nLight) continue;
+        const nWorldX = (cx + dx) * CHUNK_SIZE;
+        const nWorldZ = (cz + dz) * CHUNK_SIZE;
+        // This chunk's cells along the border, and the side chunk's facing them.
+        const lx = dx === -1 ? 0 : CHUNK_SIZE - 1;
+        const nlx = dx === -1 ? CHUNK_SIZE - 1 : 0;
+        const lz = dz === -1 ? 0 : CHUNK_SIZE - 1;
+        const nlz = dz === -1 ? CHUNK_SIZE - 1 : 0;
         for (let y = MIN_Y; y <= MAX_Y; y++) {
-            for (let lx = currXStart; lx <= currXEnd; lx++) {
-                for (let lz = currZStart; lz <= currZEnd; lz++) {
-                     const cIndex = index3D(lx, y, lz);
-                     const val = currentLight[cIndex];
-
-                     let nlx = lx; let nlz = lz;
-                     if (dx === -1) nlx = CHUNK_SIZE - 1;
-                     else if (dx === 1) nlx = 0;
-                     else if (dz === -1) nlz = CHUNK_SIZE - 1;
-                     else if (dz === 1) nlz = 0;
-
-                     const nIndex = index3D(nlx, y, nlz);
-                     const nVal = nLight[nIndex];
-
-                     // When both sides of the border are fully sunlit (sky=15), neither can
-                     // improve the other, this is the overwhelmingly common open-air case
-                     // and skipping it removes tens of thousands of no-op BFS seeds per
-                     // chunk load on the main thread.
-                     const curSky = val >> 4;
-                     const nSky = nVal >> 4;
-                     const bothSaturated = curSky === 15 && nSky === 15;
-
-                     if (curSky > 0 && !bothSaturated && sCount < QUEUE_SIZE * 3) {
-                         qSky[sCount++] = worldX + lx; qSky[sCount++] = y; qSky[sCount++] = worldZ + lz;
-                     }
-                     if ((val & 0xF) > 0 && bCount < QUEUE_SIZE * 3) {
-                         qBlock[bCount++] = worldX + lx; qBlock[bCount++] = y; qBlock[bCount++] = worldZ + lz;
-                     }
-
-                     if (nSky > 0 && !bothSaturated && sCount < QUEUE_SIZE * 3) {
-                         qSky[sCount++] = nWorldX + nlx; qSky[sCount++] = y; qSky[sCount++] = nWorldZ + nlz;
-                     }
-                     if ((nVal & 0xF) > 0 && bCount < QUEUE_SIZE * 3) {
-                         qBlock[bCount++] = nWorldX + nlx; qBlock[bCount++] = y; qBlock[bCount++] = nWorldZ + nlz;
-                     }
+            for (let t = 0; t < CHUNK_SIZE; t++) {
+                const ax = dx !== 0 ? lx : t;
+                const az = dx !== 0 ? t : lz;
+                const bx = dx !== 0 ? nlx : t;
+                const bz = dx !== 0 ? t : nlz;
+                const val = currentLight[index3D(ax, y, az)];
+                const nVal = nLight[index3D(bx, y, bz)];
+                const sky = val >> 4;
+                const nSky = nVal >> 4;
+                const block = val & 0xF;
+                const nBlock = nVal & 0xF;
+                if (sky > nSky + 1 && sCount < cap) {
+                    qSky[sCount++] = worldX + ax; qSky[sCount++] = y; qSky[sCount++] = worldZ + az;
+                } else if (nSky > sky + 1 && sCount < cap) {
+                    qSky[sCount++] = nWorldX + bx; qSky[sCount++] = y; qSky[sCount++] = nWorldZ + bz;
+                }
+                if (block > nBlock + 1 && bCount < cap) {
+                    qBlock[bCount++] = worldX + ax; qBlock[bCount++] = y; qBlock[bCount++] = worldZ + az;
+                } else if (nBlock > block + 1 && bCount < cap) {
+                    qBlock[bCount++] = nWorldX + bx; qBlock[bCount++] = y; qBlock[bCount++] = nWorldZ + bz;
                 }
             }
         }
-    });
+    }
 
+    if (sCount === 0 && bCount === 0) return;
+    lightWrites.minX = lightWrites.minZ = Infinity;
+    lightWrites.maxX = lightWrites.maxZ = -Infinity;
     propagateLightTyped(state, qSky, sCount, qBlock, bCount);
-    
-    neighbors.forEach(({dx, dz}) => {
-        if (state.chunks.has(getChunkKey(cx+dx, cz+dz))) notifyFn(cx+dx, cz+dz);
-    });
-    notifyFn(cx, cz);
+    if (lightWrites.minX === Infinity) return;
+
+    // Every chunk light was written in, and the side chunk of any border cell it was written on.
+    const x0 = Math.floor((lightWrites.minX - 1) / CHUNK_SIZE);
+    const x1 = Math.floor((lightWrites.maxX + 1) / CHUNK_SIZE);
+    const z0 = Math.floor((lightWrites.minZ - 1) / CHUNK_SIZE);
+    const z1 = Math.floor((lightWrites.maxZ + 1) / CHUNK_SIZE);
+    for (let ncx = x0; ncx <= x1; ncx++) {
+        for (let ncz = z0; ncz <= z1; ncz++) {
+            if (state.chunks.has(getChunkKey(ncx, ncz))) notifyFn(ncx, ncz);
+        }
+    }
 }

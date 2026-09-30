@@ -4,12 +4,22 @@ import { createBorderScratch, unpackMeshBorders } from '../meshBorders';
 import { reseedGlobalNoise } from '../../../utils/noise';
 import { loadGenConfig, resetGenConfig } from '../genConfig';
 import { buildHorizonTile } from '../horizon/buildHorizonTile';
+import { BlockType } from '../../../types';
 
 // Cast self to Worker
 const ctx = self as unknown as Worker;
 
 // Side chunks rebuilt from a mesh job's border planes, reused job after job.
 const borderScratch = createBorderScratch();
+
+/** Whether a chunk holds a flowing (levelled) water or lava cell. */
+function hasFlowingFluid(blocks: Uint8Array, meta: Uint8Array | undefined): boolean {
+    if (!meta) return false;
+    for (let i = 0; i < blocks.length; i++) {
+        if (meta[i] !== 0 && (blocks[i] === BlockType.WATER || blocks[i] === BlockType.LAVA)) return true;
+    }
+    return false;
+}
 
 ctx.onmessage = (e) => {
     const { type, id, cx, cz, seed, config, chunk, metaData, light, borders, ticket, cullDarkFaces, rejectedVaultIds } = e.data;
@@ -27,17 +37,20 @@ ctx.onmessage = (e) => {
     }
     else if (type === 'GEN') {
         const result = generateChunk(cx, cz, { rejectedVaultIds });
-        
+
         // Transfer the generated buffers directly to the main thread.
         // The worker no longer maintains a cache, making it stateless.
-        ctx.postMessage({ 
-            type: 'GEN_DONE', 
-            id, cx, cz, 
+        ctx.postMessage({
+            type: 'GEN_DONE',
+            id, cx, cz,
             ticket,
-            result: { 
-                blocks: result.blocks, 
-                light: result.light, 
-                meta: result.meta 
+            result: {
+                blocks: result.blocks,
+                light: result.light,
+                meta: result.meta,
+                // Whether any water or lava is mid-flow (almost never, freshly
+                // generated): the main thread looks for it only then.
+                hasFlowing: hasFlowingFluid(result.blocks, result.meta),
             }
         }, [result.blocks.buffer, result.light.buffer, result.meta.buffer]);
     }

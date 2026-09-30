@@ -204,6 +204,20 @@ export class WorldManager {
     private lastDesiredCount = -1;
     private desiredUpdateCounter = 0;
     private desiredChunkKeys = new Set<string>();
+    /**
+     * The chunks meshed and drawn: the render distance. The desired chunks
+     * reach a ring further (App asks for render distance + 1), generated but
+     * never meshed, so every drawn chunk is meshed once, with all four side
+     * chunks there: no walls toward chunks not there yet, and no row meshed
+     * again each time the next ring arrives.
+     */
+    private meshChunkKeys = new Set<string>();
+    private lastMeshRadius = Infinity;
+    /** Meshes gone stale past the render distance (a side chunk changed), by priority: redone if they come back. */
+    private staleMeshes = new Map<string, number>();
+    /** Chunks that left the desired set: a few are checked each frame and evicted once well out of range. */
+    private evictCandidates = new Map<string, { cx: number; cz: number }>();
+    private unloadRadius = Infinity;
 
   private workers: Worker[] = [];
   /** Jobs sent to each worker and not yet answered. */
@@ -347,6 +361,12 @@ export class WorldManager {
     this.desiredUpdateCounter = 0;
     this.desiredChunkList = [];
     this.desiredChunkCursor = 0;
+    this.desiredChunkKeys = new Set();
+    this.meshChunkKeys = new Set();
+    this.lastMeshRadius = Infinity;
+    this.staleMeshes.clear();
+    this.evictCandidates.clear();
+    this.unloadRadius = Infinity;
     this.activeGenTickets.clear();
     this.activeMeshTickets.clear();
     this.genStartedAt.clear();
@@ -609,12 +629,12 @@ export class WorldManager {
           this.activeGenTickets.delete(key);
           this.inFlightGen = Math.max(0, this.inFlightGen - 1);
           this.genStartedAt.delete(key);
-          
           WorldStore.setChunkData(this.state, cx, cz, result.blocks);
           WorldStore.setLightData(this.state, cx, cz, result.light);
           WorldStore.setMetadataIfAny(this.state, cx, cz, result.meta);
-          this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
-          
+          // Generated chunks say whether anything flows in them; a saved one is looked through.
+          if (result.hasFlowing !== false) this.wakeFlowingFluids(cx, cz, result.blocks, result.meta);
+
           Lighting.reconcileChunkBorders(this.state, cx, cz, (ncx, ncz) => {
               // Side chunks with a mesh (or one on the way) remesh against this one;
               // those still waiting for their first mesh are re-checked below.
@@ -714,9 +734,19 @@ export class WorldManager {
 
   private queueMesh(cx: number, cz: number, priority: number) {
       const stage = this.getStage(cx, cz);
-      if (stage < ChunkStage.GENERATED) return; 
-      
+      if (stage < ChunkStage.GENERATED) return;
+
       const key = WorldCoords.getChunkKey(cx, cz);
+
+      // Past the render distance a chunk is data only; a mesh it already has
+      // is redone if it comes back into view.
+      if (!this.meshChunkKeys.has(key)) {
+          if (this.meshCache.has(key)) {
+              const prev = this.staleMeshes.get(key);
+              if (prev === undefined || priority < prev) this.staleMeshes.set(key, priority);
+          }
+          return;
+      }
 
       if (stage === ChunkStage.MESHING) {
           const prev = this.pendingRemesh.get(key);
@@ -735,26 +765,68 @@ export class WorldManager {
       this.enqueueMesh(cx, cz, priority);
   }
 
-  public setDesiredChunks(chunks: {cx: number, cz: number}[]) {
+  /**
+   * The chunks to keep loaded, nearest first (their order is their priority),
+   * the first centred on the player. Only those within `meshRadius` chunks
+   * of it are meshed and drawn; the rest are the ring of side chunks the
+   * outermost drawn ones mesh against.
+   */
+  public setDesiredChunks(chunks: {cx: number, cz: number}[], meshRadius = Infinity) {
       const center = chunks.length > 0 ? chunks[0] : { cx: 0, cz: 0 };
       const centerKey = WorldCoords.getChunkKey(center.cx, center.cz);
 
-      if (this.lastDesiredCenterKey === centerKey && this.lastDesiredCount === chunks.length) {
+      if (this.lastDesiredCenterKey === centerKey && this.lastDesiredCount === chunks.length && this.lastMeshRadius === meshRadius) {
           return;
       }
 
       this.lastDesiredCenterKey = centerKey;
       this.lastDesiredCount = chunks.length;
+      this.lastMeshRadius = meshRadius;
       this.desiredUpdateCounter++;
     this.desiredCenter = { cx: center.cx, cz: center.cz };
 
+      // The sets first: queueing below looks them up.
+      const previous = this.desiredChunkKeys;
       const wantedKeys = new Set<string>();
+      const meshKeys = new Set<string>();
+      const keys: string[] = new Array(chunks.length);
+      const meshR2 = meshRadius * meshRadius;
+      let maxDesiredDistSq = 0;
+      for (let i = 0; i < chunks.length; i++) {
+          const { cx, cz } = chunks[i];
+          const key = WorldCoords.getChunkKey(cx, cz);
+          keys[i] = key;
+          wantedKeys.add(key);
+          const dx = cx - center.cx;
+          const dz = cz - center.cz;
+          const dSq = dx * dx + dz * dz;
+          if (dSq > maxDesiredDistSq) maxDesiredDistSq = dSq;
+          if (dSq <= meshR2) meshKeys.add(key);
+      }
+      this.desiredChunkKeys = wantedKeys;
+      this.meshChunkKeys = meshKeys;
+      this.unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
+
+      // Chunks left behind: evicted a few a frame once out of range (evictStep).
+      for (const key of previous) {
+          if (wantedKeys.has(key)) continue;
+          const comma = key.indexOf(',');
+          this.evictCandidates.set(key, { cx: Number(key.slice(0, comma)), cz: Number(key.slice(comma + 1)) });
+          this.staleMeshes.delete(key);
+      }
+
       for (let i = 0; i < chunks.length; i++) {
           const { cx, cz } = chunks[i];
           const priority = i;
-          const key = WorldCoords.getChunkKey(cx, cz);
-          
-          wantedKeys.add(key);
+          const key = keys[i];
+          this.evictCandidates.delete(key);
+
+          // Back in view with a mesh that went stale meanwhile.
+          const stale = this.staleMeshes.get(key);
+          if (stale !== undefined && meshKeys.has(key)) {
+              this.staleMeshes.delete(key);
+              this.queueMesh(cx, cz, Math.min(stale, priority));
+          }
 
           let stage = this.getStage(cx, cz);
           const hasChunkData = !!WorldStore.getChunkData(this.state, cx, cz);
@@ -782,50 +854,61 @@ export class WorldManager {
           }
       }
 
-      this.desiredChunkKeys = wantedKeys;
-      this.desiredChunkList = Array.from(wantedKeys);
+      this.desiredChunkList = keys;
       if (this.desiredChunkCursor >= this.desiredChunkList.length) {
           this.desiredChunkCursor = 0;
       }
 
-      let maxDesiredDistSq = 0;
-      for (const c of chunks) {
-          const dx = c.cx - center.cx;
-          const dz = c.cz - center.cz;
-          const dSq = dx * dx + dz * dz;
-          if (dSq > maxDesiredDistSq) maxDesiredDistSq = dSq;
-      }
-
-      const shouldRunEvictionScan = this.desiredUpdateCounter % 6 === 0;
-      if (shouldRunEvictionScan && this.chunkStages.size > chunks.length) {
-          let evicted = 0;
-          let deferredDirty = false;
-          const maxEvictionsPerPass = 16;
-          const unloadRadius = Math.sqrt(maxDesiredDistSq) + 2;
-
-          for (const [key, _stage] of this.chunkStages) {
-              if (!wantedKeys.has(key)) {
-                  const [kcx, kcz] = key.split(',').map(Number);
-                  const dist = Math.sqrt((kcx - center.cx)**2 + (kcz - center.cz)**2);
-                  if (dist > unloadRadius) {
-                      // evict() returns false for a still-dirty chunk (it stays loaded);
-                      // only count real unloads toward the per-pass budget.
-                      if (this.evict(kcx, kcz)) {
-                          evicted++;
-                          if (evicted >= maxEvictionsPerPass) break;
-                      } else {
-                          deferredDirty = true;
-                      }
-                  }
-              }
+      // Now and then, anything loaded some other way (a spawn preload, a
+      // command) and no longer wanted joins the candidates too.
+      if (this.desiredUpdateCounter % 16 === 0 && this.chunkStages.size > wantedKeys.size + this.evictCandidates.size) {
+          for (const key of this.chunkStages.keys()) {
+              if (wantedKeys.has(key) || this.evictCandidates.has(key)) continue;
+              const comma = key.indexOf(',');
+              this.evictCandidates.set(key, { cx: Number(key.slice(0, comma)), cz: Number(key.slice(comma + 1)) });
           }
-          // Persist any chunks we couldn't evict because they were dirty, so they
-          // become evictable on a later pass instead of lingering in memory.
-          if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
       }
   }
 
+  /**
+   * Unloads chunks that left the desired set once they are past the unload
+   * radius (two chunks of slack, so a player turning back doesn't reload
+   * them), at most `maxEvictions` a call. They used to go 16 every sixth
+   * border crossing: flying fast, the world loaded 150 chunks a second and let
+   * go of 8, and memory climbed until garbage collection stalled the game.
+   */
+  private evictStep(maxEvictions: number, maxChecks: number) {
+      if (this.evictCandidates.size === 0) return;
+      const { cx: ccx, cz: ccz } = this.desiredCenter;
+      const r2 = this.unloadRadius * this.unloadRadius;
+      let evicted = 0;
+      let checks = 0;
+      let deferredDirty = false;
+      const kept: [string, { cx: number; cz: number }][] = [];
+      for (const [key, c] of this.evictCandidates) {
+          if (checks++ >= maxChecks || evicted >= maxEvictions) break;
+          this.evictCandidates.delete(key);
+          if (this.desiredChunkKeys.has(key)) continue;
+          const dx = c.cx - ccx;
+          const dz = c.cz - ccz;
+          if (dx * dx + dz * dz <= r2) {
+              kept.push([key, c]);
+              continue;
+          }
+          // evict() keeps a chunk with unsaved edits until they are saved.
+          if (this.evict(c.cx, c.cz)) evicted++;
+          else {
+              kept.push([key, c]);
+              deferredDirty = true;
+          }
+      }
+      // Checked but kept: to the back, so the rest get their turn.
+      for (const [key, c] of kept) this.evictCandidates.set(key, c);
+      if (deferredDirty && this.activeWorldId) void this.processSaveQueue();
+  }
+
   public processStreamingJobs() {
+      this.evictStep(24, 256);
       this.repairDesiredChunks(64);
 
       while (this.inFlightGen < this.MAX_GEN_IN_FLIGHT && this.genQueue.length > 0) {
@@ -890,11 +973,17 @@ export class WorldManager {
           this.queuedMeshKeys.delete(WorldCoords.getChunkKey(job.cx, job.cz));
 
           const stage = this.getStage(job.cx, job.cz);
-          if (stage !== ChunkStage.MESH_QUEUED) continue; 
+          if (stage !== ChunkStage.MESH_QUEUED) continue;
 
           const key = WorldCoords.getChunkKey(job.cx, job.cz);
-          if (!this.desiredChunkKeys.has(key)) {
-              this.setStage(job.cx, job.cz, ChunkStage.GENERATED);
+          if (!this.meshChunkKeys.has(key)) {
+              // Out of view before its turn came: a mesh it had stays (stale, redone if it comes back).
+              if (this.meshCache.has(key)) {
+                  this.setStage(job.cx, job.cz, ChunkStage.READY);
+                  if (this.desiredChunkKeys.has(key)) this.staleMeshes.set(key, job.priority);
+              } else {
+                  this.setStage(job.cx, job.cz, ChunkStage.GENERATED);
+              }
               continue;
           }
 
@@ -1222,11 +1311,12 @@ export class WorldManager {
    */
   public getStreamingStatus(): { desired: number; meshed: number; queued: number; inFlight: number } {
       let meshed = 0;
-      for (const key of this.desiredChunkKeys) {
+      for (const key of this.meshChunkKeys) {
           if (this.chunkStages.get(key) === ChunkStage.READY && this.meshCache.has(key)) meshed++;
       }
       return {
-          desired: this.desiredChunkKeys.size,
+          // The chunks drawn (the ring of side chunks past them is loaded, never meshed).
+          desired: this.meshChunkKeys.size,
           meshed,
           queued: this.genQueue.length + this.meshQueue.length,
           inFlight: this.inFlightGen + this.inFlightMesh,

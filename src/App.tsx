@@ -539,8 +539,10 @@ const App: React.FC = () => {
   const commandHistoryRef = useRef<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
-    const renderChunkOffsets = desiredChunkOffsets;
+    // Loaded one ring past the render distance, so every chunk drawn is meshed
+    // with all its side chunks there (WorldManager.setDesiredChunks).
+    const desiredChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance + 1), [renderDistance]);
+    const renderChunkOffsets = useMemo(() => buildChunkOffsets(renderDistance), [renderDistance]);
 
   const isDead = health <= 0;
   const worldPaused = isPaused || isSleeping || appState !== 'game' || isCapturingPanorama;
@@ -642,7 +644,7 @@ const App: React.FC = () => {
                 const nextDesired = desiredChunkOffsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz }));
                 const nextRender = renderChunkOffsets.map(({ dx, dz }) => ({ cx: cx + dx, cz: cz + dz }));
 
-                worldManager.setDesiredChunks(nextDesired);
+                worldManager.setDesiredChunks(nextDesired, renderDistance);
                 // The scene's chunk field follows this list itself (chunkView.ts),
                 // and the horizon draws past it (horizonView.ts).
                 chunkView.set(nextRender);
