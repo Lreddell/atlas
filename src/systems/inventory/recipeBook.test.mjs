@@ -56,6 +56,26 @@ test('craftability picks the variant the player can make, and flags table-only r
     assert.equal(nothing.haveIngredients, false);
 });
 
+// Mixed materials, as Minecraft allows them: a table from two woods.
+test('the book counts and fills mixed planks where the recipe allows them', () => {
+    const have = book.countItems([{ type: B.OAK_PLANKS, count: 3 }, { type: B.BIRCH_PLANKS, count: 5 }]);
+    const table = book.entryStatus(entryFor(B.CRAFTING_TABLE), have, 2);
+    assert.equal(table.crafts, 2, 'eight planks of two woods count as eight');
+    assert.equal(table.haveIngredients, true);
+    // Cell by cell: each cell holds one kind, so two tables at once don't fit
+    // three oak and five birch, but one does, mixing the woods.
+    const layout = book.layOut(table.recipe, 2);
+    assert.equal(book.assignCells(table.recipe, layout, have, 2), null);
+    const one = book.assignCells(table.recipe, layout, have, 1);
+    assert.equal(one.filter((cell) => cell === B.OAK_PLANKS).length + one.filter((cell) => cell === B.BIRCH_PLANKS).length, 4);
+    // A wood-specific result never mixes: three oak and two birch make no slabs.
+    const slabs = book.entryStatus(entryFor(B.OAK_SLAB), book.countItems([{ type: B.OAK_PLANKS, count: 2 }, { type: B.BIRCH_PLANKS, count: 1 }]), 3);
+    assert.equal(slabs.crafts, 0);
+    // With enough of one wood, the book shows that wood's recipe.
+    const spruce = book.entryStatus(entryFor(B.CRAFTING_TABLE), book.countItems([{ type: B.SPRUCE_PLANKS, count: 4 }, { type: B.OAK_PLANKS, count: 1 }]), 2);
+    assert.equal(spruce.recipe.pattern[0], B.SPRUCE_PLANKS);
+});
+
 test('a recipe lays into the grid from the top-left corner', () => {
     const stick = entryFor(B.STICK).variants[0];
     assert.deepEqual(book.layOut(stick, 2), [stick.pattern[0], null, stick.pattern[2], null]);
@@ -75,7 +95,8 @@ test('the inventory shows the book and filling it moves real items', () => {
     const controller = read('src/hooks/useInventoryController.ts');
     // The grid's contents go back first, and nothing moves if they can't.
     assert.match(controller, /if \(item && addToInventoryList\(next, cloneItemStack\(item\)\)\) return false;/);
-    assert.match(controller, /const crafts = Math\.min\(craftsAvailable\(recipe, countItems\(next\)\), all \? perCell : 1\);/);
+    assert.match(controller, /let crafts = Math\.min\(craftsAvailable\(recipe, held\), all \? perCell : 1\);/);
+    assert.match(controller, /while \(crafts > 0 && !\(cells = assignCells\(recipe, layout, held, crafts\)\)\) crafts--;/);
     const ui = read('src/components/ui/InventoryUI.tsx');
     assert.match(ui, /<RecipeBookPanel/);
     assert.match(ui, /recipeBook && <RecipeBookButton open=\{bookOpen\} onToggle=\{toggleBook\} \/>/);

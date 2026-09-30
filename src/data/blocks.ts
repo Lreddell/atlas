@@ -14,7 +14,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.STONE]: { 
       id: BlockType.STONE, color: '#757575', name: 'Stone', textureSlot: 2, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1,
       drops: [{ type: BlockType.COBBLESTONE, chance: 1, min: 1, max: 1 }],
-      smeltsInto: BlockType.STONE, category: 'building'
+      category: 'building'
   },
   [BlockType.COBBLESTONE]: { id: BlockType.COBBLESTONE, color: '#616161', name: 'Cobblestone', textureSlot: 10, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, smeltsInto: BlockType.STONE, category: 'building' },
   [BlockType.BRICK]: { id: BlockType.BRICK, color: '#b71c1c', name: 'Brick', textureSlot: 9, hardness: 2.0, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
@@ -31,7 +31,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   },
   [BlockType.WATER]: { id: BlockType.WATER, color: '#0288d1', name: 'Water', transparent: true, textureSlot: 14, hardness: 100, category: 'natural' },
   [BlockType.LAVA]: { id: BlockType.LAVA, color: '#d32f2f', name: 'Lava', textureSlot: 17, hardness: 100, lightLevel: 15, noCollision: true, category: 'natural' },
-  [BlockType.OBSIDIAN]: { id: BlockType.OBSIDIAN, color: '#120b1c', name: 'Obsidian', textureSlot: 26, hardness: 50, preferredTool: 'pickaxe', minHarvestTier: 3, category: 'building' },
+  [BlockType.OBSIDIAN]: { id: BlockType.OBSIDIAN, color: '#120b1c', name: 'Obsidian', textureSlot: 26, hardness: 50, preferredTool: 'pickaxe', minHarvestTier: 4, category: 'building' },
   
   [BlockType.WOOL]: { id: BlockType.WOOL, color: '#eeeeee', name: 'Wool', textureSlot: 64, hardness: 0.8, preferredTool: 'axe', category: 'building' },
 
@@ -96,7 +96,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
 
   // --- VOLCANIC ---
   [BlockType.BASALT]: { id: BlockType.BASALT, color: '#424242', name: 'Basalt', textureSlot: 83, hardness: 1.25, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'building' },
-  [BlockType.MAGMA]: { id: BlockType.MAGMA, color: '#ff7043', name: 'Magma Block', textureSlot: 85, hardness: 0.5, preferredTool: 'pickaxe', lightLevel: 3, category: 'natural' },
+  [BlockType.MAGMA]: { id: BlockType.MAGMA, color: '#ff7043', name: 'Magma Block', textureSlot: 85, hardness: 0.5, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 3, category: 'natural' },
 
   // --- PLANTS ---
   [BlockType.GRASS_PLANT]: { 
@@ -142,7 +142,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.CRAFTING_TABLE]: { id: BlockType.CRAFTING_TABLE, color: '#8d6e63', name: 'Crafting Table', textureSlot: 43, hardness: 2.5, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'functional' },
   [BlockType.FURNACE]: { id: BlockType.FURNACE, color: '#616161', name: 'Furnace', textureSlot: 44, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, category: 'functional' },
   [BlockType.FURNACE_ACTIVE]: { 
-      id: BlockType.FURNACE_ACTIVE, color: '#616161', name: 'Furnace', textureSlot: 47, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1,
+      id: BlockType.FURNACE_ACTIVE, color: '#616161', name: 'Furnace', textureSlot: 47, hardness: 3.5, preferredTool: 'pickaxe', minHarvestTier: 1, lightLevel: 13,
       drops: [{ type: BlockType.FURNACE, chance: 1, min: 1, max: 1 }]
   },
   [BlockType.CHEST]: { id: BlockType.CHEST, color: '#8d6e63', name: 'Chest', textureSlot: 52, hardness: 2.5, preferredTool: 'axe', isFuel: true, fuelValue: 15000, category: 'functional' },
@@ -161,17 +161,17 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.WOOD_PICKAXE]: { id: BlockType.WOOD_PICKAXE, color: '#8d6e63', name: 'Wood Pickaxe', textureSlot: 32, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'pickaxe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
   [BlockType.STONE_PICKAXE]: { id: BlockType.STONE_PICKAXE, color: '#757575', name: 'Stone Pickaxe', textureSlot: 33, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
   [BlockType.IRON_PICKAXE]: { id: BlockType.IRON_PICKAXE, color: '#d7ccc8', name: 'Iron Pickaxe', textureSlot: 34, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'pickaxe', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_PICKAXE]: { id: BlockType.COPPER_PICKAXE, color: '#e67e22', name: 'Copper Pickaxe', textureSlot: 61, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
+  [BlockType.COPPER_PICKAXE]: { id: BlockType.COPPER_PICKAXE, color: '#e67e22', name: 'Copper Pickaxe', textureSlot: 61, hardness: 0, isItem: true, toolSpeed: 5.0, toolType: 'pickaxe', toolTier: 2, category: 'tools' },
 
   [BlockType.WOOD_AXE]: { id: BlockType.WOOD_AXE, color: '#8d6e63', name: 'Wood Axe', textureSlot: 36, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'axe', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
   [BlockType.STONE_AXE]: { id: BlockType.STONE_AXE, color: '#757575', name: 'Stone Axe', textureSlot: 37, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'axe', toolTier: 2, category: 'tools' },
   [BlockType.IRON_AXE]: { id: BlockType.IRON_AXE, color: '#d7ccc8', name: 'Iron Axe', textureSlot: 38, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'axe', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_AXE]: { id: BlockType.COPPER_AXE, color: '#e67e22', name: 'Copper Axe', textureSlot: 62, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'axe', toolTier: 2, category: 'tools' },
+  [BlockType.COPPER_AXE]: { id: BlockType.COPPER_AXE, color: '#e67e22', name: 'Copper Axe', textureSlot: 62, hardness: 0, isItem: true, toolSpeed: 5.0, toolType: 'axe', toolTier: 2, category: 'tools' },
 
   [BlockType.WOOD_SHOVEL]: { id: BlockType.WOOD_SHOVEL, color: '#8d6e63', name: 'Wood Shovel', textureSlot: 39, hardness: 0, isItem: true, toolSpeed: 2.0, toolType: 'shovel', toolTier: 1, isFuel: true, fuelValue: 10000, category: 'tools' },
   [BlockType.STONE_SHOVEL]: { id: BlockType.STONE_SHOVEL, color: '#757575', name: 'Stone Shovel', textureSlot: 40, hardness: 0, isItem: true, toolSpeed: 4.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
   [BlockType.IRON_SHOVEL]: { id: BlockType.IRON_SHOVEL, color: '#d7ccc8', name: 'Iron Shovel', textureSlot: 41, hardness: 0, isItem: true, toolSpeed: 6.0, toolType: 'shovel', toolTier: 3, category: 'tools' },
-  [BlockType.COPPER_SHOVEL]: { id: BlockType.COPPER_SHOVEL, color: '#e67e22', name: 'Copper Shovel', textureSlot: 63, hardness: 0, isItem: true, toolSpeed: 8.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
+  [BlockType.COPPER_SHOVEL]: { id: BlockType.COPPER_SHOVEL, color: '#e67e22', name: 'Copper Shovel', textureSlot: 63, hardness: 0, isItem: true, toolSpeed: 5.0, toolType: 'shovel', toolTier: 2, category: 'tools' },
 
   [BlockType.WOOD_SWORD]: { id: BlockType.WOOD_SWORD, color: '#8d6e63', name: 'Wood Sword', textureSlot: 105, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
   [BlockType.WOOD_HOE]: { id: BlockType.WOOD_HOE, color: '#8d6e63', name: 'Wood Hoe', textureSlot: 106, hardness: 0, isItem: true, isFuel: true, fuelValue: 10000, category: 'tools' },
@@ -285,7 +285,7 @@ export const BLOCKS: Record<BlockType, BlockDef> = {
   [BlockType.MEADOW_GRASS]: { id: BlockType.MEADOW_GRASS, color: '#78aa50', name: 'Meadow Grass', textureSlot: 176, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
   [BlockType.SAVANNA_GRASS]: { id: BlockType.SAVANNA_GRASS, color: '#b0a83c', name: 'Savanna Grass', textureSlot: 178, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
   [BlockType.JUNGLE_GRASS]: { id: BlockType.JUNGLE_GRASS, color: '#3c8c32', name: 'Jungle Grass', textureSlot: 180, hardness: 0.6, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
-  [BlockType.PODZOL]: { id: BlockType.PODZOL, color: '#6e5037', name: 'Podzol', textureSlot: 182, hardness: 0.5, preferredTool: 'shovel', category: 'natural' },
+  [BlockType.PODZOL]: { id: BlockType.PODZOL, color: '#6e5037', name: 'Podzol', textureSlot: 182, hardness: 0.5, preferredTool: 'shovel', drops: [{ type: BlockType.DIRT, chance: 1, min: 1, max: 1 }], category: 'natural' },
 
   // Mountain stone variants
   [BlockType.ANDESITE]: { id: BlockType.ANDESITE, color: '#8c8a86', name: 'Andesite', textureSlot: 184, hardness: 1.5, preferredTool: 'pickaxe', minHarvestTier: 1, drops: [{ type: BlockType.ANDESITE, chance: 1, min: 1, max: 1 }], smeltsInto: BlockType.STONE, category: 'building' },

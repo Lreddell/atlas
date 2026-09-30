@@ -44,6 +44,7 @@ import { aimRay, viewRig, detachedCamera, framingDetachedShot } from '../../syst
 import { motionRequests, motionStatus } from '../../systems/player/playerMotion';
 import { playerAttack, playerMining, playerInteraction, attackBusy, beginAttack, advanceAttack, cancelAttack, createAttackState, inAttackArc } from '../../systems/combat/playerAttack';
 import { MAGNET_SLAM_HIT_ZONE } from '../../systems/boss/MagneticWardenEncounter';
+import { rollDrops } from '../../systems/world/blockDrops';
 
 // Scratch vectors for the aim origin/direction (used every frame)
 const _camPos = new THREE.Vector3();
@@ -478,7 +479,7 @@ export const InteractionController = ({
                         && canPlayerEdit(bx, by, bz, { kind: 'place', currentBlock: targetType, placedBlock: tilled.type })) {
                         if (clearsAbove) {
                             if (gameMode === 'survival') {
-                                BLOCKS[aboveType].drops?.forEach((d) => { if (Math.random() < d.chance) spawnDrop(d.type, bx, by + 1, bz); });
+                                for (const drop of rollDrops(BLOCKS[aboveType].drops)) spawnDrop(drop, bx, by + 1, bz);
                             }
                             worldManager.setBlock(bx, by + 1, bz, BlockType.AIR);
                         }
@@ -1184,7 +1185,7 @@ export const InteractionController = ({
                                     for (let i = 0; i < drop.count; i++) spawnDrop(drop.type, bx, by, bz);
                                 }
                             } else if (targetDef.drops) {
-                                targetDef.drops.forEach(d => { if(Math.random() < d.chance) spawnDrop(d.type, bx, by, bz); });
+                                for (const drop of rollDrops(targetDef.drops)) spawnDrop(drop, bx, by, bz);
                             } else {
                                 spawnDrop(targetType === BlockType.STONE ? BlockType.COBBLESTONE : targetType, bx, by, bz);
                             }

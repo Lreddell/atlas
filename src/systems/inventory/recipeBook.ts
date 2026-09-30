@@ -8,7 +8,7 @@
 // and grows as the player gathers.
 
 import type { BlockType, CreativeTab, ItemStack } from '../../types';
-import type { Recipe } from '../../recipes';
+import { canonicalIngredient, ingredientGroup, mixesIngredients, type Recipe } from '../../recipes';
 
 export interface RecipeEntry {
     /** What the recipes make. */
@@ -64,11 +64,57 @@ export function countItems(stacks: readonly (ItemStack | null)[]): Map<BlockType
     return counts;
 }
 
-/** How many times the recipe can be made from these items. */
-export function craftsAvailable(recipe: Recipe, have: ReadonlyMap<BlockType, number>): number {
+/**
+ * How many times the recipe can be made from these items. Where the recipe
+ * takes mixed materials (any planks for a table, cobblestone or cobbled
+ * deepslate for a furnace), a group's items count together unless `exact`.
+ */
+export function craftsAvailable(recipe: Recipe, have: ReadonlyMap<BlockType, number>, exact = false): number {
+    const mixing = !exact && mixesIngredients(recipe);
+    const need = new Map<BlockType, number>();
+    for (const cell of recipe.pattern) {
+        if (cell === null) continue;
+        const key = mixing ? canonicalIngredient(cell) : cell;
+        need.set(key, (need.get(key) ?? 0) + 1);
+    }
     let crafts = Infinity;
-    for (const [type, need] of ingredientCounts(recipe)) crafts = Math.min(crafts, Math.floor((have.get(type) ?? 0) / need));
+    for (const [key, count] of need) {
+        let held = 0;
+        if (mixing) for (const member of ingredientGroup(recipe, key)) held += have.get(member) ?? 0;
+        else held = have.get(key) ?? 0;
+        crafts = Math.min(crafts, Math.floor(held / count));
+    }
     return crafts === Infinity ? 0 : crafts;
+}
+
+/**
+ * Which item goes in each cell of a laid-out recipe to make it `crafts` times,
+ * or null if the items can't: a cell holds one kind of item, so where the
+ * recipe mixes materials each cell takes its own kind if enough is left, else
+ * whichever of its group is most plentiful.
+ */
+export function assignCells(
+    recipe: Recipe,
+    layout: readonly (BlockType | null)[],
+    have: ReadonlyMap<BlockType, number>,
+    crafts: number,
+): (BlockType | null)[] | null {
+    const left = new Map(have);
+    const cells: (BlockType | null)[] = [];
+    for (const cell of layout) {
+        if (cell === null) { cells.push(null); continue; }
+        let pick: BlockType | null = (left.get(cell) ?? 0) >= crafts ? cell : null;
+        if (pick === null) {
+            for (const member of ingredientGroup(recipe, cell)) {
+                const count = left.get(member) ?? 0;
+                if (count >= crafts && (pick === null || count > (left.get(pick) ?? 0))) pick = member;
+            }
+        }
+        if (pick === null) return null;
+        left.set(pick, (left.get(pick) ?? 0) - crafts);
+        cells.push(pick);
+    }
+    return cells;
 }
 
 /** Recipes grouped by what they make, in the order the results first appear. */
@@ -101,6 +147,13 @@ export interface EntryStatus {
 
 /** Which variant of an entry to use here, and whether it can be made. */
 export function entryStatus(entry: RecipeEntry, have: ReadonlyMap<BlockType, number>, gridWidth: number): EntryStatus {
+    // A variant the items make without mixing first (so the book shows the
+    // wood the player actually has), then any the items make mixed.
+    for (const recipe of entry.variants) {
+        if (fitsGrid(recipe, gridWidth) && craftsAvailable(recipe, have, true) > 0) {
+            return { recipe, crafts: craftsAvailable(recipe, have), needsTable: false, haveIngredients: true };
+        }
+    }
     let fallback: EntryStatus | null = null;
     for (const recipe of entry.variants) {
         const needsTable = !fitsGrid(recipe, gridWidth);

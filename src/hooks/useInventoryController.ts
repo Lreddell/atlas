@@ -14,7 +14,7 @@ import {
 import { BLOCKS } from '../data/blocks';
 import { worldManager } from '../systems/WorldManager';
 import { checkRecipe, type Recipe } from '../recipes';
-import { countItems, craftsAvailable, ingredientCounts, layOut } from '../systems/inventory/recipeBook';
+import { assignCells, countItems, craftsAvailable, ingredientCounts, layOut } from '../systems/inventory/recipeBook';
 import * as THREE from 'three';
 import React from 'react';
 import type { ChestState, FurnaceState } from '../systems/world/worldTypes';
@@ -778,12 +778,17 @@ export const useInventoryController = ({ gameMode, setDrops, playerPosRef, camer
             if (item && addToInventoryList(next, cloneItemStack(item))) return false;
         }
         const perCell = Math.min(...[...ingredientCounts(recipe).keys()].map((ingredient) => getItemStackLimit(ingredient)));
-        const crafts = Math.min(craftsAvailable(recipe, countItems(next)), all ? perCell : 1);
-        if (crafts <= 0) return false;
+        const held = countItems(next);
+        // Which item each cell takes (mixed planks or stone where the recipe
+        // allows), at the most crafts the items can fill cell by cell.
+        let crafts = Math.min(craftsAvailable(recipe, held), all ? perCell : 1);
+        let cells: (BlockType | null)[] | null = null;
+        while (crafts > 0 && !(cells = assignCells(recipe, layout, held, crafts))) crafts--;
+        if (!cells || crafts <= 0) return false;
 
         // Take from the backpack before the hotbar.
         const order = [...Array(INVENTORY_SIZE).keys()].slice(9).concat([...Array(9).keys()]);
-        const grid = layout.map((ingredient): ItemStack | null => {
+        const grid = cells.map((ingredient): ItemStack | null => {
             if (ingredient === null) return null;
             let need = crafts;
             for (const i of order) {

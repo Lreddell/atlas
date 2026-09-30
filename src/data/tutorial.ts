@@ -37,7 +37,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             'Create world: Singleplayer -> Create New World, then pick Survival, Creative, or Spectator.',
             'Hold left click on a tree for logs. In your inventory (E), one log makes four planks, and two planks stacked make four sticks.',
             'The recipe book (the book beside the crafting grid) lists every recipe you have found an ingredient for. Click one to lay it into the grid; shift-click for as many as you can make.',
-            'Two planks above two sticks make a wooden pickaxe, right in the inventory grid. Four planks make a Crafting Table for the 3x3 recipes.',
+            'Four planks make a Crafting Table for the 3x3 recipes. At the table, three planks over two sticks make a wooden pickaxe.',
             'Mine stone for cobblestone: stone tools, and a Furnace (eight cobblestone in a ring) to smelt ore. Coal or charcoal on a stick makes torches.',
             "Food: apples fall from oak leaves, bananas from jungle leaves, and glowing Lumen Berries from cave glow lichen. One of each, in a row at a Crafting Table, makes a Forager's Bowl.",
             'Farm for steady food: a hoe (right-click) tills grass or dirt into farmland, and wheat seeds from tall grass plant on it. Water within four blocks keeps the soil dark and moist, and the wheat grows much faster. Harvest it golden: three wheat in a row make bread.',
@@ -142,7 +142,7 @@ export const TUTORIAL_SECTIONS: TutorialSection[] = [
             '/locate biome <name> and /locate vault',
             '/boss <spawn|kill> and /magfields <on|off|toggle>: encounter testing',
             '/playsound <id>, /sound volume <value>, /music skip',
-            'Tip: use Options and Panorama Settings to tune visuals and menu presentation.'
+            'Tip: Options holds Video Settings, and Options > Menu Background the title screen panorama.'
         ]
     }
 ];
