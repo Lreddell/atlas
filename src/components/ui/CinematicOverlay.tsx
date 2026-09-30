@@ -23,17 +23,19 @@ export const CinematicOverlay: React.FC = () => {
     }, []);
 
     if (fade <= 0.001 && flash <= 0.001) return null;
+    // Over the world and the HUD, under the menus (z-50): a pause menu opened
+    // mid-cinematic shows on top of the fade instead of behind it.
     return (
         <>
             {fade > 0.001 && (
                 <div
-                    className="pointer-events-none absolute inset-0 z-[120] bg-black"
+                    className="pointer-events-none absolute inset-0 z-[48] bg-black"
                     style={{ opacity: Math.max(0, Math.min(1, fade)) }}
                 />
             )}
             {flash > 0.001 && (
                 <div
-                    className="pointer-events-none absolute inset-0 z-[121] bg-white"
+                    className="pointer-events-none absolute inset-0 z-[49] bg-white"
                     style={{ opacity: Math.max(0, Math.min(1, flash)) }}
                 />
             )}

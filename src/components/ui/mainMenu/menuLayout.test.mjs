@@ -15,7 +15,7 @@ test('the title screen offers only what works: no "Coming soon" buttons', () => 
 
 test('the menu background lives in Options, and Back returns there', () => {
     const pause = read('src/components/ui/PauseMenu.tsx');
-    assert.match(pause, /isMainMenu && onOpenPanorama && <MenuButton label="Panorama Settings\.\.\."/);
+    assert.match(pause, /isMainMenu && onOpenPanorama && <MenuButton label="Menu Background\.\.\."/);
     const app = read('src/App.tsx');
     assert.match(app, /onOpenPanorama=\{\(\) => \{ setMenuInitialView\('settings'\); setAppState\('menu'\); \}\}/);
     assert.match(app, /onPanoramaDone=\{menuInitialView === 'settings' \? \(\) => \{ setMenuInitialView\('main'\); setAppState\('options'\); \} : undefined\}/);

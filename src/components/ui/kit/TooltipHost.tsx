@@ -73,10 +73,12 @@ export const TooltipHost: React.FC = () => {
     const left = Math.max(EDGE, Math.min(tip.x + OFFSET_X, window.innerWidth - MAX_WIDTH - EDGE));
     const nearBottom = tip.y + OFFSET_Y + 48 > window.innerHeight;
     const top = nearBottom ? tip.y - OFFSET_Y - 32 : tip.y + OFFSET_Y;
+    // Over every layer (the title screen is z-200, modals up to z-700): a hint
+    // belongs to whatever the pointer is on, so it must never land behind it.
     return (
         <div
             role="tooltip"
-            className="atlas-tooltip pointer-events-none fixed z-[90] text-read text-parchment-100"
+            className="atlas-tooltip pointer-events-none fixed z-[1000] text-read text-parchment-100"
             style={{ left, top, maxWidth: MAX_WIDTH }}
         >
             {tip.text}

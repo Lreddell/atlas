@@ -147,8 +147,11 @@ export const DebugScreen: React.FC<DebugScreenProps> = ({
         return () => cancelAnimationFrame(rafId);
     }, [dropsCount, renderDistance, fpsRef, cameraRef, playerPosRef]);
 
+    // In the HUD's band (z-40), just over it: like Minecraft's, the debug text is
+    // part of the HUD, so the pause menu, the inventory and the death and sleep
+    // screens (z-50 and up) cover it, their dimming and blur included.
     return (
-        <div className="absolute inset-0 pointer-events-none z-[100] text-white font-mono text-mono-2 leading-[20px] drop-shadow-[2px_2px_0_rgba(7,9,23,0.9)] select-none p-1 flex justify-between">
+        <div className="absolute inset-0 pointer-events-none z-[45] text-white font-mono text-mono-2 leading-[20px] drop-shadow-[2px_2px_0_rgba(7,9,23,0.9)] select-none p-1 flex justify-between">
             <div ref={leftColRef} className="text-left items-start flex flex-col min-w-[300px]"></div>
             <div ref={rightColRef} className="text-right items-end flex flex-col min-w-[300px]"></div>
         </div>

@@ -222,7 +222,7 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     <MenuButton label="Controls..." onClick={() => setScreen('controls')} width="w-full" />
                     <MenuButton label="Tutorial..." onClick={() => setScreen('tutorial')} width="w-full" />
                 </div>
-                {isMainMenu && onOpenPanorama && <MenuButton label="Panorama Settings..." onClick={onOpenPanorama} width="w-full" />}
+                {isMainMenu && onOpenPanorama && <MenuButton label="Menu Background..." onClick={onOpenPanorama} width="w-full" />}
                 {!isMainMenu && <MenuButton label="Save and Quit to Title" onClick={onQuitToTitle} width="w-full" />}
                 {isMainMenu && <MenuButton label="Done" onClick={onResume} width="w-full" />}
             </div>
@@ -313,9 +313,9 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
                     onClick={() => graphicsSettings.setOption('maxPixelRatio', nextInCycle(PIXEL_RATIO_CYCLE, gfx.maxPixelRatio))}
                     width="w-80"
                 />
-                <MCToggle label="Mipmap Levels" value={gfx.mipmaps} width="w-80"
+                <MCToggle label="Mipmaps" value={gfx.mipmaps} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('mipmaps', on)} />
-                <MCToggle label="Fade In" value={gfx.chunkFade} width="w-80"
+                <MCToggle label="Chunk Fade-In" value={gfx.chunkFade} width="w-80"
                     onChange={(on) => graphicsSettings.setOption('chunkFade', on)} />
                 {/* Scene only: the 3D world blurs, the HUD never does. Enabled by Ultra. */}
                 <MCToggle label="Motion Blur" value={gfx.motionBlur} width="w-80"
@@ -472,9 +472,6 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         return (
             <div className="flex w-[900px] max-w-[calc(100vw-4rem)] flex-col items-center gap-2">
                 <h1 className="atlas-title mb-2">Tutorial</h1>
-                <p className="atlas-hint mb-1 w-full px-1 text-center">
-                    Tutorial wiki. You can always return here through Options &gt; Tutorial.
-                </p>
 
                 <div className="mb-2 grid w-full grid-cols-3 gap-2" role="tablist" aria-label="Tutorial sections">
                     {TUTORIAL_SECTIONS.map((section) => (

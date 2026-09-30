@@ -2,16 +2,23 @@ export const MENU_PANORAMA_PATH_KEY = 'atlas.menu.panoramaPath';
 export const MENU_PANORAMA_LIBRARY_KEY = 'atlas.menu.panoramaLibrary';
 
 export const BUILT_IN_MENU_PANORAMAS = [
+    // WebP: the same pictures as the captures' PNGs at a tenth of the download.
+    {
+        id: 'default:riverlands-1.3.0',
+        name: 'Riverlands',
+        url: './assets/panoramas/riverlands-1.3.0.webp',
+        description: 'Alpha 1.3.0 panorama',
+    },
     {
         id: 'default:tundra-1.3.0',
         name: 'Tundra',
-        url: './assets/panoramas/tundra-1.3.0.png',
+        url: './assets/panoramas/tundra-1.3.0.webp',
         description: 'Alpha 1.3.0 panorama',
     },
     {
         id: 'default:alpha-1.0.1',
         name: 'Classic Atlas',
-        url: './assets/panoramas/alpha-1.0.1.png',
+        url: './assets/panoramas/alpha-1.0.1.webp',
         description: 'Original Alpha 1.0.1 panorama',
     },
 ] as const;

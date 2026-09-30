@@ -310,7 +310,7 @@ const SPLASHES = [
     'Timber! Leaves fall now!',
     'Listen for the heartbeat!',
     'Now loading twice as fast!',
-    'Tundra on the title screen!',
+    'Riverlands on the title screen!',
     'Ink, parchment and brass!',
 ];
 
