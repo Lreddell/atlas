@@ -10,7 +10,7 @@ import { CombatFeedback, CombatOverlay } from './CombatFeedback';
 import { ResonantObjectiveHUD } from './ResonantObjectiveHUD';
 import { PixelArt } from './kit/PixelArt';
 import { ARMOR_PLATE, BREATH_BUBBLE, LIFE_CRYSTAL, PROVISIONS, type VitalIcon } from './kit/vitalIcons';
-import { useHudScale } from './hudScale';
+import { HUD_SCALE } from './hudScale';
 
 interface HUDProps {
     health: number;
@@ -28,7 +28,7 @@ interface HUDProps {
 
 // The bottom-centre HUD (vitals, hotbar, item name and the readouts above it)
 // is laid out in art pixels, drawn `scale` screen pixels each (hudScale.ts), so
-// it keeps one set of proportions at every size.
+// every part keeps its proportions.
 const HudScaleContext = React.createContext(2);
 
 // One vital pip: the icon's empty form, with the full form over it, clipped to
@@ -100,7 +100,7 @@ const ArmorReadout: React.FC<{ equipment: Equipment }> = ({ equipment }) => {
 
 export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath, inventory, selectedSlot, gameMode, lastDamageTime = 0, equipment, magnetic = false }) => {
     // Screen pixels per art pixel for the bottom-centre HUD; u(n) is n art pixels.
-    const scale = useHudScale();
+    const scale = HUD_SCALE;
     const u = (artPixels: number) => artPixels * scale;
     const [showItemName, setShowItemName] = useState(true);
     const hotbarRef = useRef<HTMLDivElement>(null);
@@ -246,8 +246,8 @@ export const HUD: React.FC<HUDProps> = ({ health, hunger, saturation = 0, breath
             {gameMode !== 'spectator' && <CombatOverlay />}
 
             {/* Hotbar: nine 24-pixel slots, 2 apart, in a 3-pixel padding and a
-                1-pixel border (240 art pixels across), floating above the
-                bottom edge. 720px across at 1920x1080, Minecraft's size. */}
+                1-pixel border (240 art pixels, 480px across), floating above
+                the bottom edge. */}
             {gameMode !== 'spectator' && (
                 <div className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center z-40" style={{ bottom: u(8) }}>
                     <div

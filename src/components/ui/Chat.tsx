@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { useHudScale } from './hudScale';
+import { HUD_SCALE } from './hudScale';
 
 export interface ChatMessage {
     id: number;
@@ -52,7 +52,6 @@ export const Chat: React.FC<ChatProps> = ({
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    const hudScale = useHudScale();
 
     useEffect(() => {
         if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -78,7 +77,7 @@ export const Chat: React.FC<ChatProps> = ({
     return (
         <div
             className={`absolute bottom-2 left-2 flex flex-col gap-1 pointer-events-none ${interactionsDisabled ? 'z-40' : 'z-[60]'}`}
-            style={{ width: `clamp(280px, calc(50vw - ${120 * hudScale + 16}px), 560px)` }}
+            style={{ width: `clamp(280px, calc(50vw - ${120 * HUD_SCALE + 16}px), 560px)` }}
             onClick={stopPropagation}
             onMouseDown={stopPropagation}
             onMouseUp={stopPropagation}

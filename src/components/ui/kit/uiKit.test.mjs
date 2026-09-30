@@ -73,25 +73,17 @@ test('vitals keep ten pips, half pips and their drain directions', () => {
     assert.doesNotMatch(hud, /HEART_D|DRUM_MEAT_D|rounded-full/);
 });
 
-// The hotbar was 480px wide at the original scale (2). Its scale follows the
-// window like Minecraft's automatic GUI scale, as a whole number, so pixel art
-// stays on whole pixels: 720px at 1920x1080, where Minecraft's is 728px.
-test('the HUD scale is a whole number that follows the window', async () => {
-    const { hudScaleFor } = await loadTs(`export { hudScaleFor } from './src/components/ui/hudScale';`);
-    const hotbarWidth = (width, height) => 240 * hudScaleFor(width, height);
-    assert.equal(hotbarWidth(1920, 1080), 720);
-    // A browser window on the same screen, under its tabs and address bar.
-    assert.equal(hotbarWidth(1920, 955), 720);
-    assert.equal(hotbarWidth(1680, 1050), 720);
-    assert.equal(hotbarWidth(1366, 768), 480);
-    assert.equal(hotbarWidth(1280, 720), 480);
-    assert.equal(hotbarWidth(2560, 1440), 960);
-    // Never below the original size, however small the window.
-    assert.equal(hudScaleFor(800, 600), 2);
-    for (const [w, h] of [[1920, 1080], [1600, 900], [3840, 2160], [1024, 768]]) {
-        assert.ok(Number.isInteger(hudScaleFor(w, h)), `${w}x${h}`);
-        // The hotbar always leaves over half the screen's width free.
-        assert.ok(hotbarWidth(w, h) < w / 2, `${w}x${h}`);
+// The hotbar keeps its original size at every window size: 480px across, with
+// 48px slots holding 32px items, the hearts and loaves drawn to match.
+test('the HUD is drawn at its original size', async () => {
+    const { HUD_SCALE } = await loadTs(`export { HUD_SCALE } from './src/components/ui/hudScale';`);
+    assert.equal(HUD_SCALE, 2);
+    assert.equal(240 * HUD_SCALE, 480, 'hotbar width');
+    assert.equal(24 * HUD_SCALE, 48, 'slot size');
+    assert.equal(16 * HUD_SCALE, 32, 'item size');
+    // Nothing sizes the HUD from the window.
+    for (const file of ['src/components/ui/HUD.tsx', 'src/components/ui/Chat.tsx', 'src/App.tsx']) {
+        assert.doesNotMatch(read(file), /useHudScale|hudScaleFor/, file);
     }
 });
 
