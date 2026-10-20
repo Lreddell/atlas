@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "atlas",
+  "version": "${version}",
+  "name": "Atlas: Light & Polarity",
+  "icon": "assets/atlas/icon.png",
+  "description": "Atlas adventures in Minecraft: Magnetic Fields, the Magnetic Warden, Resonant Vaults, Bell Titan, polarity traversal, free cameras, combat and the Atlas soundtrack.",
+  "authors": ["Logan Reddell"],
+  "environment": "*",
+  "entrypoints": { "main": ["dev.atlas.Atlas"], "client": ["dev.atlas.client.AtlasClient"] },
+  "mixins": ["atlas.mixins.json", {"config": "atlas.client.mixins.json", "environment": "client"}],
+  "depends": { "fabricloader": ">=0.16.14", "minecraft": "1.21.1", "java": ">=21", "fabric-api": "*" }
+}

@@ -1,0 +1,40 @@
+plugins { id 'fabric-loom' version '1.8.13'; id 'maven-publish' }
+version = project.mod_version
+group = project.maven_group
+base { archivesName = project.archives_base_name }
+repositories { mavenCentral() }
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    include "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation 'org.mozilla:rhino:1.7.15'
+    include 'org.mozilla:rhino:1.7.15'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+loom {
+    splitEnvironmentSourceSets()
+    mods { atlas { sourceSet sourceSets.main; sourceSet sourceSets.client } }
+    runs {
+        server { runDir 'run/server'; if (project.hasProperty('smoke')) { vmArgs '-Datlas.smoke=true', '-Datlas.smoke.exit=true'; programArgs 'nogui'; if (project.hasProperty('reload')) vmArgs '-Datlas.smoke.reload=true' } }
+        client { runDir 'run/client'; programArgs '--width', '1280', '--height', '720'; if (project.hasProperty('clientqa')) { vmArgs '-Datlas.clientqa=true' } }
+    }
+}
+sourceSets.main.resources.srcDir 'build/generated/atlas'
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}
+tasks.withType(JavaCompile).configureEach { options.release = 21; options.encoding = 'UTF-8' }
+java { withSourcesJar(); sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
+test { useJUnitPlatform() }
+jar { from('../../LICENSE') { rename { 'ATLAS-LICENSE' } } }
+tasks.register('prepareAtlasAssets', Exec) {
+    commandLine 'node', 'scripts/prepare-atlas.mjs'
+    inputs.files(fileTree('../../src'), fileTree('../../public/assets/rvx'), fileTree('../../public/assets/panoramas'), fileTree('scripts'))
+    outputs.dir 'build/generated/atlas'
+}
+processResources.dependsOn prepareAtlasAssets
+sourcesJar { dependsOn prepareAtlasAssets; exclude 'assets/atlas/sounds/**' }

@@ -1,0 +1,1 @@
+{"name":"atlas-fabric-assets","private":true,"type":"module","scripts":{"assets":"node scripts/prepare-atlas.mjs","audit":"node scripts/audit.mjs"},"devDependencies":{"@babel/core":"^7.28.5","@babel/preset-env":"^7.28.5","@napi-rs/canvas":"0.1.80","esbuild":"0.25.12","three":"^0.160.0"}}
