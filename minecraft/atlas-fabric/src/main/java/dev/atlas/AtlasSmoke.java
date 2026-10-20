@@ -16,6 +16,9 @@ public final class AtlasSmoke {
   private static Vaults.Site vault;
   private static final JsonArray checks = new JsonArray();
   private static boolean running = false;
+  private static AtlasBoss resetProbe;
+  private static int resetTicks;
+  private static boolean forcedBefore;
 
   public static void init() {
     ServerLifecycleEvents.SERVER_STARTED.register(
@@ -30,7 +33,26 @@ public final class AtlasSmoke {
               var p = QUEUE.remove();
               world.getChunk(p.getX() >> 4, p.getZ() >> 4);
             }
-            if (QUEUE.isEmpty()) finish();
+            if (QUEUE.isEmpty()) {
+              if (resetProbe == null) finish();
+              else if (++resetTicks >= 310) {
+                check(
+                    "abandoned encounter removes boss after intro and 10s retreat",
+                    resetProbe.isRemoved());
+                for (int i = 0; i < 4; i++) {
+                  var s = world.getBlockState(resetProbe.tower(i));
+                  check(
+                      "reset disables crystal " + i,
+                      !s.isOf(Content.block("magnetic_shield_crystal"))
+                          || !s.get(AtlasBlock.ACTIVE));
+                }
+                world.setChunkForced(field.x() >> 4, field.z() >> 4, forcedBefore);
+                write(true);
+                running = false;
+                Atlas.LOGGER.info("ATLAS_SMOKE_SUCCESS: {} live checks", checks.size());
+                if (Boolean.getBoolean("atlas.smoke.exit")) server.stop(false);
+              }
+            }
           } catch (Throwable e) {
             Atlas.LOGGER.error("ATLAS_SMOKE_FAILURE", e);
             var failure = new JsonObject();
@@ -48,6 +70,8 @@ public final class AtlasSmoke {
     world = w;
     running = true;
     checks.asList().clear();
+    resetProbe = null;
+    resetTicks = 0;
     field = FieldMath.nearest(0, 0, w.getSeed());
     for (int cx = (field.x() - 80) >> 4; cx <= (field.x() + 80) >> 4; cx++)
       for (int cz = (field.z() - 80) >> 4; cz <= (field.z() + 80) >> 4; cz++)
@@ -71,10 +95,12 @@ public final class AtlasSmoke {
   }
 
   private static void finish() {
-    check("67 custom items registered", Content.ITEMS.size() == 67);
+    check("67 source items plus induction relay registered", Content.ITEMS.size() == 68);
     for (var d : Content.DEFINITIONS.values()) {
       var id = net.minecraft.util.Identifier.of(d.get("mc").getAsString());
-      check("content mapping " + id, Registries.ITEM.containsId(id));
+      check(
+          "content mapping " + id,
+          Registries.ITEM.containsId(id) || Registries.BLOCK.containsId(id));
     }
     check(
         "all 23 music events registered",
@@ -143,10 +169,36 @@ public final class AtlasSmoke {
     check("progress serializes", n.getCompound("puzzles").getInt("smoke_roundtrip") == 7);
     state.puzzles.remove("smoke_roundtrip");
     state.markDirty();
-    write(true);
-    running = false;
-    Atlas.LOGGER.info("ATLAS_SMOKE_SUCCESS: {} live checks", checks.size());
-    if (Boolean.getBoolean("atlas.smoke.exit")) world.getServer().stop(false);
+    var relayAt = new BlockPos(field.x() + 60, 205, field.z() + 60);
+    var previous = world.getBlockState(relayAt);
+    var previousPower = world.getBlockState(relayAt.east());
+    world.setBlockState(relayAt, Content.block("induction_relay").getDefaultState());
+    check(
+        "unpowered induction relay has no field",
+        PlayerMechanics.magnet(world.getBlockState(relayAt)) == 0);
+    world.setBlockState(
+        relayAt.east(), net.minecraft.block.Blocks.REDSTONE_BLOCK.getDefaultState());
+    check(
+        "redstone powers positive relay",
+        PlayerMechanics.magnet(world.getBlockState(relayAt)) == 1);
+    world.setBlockState(relayAt, world.getBlockState(relayAt).with(AtlasBlock.TONE, 1));
+    check(
+        "negative relay reverses shared field",
+        PlayerMechanics.magnet(world.getBlockState(relayAt)) == -1);
+    world.setBlockState(relayAt.east(), previousPower);
+    check(
+        "relay loses field when power removed",
+        PlayerMechanics.magnet(world.getBlockState(relayAt)) == 0);
+    world.setBlockState(relayAt, previous);
+    forcedBefore =
+        world
+            .getForcedChunks()
+            .contains(net.minecraft.util.math.ChunkPos.toLong(field.x() >> 4, field.z() >> 4));
+    world.setChunkForced(field.x() >> 4, field.z() >> 4, true);
+    resetProbe = AtlasEntities.WARDEN.create(world);
+    resetProbe.initializeFight(new BlockPos(field.x(), 132, field.z()), "smoke-reset");
+    resetProbe.refreshPositionAndAngles(field.x() + .5, 136, field.z() + .5, 0, 0);
+    world.spawnEntity(resetProbe);
   }
 
   private static void write(boolean success) {

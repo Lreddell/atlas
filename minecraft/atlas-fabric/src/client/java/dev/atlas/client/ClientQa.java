@@ -91,6 +91,8 @@ public final class ClientQa {
               p.getServerWorld().spawnEntity(b);
             });
       } else if (stage == 1 && ticks > 240) {
+        if (CameraRig.mode != CameraRig.Mode.FIRST)
+          throw new IllegalStateException("Intro did not restore first person");
         CameraRig.detached = 2;
         CameraRig.detachedPosition = new Vec3d(field.x() + 68, 215, field.z() + 68);
         CameraRig.yaw = 135;
@@ -324,6 +326,7 @@ public final class ClientQa {
           server(
               c,
               p -> {
+                p.getServerWorld().setWeather(0, 6000, false, false);
                 String command =
                     "fillbiome "
                         + (p.getBlockX() - 8)
@@ -340,7 +343,7 @@ public final class ClientQa {
               });
           c.options.hudHidden = true;
           CameraRig.detached = 2;
-          CameraRig.detachedPosition = c.player.getEyePos();
+          CameraRig.detachedPosition = c.player.getEyePos().add(-8, 6, -8);
           CameraRig.yaw = 0;
           CameraRig.pitch = -32;
           stage = 85;
@@ -348,7 +351,17 @@ public final class ClientQa {
         }
       } else if (stage == 85 && ticks > 90) {
         if (AtlasSky.renderedRibbons == 0)
-          throw new IllegalStateException("Aurora rendering path did not execute");
+          throw new IllegalStateException(
+              "Aurora rendering path did not execute: biome="
+                  + c.world.getBiome(c.player.getBlockPos()).getKey()
+                  + ", time="
+                  + c.world.getTimeOfDay()
+                  + ", rain="
+                  + c.world.getRainGradient(1)
+                  + ", night="
+                  + c.world.isNight()
+                  + ", blood="
+                  + AtlasClient.bloodMoon);
         capture(c, "08-aurora.png");
         server(
             c,
@@ -368,15 +381,20 @@ public final class ClientQa {
         capture(c, "09-blood-moon.png");
         c.options.hudHidden = false;
         CameraRig.detached = 0;
-        c.setScreen(new AtlasSettingsScreen(null));
+        c.setScreen(new FieldJournalScreen());
         stage = 9;
         ticks = 0;
       } else if (stage == 9 && ticks > 40) {
+        capture(c, "10-field-journal.png");
+        c.setScreen(new AtlasSettingsScreen(null));
+        stage = 91;
+        ticks = 0;
+      } else if (stage == 91 && ticks > 40) {
         capture(c, "07-settings.png");
         Files.createDirectories(Path.of("logs"));
         Files.writeString(
             Path.of("logs/atlas-clientqa.json"),
-            "{\"success\":true,\"screenshots\":9,\"cameraOrbit\":true,\"eightWaySprint\":true,\"dodgePacket\":true,\"harmonicPuzzle\":true,\"timedMelee\":true,\"authoredLoopPlaying\":true,\"aurora\":true,\"bloodMoon\":true,\"note\":\"Automated"
+            "{\"success\":true,\"screenshots\":10,\"firstPersonRestored\":true,\"cameraOrbit\":true,\"eightWaySprint\":true,\"dodgePacket\":true,\"harmonicPuzzle\":true,\"timedMelee\":true,\"authoredLoopPlaying\":true,\"aurora\":true,\"bloodMoon\":true,\"fieldJournal\":true,\"note\":\"Automated"
                 + " client tour; manual game-feel assessment remains separate\"}");
         stage = 10;
         ticks = 0;

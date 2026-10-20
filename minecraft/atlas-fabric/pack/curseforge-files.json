@@ -1,0 +1,50 @@
+[
+  {
+    "projectID": 360438,
+    "fileID": 8330364,
+    "filename": "lithium-fabric-0.15.4+mc1.21.1.jar",
+    "hashes": [
+      {
+        "type": 1,
+        "value": "7d82a004403b7780d4443d8e40361a55cfd0ae63"
+      },
+      {
+        "type": 2,
+        "value": "6fd6783640f42130f041b50cca2d3be6"
+      }
+    ],
+    "url": "https://edge.forgecdn.net/files/8330/364/lithium-fabric-0.15.4%2bmc1.21.1.jar"
+  },
+  {
+    "projectID": 459857,
+    "fileID": 7524152,
+    "filename": "ferritecore-7.0.3-fabric.jar",
+    "hashes": [
+      {
+        "type": 1,
+        "value": "a8a6a34fcda177da2828cedef44e0e538cf78aad"
+      },
+      {
+        "type": 2,
+        "value": "b8513c8c3eef01ea1117ed8d8cba060d"
+      }
+    ],
+    "url": "https://edge.forgecdn.net/files/7524/152/ferritecore-7.0.3-fabric.jar"
+  },
+  {
+    "projectID": 580555,
+    "fileID": 8081407,
+    "filename": "emi-1.1.24+1.21.1+fabric.jar",
+    "hashes": [
+      {
+        "type": 1,
+        "value": "6abcf2a10a629e401bff73a8fd1ad328a72b1482"
+      },
+      {
+        "type": 2,
+        "value": "b0cd594a9eddb552494f147fc1dff596"
+      }
+    ],
+    "url": "https://edge.forgecdn.net/files/8081/407/emi-1.1.24%2b1.21.1%2bfabric.jar"
+  }
+]

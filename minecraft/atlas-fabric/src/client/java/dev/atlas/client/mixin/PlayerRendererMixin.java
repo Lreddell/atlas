@@ -26,7 +26,10 @@ public abstract class PlayerRendererMixin {
       VertexConsumerProvider out,
       int light,
       CallbackInfo ci) {
-    if (CameraRig.cinematic() && p == MinecraftClient.getInstance().player) ci.cancel();
+    if (p == MinecraftClient.getInstance().player
+        && (CameraRig.cinematic()
+            || CameraRig.detached != 0
+                && CameraRig.detachedPosition.squaredDistanceTo(p.getEyePos()) < 1)) ci.cancel();
   }
 
   @Inject(

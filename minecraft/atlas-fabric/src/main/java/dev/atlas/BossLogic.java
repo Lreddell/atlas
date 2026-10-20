@@ -30,12 +30,20 @@ public final class BossLogic {
           });
 
   public static JsonObject step(String kind, JsonObject state, JsonObject input) {
+    return run("step", kind, state, input);
+  }
+
+  public static JsonObject play(String kind, JsonObject state, JsonObject input) {
+    return run("play", kind, state, input);
+  }
+
+  private static JsonObject run(String method, String kind, JsonObject state, JsonObject input) {
     try (var context = Context.enter()) {
       context.setLanguageVersion(Context.VERSION_ES6);
       context.setOptimizationLevel(-1);
       var scope = SCOPES.get();
       var api = (Scriptable) ScriptableObject.getProperty(scope, "AtlasCore");
-      var fn = (Function) ScriptableObject.getProperty(api, "step");
+      var fn = (Function) ScriptableObject.getProperty(api, method);
       Object value =
           fn.call(
               context,

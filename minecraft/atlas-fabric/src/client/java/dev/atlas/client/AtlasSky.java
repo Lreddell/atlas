@@ -1,6 +1,7 @@
 package dev.atlas.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import dev.atlas.SkyTime;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.*;
@@ -15,7 +16,8 @@ public final class AtlasSky {
     if (c.world == null
         || c.player == null
         || !AtlasConfig.INSTANCE.atmosphere
-        || !c.world.isNight()
+        || !c.world.getDimension().hasSkyLight()
+        || !SkyTime.night(c.world.getTimeOfDay())
         || c.world.getRainGradient(1) > .3f) return;
     String biome =
         c.world
@@ -33,9 +35,9 @@ public final class AtlasSky {
     boolean aurora =
         cold && !AtlasClient.bloodMoon && Math.floorMod(day + (int) AtlasClient.seed, 4) != 0;
     if (!aurora) return;
-    renderedRibbons++;
     var m = context.matrixStack();
     if (m == null) return;
+    renderedRibbons++;
     var camera = context.camera().getPos();
     m.push();
     m.translate(-camera.x, -camera.y, -camera.z);
@@ -43,6 +45,8 @@ public final class AtlasSky {
     RenderSystem.enableBlend();
     RenderSystem.defaultBlendFunc();
     RenderSystem.disableCull();
+    RenderSystem.depthMask(false);
+    RenderSystem.setShaderColor(1, 1, 1, 1);
     RenderSystem.setShader(GameRenderer::getPositionColorProgram);
     float time = (c.world.getTime() % 240000) / 20f;
     double baseX = Math.floor(camera.x / 512) * 512, baseZ = Math.floor(camera.z / 512) * 512;
@@ -65,6 +69,7 @@ public final class AtlasSky {
       BufferRenderer.drawWithGlobalProgram(buffer.end());
     }
     RenderSystem.enableCull();
+    RenderSystem.depthMask(true);
     RenderSystem.disableBlend();
     m.pop();
   }

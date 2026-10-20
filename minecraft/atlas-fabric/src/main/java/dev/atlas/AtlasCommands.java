@@ -120,7 +120,15 @@ public final class AtlasCommands {
     if (vault) {
       var center = Worldgen.nearestVault(p.getBlockX(), p.getBlockZ(), s.getWorld().getSeed());
       var site = Vaults.site(s.getWorld(), center);
-      at = site.world(0, 72, 144);
+      var entrance = site.world(0, 72, 144);
+      s.getWorld().getChunk(entrance);
+      at =
+          new BlockPos(
+              entrance.getX(),
+              Math.max(
+                  entrance.getY(),
+                  Vaults.nativeSurface(s.getWorld(), entrance.getX(), entrance.getZ())),
+              entrance.getZ());
     } else {
       var c = FieldMath.nearest(p.getBlockX(), p.getBlockZ(), s.getWorld().getSeed());
       at = new BlockPos(c.x() + 44, 134, c.z());
@@ -165,8 +173,9 @@ public final class AtlasCommands {
           "F5: Free third person · F6: Shoulder view · F7: Place / lock / release camera",
           "Same polarity repels; opposite attracts. Oppose a tower to climb; flip when its warning"
               + " sounds.",
-          "Warden: break each form's lit crystals, then oppose its body to attack. Dash into an"
-              + " exposed opposing Warden for a Magnet Slam.",
+          "Warden: flank the lit crystal wards or break them. All weapons work. Dash into an"
+              + " exposed opposing Warden for a Magnet Slam. Retreat resets the fight after 10s.",
+          "J: Field journal · G: Warden Field with upgraded boots (40 stamina, 8s recovery).",
           "Vault: find a Listening Spire. Armory caches supply weapons. Clear both circuits, follow"
               + " each room's cues, then enter the inner seal.",
           "Bell Titan: dodge the white attack windups; strike the hanging bell when the core opens."

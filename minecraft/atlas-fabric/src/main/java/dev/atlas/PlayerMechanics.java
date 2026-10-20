@@ -20,9 +20,15 @@ import net.minecraft.world.World;
 public final class PlayerMechanics {
   public static final class Motion {
     double stamina = 100;
-    int roll = 0, cooldown = 0, regen = 0, slam = 0, magnetGrace = 0;
+    int roll = 0,
+        cooldown = 0,
+        regen = 0,
+        slam = 0,
+        magnetGrace = 0,
+        fieldCooldown = 0,
+        fieldTicks = 0;
     Vec3d direction = Vec3d.ZERO;
-    long[] lastControl = {-100, -100, -100, -100};
+    long[] lastControl = {-100, -100, -100, -100, -100};
     float forward;
   }
 
@@ -58,8 +64,7 @@ public final class PlayerMechanics {
     net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.COPY_FROM.register(
         (oldPlayer, newPlayer, alive) -> {
           for (String tag : oldPlayer.getCommandTags())
-            if (tag.equals("atlas:negative") || tag.equals("atlas:boots_off"))
-              newPlayer.addCommandTag(tag);
+            if (tag.startsWith("atlas:")) newPlayer.addCommandTag(tag);
           MOTION.remove(newPlayer.getUuid());
         });
     ServerLivingEntityEvents.ALLOW_DAMAGE.register(
@@ -86,9 +91,42 @@ public final class PlayerMechanics {
         || !Float.isFinite(packet.forward())
         || !Float.isFinite(packet.sideways())) return;
     int action = packet.action();
-    if (action < 0 || action > 3 || now == m.lastControl[action] || !p.isAlive() || p.isSpectator())
+    if (action < 0 || action > 4 || now == m.lastControl[action] || !p.isAlive() || p.isSpectator())
       return;
     m.lastControl[action] = now;
+    if (action == 4) {
+      if (!Content.path(p.getEquippedStack(EquipmentSlot.FEET).getItem())
+              .equals("upgraded_polarity_boots")
+          || polarity(p) == 0) {
+        p.sendMessage(
+            net.minecraft.text.Text.literal(
+                "Warden Field requires equipped, active upgraded polarity boots."),
+            true);
+        return;
+      }
+      if (m.fieldCooldown > 0 || m.stamina < 40) {
+        p.sendMessage(
+            net.minecraft.text.Text.literal(
+                m.fieldCooldown > 0
+                    ? "Warden Field recharging · " + ((m.fieldCooldown + 19) / 20) + "s"
+                    : "Warden Field needs 40 stamina."),
+            true);
+        return;
+      }
+      m.stamina -= 40;
+      m.regen = 30;
+      m.fieldCooldown = 160;
+      m.fieldTicks = 16;
+      p.getWorld()
+          .playSound(
+              null,
+              p.getBlockPos(),
+              Content.sound("magnetic_warden.deflect"),
+              net.minecraft.sound.SoundCategory.PLAYERS,
+              .45f,
+              1.15f);
+      return;
+    }
     if (packet.action() == 1 && boots(p)) {
       if (!p.getCommandTags().remove("atlas:negative")) p.addCommandTag("atlas:negative");
       return;
@@ -158,6 +196,8 @@ public final class PlayerMechanics {
 
   public static int magnet(net.minecraft.block.BlockState b) {
     String n = Content.path(b);
+    if (n.equals("induction_relay"))
+      return b.get(AtlasBlock.ACTIVE) ? (b.get(AtlasBlock.TONE) == 0 ? 1 : -1) : 0;
     return n.equals("positive_magnet") ? 1 : n.equals("negative_magnet") ? -1 : 0;
   }
 
@@ -165,6 +205,11 @@ public final class PlayerMechanics {
     if (w.getTime() % 5 == 0) magneticDrops(w);
     for (var p : w.getPlayers()) {
       var m = motion(p);
+      if (m.fieldCooldown > 0) m.fieldCooldown--;
+      if (m.fieldTicks > 0) {
+        m.fieldTicks--;
+        if (m.fieldTicks % 2 == 0) wardenField(w, p);
+      }
       if (m.magnetGrace > 0) m.magnetGrace--;
       if (m.cooldown > 0) m.cooldown--;
       if (m.regen > 0) m.regen--;
@@ -220,6 +265,56 @@ public final class PlayerMechanics {
                     && w.isNight(),
                 context));
       }
+    }
+  }
+
+  private static void wardenField(ServerWorld w, ServerPlayerEntity p) {
+    int pol = polarity(p);
+    if (pol == 0
+        || !p.isAlive()
+        || !Content.path(p.getEquippedStack(EquipmentSlot.FEET).getItem())
+            .equals("upgraded_polarity_boots")) return;
+    var center = p.getPos().add(0, 1, 0);
+    int budget = 8;
+    for (var e :
+        w.getOtherEntities(
+            p,
+            p.getBoundingBox().expand(8),
+            e ->
+                e instanceof AtlasBolt
+                    || e instanceof net.minecraft.entity.projectile.PersistentProjectileEntity
+                    || e instanceof net.minecraft.entity.mob.MobEntity
+                        && !(e instanceof AtlasBoss)
+                        && e.getWidth() <= 1.5
+                        && e.getHeight() <= 2.5)) {
+      Vec3d d = e.getPos().subtract(center);
+      if (d.lengthSquared() > 64 || d.lengthSquared() < .1 || !p.canSee(e)) continue;
+      if (budget-- <= 0) break;
+      var v = e.getVelocity().add(d.normalize().multiply(pol > 0 ? .16 : -.16));
+      double cap = e instanceof net.minecraft.entity.projectile.ProjectileEntity ? 1.6 : .55;
+      if (v.length() > cap) v = v.normalize().multiply(cap);
+      e.setVelocity(v);
+      e.velocityModified = true;
+      if (pol > 0 && e instanceof AtlasBolt bolt && bolt.getOwner() != p) {
+        bolt.setOwner(p);
+        bolt.homing = 0;
+        bolt.setVelocity(
+            e.getPos().subtract(center).normalize().multiply(Math.max(.6, v.length())));
+      }
+    }
+    double radius = 2 + (16 - motion(p).fieldTicks) * .35;
+    for (int i = 0; i < 24; i++) {
+      double a = i * Math.PI / 12;
+      w.spawnParticles(
+          new net.minecraft.particle.DustParticleEffect(AtlasBolt.color(pol), 1),
+          center.x + Math.cos(a) * radius,
+          center.y,
+          center.z + Math.sin(a) * radius,
+          1,
+          0,
+          .1,
+          0,
+          0);
     }
   }
 

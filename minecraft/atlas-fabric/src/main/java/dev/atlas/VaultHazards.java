@@ -55,6 +55,7 @@ public final class VaultHazards {
         state.complete(s.id() + ":escaped");
         state.escapes.remove(s.id());
         state.markDirty();
+        settle(w, s);
         player.giveItemStack(
             new net.minecraft.item.ItemStack(Content.item("echo_core"), left > 0 ? 4 : 1));
         Vaults.sound(w, player.getBlockPos(), "escape_complete");
@@ -180,6 +181,33 @@ public final class VaultHazards {
                   + left
                   + "s · Choose the guarded ascent or the shorter fractured stair"),
           true);
+  }
+
+  /** Settle only authored hazard cells and remove their tagged display entities. */
+  public static void settle(ServerWorld w, Vaults.Site s) {
+    for (var value : s.layout().getAsJsonArray("hazards")) {
+      var d = value.getAsJsonObject();
+      String id = s.id() + ":" + d.get("id").getAsString();
+      var display = DISPLAYS.remove(id);
+      if (display != null) display.discard();
+      PHASES.remove(id);
+      Vec3d center =
+          world(s, d.get("x").getAsDouble(), d.get("y").getAsDouble(), d.get("z").getAsDouble());
+      for (var e :
+          w.getEntitiesByClass(
+              DisplayEntity.BlockDisplayEntity.class,
+              new Box(center, center).expand(18),
+              e -> e.getCommandTags().stream().anyMatch(t -> t.startsWith("atlas:hazard:" + id))))
+        e.discard();
+      if (d.get("kind").getAsString().equals("gap")
+          || d.get("kind").getAsString().equals("collapse"))
+        for (var cell : d.getAsJsonArray("cells")) {
+          var p = s.world(cell.getAsJsonObject());
+          if (w.isChunkLoaded(p) && w.getBlockState(p).isAir())
+            w.setBlockState(
+                p, Content.block("phase_block").getDefaultState().with(AtlasBlock.ACTIVE, true));
+        }
+    }
   }
 
   private static void display(

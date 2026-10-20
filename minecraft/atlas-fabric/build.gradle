@@ -38,3 +38,9 @@ tasks.register('prepareAtlasAssets', Exec) {
 }
 processResources.dependsOn prepareAtlasAssets
 sourcesJar { dependsOn prepareAtlasAssets; exclude 'assets/atlas/sounds/**' }
+
+tasks.register('verifyProductionJar', Exec) {
+    dependsOn remapJar
+    commandLine 'python', 'tools/verify-jar.py', "build/libs/${project.archives_base_name}-${project.version}.jar"
+}
+build.dependsOn verifyProductionJar

@@ -20,6 +20,9 @@ public final class CameraRig {
   private static boolean seeded = false;
   public static int bossId = -1;
   private static Mode beforeBoss = Mode.FIRST;
+  private static int beforeDetached;
+  private static Vec3d beforePosition = Vec3d.ZERO;
+  private static float beforeYaw, beforePitch;
   private static boolean cinematic = false;
   private static long cinemaStart;
   private static int cinemaDuration;
@@ -76,6 +79,11 @@ public final class CameraRig {
     if (detached == 0) {
       seed();
       detachedPosition = mc().gameRenderer.getCamera().getPos();
+      var eye = mc().player.getEyePos();
+      if (detachedPosition.squaredDistanceTo(eye) < 1) {
+        double r = Math.toRadians(yaw);
+        detachedPosition = collision(eye, eye.add(Math.sin(r) * 5.5, 1, -Math.cos(r) * 5.5));
+      }
       detached = 1;
       mc().options.setPerspective(Perspective.THIRD_PERSON_BACK);
     } else if (detached == 1) detached = 2;
@@ -98,7 +106,14 @@ public final class CameraRig {
       return;
     }
     if (!cue.equals("intro") && !cue.equals("defeat")) return;
-    if (bossId < 0) beforeBoss = mode;
+    if (!AtlasConfig.INSTANCE.cinematics || AtlasConfig.INSTANCE.reducedMotion) return;
+    if (!cinematic) {
+      beforeBoss = mode;
+      beforeDetached = detached;
+      beforePosition = detachedPosition;
+      beforeYaw = yaw;
+      beforePitch = pitch;
+    }
     bossId = id;
     detached = 0;
     mode = Mode.FREE;
@@ -120,14 +135,11 @@ public final class CameraRig {
     if (cinematic
         && ((System.nanoTime() - cinemaStart) / 1e9 >= cinemaDuration
             || c.options.jumpKey.isPressed() && (System.nanoTime() - cinemaStart) > 300_000_000L))
-      cinematic = false;
-    if (bossId >= 0 && (c.world.getEntityById(bossId) == null || defeat && !cinematic)) {
+      restoreView();
+    if (bossId >= 0 && c.world.getEntityById(bossId) == null) {
+      if (cinematic) restoreView();
       bossId = -1;
-      mode = beforeBoss;
-      c.options.setPerspective(
-          mode == Mode.FIRST ? Perspective.FIRST_PERSON : Perspective.THIRD_PERSON_BACK);
       defeat = false;
-      seed();
     }
     if (detached == 1 && c.currentScreen == null) {
       double
@@ -147,6 +159,20 @@ public final class CameraRig {
     if (mode == Mode.FREE && detached == 0)
       c.player.headYaw =
           c.player.getYaw() + Math.clamp(MathHelper.wrapDegrees(yaw - c.player.getYaw()), -65, 65);
+  }
+
+  private static void restoreView() {
+    cinematic = false;
+    mode = beforeBoss;
+    detached = beforeDetached;
+    detachedPosition = beforePosition;
+    yaw = beforeYaw;
+    pitch = beforePitch;
+    mc().options
+        .setPerspective(
+            mode == Mode.FIRST && detached == 0
+                ? Perspective.FIRST_PERSON
+                : Perspective.THIRD_PERSON_BACK);
   }
 
   public static void faceForAction() {

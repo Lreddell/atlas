@@ -32,7 +32,7 @@ public final class AtlasBoss extends PathAwareEntity {
   private JsonObject logic;
   private BlockPos anchor = BlockPos.ORIGIN;
   private String fightId = "";
-  private int deathClock = 0, openingClock = 0;
+  private int deathClock = 0, openingClock = 0, emptyTicks = 0;
   private long lastHit = -100;
   private Vec3d lockedDirection = new Vec3d(0, 0, 1), slamPoint = Vec3d.ZERO;
   private boolean drawing = false;
@@ -153,7 +153,7 @@ public final class AtlasBoss extends PathAwareEntity {
   }
 
   private void apply(JsonObject input) {
-    var t = BossLogic.step(kind(), logic, input);
+    var t = BossLogic.play(kind(), logic, input);
     logic = t.getAsJsonObject("state");
     for (var event : t.getAsJsonArray("events")) event(event.getAsJsonObject());
     sync();
@@ -179,7 +179,7 @@ public final class AtlasBoss extends PathAwareEntity {
             kind().equals("warden")
                 ? "Magnetic Warden · "
                     + new String[] {"Warden", "Aegis", "Storm"}[phase() - 1]
-                    + (shields() > 0 ? " · " + shields() + " crystals" : " · Exposed")
+                    + (shields() > 0 ? " · " + shields() + " directional wards" : " · Exposed")
                 : "Bell Titan · " + (shields() == 0 ? "Core exposed" : "Resonant shell")));
     bar.setColor(
         polarity() > 0
@@ -200,6 +200,8 @@ public final class AtlasBoss extends PathAwareEntity {
       dataTracker.set(CINEMATIC, -(++deathClock));
       if (deathClock == 1) {
         Vaults.bossDefeated(world, this);
+        cleanupEncounter(world);
+        if (kind().equals("warden")) RegionProgress.victory(world, this);
         for (var minion :
             world.getEntitiesByClass(
                 AtlasMob.class,
@@ -239,19 +241,29 @@ public final class AtlasBoss extends PathAwareEntity {
     }
     var target =
         world.getClosestPlayer(
-            getX(),
-            getY(),
-            getZ(),
+            anchor.getX(),
+            anchor.getY(),
+            anchor.getZ(),
             128,
-            p -> p instanceof PlayerEntity player && !player.isSpectator() && !player.isCreative());
+            p ->
+                p instanceof PlayerEntity player
+                    && player.isAlive()
+                    && !player.isSpectator()
+                    && !player.isCreative());
     if (target == null) {
-      tickHazards(world);
+      if (EncounterRules.abandoned(++emptyTicks)) {
+        cleanupEncounter(world);
+        discard();
+      }
       return;
     }
+    emptyTicks = 0;
     lookAtEntity(target, 360, 360);
-    setYaw(
-        (float) (MathHelper.atan2(target.getZ() - getZ(), target.getX() - getX()) * 180 / Math.PI)
-            - 90);
+    Vec3d facing =
+        (action().endsWith("windup") || action().endsWith("active"))
+            ? lockedDirection
+            : target.getPos().subtract(getPos());
+    setYaw((float) (MathHelper.atan2(facing.z, facing.x) * 180 / Math.PI) - 90);
     bodyYaw = getYaw();
     headYaw = getYaw();
     if (action().endsWith("windup") && actionTick() == 0)
@@ -283,6 +295,29 @@ public final class AtlasBoss extends PathAwareEntity {
         target.velocityModified = true;
       }
     }
+  }
+
+  private void cleanupEncounter(ServerWorld world) {
+    waves.clear();
+    impacts.clear();
+    drawing = false;
+    for (var e :
+        world.getEntitiesByClass(
+            AtlasBolt.class,
+            new Box(anchor).expand(220),
+            b -> b.getOwner() == this || b.encounter.equals(getUuidAsString()))) e.discard();
+    for (var e :
+        world.getEntitiesByClass(
+            AtlasMob.class, new Box(anchor).expand(200), m -> m.roomId.equals(fightId + ":minion")))
+      e.discard();
+    if (kind().equals("warden"))
+      for (int i = 0; i < 4; i++) {
+        var p = tower(i);
+        var state = world.getBlockState(p);
+        if (state.isOf(Content.block("magnetic_shield_crystal")))
+          world.setBlockState(p, state.with(AtlasBlock.ACTIVE, false));
+      }
+    bar.clearPlayers();
   }
 
   private void moveFight(ServerWorld world, PlayerEntity target) {
@@ -603,6 +638,7 @@ public final class AtlasBoss extends PathAwareEntity {
       int polarity) {
     var bolt = AtlasEntities.BOLT.create(w);
     bolt.setOwner(this);
+    bolt.encounter = getUuidAsString();
     bolt.setPosition(getPos().add(0, 2.5, 0));
     bolt.setVelocity(dir.multiply(speed / 20));
     bolt.damage = (float) damage;
@@ -750,7 +786,24 @@ public final class AtlasBoss extends PathAwareEntity {
     }
     if (getWorld().getTime() - lastHit < 6) return false;
     var input = BossLogic.input("damage");
-    input.addProperty("amount", amount);
+    double multiplier = 1;
+    if (kind().equals("warden") && source.getAttacker() != null && logic.has("crystals")) {
+      Vec3d attack = source.getAttacker().getPos().subtract(getPos());
+      var crystals = logic.getAsJsonArray("crystals");
+      for (int i = 0; i < Math.min(4, crystals.size()); i++)
+        if (crystals.get(i).getAsBoolean()) {
+          Vec3d crystal = Vec3d.ofCenter(tower(i)).subtract(getPos());
+          multiplier =
+              Math.min(
+                  multiplier,
+                  EncounterRules.crystalMultiplier(attack.x, attack.z, crystal.x, crystal.z));
+        }
+      if (multiplier < 1 && source.getAttacker() instanceof PlayerEntity p)
+        p.sendMessage(
+            Text.literal("Crystal ward · 60% absorbed. Flank or break its lit crystal."), true);
+    }
+    if (!Float.isFinite(amount) || amount <= 0) return false;
+    input.addProperty("amount", amount * multiplier);
     if (kind().equals("warden")) {
       int pol = source.getAttacker() instanceof PlayerEntity p ? PlayerMechanics.polarity(p) : 0;
       input.addProperty("playerPolarity", pol);

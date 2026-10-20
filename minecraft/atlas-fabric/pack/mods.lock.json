@@ -1,0 +1,67 @@
+{
+  "checked": "2026-10-20",
+  "minecraft": "1.21.1",
+  "fabricLoader": "0.16.14",
+  "mods": [
+    {
+      "slug": "lithium",
+      "projectId": "gvQqBUqZ",
+      "versionId": "N08Z8wog",
+      "version": "mc1.21.1-0.15.4-fabric",
+      "license": "LGPL-3.0-only",
+      "source": "https://github.com/caffeinemc/lithium-fabric",
+      "client": "required",
+      "server": "optional",
+      "id": "5xthAQGD",
+      "hashes": {
+        "sha1": "7d82a004403b7780d4443d8e40361a55cfd0ae63",
+        "sha512": "182064b00e6315e2255b857eaab8eb759e6b042ebd4cc8b855ff0d93f875a5a7188fac49f878d7b29d4ef7e6b6341190ad7f6f6f39f4a6d2c62003468b08e4c6"
+      },
+      "url": "https://cdn.modrinth.com/data/gvQqBUqZ/versions/N08Z8wog/lithium-fabric-0.15.4%2Bmc1.21.1.jar",
+      "filename": "lithium-fabric-0.15.4+mc1.21.1.jar",
+      "primary": true,
+      "size": 797454,
+      "file_type": null
+    },
+    {
+      "slug": "ferrite-core",
+      "projectId": "uXXizFIs",
+      "versionId": "sOzRw3CG",
+      "version": "7.0.3-fabric",
+      "license": "MIT",
+      "source": "https://github.com/malte0811/FerriteCore",
+      "client": "required",
+      "server": "optional",
+      "id": "xsHcyYAq",
+      "hashes": {
+        "sha1": "a8a6a34fcda177da2828cedef44e0e538cf78aad",
+        "sha512": "3ad31620fac4ff44327dc7dedbe162b2d978f3f246dc16255a6e400ce9592a0d326fe36a626f3c1bf30a11f813093cbb4dcc107af039cff724d0cdf648541fdf"
+      },
+      "url": "https://cdn.modrinth.com/data/uXXizFIs/versions/sOzRw3CG/ferritecore-7.0.3-fabric.jar",
+      "filename": "ferritecore-7.0.3-fabric.jar",
+      "primary": true,
+      "size": 123450,
+      "file_type": null
+    },
+    {
+      "slug": "emi",
+      "projectId": "fRiHVvU7",
+      "versionId": "on5GT1qh",
+      "version": "1.1.24+1.21.1+fabric",
+      "license": "MIT",
+      "source": "https://github.com/emilyploszaj/emi/",
+      "client": "required",
+      "server": "unsupported",
+      "id": "eF2Jmp7G",
+      "hashes": {
+        "sha1": "6abcf2a10a629e401bff73a8fd1ad328a72b1482",
+        "sha512": "2680e7b0a93152d4220afdc30a0452c911dc4b5c9ce1db1b7246c21b777bc2a1945fe97c98c09941d31b7478ae357135a1ef51cd3ba92d08dce35202a830b70d"
+      },
+      "url": "https://cdn.modrinth.com/data/fRiHVvU7/versions/on5GT1qh/emi-1.1.24%2B1.21.1%2Bfabric.jar",
+      "filename": "emi-1.1.24+1.21.1+fabric.jar",
+      "primary": true,
+      "size": 1098223,
+      "file_type": null
+    }
+  ]
+}

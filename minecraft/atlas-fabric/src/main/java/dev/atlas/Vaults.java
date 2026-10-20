@@ -281,6 +281,7 @@ public final class Vaults {
         .contains(name)) return false;
     var c = FieldMath.column(p.getX(), p.getZ(), w.getSeed());
     if (c != null
+        && c.arena()
         && !AtlasState.get(w).completed.contains("warden:" + c.center().x() + ":" + c.center().z()))
       return true;
     var s = at(w, p);
@@ -297,6 +298,19 @@ public final class Vaults {
   }
 
   public static void use(ServerWorld world, BlockPos pos, PlayerEntity player, String kind) {
+    if (kind.equals("induction_relay")) {
+      var s = world.getBlockState(pos);
+      int sign = s.get(AtlasBlock.TONE) == 0 ? 1 : 0;
+      world.setBlockState(pos, s.with(AtlasBlock.TONE, sign));
+      player.sendMessage(
+          Text.literal(
+              "Induction relay · "
+                  + (sign == 0 ? "+ positive" : "− negative")
+                  + " · "
+                  + (s.get(AtlasBlock.ACTIVE) ? "powered" : "supply redstone power to activate")),
+          true);
+      return;
+    }
     if (kind.equals("magnetic_boss_summoner")) {
       var c = FieldMath.column(pos.getX(), pos.getZ(), world.getSeed());
       BlockPos anchor = c == null ? pos.down(4) : new BlockPos(c.center().x(), 132, c.center().z());
@@ -304,8 +318,14 @@ public final class Vaults {
           .getEntitiesByClass(
               AtlasBoss.class, new Box(anchor).expand(180), e -> e.kind().equals("warden"))
           .isEmpty()) {
+        String id = "warden:" + anchor.getX() + ":" + anchor.getZ();
+        if (AtlasState.get(world).completed.contains(id) && !player.isSneaking()) {
+          player.sendMessage(
+              Text.literal("This field is unsealed. Sneak and use the altar for a rematch."), true);
+          return;
+        }
         var boss = AtlasEntities.WARDEN.create(world);
-        boss.initializeFight(anchor, "warden:" + anchor.getX() + ":" + anchor.getZ());
+        boss.initializeFight(anchor, id);
         boss.refreshPositionAndAngles(
             anchor.getX() + .5, anchor.getY() + 4, anchor.getZ() + .5, 0, 0);
         world.spawnEntity(boss);

@@ -134,6 +134,13 @@ for(const folder of ['magnetic_warden','resonant_vault','player','polarity'])for
  const event=folder+'.'+basename(f,'.ogg');await cp(resolve(root,'public/assets/rvx/sounds',folder,f),resolve(asset,'sounds',folder,f)).catch(async()=>{await mkdir(resolve(asset,'sounds',folder),{recursive:true});await cp(resolve(root,'public/assets/rvx/sounds',folder,f),resolve(asset,'sounds',folder,f));});
  sounds[event]={subtitle:'subtitles.atlas.'+event,sounds:[{name:'atlas:'+folder+'/'+basename(f,'.ogg'),volume:folder==='resonant_vault'?0.55:0.65,attenuation_distance:folder==='magnetic_warden'||folder==='resonant_vault'?64:24}]};lang['subtitles.atlas.'+event]=event.split('.').at(-1).replaceAll('_',' ');
 }
+lang['key.atlas.field']='Warden Field';lang['key.atlas.journal']='Field journal';lang['block.atlas.induction_relay']='Induction Relay';
+await put(resolve(asset,'blockstates/induction_relay.json'),{variants:{'active=false':{model:'atlas:block/induction_relay_off'},'active=true,tone=0':{model:'atlas:block/induction_relay_positive'},'active=true,tone=1':{model:'atlas:block/induction_relay_negative'},'active=true,tone=2':{model:'atlas:block/induction_relay_positive'},'active=true,tone=3':{model:'atlas:block/induction_relay_negative'}}});
+for(const[variant,texture]of Object.entries({off:'magnetite_bricks',positive:'positive_magnet',negative:'negative_magnet'}))await put(resolve(asset,`models/block/induction_relay_${variant}.json`),{parent:'minecraft:block/cube',textures:{particle:'atlas:block/'+texture,down:'atlas:block/magnetite_bricks',up:'atlas:block/chiseled_magnetite',north:'atlas:block/'+texture,south:'atlas:block/'+texture,east:'atlas:block/'+texture,west:'atlas:block/'+texture}});
+await put(resolve(asset,'models/item/induction_relay.json'),{parent:'atlas:block/induction_relay_positive'});
+await put(resolve(data,'loot_table/blocks/induction_relay.json'),{type:'minecraft:block',pools:[{rolls:1,entries:[{type:'minecraft:item',name:'atlas:induction_relay'}],conditions:[{condition:'minecraft:survives_explosion'}]}]});
+await put(resolve(data,'recipe/induction_relay.json'),{type:'minecraft:crafting_shaped',category:'redstone',pattern:['CRC','PIN','CRC'],key:{C:{item:'minecraft:copper_ingot'},R:{item:'minecraft:redstone'},P:{item:'atlas:positive_magnetite_crystal'},I:{item:'minecraft:iron_ingot'},N:{item:'atlas:negative_magnetite_crystal'}},result:{id:'atlas:induction_relay',count:2}});
+await put(resolve(data,'advancement/recipes/induction_relay.json'),{parent:'minecraft:recipes/root',criteria:{crystal:{trigger:'minecraft:inventory_changed',conditions:{items:[{items:['atlas:positive_magnetite_crystal']}]}}},requirements:[['crystal']],rewards:{recipes:['atlas:induction_relay']}});
 await put(resolve(asset,'sounds.json'),sounds);await put(resolve(asset,'music.json'),music);await put(resolve(asset,'lang/en_us.json'),lang);
 await put(resolve(asset,'music-durations.json'),durations);
 await put(resolve(asset,'music-loops.json'),loops);
@@ -142,10 +149,33 @@ const span=161, minY=-26, maxY=59, volume=new Uint16Array(span*span*(maxY-minY+1
 atlas.generateMagneticWardenArena(0,0,0,{minX:-80,maxX:80,minZ:-80,maxZ:80,setBlock:(x,y,z,t)=>{if(x>=-80&&x<=80&&z>=-80&&z<=80&&y>=minY&&y<=maxY)volume[((x+80)*span+z+80)*(maxY-minY+1)+y-minY]=t;}});
 const arena=Buffer.alloc(16+volume.length*2);arena.writeInt32BE(span,0);arena.writeInt32BE(minY,4);arena.writeInt32BE(maxY,8);arena.writeInt32BE(80,12);volume.forEach((v,i)=>arena.writeUInt16BE(v,16+i*2));
 await put(resolve(asset,'generation/magnetic-arena.bin.gz'),gzipSync(arena));
+// Keep the source reducers intact for parity tests. The playable policy is a
+// separate, checked adaptation: no global shields, damage caps or lost overkill.
+function replaceOnce(source, before, after) {
+ if(source.split(before).length!==2)throw Error('Native boss adapter drift: '+before);
+ return source.replace(before,after);
+}
+let nativeWarden=await readFile(resolve(root,'src/systems/boss/magneticWardenCore.ts'),'utf8');
+nativeWarden=replaceOnce(nativeWarden,"if (isWardenTransitioning(state)) return 'transition';",'');
+nativeWarden=replaceOnce(nativeWarden,"if (isWardenShielded(state)) return 'shielded';",'');
+nativeWarden=replaceOnce(nativeWarden,"if (relation === 'same') return 'repelled';",'');
+nativeWarden=replaceOnce(nativeWarden,'Math.min(WARDEN_DAMAGE_CAP, clampDuration(input.amount) * multiplier)','clampDuration(input.amount) * multiplier');
+for(const phase of [2,3])nativeWarden=replaceOnce(nativeWarden,`hp: state.maxHp * WARDEN_FORM_THRESHOLDS[${phase}],`,'hp: state.hp,');
+await put(resolve(mod,'build/bridge/native-warden.ts'),nativeWarden);
+// Titan retains the powerful exposed-bell opening; the closed shell takes chip damage.
+let nativeTitan=await readFile(resolve(root,'src/systems/entities/BellTitanEncounterCore.ts'),'utf8');
+nativeTitan=replaceOnce(nativeTitan,'Math.min(BELL_TITAN_DAMAGE_CAP, clampDuration(input.amount) * multiplier)','clampDuration(input.amount) * (coreHit ? multiplier : 0.25)');
+// This file also contains the original TS runtime; relative imports must resolve
+// against its source directory while esbuild eliminates unused runtime exports.
+nativeTitan=nativeTitan.replace(/from (['"])(\.\.?\/[^'"]+)\1/g,(_,q,p)=>'from '+q+resolve(root,'src/systems/entities',p).replaceAll('\\','/')+q);
+await put(resolve(mod,'build/bridge/native-titan.ts'),nativeTitan);
 const coreEntry=`
 import {createWardenState,advanceWarden} from '${root.replaceAll('\\','/')}/src/systems/boss/magneticWardenCore.ts';
 import {createBellTitanState,advanceBellTitan} from '${root.replaceAll('\\','/')}/src/systems/entities/BellTitanEncounterCore.ts';
+import {advanceWarden as nativeWarden} from './build/bridge/native-warden.ts';
+import {advanceBellTitan as nativeTitan} from './build/bridge/native-titan.ts';
 export function step(kind,state,input){var s=state?JSON.parse(state):(kind==='warden'?createWardenState():createBellTitanState());return JSON.stringify(kind==='warden'?advanceWarden(s,JSON.parse(input)):advanceBellTitan(s,JSON.parse(input)));}
+export function play(kind,state,input){var s=state?JSON.parse(state):(kind==='warden'?createWardenState():createBellTitanState());return JSON.stringify(kind==='warden'?nativeWarden(s,JSON.parse(input)):nativeTitan(s,JSON.parse(input)));}
 `;
 const js=await build({stdin:{contents:coreEntry,resolveDir:mod,loader:'ts'},bundle:true,platform:'neutral',format:'iife',globalName:'AtlasCore',target:'es2015',write:false});
 const es5=await transformAsync(js.outputFiles[0].text,{presets:[['@babel/preset-env',{targets:{ie:'11'},modules:false}]],comments:false,compact:false});

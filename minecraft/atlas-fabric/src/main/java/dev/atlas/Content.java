@@ -109,6 +109,21 @@ public final class Content {
       Block b = Registries.BLOCK.get(name);
       LEGACY.put(d.get("id").getAsInt(), b.getDefaultState());
     }
+    var relay =
+        new AtlasBlock(
+            "induction_relay",
+            AbstractBlock.Settings.create()
+                .strength(3, 8)
+                .sounds(BlockSoundGroup.COPPER)
+                .luminance(s -> s.get(AtlasBlock.ACTIVE) ? 7 : 0));
+    BLOCKS.put(
+        "induction_relay", Registry.register(Registries.BLOCK, Atlas.id("induction_relay"), relay));
+    ITEMS.put(
+        "induction_relay",
+        Registry.register(
+            Registries.ITEM,
+            Atlas.id("induction_relay"),
+            new BlockItem(relay, new Item.Settings())));
     Registry.register(
         Registries.ITEM_GROUP,
         Atlas.id("adventure"),

@@ -53,6 +53,30 @@ public class AtlasBlock extends Block {
   }
 
   @Override
+  protected void neighborUpdate(
+      BlockState state,
+      World world,
+      BlockPos pos,
+      Block sourceBlock,
+      BlockPos sourcePos,
+      boolean notify) {
+    if (kind.equals("induction_relay") && !world.isClient) {
+      boolean powered = world.isReceivingRedstonePower(pos);
+      if (powered != state.get(ACTIVE))
+        world.setBlockState(pos, state.with(ACTIVE, powered), Block.NOTIFY_ALL);
+    }
+    super.neighborUpdate(state, world, pos, sourceBlock, sourcePos, notify);
+  }
+
+  @Override
+  protected void onBlockAdded(
+      BlockState state, World world, BlockPos pos, BlockState oldState, boolean notify) {
+    super.onBlockAdded(state, world, pos, oldState, notify);
+    if (kind.equals("induction_relay") && !world.isClient && world.isReceivingRedstonePower(pos))
+      world.setBlockState(pos, state.with(ACTIVE, true), Block.NOTIFY_ALL);
+  }
+
+  @Override
   protected ActionResult onUse(
       BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
     if (!world.isClient) Vaults.use((ServerWorld) world, pos, player, kind);

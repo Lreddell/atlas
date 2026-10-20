@@ -22,6 +22,7 @@ public final class Atlas implements ModInitializer {
     PlayerMechanics.init();
     Combat.init();
     NativeExtras.init();
+    RegionProgress.init();
     AtlasCommands.init();
     AtlasSmoke.init();
     LOGGER.info("Atlas: Light & Polarity initialized from Atlas main d7444cb");

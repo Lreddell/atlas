@@ -19,6 +19,7 @@ public final class AtlasBolt extends ProjectileEntity {
   public int life = 100;
   public double homing = 0;
   public double gravity = 0;
+  public String encounter = "";
 
   public AtlasBolt(EntityType<? extends AtlasBolt> type, World world) {
     super(type, world);
@@ -49,7 +50,10 @@ public final class AtlasBolt extends ProjectileEntity {
     var world = (ServerWorld) getWorld();
     if (gravity > 0) setVelocity(getVelocity().add(0, -gravity, 0));
     var nearby = world.getClosestPlayer(getX(), getY(), getZ(), 4, false);
-    if (nearby != null && PlayerMechanics.polarity(nearby) == polarity() && polarity() != 0) {
+    if (!(getOwner() instanceof PlayerEntity)
+        && nearby != null
+        && PlayerMechanics.polarity(nearby) == polarity()
+        && polarity() != 0) {
       setVelocity(
           getVelocity()
               .add(getPos().subtract(nearby.getPos().add(0, 1, 0)).normalize().multiply(.18)));
@@ -59,6 +63,23 @@ public final class AtlasBolt extends ProjectileEntity {
         double speed = getVelocity().length();
         Vec3d direction = target.getPos().add(0, 1, 0).subtract(getPos()).normalize();
         setVelocity(getVelocity().lerp(direction.multiply(speed), Math.min(.09, homing * .02)));
+      }
+    }
+    if (getOwner() instanceof PlayerEntity) {
+      var crystal =
+          world.raycast(
+              new net.minecraft.world.RaycastContext(
+                  getPos(),
+                  getPos().add(getVelocity()),
+                  net.minecraft.world.RaycastContext.ShapeType.OUTLINE,
+                  net.minecraft.world.RaycastContext.FluidHandling.NONE,
+                  this));
+      if (crystal.getType() == HitResult.Type.BLOCK
+          && world
+              .getBlockState(crystal.getBlockPos())
+              .isOf(Content.block("magnetic_shield_crystal"))) {
+        onBlockHit(crystal);
+        return;
       }
     }
     HitResult hit = ProjectileUtil.getCollision(this, this::canHit);
@@ -87,6 +108,7 @@ public final class AtlasBolt extends ProjectileEntity {
         && PlayerMechanics.polarity(p) == polarity()) {
       setVelocity(getVelocity().multiply(-1));
       setOwner(p);
+      homing = 0;
       life = Math.min(life, 40);
       return;
     }
@@ -96,6 +118,16 @@ public final class AtlasBolt extends ProjectileEntity {
 
   @Override
   protected void onBlockHit(BlockHitResult hit) {
+    if (getOwner() instanceof PlayerEntity
+        && getWorld() instanceof ServerWorld w
+        && w.getBlockState(hit.getBlockPos()).isOf(Content.block("magnetic_shield_crystal"))) {
+      for (var b :
+          w.getEntitiesByClass(
+              AtlasBoss.class,
+              new Box(hit.getBlockPos()).expand(100),
+              b -> b.kind().equals("warden"))) b.crystalBroken(hit.getBlockPos());
+      w.breakBlock(hit.getBlockPos(), false, this);
+    }
     discard();
   }
 
@@ -107,6 +139,7 @@ public final class AtlasBolt extends ProjectileEntity {
     n.putInt("Life", life);
     n.putDouble("Homing", homing);
     n.putDouble("AtlasGravity", gravity);
+    n.putString("AtlasEncounter", encounter);
   }
 
   @Override
@@ -117,6 +150,7 @@ public final class AtlasBolt extends ProjectileEntity {
     life = n.getInt("Life");
     homing = n.getDouble("Homing");
     gravity = n.getDouble("AtlasGravity");
+    encounter = n.getString("AtlasEncounter");
   }
 
   public static Vector3f color(int pol) {

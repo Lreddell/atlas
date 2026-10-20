@@ -1,0 +1,11 @@
+{
+  "music": true,
+  "nightPitch": true,
+  "cinematics": true,
+  "atmosphere": true,
+  "reducedMotion": false,
+  "lowHealth": true,
+  "musicDelaySeconds": 5,
+  "cameraDistance": 5.5,
+  "shoulderOffset": 0.65
+}

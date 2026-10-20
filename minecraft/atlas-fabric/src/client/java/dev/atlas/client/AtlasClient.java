@@ -22,7 +22,7 @@ public final class AtlasClient implements ClientModInitializer {
   public static long seed = 0;
   public static boolean bloodMoon = false;
   public static String serverContext = "";
-  private static KeyBinding dodge, flip, boots, shoulder, detached, settings;
+  private static KeyBinding dodge, flip, boots, shoulder, detached, settings, field, journal;
   private static int ticks = 0;
   private static int heartbeatIn = 0;
   public static boolean lowHealth = false;
@@ -49,6 +49,8 @@ public final class AtlasClient implements ClientModInitializer {
     shoulder = key("shoulder", GLFW.GLFW_KEY_F6);
     detached = key("detached", GLFW.GLFW_KEY_F7);
     settings = key("config", GLFW.GLFW_KEY_O);
+    field = key("field", GLFW.GLFW_KEY_G);
+    journal = key("journal", GLFW.GLFW_KEY_J);
     ClientPlayNetworking.registerGlobalReceiver(
         Network.State.ID,
         (p, ctx) ->
@@ -112,6 +114,8 @@ public final class AtlasClient implements ClientModInitializer {
       while (dodge.wasPressed()) send(0);
       while (flip.wasPressed()) send(1);
       while (boots.wasPressed()) send(2);
+      while (field.wasPressed()) send(4);
+      if (journal.wasPressed()) c.setScreen(new FieldJournalScreen());
       while (shoulder.wasPressed()) CameraRig.toggleShoulder();
       while (detached.wasPressed()) CameraRig.toggleDetached();
       if (settings.wasPressed()) c.setScreen(new AtlasSettingsScreen(null));
@@ -157,11 +161,13 @@ public final class AtlasClient implements ClientModInitializer {
                     ? ParticleTypes.SNOWFLAKE
                     : c.player.getY() < 40
                         ? ParticleTypes.WHITE_ASH
-                        : c.world.isNight() ? ParticleTypes.GLOW : ParticleTypes.CHERRY_LEAVES;
+                        : SkyTime.night(c.world.getTimeOfDay())
+                            ? ParticleTypes.GLOW
+                            : ParticleTypes.CHERRY_LEAVES;
     if (c.world.getBlockState(BlockPos.ofFloored(x, y, z)).isAir())
       c.world.addParticle(particle, x, y, z, .007, -.006, .003);
     if (!AtlasConfig.INSTANCE.reducedMotion
-        && c.world.isNight()
+        && SkyTime.night(c.world.getTimeOfDay())
         && ticks % 600 < 12
         && c.world.isSkyVisible(c.player.getBlockPos())) {
       double at = ticks % 600;

@@ -61,7 +61,10 @@ public final class AtlasMusic {
     int threshold = urgent ? 0 : next.equals("caves") ? 80 : 160;
     if (!next.equals(context) && stable >= threshold) {
       if (next.equals("boss_magnetic_warden"))
-        bossNight = c.world != null && c.world.isNight() && AtlasConfig.INSTANCE.nightPitch;
+        bossNight =
+            c.world != null
+                && SkyTime.night(c.world.getTimeOfDay())
+                && AtlasConfig.INSTANCE.nightPitch;
       boolean carry = current != null && tags(next).contains(current.tag) && !urgent;
       context = next;
       if (!carry) {
@@ -128,7 +131,7 @@ public final class AtlasMusic {
           context.equals("boss_magnetic_warden")
               ? bossNight
               : c.world != null
-                  && c.world.isNight()
+                  && SkyTime.night(c.world.getTimeOfDay())
                   && AtlasConfig.INSTANCE.nightPitch
                   && !CONTINUOUS.contains(context)
                   && !context.equals("death")
