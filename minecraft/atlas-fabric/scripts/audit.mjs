@@ -15,4 +15,6 @@ for(const d of content.filter(x=>x.custom))assert.ok(await readFile(base+`models
 const recipeDir='build/generated/atlas/data/atlas/recipe/';
 assert.ok((await readdir(recipeDir)).includes('induction_relay.json'));
 assert.ok(await readFile(base+'logic/bosses.js'));
-console.log(`Audit passed: ${audit.content} source definitions, ${audit.customContent} source items, induction relay, ${provenance.length} original music files verified by SHA-256.`);
+assert.ok(await readFile(base+'models/item/ferric_reed.json'));
+assert.ok((await readdir(recipeDir)).includes('ferric_reed_iron.json'));
+console.log(`Audit passed: ${audit.content} source definitions, ${audit.customContent} source items, induction relay, ferric reed, ${provenance.length} original music files verified by SHA-256.`);

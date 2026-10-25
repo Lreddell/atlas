@@ -32,3 +32,9 @@
 Feature-stage biome painting is a compatibility compromise. Moving region placement into the biome source is the next major worldgen task. Modded dimensions, terrain overhauls and distant terrain renderers require separate tests. Force scans are local/bounded but should be profiled under many players and items before a larger pack. Progression schema is additive today; future migrations need explicit versioning. There is no claim of tested public-server latency, adversarial packet security or long-duration performance.
 
 Do not hide these gaps by installing many mods. Use one small native region to validate each contract, then replace a backend only when there is concrete benefit and a passing compatibility fixture.
+
+## Regional extension in 0.3
+
+MeridianBiomes classifies new sub-biomes around the source arena. MeridianTerrain enriches bare outer surfaces without replacing source wall magnets or features. MeridianFoundry owns its deterministic ordinary-block layout and three shared AtlasState milestones; its stairs use the actual terrain sampler and every write is clipped to the current chunk. No existing chunks are regenerated. LodestoneMite is a separate harmless PathAwareEntity with tracked sign, native goals and persisted molt recovery.
+
+MagneticPhysics is the common bounded field sampler for players, dropped metal, mites and minecarts. Powered relays use the same sign and iron-backing response. Minecart force is constrained to the rail axis; attracting fields damp rolling momentum. FoundryProbe runs only in the opt-in server harness, not normal `/atlas verify`, and proves item/hopper routing plus physical carriage traversal and settling. Normal world state is never used as a test fixture.

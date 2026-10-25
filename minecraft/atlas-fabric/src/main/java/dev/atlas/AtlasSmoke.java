@@ -35,7 +35,10 @@ public final class AtlasSmoke {
             }
             if (QUEUE.isEmpty()) {
               if (resetProbe == null) finish();
-              else if (++resetTicks >= 310) {
+              else {
+                FoundryProbe.step();
+                if (++resetTicks < 310 || !FoundryProbe.done) return;
+                check("foundry physical sorting, rail transit and shared seal", FoundryProbe.done);
                 check(
                     "abandoned encounter removes boss after intro and 10s retreat",
                     resetProbe.isRemoved());
@@ -54,6 +57,7 @@ public final class AtlasSmoke {
               }
             }
           } catch (Throwable e) {
+            FoundryProbe.cleanup();
             Atlas.LOGGER.error("ATLAS_SMOKE_FAILURE", e);
             var failure = new JsonObject();
             failure.addProperty("failure", e.toString());
@@ -95,7 +99,7 @@ public final class AtlasSmoke {
   }
 
   private static void finish() {
-    check("67 source items plus induction relay registered", Content.ITEMS.size() == 68);
+    check("67 source items plus relay and ferric reed registered", Content.ITEMS.size() == 69);
     for (var d : Content.DEFINITIONS.values()) {
       var id = net.minecraft.util.Identifier.of(d.get("mc").getAsString());
       check(
@@ -190,6 +194,36 @@ public final class AtlasSmoke {
         "relay loses field when power removed",
         PlayerMechanics.magnet(world.getBlockState(relayAt)) == 0);
     world.setBlockState(relayAt, previous);
+    if (!Boolean.getBoolean("atlas.smoke")) {
+      write(true);
+      running = false;
+      return;
+    }
+    if (Boolean.getBoolean("atlas.smoke.reload"))
+      check(
+          "foundry archive milestone loaded from disk",
+          state.completed.contains(MeridianFoundry.site(field, world.getSeed()).id() + ":open"));
+    var growAt = new BlockPos(field.x() + 60, 205, field.z() + 60);
+    var saved = new java.util.HashMap<BlockPos, net.minecraft.block.BlockState>();
+    for (int dx = -1; dx <= 1; dx++)
+      for (int dz = -1; dz <= 1; dz++) {
+        var q = growAt.add(dx, 0, dz);
+        saved.put(q, world.getBlockState(q));
+        saved.put(q.down(), world.getBlockState(q.down()));
+        world.setBlockState(q.down(), net.minecraft.block.Blocks.MOSS_BLOCK.getDefaultState());
+        world.setBlockState(q, net.minecraft.block.Blocks.AIR.getDefaultState());
+      }
+    var reed = (FerricReedBlock) Content.block("ferric_reed");
+    world.setBlockState(growAt, reed.getDefaultState());
+    check(
+        "ferric reed accepts native bone meal growth",
+        reed.isFertilizable(world, growAt, reed.getDefaultState()));
+    reed.grow(world, world.random, growAt, reed.getDefaultState());
+    check(
+        "ferric reed cultivation creates two nearby plants",
+        saved.keySet().stream().filter(q -> world.getBlockState(q).isOf(reed)).count() == 3);
+    saved.forEach(world::setBlockState);
+    FoundryProbe.start(world, field);
     forcedBefore =
         world
             .getForcedChunks()

@@ -13,7 +13,7 @@ const exists=async p=>{try{await access(p);return true;}catch{return false;}};
 if(await exists(game)&&!await exists(join(game,'.atlas-instance.json'))&&(await readdir(game)).length)throw Error('Refusing to use a non-empty unmarked directory.');
 const previous=await exists(join(game,'.atlas-instance.json'))?JSON.parse(await readFile(join(game,'.atlas-instance.json'),'utf8')):{};
 await mkdir(game,{recursive:true});
-await writeFile(join(game,'.atlas-instance.json'),JSON.stringify({setup:true,minecraft:'1.21.1'}));
+await writeFile(join(game,'.atlas-instance.json'),JSON.stringify({...previous,setup:true,minecraft:'1.21.1'}));
 const headers={'User-Agent':'Atlas-Fabric-Isolated-Client/0.2'};
 const get=async url=>{const r=await fetch(url,{headers});if(!r.ok)throw Error(url+': '+r.status);return r;};
 const json=async url=>(await get(url)).json();
@@ -42,7 +42,7 @@ const index=await json(mc.assetIndex.url),assetJobs=[];
 // Use read-only local caches first; downloads remain confined to this instance.
 for(const {hash:h}of Object.values(index.objects)){const path=h.slice(0,2)+'/'+h;assetJobs.push(async()=>{const gradle=join(homedir(),'.gradle/caches/fabric-loom/assets/objects',path),normal=join(ordinary,'assets/objects',path);await artifact(join(game,'assets/objects',path),'https://resources.download.minecraft.net/'+path,h,await exists(gradle)?gradle:normal);});}
 await parallel(assetJobs,16);await mkdir(join(game,'assets/indexes'),{recursive:true});await writeFile(join(game,'assets/indexes',mc.assetIndex.id+'.json'),JSON.stringify(index));
-await mkdir(join(game,'mods'),{recursive:true});const jar=resolve(options.jar??'build/libs/atlas-1.21.1-0.2.0.jar');const jarName=jar.split(/[\\/]/).at(-1);await copyFile(jar,join(game,'mods',jarName));
+await mkdir(join(game,'mods'),{recursive:true});const jar=resolve(options.jar??`build/libs/atlas-1.21.1-${(await readFile('gradle.properties','utf8')).match(/^mod_version=(.+)$/m)[1].trim()}.jar`);const jarName=jar.split(/[\\/]/).at(-1);await copyFile(jar,join(game,'mods',jarName));
 if(previous.jar&&previous.jar!==jarName&&/^atlas-1\.21\.1-[\w.-]+\.jar$/.test(previous.jar)) {
   const old=resolve(game,'mods',previous.jar);
   if(dirname(old)===resolve(game,'mods')&&await exists(old)&&hash(await readFile(old),'sha256')===previous.sha256)await unlink(old);

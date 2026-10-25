@@ -19,7 +19,7 @@ loom {
     mods { atlas { sourceSet sourceSets.main; sourceSet sourceSets.client } }
     runs {
         server { runDir 'run/server'; if (project.hasProperty('smoke')) { vmArgs '-Datlas.smoke=true', '-Datlas.smoke.exit=true'; programArgs 'nogui'; if (project.hasProperty('reload')) vmArgs '-Datlas.smoke.reload=true' } }
-        client { runDir 'run/client'; programArgs '--width', '1280', '--height', '720'; if (project.hasProperty('clientqa')) { vmArgs '-Datlas.clientqa=true' } }
+        client { runDir 'run/client'; programArgs '--width', '1280', '--height', '720'; if (project.hasProperty('clientqa') || project.hasProperty('regionqa')) { vmArgs '-Datlas.clientqa=true'; if(project.hasProperty('regionqa')) vmArgs '-Datlas.clientqa.region=true' } }
     }
 }
 sourceSets.main.resources.srcDir 'build/generated/atlas'
@@ -44,3 +44,23 @@ tasks.register('verifyProductionJar', Exec) {
     commandLine 'python', 'tools/verify-jar.py', "build/libs/${project.archives_base_name}-${project.version}.jar"
 }
 build.dependsOn verifyProductionJar
+
+// A clean Minecraft shutdown alone does not mean the opt-in live checks passed.
+tasks.named('runServer') {
+    doFirst { if (project.hasProperty('smoke')) delete file('run/server/logs/atlas-smoke.json') }
+    doLast {
+        if (project.hasProperty('smoke')) {
+            def result = new groovy.json.JsonSlurper().parse(file('run/server/logs/atlas-smoke.json'))
+            if (result.success != true) throw new GradleException('Atlas server smoke failed; see run/server/logs/atlas-smoke.json')
+        }
+    }
+}
+tasks.named('runClient') {
+    doFirst { if (project.hasProperty('clientqa') || project.hasProperty('regionqa')) delete file(project.hasProperty('regionqa') ? 'run/client/logs/atlas-regionalqa.json' : 'run/client/logs/atlas-clientqa.json') }
+    doLast {
+        if (project.hasProperty('clientqa') || project.hasProperty('regionqa')) {
+            def result = new groovy.json.JsonSlurper().parse(file(project.hasProperty('regionqa') ? 'run/client/logs/atlas-regionalqa.json' : 'run/client/logs/atlas-clientqa.json'))
+            if (result.success != true) throw new GradleException('Atlas client QA failed; see run/client/logs/atlas-clientqa.json')
+        }
+    }
+}

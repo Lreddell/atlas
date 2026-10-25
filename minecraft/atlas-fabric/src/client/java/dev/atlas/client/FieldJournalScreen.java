@@ -9,7 +9,7 @@ import net.minecraft.text.Text;
 
 /** A quiet, optional field guide. No permanent quest overlay or compulsory markers. */
 public final class FieldJournalScreen extends Screen {
-  private int page;
+  private int page, scroll, maxScroll;
 
   public FieldJournalScreen() {
     super(Text.literal("Atlas · Field Journal"));
@@ -21,7 +21,8 @@ public final class FieldJournalScreen extends Screen {
         ButtonWidget.builder(
                 Text.literal("Previous"),
                 b -> {
-                  page = Math.floorMod(page - 1, 4);
+                  page = Math.floorMod(page - 1, 5);
+                  scroll = 0;
                 })
             .dimensions(width / 2 - 155, height - 34, 95, 20)
             .build());
@@ -33,10 +34,17 @@ public final class FieldJournalScreen extends Screen {
         ButtonWidget.builder(
                 Text.literal("Next"),
                 b -> {
-                  page = (page + 1) % 4;
+                  page = (page + 1) % 5;
+                  scroll = 0;
                 })
             .dimensions(width / 2 + 60, height - 34, 95, 20)
             .build());
+  }
+
+  @Override
+  public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+    scroll = Math.clamp(scroll - (int) (vertical * 22), 0, maxScroll);
+    return true;
   }
 
   @Override
@@ -61,9 +69,10 @@ public final class FieldJournalScreen extends Screen {
               List.of(
                   "01 · THE MAGNETIC FIELDS",
                   "Nearest field centre: " + coords,
-                  "Six magnetite terraces rise around four axis towers. Iron gear responds to their"
-                      + " fields. Gather the exposed crystals outside the arena and craft polarity"
-                      + " boots before challenging the Warden.",
+                  "Six magnetite terraces rise through Ironwind Verge, Compass Barrens and"
+                      + " Railgrave around four axis towers. Iron gear responds to their fields."
+                      + " Gather the exposed crystals outside the arena and craft polarity boots"
+                      + " before challenging the Warden.",
                   "C: dodge / magnetic dash. R: switch sign. V: enable boots. Same signs repel;"
                       + " opposite signs attract. Face an opposing wall and move forward to climb."
                       + " Sneak descends.",
@@ -95,7 +104,7 @@ public final class FieldJournalScreen extends Screen {
                   "Clear both circuits to release the inner seal. Strike the Bell Titan's hanging"
                       + " bell during an opening for extra damage. After claiming the Sentinel"
                       + " Core, follow either ascent to the surface before the vault collapses.");
-          default ->
+          case 3 ->
               List.of(
                   "04 · FIELDCRAFT",
                   "Upgraded boots: G spends 40 stamina to project Warden Field for a brief pulse."
@@ -111,15 +120,53 @@ public final class FieldJournalScreen extends Screen {
                   "Minecraft Music, Hostile Creatures and Players sliders adjust the corresponding"
                       + " Atlas sounds. This journal stays optional; it does not pause multiplayer"
                       + " combat.");
+          default ->
+              List.of(
+                  "05 · THE MERIDIAN FOUNDRY",
+                  "Ironwind Verge's ferric reeds smelt into iron nuggets for the harmless lodestone"
+                      + " mites. Use bone meal to cultivate reeds; feed a nugget to a mite for a"
+                      + " shard, with five minutes between molts. Moss and ferric soil give way to"
+                      + " Compass Barrens and broken Railgrave tracks. A foundry lies 192 blocks"
+                      + " east of each field centre. Use /atlas locate foundry; its copper ribs"
+                      + " mark the stair on the south side.",
+                  "Separation: use the supply cache, climb the catwalk and drop four iron ingots"
+                      + " and two negative magnets into the glass channel. Route iron to the left"
+                      + " hopper and negative magnets right. Choose relay signs, then power their"
+                      + " levers.",
+                  "Transit: place the cart on the service line. Visit the two red end markers, left"
+                      + " then right; settle on the central detector for two seconds. End relays"
+                      + " launch and return it. The rear relay attracts toward the brake. Pushing"
+                      + " or riding is valid.",
+                  "Ascent: opposing boots cling to the wall. Its sign changes at the middle seam;"
+                      + " flip R while climbing. The stairs provide another route. Step on the"
+                      + " upper pressure plate.",
+                  "All three circuits open the archive. Take its field machinery and tuning fork,"
+                      + " then follow the ruined line west to the Warden. Foundry blocks are"
+                      + " ordinary, repairable blocks; building another solution is allowed.");
         };
-    int y = 37;
+    int total = 0;
+    for (String line : lines)
+      total += textRenderer.wrapLines(Text.literal(line), right - left - 6).size() * 11 + 9;
+    int viewport = height - 89;
+    maxScroll = Math.max(0, total - viewport);
+    scroll = Math.clamp(scroll, 0, maxScroll);
+    ctx.enableScissor(left, 35, right, height - 52);
+    int y = 37 - scroll;
     for (int i = 0; i < lines.size(); i++) {
-      for (var line : textRenderer.wrapLines(Text.literal(lines.get(i)), right - left)) {
-        if (y < height - 52)
+      for (var line : textRenderer.wrapLines(Text.literal(lines.get(i)), right - left - 6)) {
+        if (y >= 26 && y < height - 52)
           ctx.drawTextWithShadow(textRenderer, line, left, y, i == 0 ? 0xe3c68b : 0xcad3d0);
         y += 11;
       }
       y += 9;
+    }
+    ctx.disableScissor();
+    if (maxScroll > 0) {
+      int thumb = Math.max(12, viewport * viewport / total);
+      int sy = 35 + (viewport - thumb) * scroll / maxScroll;
+      ctx.fill(right - 3, sy, right - 1, sy + thumb, 0xffbba273);
+      ctx.drawTextWithShadow(
+          textRenderer, Text.literal("Scroll for more"), left, height - 45, 0xadb9b3);
     }
   }
 }

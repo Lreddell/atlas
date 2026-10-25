@@ -38,7 +38,8 @@ public final class AtlasClient implements ClientModInitializer {
           container,
           net.fabricmc.fabric.api.resource.ResourcePackActivationType.NORMAL);
     for (var entry : Content.BLOCKS.entrySet())
-      if (entry.getKey().contains("crystal")
+      if (entry.getKey().equals("ferric_reed")
+          || entry.getKey().contains("crystal")
           || entry.getKey().endsWith("spike")
           || entry.getKey().endsWith("spikes")
           || entry.getKey().equals("magnetite_shard"))
@@ -153,7 +154,7 @@ public final class AtlasClient implements ClientModInitializer {
         z = c.player.getZ() + (r.nextDouble() - .5) * 28,
         y = c.player.getY() + r.nextDouble() * 8;
     var particle =
-        biome.equals("magnetic_fields")
+        MeridianBiomes.regional(biome)
             ? ParticleTypes.ELECTRIC_SPARK
             : biome.equals("volcanic")
                 ? ParticleTypes.ASH

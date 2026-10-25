@@ -3,7 +3,7 @@ import {resolve} from 'node:path';
 
 /** New Minecraft-density material sheets and articulated voxel models. */
 export async function createMinecraftArt(atlas,asset,put){
- for(const entity of ['magnetic_warden','bell_titan','vault_guard','vault_marksman','bell_hound','tollkeeper'])await put(resolve(asset,`models/item/${entity}_spawn_egg.json`),{parent:'minecraft:item/template_spawn_egg'});
+ for(const entity of ['magnetic_warden','bell_titan','vault_guard','vault_marksman','bell_hound','tollkeeper','lodestone_mite'])await put(resolve(asset,`models/item/${entity}_spawn_egg.json`),{parent:'minecraft:item/template_spawn_egg'});
  const element=(from,to,texture='#all')=>({from,to,faces:Object.fromEntries(['north','south','east','west','up','down'].map(f=>[f,{texture}]))});
  for(const[name,elements]of Object.entries({
   resonance_pylon:[element([0,0,0],[16,4,16]),element([3,4,3],[13,13,13]),element([1,13,1],[15,16,15])],
@@ -14,6 +14,16 @@ export async function createMinecraftArt(atlas,asset,put){
  }))await put(resolve(asset,`models/block/${name}.json`),{textures:{all:`atlas:block/${name}`,particle:`atlas:block/${name}`},elements});
  await put(resolve(asset,'models/block/magnetic_shield_crystal_dormant.json'),{parent:'atlas:block/magnetic_shield_crystal',textures:{all:'atlas:block/chiseled_magnetite',particle:'atlas:block/chiseled_magnetite'}});
  await put(resolve(asset,'blockstates/magnetic_shield_crystal.json'),{variants:{'active=false':{model:'atlas:block/magnetic_shield_crystal_dormant'},'active=true':{model:'atlas:block/magnetic_shield_crystal'}}});
+ const reed=createCanvas(16,16), rc=reed.getContext('2d');
+ for(const [x,height] of [[4,11],[8,14],[11,9]]) {
+  rc.fillStyle='#48534c';rc.fillRect(x,16-height,1,height);rc.fillStyle='#82938a';rc.fillRect(x+1,16-height,1,height-1);
+  for(let y=17-height;y<14;y+=3){rc.fillStyle='#aab6ac';rc.fillRect(x-2,y,2,1);rc.fillRect(x+2,y+1,2,1);}
+  rc.fillStyle='#b8bcb2';rc.fillRect(x-1,16-height,3,2);rc.fillStyle=x===4?'#a66e67':x===11?'#6b889f':'#c7c6ad';rc.fillRect(x,15-height,1,2);
+ }
+ await put(resolve(asset,'textures/block/ferric_reed.png'),reed.toBuffer('image/png'));
+ await put(resolve(asset,'blockstates/ferric_reed.json'),{variants:{'':{model:'atlas:block/ferric_reed'}}});
+ await put(resolve(asset,'models/block/ferric_reed.json'),{parent:'minecraft:block/cross',textures:{cross:'atlas:block/ferric_reed'}});
+ await put(resolve(asset,'models/item/ferric_reed.json'),{parent:'minecraft:item/generated',textures:{layer0:'atlas:block/ferric_reed'}});
  const colors=['#59615b','#343c3b','#a18751','#718b81','#77b7ac','#554f48','#b96660','#567ca6'];
  const materials={stone:0,dark_stone:1,darkStone:1,bronze:2,worn_bronze:2,bell:2,chain:1,core:4,accent:4,cloth:5,positive:6,negative:7};
  const sheet=createCanvas(1024,512),ctx=sheet.getContext('2d');
@@ -34,6 +44,15 @@ export async function createMinecraftArt(atlas,asset,put){
   const pivot=groups.find(g=>g.id===bone)?.position??[0,0,0];return part(p.name,p.size,p.position.map((v,i)=>v-pivot[i]),p.material,bone,{rotation:p.rotation,hiddenAtStage:p.hiddenAtStage});
  });
  await put(resolve(asset,'models/entity/bell_titan.json'),{groups,parts:titan,materials});
+ const mg=[{id:'head_bone',position:[0,.3,.3]},
+  ...['left_front','right_front','left_rear','right_rear'].map((id,i)=>({id,position:[i%2?.25:-.25,.16,i<2?.18:-.18]})),
+  {id:'antenna_left',position:[-.12,.42,.34]},{id:'antenna_right',position:[.12,.42,.34]}];
+ const mp=[part('body',[.5,.25,.54],[0,.27,0],'dark_stone'),part('positive_plate',[.48,.12,.5],[0,.44,-.04],'positive'),
+  part('negative_plate',[.48,.12,.5],[0,.44,-.04],'negative'),part('spine',[.06,.15,.52],[0,.44,-.04],'bronze'),
+  part('head',[.3,.2,.24],[0,0,0],'stone','head_bone'),part('eyes',[.24,.06,.05],[0,.02,.14],'core','head_bone')];
+ for(const bone of ['left_front','right_front','left_rear','right_rear'])mp.push(part(bone+'_foot',[.22,.1,.14],[bone.startsWith('left')?-.08:.08,-.06,0],'bronze',bone));
+ for(const side of ['left','right'])mp.push(part(side+'_stem',[.05,.22,.05],[0,.1,0],'dark_stone','antenna_'+side),part(side+'_tip',[.09,.08,.09],[0,.24,0],side==='left'?'positive':'negative','antenna_'+side));
+ await put(resolve(asset,'models/entity/lodestone_mite.json'),{groups:mg,parts:mp,materials});
  const wg=[{id:'head_bone',position:[0,4.85,0]},{id:'left_arm',position:[-1.55,3.75,0]},{id:'right_arm',position:[1.55,3.75,0]},{id:'left_leg',position:[-.65,1.75,0]},{id:'right_leg',position:[.65,1.75,0]},...Array.from({length:4},(_,i)=>({id:'orbit_'+i,position:[0,3.1,0]}))];
  const wp=[
   part('waist',[1.4,.5,.95],[0,1.8,0],'dark_stone'),part('chest',[1.9,1.65,1.1],[0,2.95,0]),part('chest_band',[2.02,.23,1.25],[0,3.55,0],'bronze'),part('lower_band',[1.7,.2,1.16],[0,2.15,0],'dark_stone'),

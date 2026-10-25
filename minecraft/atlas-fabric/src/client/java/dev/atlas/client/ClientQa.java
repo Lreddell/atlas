@@ -29,6 +29,10 @@ public final class ClientQa {
   private static volatile int meleeTarget = -1;
   private static volatile boolean windupPassed = false, meleePassed = false;
   private static boolean loopPassed = false;
+  private static volatile boolean ascentPassed, mitePassed, vergeReady;
+  private static int vergeStable;
+  private static BlockPos vergeGoal;
+  private static final boolean REGION_ONLY = Boolean.getBoolean("atlas.clientqa.region");
 
   public static void init() {
     if (!Boolean.getBoolean("atlas.clientqa")) return;
@@ -73,6 +77,23 @@ public final class ClientQa {
         stage = 1;
         ticks = 0;
         field = FieldMath.nearest(0, 0, 42);
+        if (REGION_ONLY) {
+          c.setScreen(new AtlasSettingsScreen(null));
+          stage = 91;
+          server(
+              c,
+              p -> {
+                AtlasCommands.kit(p);
+                p.getAbilities().invulnerable = true;
+                p.sendAbilitiesUpdate();
+                p.getServerWorld()
+                    .getGameRules()
+                    .get(GameRules.DO_MOB_SPAWNING)
+                    .set(false, c.getServer());
+              });
+          return;
+        }
+
         server(
             c,
             p -> {
@@ -391,11 +412,179 @@ public final class ClientQa {
         ticks = 0;
       } else if (stage == 91 && ticks > 40) {
         capture(c, "07-settings.png");
+        c.setScreen(null);
+        server(
+            c,
+            p -> {
+              var site = MeridianFoundry.site(field, 42);
+              p.getServerWorld().setTimeOfDay(6000);
+              p.teleport(
+                  p.getServerWorld(),
+                  site.origin().getX() + .5,
+                  site.origin().getY() + 1,
+                  site.origin().getZ() + 8.5,
+                  180,
+                  0);
+            });
+        var site = MeridianFoundry.site(field, 42);
+        CameraRig.detached = 2;
+        CameraRig.detachedPosition = Vec3d.of(site.at(4, 6, 9));
+        CameraRig.yaw = 156;
+        CameraRig.pitch = 22;
+        c.options.hudHidden = true;
+        stage = 92;
+        ticks = 0;
+      } else if (stage == 92 && ticks > 80) {
+        capture(c, "11-foundry-workshops.png");
+        var site = MeridianFoundry.site(field, 42);
+        CameraRig.detachedPosition = Vec3d.of(site.at(-20, 5, 4));
+        CameraRig.yaw = 180;
+        CameraRig.pitch = 35;
+        stage = 93;
+        ticks = 0;
+      } else if (stage == 93 && ticks > 45) {
+        capture(c, "12-foundry-separation.png");
+        server(
+            c,
+            p -> {
+              var site = MeridianFoundry.site(field, 42);
+              p.teleport(
+                  p.getServerWorld(),
+                  site.origin().getX() + 21.5,
+                  site.origin().getY() + 9.1,
+                  site.origin().getZ() - 1.5,
+                  90,
+                  0);
+            });
+        stage = 94;
+        ticks = 0;
+      } else if (stage == 94 && ticks > 35) {
+        server(
+            c,
+            p -> {
+              var site = MeridianFoundry.site(field, 42);
+              ascentPassed =
+                  AtlasState.get(p.getServerWorld()).completed.contains(site.id() + ":climb");
+              p.teleport(
+                  p.getServerWorld(),
+                  site.origin().getX() + 17.5,
+                  site.origin().getY() + 1,
+                  site.origin().getZ() + 9.5,
+                  180,
+                  0);
+              var mite = AtlasEntities.MITE.create(p.getServerWorld());
+              mite.refreshPositionAndAngles(Vec3d.of(site.at(17, 1, 7)).add(.5, 0, .5), 0, 0);
+              mite.setAiDisabled(true);
+              mite.setPersistent();
+              p.getServerWorld().spawnEntity(mite);
+              p.setStackInHand(
+                  net.minecraft.util.Hand.MAIN_HAND,
+                  new ItemStack(net.minecraft.item.Items.IRON_NUGGET, 2));
+              int before = mite.polarity();
+              mite.interact(p, net.minecraft.util.Hand.MAIN_HAND);
+              var nbt = new net.minecraft.nbt.NbtCompound();
+              mite.writeCustomDataToNbt(nbt);
+              var restored = AtlasEntities.MITE.create(p.getServerWorld());
+              restored.readCustomDataFromNbt(nbt);
+              mitePassed =
+                  mite.polarity() == -before
+                      && restored.polarity() == mite.polarity()
+                      && p.getMainHandStack().getCount() == 1;
+              mite.interact(p, net.minecraft.util.Hand.MAIN_HAND);
+              mitePassed &= p.getMainHandStack().getCount() == 1;
+              restored.discard();
+            });
+        var site = MeridianFoundry.site(field, 42);
+        CameraRig.detachedPosition = Vec3d.of(site.at(19, 2, 9)).add(.2, .2, .2);
+        CameraRig.yaw = 135;
+        CameraRig.pitch = 18;
+        stage = 95;
+        ticks = 0;
+      } else if (stage == 95 && ticks > 45) {
+        if (!ascentPassed || !mitePassed)
+          throw new IllegalStateException(
+              "Foundry pressure plate or mite interaction/persistence failed");
+        capture(c, "13-lodestone-mite.png");
+        var site = MeridianFoundry.site(field, 42);
+        server(
+            c,
+            p ->
+                p.teleport(
+                    p.getServerWorld(),
+                    site.origin().getX() + .5,
+                    site.origin().getY() + 22,
+                    site.origin().getZ() + 33.5,
+                    180,
+                    20));
+        CameraRig.detachedPosition = Vec3d.of(site.at(16, 25, 37));
+        CameraRig.yaw = 153;
+        CameraRig.pitch = 26;
+        stage = 96;
+        ticks = 0;
+      } else if (stage == 96 && ticks > 65) {
+        capture(c, "14-foundry-entrance.png");
+        BlockPos verge = null;
+        for (int dx = -380; dx <= 380 && verge == null; dx += 12)
+          for (int dz = -380; dz <= 380; dz += 12) {
+            var column = FieldMath.column(field.x() + dx, field.z() + dz, 42);
+            if (column != null
+                && column.tier() == 1
+                && MeridianBiomes.at(field.x() + dx, field.z() + dz, 42) == MeridianBiomes.VERGE) {
+              verge = new BlockPos(field.x() + dx, column.height() + 1, field.z() + dz);
+              break;
+            }
+          }
+        if (verge == null) throw new IllegalStateException("No Ironwind Verge around QA field");
+        var goal = verge;
+        vergeGoal = goal;
+        vergeReady = false;
+        vergeStable = 0;
+        server(
+            c,
+            p -> {
+              var w = p.getServerWorld();
+              w.getChunk(goal);
+              int y = w.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, goal.getX(), goal.getZ());
+              p.teleport(w, goal.getX() + .5, y + 1, goal.getZ() + .5, -60, 12);
+              Atlas.LOGGER.info(
+                  "Verge arrival pos={} biome={} surfaceY={}",
+                  p.getPos(),
+                  w.getBiome(p.getBlockPos()).getKey(),
+                  y);
+              vergeReady = true;
+            });
+        CameraRig.detached = 0;
+        CameraRig.mode = CameraRig.Mode.FIRST;
+        c.options.setPerspective(net.minecraft.client.option.Perspective.FIRST_PERSON);
+        stage = 97;
+        ticks = 0;
+      } else if (stage == 97) {
+        boolean arrived =
+            vergeReady
+                && Math.abs(c.player.getX() - vergeGoal.getX()) < 8
+                && Math.abs(c.player.getZ() - vergeGoal.getZ()) < 8
+                && c.world.getBiome(c.player.getBlockPos()).matchesKey(MeridianBiomes.VERGE)
+                && c.player.getY() > 60;
+        vergeStable = arrived ? vergeStable + 1 : 0;
+        if (ticks > 1200)
+          throw new IllegalStateException(
+              "Verge timeout: ready="
+                  + vergeReady
+                  + " pos="
+                  + c.player.getPos()
+                  + " goal="
+                  + vergeGoal
+                  + " biome="
+                  + c.world.getBiome(c.player.getBlockPos()).getKey());
+        if (vergeStable < 80) return;
+        capture(c, "15-ironwind-verge.png");
         Files.createDirectories(Path.of("logs"));
         Files.writeString(
-            Path.of("logs/atlas-clientqa.json"),
-            "{\"success\":true,\"screenshots\":10,\"firstPersonRestored\":true,\"cameraOrbit\":true,\"eightWaySprint\":true,\"dodgePacket\":true,\"harmonicPuzzle\":true,\"timedMelee\":true,\"authoredLoopPlaying\":true,\"aurora\":true,\"bloodMoon\":true,\"fieldJournal\":true,\"note\":\"Automated"
-                + " client tour; manual game-feel assessment remains separate\"}");
+            Path.of(REGION_ONLY ? "logs/atlas-regionalqa.json" : "logs/atlas-clientqa.json"),
+            REGION_ONLY
+                ? "{\"success\":true,\"mode\":\"region-only\",\"foundryAscent\":true,\"miteFeedingAndPersistence\":true,\"vergeLoaded\":true,\"screenshots\":6}"
+                : "{\"success\":true,\"screenshots\":15,\"firstPersonRestored\":true,\"cameraOrbit\":true,\"eightWaySprint\":true,\"dodgePacket\":true,\"harmonicPuzzle\":true,\"timedMelee\":true,\"authoredLoopPlaying\":true,\"aurora\":true,\"bloodMoon\":true,\"fieldJournal\":true,\"foundryAscent\":true,\"miteFeedingAndPersistence\":true,\"note\":\"Automated"
+                      + " client tour; manual game-feel assessment remains separate\"}");
         stage = 10;
         ticks = 0;
         Atlas.LOGGER.info("ATLAS_CLIENT_QA_SUCCESS");
@@ -406,7 +595,7 @@ public final class ClientQa {
       try {
         Files.createDirectories(Path.of("logs"));
         Files.writeString(
-            Path.of("logs/atlas-clientqa.json"),
+            Path.of(REGION_ONLY ? "logs/atlas-regionalqa.json" : "logs/atlas-clientqa.json"),
             "{\"success\":false,\"failure\":"
                 + new com.google.gson.Gson().toJson(e.toString())
                 + "}");

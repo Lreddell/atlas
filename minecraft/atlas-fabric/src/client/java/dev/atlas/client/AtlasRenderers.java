@@ -43,6 +43,8 @@ public final class AtlasRenderers {
 
   public static void init() {
     EntityRendererRegistry.register(
+        AtlasEntities.MITE, c -> new AtlasLivingRenderer<>(c, "lodestone_mite", .25f));
+    EntityRendererRegistry.register(
         AtlasEntities.WARDEN, c -> new AtlasLivingRenderer<>(c, "magnetic_warden", 1.8f));
     EntityRendererRegistry.register(
         AtlasEntities.TITAN, c -> new AtlasLivingRenderer<>(c, "bell_titan", 2.0f));

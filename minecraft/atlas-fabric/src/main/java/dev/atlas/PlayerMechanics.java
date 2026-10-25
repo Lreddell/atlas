@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.block.AbstractRailBlock;
 import net.minecraft.entity.*;
 import net.minecraft.entity.damage.DamageTypes;
 import net.minecraft.entity.player.PlayerEntity;
@@ -203,6 +204,7 @@ public final class PlayerMechanics {
 
   private static void tick(ServerWorld w) {
     if (w.getTime() % 5 == 0) magneticDrops(w);
+    if (w.getTime() % 2 == 0) magneticCarts(w);
     for (var p : w.getPlayers()) {
       var m = motion(p);
       if (m.fieldCooldown > 0) m.fieldCooldown--;
@@ -325,28 +327,17 @@ public final class PlayerMechanics {
     for (var stack : p.getArmorItems())
       if (Content.path(stack.getItem()).startsWith("iron_")) iron = true;
     if (pol == 0 && !iron) return;
-    Vec3d force = Vec3d.ZERO;
-    boolean cling = false;
-    var origin = p.getPos().add(0, .7, 0);
-    for (var pos : BlockPos.iterateOutwards(p.getBlockPos(), 5, 5, 5)) {
-      int magnet = magnet(w.getBlockState(pos));
-      if (magnet == 0) continue;
-      Vec3d d = Vec3d.ofCenter(pos).subtract(origin);
-      double distance = d.length();
-      if (distance < .1 || distance > 5) continue;
-      boolean grace = pol != 0 && motion(p).magnetGrace > 0 && distance < 1.65;
-      double relation = grace ? 1 : pol == 0 ? -magnet : pol == magnet ? -1 : 1;
-      double strength =
-          70
-              / Math.pow(Math.max(.75, distance), 2)
-              * Math.min(1, 5 - distance)
-              * .0025
-              * 3
-              * directionality(w, pos, d.negate());
-      force = force.add(d.normalize().multiply(relation * strength));
-      if ((pol == -magnet || grace) && distance < 1.65 && p.horizontalCollision) cling = true;
-    }
-    if (force.length() > .45) force = force.normalize().multiply(.45);
+    var field =
+        MagneticPhysics.sample(
+            w,
+            p.getPos().add(0, .7, 0),
+            pol,
+            .0075,
+            .45,
+            pol != 0 && motion(p).magnetGrace > 0,
+            pol == 0);
+    Vec3d force = field.force();
+    boolean cling = field.oppositeSurface() && p.horizontalCollision;
     p.addVelocity(force);
     if (force.lengthSquared() > .00001 && p.getVelocity().length() > 1)
       p.setVelocity(p.getVelocity().normalize());
@@ -381,39 +372,45 @@ public final class PlayerMechanics {
         || name.equals("negative_magnet");
   }
 
-  private static double directionality(ServerWorld w, BlockPos pos, Vec3d towardsSample) {
-    Vec3d axis = Vec3d.ZERO;
-    for (var dir : Direction.values())
-      if (w.getBlockState(pos.offset(dir)).isOf(net.minecraft.block.Blocks.IRON_BLOCK))
-        axis = axis.add(Vec3d.of(dir.getOpposite().getVector()));
-    if (axis.lengthSquared() < .00001) return 1;
-    double dot = axis.normalize().dotProduct(towardsSample.normalize()),
-        cone = Math.cos(Math.PI / 6);
-    if (dot <= cone) return .01;
-    double t = (dot - cone) / (1 - cone);
-    return .01 + 3.99 * t * t * (3 - 2 * t);
+  private static void magneticCarts(ServerWorld w) {
+    for (var entity : w.iterateEntities())
+      if (entity instanceof net.minecraft.entity.vehicle.AbstractMinecartEntity cart
+          && (w.getBlockState(cart.getBlockPos()).getBlock() instanceof AbstractRailBlock
+              || w.getBlockState(cart.getBlockPos().down()).getBlock()
+                  instanceof AbstractRailBlock)) {
+        var field =
+            MagneticPhysics.sample(w, cart.getPos().add(0, .3, 0), 1, .0075, .22, false, false);
+        var railState = w.getBlockState(cart.getBlockPos());
+        if (!(railState.getBlock() instanceof AbstractRailBlock))
+          railState = w.getBlockState(cart.getBlockPos().down());
+        var shape = railState.get(((AbstractRailBlock) railState.getBlock()).getShapeProperty());
+        var force =
+            switch (shape) {
+              case EAST_WEST, ASCENDING_EAST, ASCENDING_WEST -> new Vec3d(field.force().x, 0, 0);
+              case NORTH_SOUTH, ASCENDING_NORTH, ASCENDING_SOUTH ->
+                  new Vec3d(0, 0, field.force().z);
+              default -> field.force().multiply(1, 0, 1);
+            };
+        if (force.lengthSquared() > .000001 || field.attracting()) {
+          // Ferrous rolling machinery loses momentum in an attracting field:
+          // the same relay can launch in + mode and settle a carriage in - mode.
+          var velocity =
+              cart.getVelocity()
+                  .multiply(field.attracting() ? .65 : 1, 1, field.attracting() ? .65 : 1)
+                  .add(force);
+          if (velocity.horizontalLength() > .6) velocity = velocity.normalize().multiply(.6);
+          cart.setVelocity(velocity);
+          cart.velocityModified = true;
+        }
+      }
   }
 
   private static void magneticDrops(ServerWorld w) {
     for (var entity : w.iterateEntities())
       if (entity instanceof ItemEntity item && isMetal(Content.path(item.getStack().getItem()))) {
-        Vec3d force = Vec3d.ZERO;
         int response = Content.path(item.getStack().getItem()).equals("negative_magnet") ? -1 : 1;
-        for (var pos : BlockPos.iterateOutwards(item.getBlockPos(), 5, 5, 5)) {
-          int polarity = magnet(w.getBlockState(pos));
-          if (polarity == 0) continue;
-          Vec3d d = Vec3d.ofCenter(pos).subtract(item.getPos());
-          double distance = d.length();
-          if (distance < .1 || distance > 5) continue;
-          double strength =
-              70
-                  / Math.pow(Math.max(.75, distance), 2)
-                  * Math.min(1, 5 - distance)
-                  * .0125
-                  * directionality(w, pos, d.negate());
-          force = force.add(d.normalize().multiply(-strength * polarity * response));
-        }
-        if (force.length() > .65) force = force.normalize().multiply(.65);
+        Vec3d force =
+            MagneticPhysics.sample(w, item.getPos(), response, .0125, .65, false, false).force();
         if (force.lengthSquared() > .000001) {
           item.addVelocity(force);
           if (item.getVelocity().length() > .9)

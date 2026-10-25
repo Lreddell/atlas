@@ -8,3 +8,11 @@ The production JAR includes these unmodified libraries as nested JARs, with thei
 - Rhino 1.7.15, Mozilla Public License 2.0: https://github.com/mozilla/rhino
 
 Fabric Loader and Minecraft are separately required. Minecraft is not distributed by this project. Build tooling includes Gradle, Fabric Loom, esbuild, Babel, canvas bindings, and Three.js; those build dependencies retain their package licenses and are not bundled as runtime JavaScript dependencies.
+
+The initial pack references these independently distributed, pinned companion mods; they are not nested inside Atlas:
+
+- Lithium mc1.21.1-0.15.4-fabric, LGPL-3.0: https://github.com/CaffeineMC/lithium
+- FerriteCore 7.0.3-fabric, MIT: https://github.com/malte0811/FerriteCore
+- EMI 1.1.24+1.21.1+fabric, MIT: https://github.com/emilyploszaj/emi
+
+CurseForge and Modrinth exports use exact upstream file references/URLs and hashes. Their license and distribution terms remain with the original projects.

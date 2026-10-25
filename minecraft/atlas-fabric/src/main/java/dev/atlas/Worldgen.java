@@ -115,6 +115,11 @@ public final class Worldgen {
     }
     if (!centers.isEmpty() || anyVolcanic) {
       var fields = world.getRegistryManager().get(RegistryKeys.BIOME).entryOf(FIELDS);
+      var verge = world.getRegistryManager().get(RegistryKeys.BIOME).entryOf(MeridianBiomes.VERGE);
+      var barrens =
+          world.getRegistryManager().get(RegistryKeys.BIOME).entryOf(MeridianBiomes.BARRENS);
+      var railgrave =
+          world.getRegistryManager().get(RegistryKeys.BIOME).entryOf(MeridianBiomes.RAILGRAVE);
       var volcano = world.getRegistryManager().get(RegistryKeys.BIOME).entryOf(VOLCANIC);
       for (int i = 0; i < chunk.getSectionArray().length; i++) {
         var section = chunk.getSection(i);
@@ -123,7 +128,13 @@ public final class Worldgen {
         section.populateBiomes(
             (bx, by, bz, sampler) ->
                 FieldMath.column(bx * 4, bz * 4, seed) != null
-                    ? fields
+                    ? MeridianBiomes.at(bx * 4, bz * 4, seed) == MeridianBiomes.VERGE
+                        ? verge
+                        : MeridianBiomes.at(bx * 4, bz * 4, seed) == MeridianBiomes.BARRENS
+                            ? barrens
+                            : MeridianBiomes.at(bx * 4, bz * 4, seed) == MeridianBiomes.RAILGRAVE
+                                ? railgrave
+                                : fields
                     : volcanic[(bx * 4) & 15][(bz * 4) & 15]
                         ? volcano
                         : old.get(bx & 3, by & 3, bz & 3),
@@ -133,7 +144,9 @@ public final class Worldgen {
             minZ >> 2);
       }
     }
+    MeridianTerrain.decorate(world, chunk);
     Vaults.generate(world, chunk);
+    MeridianFoundry.generate(world, chunk);
   }
 
   private static int height(int x, int z, long seed, int ambient) {
@@ -148,7 +161,9 @@ public final class Worldgen {
     return c.height();
   }
 
-  private static int surface(StructureWorldAccess world, int x, int z, long seed) {
+  static int surface(StructureWorldAccess world, int x, int z, long seed) {
+    var known = FieldMath.column(x, z, seed);
+    if (known != null && (known.tier() > 0 || known.edge() >= 64)) return known.height();
     int ambient =
         world
                 .toServerWorld()

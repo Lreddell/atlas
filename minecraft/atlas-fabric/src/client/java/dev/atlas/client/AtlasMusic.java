@@ -162,7 +162,7 @@ public final class AtlasMusic {
     if (!AtlasClient.serverContext.isEmpty()) return AtlasClient.serverContext;
     var entry = c.world.getBiome(c.player.getBlockPos());
     String biome = entry.getKey().map(k -> k.getValue().getPath()).orElse("plains");
-    if (biome.equals("magnetic_fields")) return "magnetic_fields";
+    if (MeridianBiomes.regional(biome)) return "magnetic_fields";
     if (c.player.getY()
             < c.world.getTopY(
                     net.minecraft.world.Heightmap.Type.WORLD_SURFACE,

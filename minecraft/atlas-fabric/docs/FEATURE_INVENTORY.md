@@ -1,6 +1,6 @@
 # Source coverage and implementation boundaries
 
-Source: Atlas main `d7444cb6a56b984a1d9a71e6362419d5d6653fed`. Generated `assets/atlas/content.json` lists all 249 source content definitions and their Minecraft mappings. Of these, 67 receive native Atlas items; the remainder map to Minecraft blocks/items. The induction relay is an additional native design, bringing the custom registry to 68 items, excluding six spawn eggs. The original 56 custom recipes gain one relay recipe.
+Source: Atlas main `d7444cb6a56b984a1d9a71e6362419d5d6653fed`. Generated `assets/atlas/content.json` lists all 249 source content definitions and their Minecraft mappings. Of these, 67 receive native Atlas items; the remainder map to Minecraft blocks/items. The induction relay is an additional native design, bringing the custom registry to 69 items with the ferric reed, excluding seven spawn eggs. The original 56 custom recipes gain a relay recipe and a ferric-reed smelting recipe.
 
 | Area | Source implementation | Fabric implementation / deliberate adaptation |
 |---|---|---|
@@ -17,8 +17,8 @@ Source: Atlas main `d7444cb6a56b984a1d9a71e6362419d5d6653fed`. Generated `assets
 | Music | 23 Ogg tracks and source biome/context groups, night pitch, authored dungeon loops | All original tracks copied with SHA-256 provenance. Native biome mapping, stable context selection, encounter priority, fades/delay, native repeated trimmed vault loops, phase/night pitch and single music authority. |
 | Sound/presentation | 51 encounter/player/polarity effects, atmosphere/blood moon/low-health effects | Native sound categories, volume/attenuation controls, encounter particles, heartbeat hysteresis, blood-moon tint, cold-night aurora ribbons, fireflies/snow/ash/dust and meteors. |
 | Menus/art | Three Atlas panorama sets and source texture/model data | Three optional built-in panorama packs, 16-pixel native block/item art, custom cuboid entities and glow mask. Full Atlas menu identity/postprocessing is not ported. |
-| New discovery/progression | Source completion flags and rewards | World-owned milestone/puzzle/escape state, player discovery tags, optional four-page field journal (J), one-time discovery messages, explicit rematch activation, encounter cleanup after retreat, field unsealing and tower beacons after victory. |
-| New machinery | Source positive/negative fields | Craftable redstone-powered induction relay, selectable sign, reuses the same player/drop field rules and iron backing. No separate energy API or GUI. |
+| New discovery/progression | Source completion flags and rewards | World-owned milestone/puzzle/escape state, player discovery tags, optional five-page scrollable field journal (J), one-time discovery messages, explicit rematch activation, encounter cleanup after retreat, field unsealing and tower beacons after victory. |
+| New machinery | Source positive/negative fields | Craftable redstone-powered induction relay, selectable sign, reuses the same player/drop/creature/minecart field rules and iron backing. No separate energy API or GUI. |
 
 ## What is not claimed
 
@@ -31,3 +31,15 @@ The design bible's five regions, 31 bosses, keystone graph, dynamic regional tra
 ## Reproducible inventory
 
 Run `npm run audit` after `prepareAtlasAssets`. It validates source counts, custom item-model presence, the added recipe and SHA-256 of all 23 original music tracks. `SourceParityTest` compares hashes/noise/columns and untouched boss reducers; `EncounterRulesTest` verifies the separate playable damage policy. Dedicated-server smoke checks resolve each source mapping in live registries, inspect caches/exits, reload progression, exercise relay power/sign changes and wait for an abandoned encounter to clean itself up.
+
+## 0.3 native regional additions
+
+These are deliberate Minecraft adaptations, not claims about implemented Atlas main content. Central sampled arena blocks, source field placement and terrace heights remain unchanged. Ironwind Verge adds ferric soil, moss, ferric reeds and sparse native plants; Compass Barrens exposes tuff and occasional iron; Railgrave carries ruined copper/deepslate rail alignments toward the core. All use the original magnetic music group.
+
+The Meridian Foundry sits 192 blocks east of each field centre, with terrain-connected stairs, copper ribs, lit workshops, supply cache and a sealed service archive. Its separation channel uses dropped items and native hoppers; its transit circuit tracks a real carriage through both end markers and a two-second central brake; its ascent uses a real pressure plate, polarity wall and a stair alternative. Three world-owned co-op milestones open the archive. The workshop allows building and repairing machinery. It does not impose a mandatory campaign gate on the Warden.
+
+Lodestone mites are small harmless native creatures, spawned in Verge/Barrens. They follow iron nuggets, respond to the shared field sampler and shed one magnetite shard when fed, with a persisted five-minute recovery and polarity reversal. They do not take dropped player items. A custom articulated cuboid model includes animated legs/antennae and a sign-colored carapace. This is a small ecological interaction, not a comprehensive ecosystem.
+
+The original player/drop field law is centralized in MagneticPhysics. Rolling ferrous machinery adds attraction damping so a negative relay acts as a usable brake; launch relays retain directional iron backing, while the foundry brake deliberately uses an unbacked radial field.
+
+Ferric reeds are an original cross-model plant on ferric soil, moss and ordinary dirt. Native bone meal spreads two nearby plants; smelting a reed yields one iron nugget. This supports the mite-feeding/material loop without adding another food or inventory system. The reeds use ordinary block-state persistence and loot.

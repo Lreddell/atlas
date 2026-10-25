@@ -149,7 +149,17 @@ public final class VoxelModel<T extends LivingEntity> extends EntityModel<T> {
       angle(n, -gait, 0, 0);
     angle(parts.containsKey("head_bone") ? "head_bone" : "head", pitch * .008f, yaw * .012f, 0);
     body.pivotY += Math.abs(gait) * .6f;
-    if (entity instanceof AtlasBoss boss) {
+    if (entity instanceof LodestoneMite mite) {
+      body.pivotY += MathHelper.sin(time * 3) * .3f;
+      angle("left_front", 0, gait * 1.4f, .12f);
+      angle("right_rear", 0, gait * 1.4f, -.12f);
+      angle("right_front", 0, -gait * 1.4f, -.12f);
+      angle("left_rear", 0, -gait * 1.4f, .12f);
+      angle("antenna_left", MathHelper.sin(time * 2) * .12f, 0, -.15f);
+      angle("antenna_right", MathHelper.sin(time * 2 + 1) * .12f, 0, .15f);
+      parts.get("positive_plate").visible = mite.polarity() > 0;
+      parts.get("negative_plate").visible = mite.polarity() < 0;
+    } else if (entity instanceof AtlasBoss boss) {
       String action = boss.action();
       float beat = MathHelper.sin(Math.min(1, boss.actionTick() / 16f) * (float) Math.PI);
       boolean wind = action.contains("windup"),

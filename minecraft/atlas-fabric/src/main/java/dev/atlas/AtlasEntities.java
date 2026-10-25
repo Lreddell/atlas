@@ -30,6 +30,15 @@ public final class AtlasEntities {
       MARKSMAN = mob("vault_marksman", .86f, 1.78f),
       HOUND = mob("bell_hound", 1.08f, .92f),
       TOLLKEEPER = mob("tollkeeper", 1.5f, 2.74f);
+  public static final EntityType<LodestoneMite> MITE =
+      Registry.register(
+          Registries.ENTITY_TYPE,
+          Atlas.id("lodestone_mite"),
+          EntityType.Builder.<LodestoneMite>create(LodestoneMite::new, SpawnGroup.CREATURE)
+              .dimensions(.65f, .5f)
+              .maxTrackingRange(8)
+              .trackingTickInterval(3)
+              .build("atlas:lodestone_mite"));
   public static final EntityType<AtlasBolt> BOLT =
       Registry.register(
           Registries.ENTITY_TYPE,
@@ -52,6 +61,7 @@ public final class AtlasEntities {
   }
 
   public static void init() {
+    FabricDefaultAttributeRegistry.register(MITE, LodestoneMite.attributes());
     FabricDefaultAttributeRegistry.register(WARDEN, AtlasBoss.attributes(400));
     FabricDefaultAttributeRegistry.register(TITAN, AtlasBoss.attributes(390));
     for (var t : new EntityType[] {GUARD, MARKSMAN, HOUND, TOLLKEEPER}) {
@@ -59,7 +69,16 @@ public final class AtlasEntities {
       EntityType<AtlasMob> type = (EntityType<AtlasMob>) t;
       FabricDefaultAttributeRegistry.register(type, AtlasMob.attributes());
     }
-    for (var t : new EntityType[] {WARDEN, TITAN, GUARD, MARKSMAN, HOUND, TOLLKEEPER}) {
+    SpawnRestriction.register(
+        MITE,
+        SpawnLocationTypes.ON_GROUND,
+        net.minecraft.world.Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+        (type, world, reason, pos, random) ->
+            world.getLightLevel(pos) > 7
+                && (world.getBlockState(pos.down()).isOf(net.minecraft.block.Blocks.MOSS_BLOCK)
+                    || world.getBlockState(pos.down()).isOf(net.minecraft.block.Blocks.COARSE_DIRT)
+                    || world.getBlockState(pos.down()).isOf(Content.block("magnetite_block"))));
+    for (var t : new EntityType[] {WARDEN, TITAN, GUARD, MARKSMAN, HOUND, TOLLKEEPER, MITE}) {
       String path = Registries.ENTITY_TYPE.getId(t).getPath();
       Registry.register(
           Registries.ITEM,

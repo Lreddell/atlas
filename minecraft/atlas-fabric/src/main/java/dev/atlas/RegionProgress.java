@@ -25,7 +25,8 @@ public final class RegionProgress {
         w -> {
           if (w.getRegistryKey() != World.OVERWORLD || w.getTime() % 40 != 0) return;
           for (var p : w.getPlayers()) {
-            if (w.getBiome(p.getBlockPos()).matchesKey(Worldgen.FIELDS)
+            if (MeridianBiomes.regional(
+                    w.getBiome(p.getBlockPos()).getKey().orElseThrow().getValue().getPath())
                 && p.addCommandTag("atlas:discovered_fields")) {
               p.sendMessage(
                   Text.literal(
@@ -33,6 +34,23 @@ public final class RegionProgress {
                           + " Press J to read your field notes."),
                   false);
             }
+            String biome =
+                w.getBiome(p.getBlockPos()).getKey().map(k -> k.getValue().getPath()).orElse("");
+            String discovery =
+                switch (biome) {
+                  case "ironwind_verge" ->
+                      "Ironwind Verge · Moss takes root in the ferric soil. Hold an iron nugget to"
+                          + " lead a lodestone mite.";
+                  case "compass_barrens" ->
+                      "Compass Barrens · Exposed crystals and rare iron veins supply field"
+                          + " equipment. Red and blue mark opposite signs.";
+                  case "railgrave" ->
+                      "Railgrave · Ruined transit lines lead toward the axis towers. The Meridian"
+                          + " Foundry lies on the eastern line.";
+                  default -> "";
+                };
+            if (!discovery.isEmpty() && p.addCommandTag("atlas:discovered_" + biome))
+              p.sendMessage(Text.literal(discovery), false);
             var site = Vaults.at(w, p.getBlockPos());
             if (site != null
                 && Vaults.inside(site, p.getBlockPos())

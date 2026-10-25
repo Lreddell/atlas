@@ -26,7 +26,8 @@ public final class AtlasCommands {
                     .then(
                         literal("locate")
                             .then(literal("fields").executes(c -> locate(c.getSource(), false)))
-                            .then(literal("vault").executes(c -> locate(c.getSource(), true))))
+                            .then(literal("vault").executes(c -> locate(c.getSource(), true)))
+                            .then(literal("foundry").executes(c -> foundry(c.getSource(), false))))
                     .then(
                         literal("kit")
                             .requires(s -> s.hasPermissionLevel(2))
@@ -39,7 +40,8 @@ public final class AtlasCommands {
                         literal("travel")
                             .requires(s -> s.hasPermissionLevel(2))
                             .then(literal("fields").executes(c -> travel(c.getSource(), false)))
-                            .then(literal("vault").executes(c -> travel(c.getSource(), true))))
+                            .then(literal("vault").executes(c -> travel(c.getSource(), true)))
+                            .then(literal("foundry").executes(c -> foundry(c.getSource(), true))))
                     .then(
                         literal("summon")
                             .requires(s -> s.hasPermissionLevel(2))
@@ -92,6 +94,29 @@ public final class AtlasCommands {
                                           false);
                                   return 1;
                                 }))));
+  }
+
+  private static int foundry(ServerCommandSource source, boolean travel)
+      throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    var at = BlockPos.ofFloored(source.getPosition());
+    var site = MeridianFoundry.nearest(at.getX(), at.getZ(), source.getWorld().getSeed());
+    if (travel) {
+      var p = source.getPlayerOrThrow();
+      var goal = site.at(0, 1, 8);
+      source.getWorld().getChunk(goal);
+      p.teleport(source.getWorld(), goal.getX() + .5, goal.getY(), goal.getZ() + .5, 180, 0);
+    } else
+      source.sendFeedback(
+          () ->
+              Text.literal(
+                  "Meridian Foundry at "
+                      + site.origin().getX()
+                      + ", "
+                      + site.origin().getZ()
+                      + ". Find the copper entrance on its south side. /atlas locate fields leads"
+                      + " to its Warden."),
+          false);
+    return 1;
   }
 
   private static int locate(ServerCommandSource s, boolean vault) {
@@ -175,6 +200,8 @@ public final class AtlasCommands {
               + " sounds.",
           "Warden: flank the lit crystal wards or break them. All weapons work. Dash into an"
               + " exposed opposing Warden for a Magnet Slam. Retreat resets the fight after 10s.",
+          "Foundry: /atlas locate foundry. Restore sorting, transit and ascent to open its service"
+              + " archive.",
           "J: Field journal · G: Warden Field with upgraded boots (40 stamina, 8s recovery).",
           "Vault: find a Listening Spire. Armory caches supply weapons. Clear both circuits, follow"
               + " each room's cues, then enter the inner seal.",

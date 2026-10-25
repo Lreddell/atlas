@@ -72,6 +72,19 @@ public final class Content {
               e.getKey().startsWith("magnetic_warden.") || e.getKey().startsWith("resonant_vault.")
                   ? SoundEvent.of(Atlas.id(e.getKey()), 64)
                   : SoundEvent.of(Atlas.id(e.getKey()))));
+    var reed =
+        new FerricReedBlock(
+            AbstractBlock.Settings.create()
+                .noCollision()
+                .nonOpaque()
+                .replaceable()
+                .breakInstantly()
+                .sounds(BlockSoundGroup.GRASS));
+    BLOCKS.put("ferric_reed", Registry.register(Registries.BLOCK, Atlas.id("ferric_reed"), reed));
+    ITEMS.put(
+        "ferric_reed",
+        Registry.register(
+            Registries.ITEM, Atlas.id("ferric_reed"), new BlockItem(reed, new Item.Settings())));
     for (var el : SourceData.json("content.json").getAsJsonArray()) {
       var d = el.getAsJsonObject();
       String path = d.get("path").getAsString();
