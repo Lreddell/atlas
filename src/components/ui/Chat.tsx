@@ -50,17 +50,21 @@ export const Chat: React.FC<ChatProps> = ({
     acCandidates = [], acIndex = 0, onMessageClick, showSuggestions = false,
     interactionsDisabled = false,
 }) => {
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const logRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
+    // Keep the newest line in view by scrolling only the chat box. scrollIntoView
+    // and a plain focus() also scroll every page around Atlas, so a site that
+    // embeds it would jump each time a message arrives or the chat opens.
     useEffect(() => {
-        if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+        const log = logRef.current;
+        if (log) log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' });
     }, [messages, showInput]);
 
     useEffect(() => {
         if (showInput) {
             const el = inputRef.current;
-            el?.focus();
+            el?.focus({ preventScroll: true });
             if (el) el.setSelectionRange(el.value.length, el.value.length);
         }
     }, [showInput]);
@@ -84,7 +88,7 @@ export const Chat: React.FC<ChatProps> = ({
         >
             {/* A fixed box, lines stacking up from its bottom: only once they reach
                 its top edge do the oldest start to fade, never the first few. */}
-            <div className="flex flex-col gap-0.5 justify-end h-[300px] overflow-hidden mask-fade-top pb-1">
+            <div ref={logRef} className="flex flex-col gap-0.5 justify-end h-[300px] overflow-hidden mask-fade-top pb-1.5">
                 {messages.map((msg) => (
                     <ChatLine
                         key={msg.id}
@@ -108,7 +112,6 @@ export const Chat: React.FC<ChatProps> = ({
                         )}
                     </ChatLine>
                 ))}
-                <div ref={bottomRef} />
             </div>
 
             {showInput && (
@@ -134,7 +137,6 @@ export const Chat: React.FC<ChatProps> = ({
 
                      <input
                          ref={inputRef}
-                         autoFocus
                          type="text"
                          value={inputValue}
                          onChange={(e) => setInputValue(e.target.value)}
